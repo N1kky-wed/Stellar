@@ -4072,6 +4072,34 @@ def forge_get_files():
         return jsonify({'error': 'No active Forge session.'}), 404
     return jsonify(session['forge_project'].get('files', {}))
 
+@app.route('/codelab/forge/database', methods=['GET'])
+def forge_get_database():
+    """Fetch the SQLite database file from the running Forge container."""
+    if 'user_id' not in session or 'forge_project' not in session:
+        return jsonify({'error': 'No active Forge session.'}), 404
+    
+    container_id = session['forge_project'].get('container_id')
+    if not container_id:
+        return jsonify({'error': 'No running container.'}), 404
+    
+    try:
+        container = client.containers.get(container_id)
+        # Execute cat on the database file and get raw bytes
+        exit_code, output = container.exec_run("cat /app/database.db", demux=False)
+        if exit_code != 0:
+            return jsonify({'error': 'No database found.'}), 404
+        
+        # Return base64 encoded database
+        import base64
+        db_base64 = base64.b64encode(output).decode('utf-8')
+        return jsonify({'database': db_base64})
+    except docker.errors.NotFound:
+        return jsonify({'error': 'Container not found.'}), 404
+    except Exception as e:
+        logger.error(f"Error fetching database: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/codelab/forge/redeploy', methods=['POST'])
 def forge_redeploy():
     if 'user_id' not in session or 'forge_project' not in session:

@@ -28,6 +28,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+    <!-- SQL.js for SQLite database viewing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.min.js"></script>
 
     <style>
         .code-controls .run-code-btn {
@@ -84,6 +86,92 @@
             background-color: var(--code-bg);
             color: var(--primary-text-color);
             border-color: var(--model-color-border);
+        }
+
+        /* Database Viewer Styles */
+        #forge-db-viewer {
+            padding: 15px;
+            overflow: auto;
+            height: 100%;
+            background: var(--stellar-msg-bg);
+        }
+
+        #forge-db-viewer .db-query-section {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        #forge-db-viewer .db-query-input {
+            flex: 1;
+            padding: 8px 12px;
+            background: var(--input-background);
+            border: 1px solid var(--input-border);
+            border-radius: 6px;
+            color: var(--primary-text-color);
+            font-family: monospace;
+        }
+
+        #forge-db-viewer .db-query-btn {
+            padding: 8px 16px;
+            background: var(--nebula-confirm-start);
+            border: none;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+        }
+
+        #forge-db-viewer .db-tables-list {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        #forge-db-viewer .db-table-btn {
+            padding: 6px 12px;
+            background: var(--stellar-msg-hover-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 6px;
+            color: var(--secondary-text-color);
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #forge-db-viewer .db-table-btn.active {
+            background: var(--model-color-border);
+            color: white;
+        }
+
+        #forge-db-viewer .db-result-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        #forge-db-viewer .db-result-table th,
+        #forge-db-viewer .db-result-table td {
+            padding: 8px 12px;
+            border: 1px solid var(--input-border);
+            text-align: left;
+        }
+
+        #forge-db-viewer .db-result-table th {
+            background: var(--header-bg);
+            color: var(--primary-text-color);
+            font-weight: 600;
+        }
+
+        #forge-db-viewer .db-result-table td {
+            background: var(--stellar-msg-bg);
+            color: var(--secondary-text-color);
+        }
+
+        #forge-db-viewer .db-no-data {
+            color: var(--secondary-text-color);
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
         }
 
         .code-output-container {
@@ -4406,6 +4494,7 @@
 
         let forgeHtmlEditor = null;
         let forgePyEditor = null;
+        let forgeReqsEditor = null;
         const NEBULA_AUTO_CONTINUE_TIMEOUT = 20000;
         let nebulaAutoContinueTimerId = null;
 
@@ -4501,6 +4590,18 @@
                 }
                 const files = await response.json();
 
+                // Try to fetch database
+                let dbData = null;
+                try {
+                    const dbResponse = await fetch('/codelab/forge/database');
+                    if (dbResponse.ok) {
+                        const dbJson = await dbResponse.json();
+                        dbData = dbJson.database;
+                    }
+                } catch (dbErr) {
+                    console.log('No database available:', dbErr);
+                }
+
                 forgePreviewFrame.style.display = 'none';
                 forgeLoadingOverlay.style.display = 'none';
 
@@ -4517,6 +4618,8 @@
                 <div id="forge-editor-tabs" style="display: flex; gap: 5px;">
                     <button class="forge-tab-btn active" data-editor="html">index.html</button>
                     <button class="forge-tab-btn" data-editor="py">app.py</button>
+                    <button class="forge-tab-btn" data-editor="reqs">requirements.txt</button>
+                    <button class="forge-tab-btn" data-editor="db" id="forge-db-tab" style="display: ${dbData ? 'block' : 'none'};">database.db</button>
                 </div>
                 <div id="forge-editor-controls" style="display: flex; gap: 10px;">
                     <button id="forge-editor-close-btn" class="codelab-action-btn codelab-ai-btn">Close Editor</button>
@@ -4526,6 +4629,15 @@
             <div id="forge-editor-body" style="flex-grow: 1; position: relative; overflow: hidden;">
                 <div id="forge-html-editor-container" style="position: absolute; width: 100%; height: 100%;"></div>
                 <div id="forge-py-editor-container" style="position: absolute; width: 100%; height: 100%; display: none;"></div>
+                <div id="forge-reqs-editor-container" style="position: absolute; width: 100%; height: 100%; display: none;"></div>
+                <div id="forge-db-viewer" style="position: absolute; width: 100%; height: 100%; display: none;">
+                    <div class="db-query-section">
+                        <input type="text" class="db-query-input" placeholder="Enter SQL query (e.g., SELECT * FROM users)" id="forge-db-query-input">
+                        <button class="db-query-btn" id="forge-db-run-query">Run Query</button>
+                    </div>
+                    <div class="db-tables-list" id="forge-db-tables"></div>
+                    <div id="forge-db-result"></div>
+                </div>
             </div>
         `;
 
@@ -4533,14 +4645,83 @@
 
                 const htmlContainer = editorWrapper.querySelector('#forge-html-editor-container');
                 const pyContainer = editorWrapper.querySelector('#forge-py-editor-container');
+                const reqsContainer = editorWrapper.querySelector('#forge-reqs-editor-container');
+                const dbViewer = editorWrapper.querySelector('#forge-db-viewer');
 
                 forgeHtmlEditor = CodeMirror(htmlContainer, { value: files['index.html'] || '', mode: 'htmlmixed', theme: 'dracula', lineNumbers: true });
                 forgePyEditor = CodeMirror(pyContainer, { value: files['app.py'] || '', mode: 'python', theme: 'dracula', lineNumbers: true });
+                forgeReqsEditor = CodeMirror(reqsContainer, { value: files['requirements.txt'] || 'flask\n', mode: 'text/plain', theme: 'dracula', lineNumbers: true });
+
+                // Initialize SQL.js database if available
+                let forgeDb = null;
+                if (dbData) {
+                    try {
+                        const SQL = await initSqlJs({
+                            locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`
+                        });
+                        const binaryStr = atob(dbData);
+                        const bytes = new Uint8Array(binaryStr.length);
+                        for (let i = 0; i < binaryStr.length; i++) {
+                            bytes[i] = binaryStr.charCodeAt(i);
+                        }
+                        forgeDb = new SQL.Database(bytes);
+
+                        // Get table names
+                        const tablesResult = forgeDb.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+                        const tablesDiv = editorWrapper.querySelector('#forge-db-tables');
+                        if (tablesResult.length > 0 && tablesResult[0].values.length > 0) {
+                            tablesResult[0].values.forEach(([tableName]) => {
+                                const btn = document.createElement('button');
+                                btn.className = 'db-table-btn';
+                                btn.textContent = tableName;
+                                btn.onclick = () => {
+                                    editorWrapper.querySelector('#forge-db-query-input').value = `SELECT * FROM ${tableName}`;
+                                    editorWrapper.querySelector('#forge-db-run-query').click();
+                                };
+                                tablesDiv.appendChild(btn);
+                            });
+                        }
+
+                        // Query handler
+                        editorWrapper.querySelector('#forge-db-run-query').onclick = () => {
+                            const query = editorWrapper.querySelector('#forge-db-query-input').value.trim();
+                            const resultDiv = editorWrapper.querySelector('#forge-db-result');
+                            if (!query) return;
+
+                            try {
+                                const result = forgeDb.exec(query);
+                                if (result.length === 0) {
+                                    resultDiv.innerHTML = '<div class="db-no-data">Query executed. No results returned.</div>';
+                                } else {
+                                    let tableHtml = '<table class="db-result-table"><thead><tr>';
+                                    result[0].columns.forEach(col => {
+                                        tableHtml += `<th>${col}</th>`;
+                                    });
+                                    tableHtml += '</tr></thead><tbody>';
+                                    result[0].values.forEach(row => {
+                                        tableHtml += '<tr>';
+                                        row.forEach(val => {
+                                            tableHtml += `<td>${val === null ? '<i>NULL</i>' : val}</td>`;
+                                        });
+                                        tableHtml += '</tr>';
+                                    });
+                                    tableHtml += '</tbody></table>';
+                                    resultDiv.innerHTML = tableHtml;
+                                }
+                            } catch (sqlErr) {
+                                resultDiv.innerHTML = `<div class="db-no-data" style="color: #ff6b6b;">Error: ${sqlErr.message}</div>`;
+                            }
+                        };
+                    } catch (sqlInitErr) {
+                        console.error('Failed to init SQL.js:', sqlInitErr);
+                    }
+                }
 
                 // This timeout ensures the editors render correctly after being added to the DOM
                 setTimeout(() => {
                     forgeHtmlEditor.refresh();
                     forgePyEditor.refresh();
+                    forgeReqsEditor.refresh();
                 }, 1);
 
                 const tabs = editorWrapper.querySelectorAll('.forge-tab-btn');
@@ -4548,14 +4729,23 @@
                     tab.addEventListener('click', () => {
                         tabs.forEach(t => t.classList.remove('active'));
                         tab.classList.add('active');
+                        // Hide all containers first
+                        htmlContainer.style.display = 'none';
+                        pyContainer.style.display = 'none';
+                        reqsContainer.style.display = 'none';
+                        dbViewer.style.display = 'none';
+                        // Show the selected one
                         if (tab.dataset.editor === 'html') {
                             htmlContainer.style.display = 'block';
-                            pyContainer.style.display = 'none';
                             forgeHtmlEditor.refresh();
-                        } else {
-                            htmlContainer.style.display = 'none';
+                        } else if (tab.dataset.editor === 'py') {
                             pyContainer.style.display = 'block';
                             forgePyEditor.refresh();
+                        } else if (tab.dataset.editor === 'reqs') {
+                            reqsContainer.style.display = 'block';
+                            forgeReqsEditor.refresh();
+                        } else if (tab.dataset.editor === 'db') {
+                            dbViewer.style.display = 'block';
                         }
                     });
                 });
@@ -4571,7 +4761,8 @@
                 editorWrapper.querySelector('#forge-editor-redeploy-btn').addEventListener('click', () => {
                     handleForgeRedeploy({
                         'index.html': forgeHtmlEditor.getValue(),
-                        'app.py': forgePyEditor.getValue()
+                        'app.py': forgePyEditor.getValue(),
+                        'requirements.txt': forgeReqsEditor.getValue()
                     });
                     editorWrapper.remove();
                     forgePreviewFrame.style.display = 'block';
