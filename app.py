@@ -3779,7 +3779,7 @@ def generate_visualization():
     data = request.get_json()
     content = data.get('content')
     message_id = data.get('message_id') # Get message_id to persist visualization
-    model_id = 'gemini-2.0-pro-exp-02-05' # Use the pro preview model as requested
+    model_id = 'gemini-3-pro-preview' # Use the pro preview model as requested
     api_key = RTP_API_KEY # Use RTP key for faster/cheaper generation or PRIMARY if needed
 
     if not content:
