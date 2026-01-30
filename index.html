@@ -3810,6 +3810,20 @@
             font-weight: bold;
         }
 
+        #forge-status-log .log-line.install {
+            color: #00ccff;
+            opacity: 0.85;
+            font-family: monospace;
+            font-size: 11px;
+        }
+
+        .forge-phase-indicator {
+            text-align: center;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+
         #forge-left-panel {
             /* This is the most critical fix. It allows this flex column to be constrained and not grow infinitely. */
             min-height: 0;
@@ -4710,6 +4724,7 @@
             const loadingOverlay = document.getElementById('forge-loading-overlay');
             const previewFrame = document.getElementById('forgePreviewFrame');
             const startBtn = document.getElementById('forgeStartBtn');
+            let currentPhase = 'connecting';
 
             loadingOverlay.style.display = 'grid';
             loadingOverlay.textContent = 'Connecting to build stream...';
@@ -4722,9 +4737,31 @@
 
                     const data = JSON.parse(event.data);
 
+                    // Handle phase transitions
+                    if (data.type === 'phase') {
+                        currentPhase = data.phase;
+                        if (data.phase === 'installing') {
+                            loadingOverlay.innerHTML = '<div class="forge-phase-indicator">📦 Installing Dependencies...</div>';
+                        } else if (data.phase === 'starting') {
+                            loadingOverlay.innerHTML = '<div class="forge-phase-indicator">🚀 Starting Application...</div>';
+                        } else if (data.phase === 'ready') {
+                            loadingOverlay.innerHTML = '<div class="forge-phase-indicator">✨ Ready!</div>';
+                        }
+                    }
+
+                    // Handle pip install log lines with distinct styling
+                    if (data.type === 'install_log') {
+                        addLogToForge(data.content, 'install');
+                        // Update overlay with current install status
+                        const shortContent = data.content.length > 60 ? data.content.substring(0, 60) + '...' : data.content;
+                        loadingOverlay.innerHTML = `<div class="forge-phase-indicator">📦 Installing...<br><small style="opacity:0.7">${shortContent}</small></div>`;
+                    }
+
                     if (data.type === 'log') {
                         addLogToForge(data.content);
-                        loadingOverlay.textContent = data.content;
+                        if (currentPhase !== 'installing') {
+                            loadingOverlay.textContent = data.content;
+                        }
                     } else if (data.status) {
                         addLogToForge(data.status);
                         loadingOverlay.textContent = data.status;

@@ -1313,16 +1313,26 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         run_id = str(uuid.uuid4())
         temp_dir_path = os.path.join(SANDBOX_DIR, f"{app_type}_{run_id}")
         os.makedirs(temp_dir_path, exist_ok=True)
+        
+        # Write all project files
         with open(os.path.join(temp_dir_path, 'app.py'), 'w', encoding='utf-8') as f:
             f.write(project_files.get('app.py', ''))
         with open(os.path.join(temp_dir_path, 'index.html'), 'w', encoding='utf-8') as f:
             f.write(project_files.get('index.html', ''))
         
+        # Write requirements.txt if present
+        requirements_content = project_files.get('requirements.txt', '')
+        has_requirements = bool(requirements_content.strip())
+        if has_requirements:
+            with open(os.path.join(temp_dir_path, 'requirements.txt'), 'w', encoding='utf-8') as f:
+                f.write(requirements_content)
+        
         abs_temp_dir_path = os.path.abspath(temp_dir_path)
 
+        # Start container with sleep to keep it running while we install deps
         container = client.containers.run(
             image='stellar-python-sandbox:3.12',
-            command='python app.py',
+            command='sleep infinity',
             working_dir='/app',
             volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
             ports={'5000/tcp': ('0.0.0.0', 0)},
@@ -1348,6 +1358,45 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         with active_apps_lock:
             active_apps[process_id] = {"container_id": container.id, "port": None, "status": "created"}
 
+        # Phase 1: Install dependencies if requirements.txt exists
+        if has_requirements:
+            _put_event({'type': 'phase', 'phase': 'installing'})
+            _put_event({'type': 'log', 'content': '📦 Installing dependencies from requirements.txt...'})
+            
+            try:
+                # Run pip install with streaming output
+                exec_result = container.exec_run(
+                    "pip install --no-cache-dir -r requirements.txt",
+                    stream=True,
+                    demux=True
+                )
+                
+                for stdout_chunk, stderr_chunk in exec_result.output:
+                    if stdout_chunk:
+                        lines = stdout_chunk.decode('utf-8', 'replace').rstrip().split('\n')
+                        for line in lines:
+                            if line.strip():
+                                _put_event({'type': 'install_log', 'content': line})
+                    if stderr_chunk:
+                        lines = stderr_chunk.decode('utf-8', 'replace').rstrip().split('\n')
+                        for line in lines:
+                            if line.strip():
+                                _put_event({'type': 'install_log', 'content': line})
+                
+                _put_event({'type': 'log', 'content': '✅ Dependencies installed successfully.'})
+            except Exception as pip_err:
+                logger.error(f"Pip install error for {process_id}: {pip_err}")
+                _put_event({'type': 'error', 'content': f'Failed to install dependencies: {pip_err}'})
+                return
+
+        # Phase 2: Start the Flask application
+        _put_event({'type': 'phase', 'phase': 'starting'})
+        _put_event({'type': 'log', 'content': '🚀 Starting Flask application...'})
+        
+        # Start the Flask app in the background using exec
+        container.exec_run("python app.py", detach=True)
+        
+        # Wait for the port to become available
         public_url_found = False
         host_port = None
         for i in range(15):
@@ -1369,7 +1418,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             _put_event({'type': 'log', 'content': f'Container is running on port {host_port}. Verifying server readiness...'})
             
             is_ready = False
-            for _ in range(10):
+            for _ in range(20):  # Increased retries for dependency-heavy apps
                 time.sleep(0.5)
                 try:
                     exec_result = container.exec_run("curl --fail --silent http://localhost:5000/")
@@ -1392,7 +1441,8 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     logger.exception("Failed to persist host_port for %s", process_id)
 
                 public_url = f"https://stellarai.live/apps/{process_id}/"
-                _put_event({'type': 'log', 'content': f'Server is ready! Available at {public_url}'})
+                _put_event({'type': 'phase', 'phase': 'ready'})
+                _put_event({'type': 'log', 'content': f'✨ Server is ready! Available at {public_url}'})
                 _put_event({'type': 'port_info', 'url': public_url})
                 public_url_found = True
             else:

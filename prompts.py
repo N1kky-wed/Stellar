@@ -391,81 +391,29 @@ def get_forge_initial_build_prompt(user_prompt):
     return (
         f"**Role:** You are an expert full-stack developer specializing in rapid prototyping. Your task is to generate a complete, functional, single-page web application based on a user's request.\n\n"
         f"**User's Request:**\n---\n{user_prompt}\n---\n\n"
-        f"**Core Task:** Generate a complete `index.html` and a Python `app.py` file using Flask.\n\n"
-        f"**CRITICAL INSTRUCTIONS:**\n"
-        f"1.  **`app.py`:**\n"
-        f"    *   It MUST use `send_from_directory('.', 'index.html')` to serve the frontend.\n"
-        f"    *   It MUST end with `if __name__ == '__main__': app.run(host='0.0.0.0', port=5000)`.\n"
-        f"    *   **Database Isolation:** If using SQLite, the database file **MUST** be named `database.db`. **DO NOT** use the name `stellar_local.db`.\n"
-        f"    *   **Route Protection:** Public routes like `/api/login` must be accessible to anyone. Protected routes must check for a valid session and return a 401 error if the user is not logged in.\n"
-        f"2.  **`index.html`:**\n"
-        f"    *   All API calls made from the JavaScript to the backend **MUST** use relative paths (e.g., `fetch('api/data')`). **DO NOT** use absolute paths (e.g., `fetch('/api/data')`). This is critical for the app to function.\n\n"
-        f"**Available Libraries:** You can only use standard Python libraries matplotlib pandas numpy scipy google-genai scikit-learn Pillow requests beautifulsoup4 lxml Flask Flask-Session werkzeug python-dotenv PyPDF2 pypandoc google-generativeai google-api-core tavily-python, Apart from these libraries you should not use anything else."
-        "Default to using gemini models for any Ai integrations unless specified default to gemini 2.0 flash lite unless specified or required an image/video generation model"
-        f" The only valid gemini models are gemini 2.0 flash, gemini 2.0 flash lite, gemini 2.5 flash, gemini 2.5 pro please search for more futher information on working of these exact gemini models all the 1.0,1.5 models are deprecated according to {naw}"
-        f"The only valid aws models are Model ID amazon.nova-premier-v1:0 amazon.nova-pro-v1:0 amazon.nova-lite-v1:0 amazon.nova-micro-v1:0 Inference Profile ID us.amazon.nova-premier-v1:0 us.amazon.nova-pro-v1:0 us.amazon.nova-lite-v1:0 us.amazon.nova-micro-v1:0"
-        '''example on how to use them:
-        import boto3
-import json
-
-#ask for these api keys in the frontend before letting the user access the website
-aws_access_key_id = 'key'
-aws_secret_access_key = 'key'
-aws_region = 'us-east-1'
-
-# Create Bedrock client with hardcoded credentials
-bedrock = boto3.client(
-    service_name='bedrock-runtime',
-    region_name=aws_region,
-    aws_access_key_id=aws_access_key_id,
-    aws_secret_access_key=aws_secret_access_key
-)
-
-# Example: Using Amazon Nova Premier
-def chat_with_nova_premier(message):
-    """
-    Sends a message to the Amazon Nova Premier model and returns the response.
-    """
-    try:
-        # --- UPDATED to Nova Premier model ID ---
-        model_id = 'us.amazon.nova-premier-v1:0'
-        
-        # --- MODIFIED to the maximum output token limit for Nova Premier ---
-        body = json.dumps({
-            "messages": [{"role": "user", "content": [{"text": message}]}],
-            "inferenceConfig": {"max_new_tokens": 32000} # <-- Set to the maximum for Nova Premier
-        })
-        
-        # Invoke the model
-        response = bedrock.invoke_model(
-            modelId=model_id,
-            body=body
-        )
-        
-        # Parse the response
-        result = json.loads(response['body'].read())
-        
-        # Extract and return the text content from the response
-        return result['output']['message']['content'][0]['text']
-        
-    except Exception as e:
-        # Return an error message if something goes wrong
-        return f"Error interacting with Bedrock: {str(e)}"
-
-# --- Test the function ---
-# The message to send to the model
-user_message = "Generate a comprehensive guide on how to build a full-stack web application using Python for the backend and React for the frontend. Cover everything from setting up the development environment to deployment."
-
-# Get the response from the model
-response_from_nova_premier = chat_with_nova_premier(user_message)
-
-# Print the final response
-print(f"Response (up to 32,000 tokens from Nova Premier):\n{response_from_nova_premier}")
-        '''
-        """For any project or request that requires the generation of a new visual image, you are to always and exclusively use the 'gemini-2.5-flash-image-preview' model.
-This is a non-negotiable directive."""
-        "If you need any api keys put a custom box in the frontend where you can ask the user for the api keys before letting them use the website and store the key permanently unless specified."
-        f"**Output Format:** Your entire response MUST be a single, raw, valid JSON object with two keys: \"index.html\" and \"app.py\". Do not include any text outside the JSON object.\n"
+        f"**Core Task:** Generate a complete `index.html`, a Python `app.py` file using Flask, and a `requirements.txt` file listing all Python dependencies.\n\n"
+        f"**CRITICAL INSTRUCTIONS FOR `app.py`:**\n"
+        f"1.  **Framework:** You MUST use Flask. No other web frameworks are allowed.\n"
+        f"2.  **Complete Setup:** Include all necessary imports and Flask app initialization at the top.\n"
+        f"3.  **Serve the Frontend:** CRITICAL - You **must** include a `@app.route('/')` that uses `send_from_directory('.', 'index.html')` to serve the frontend.\n"
+        f"4.  **API Routes:** Create all Flask API routes with the exact endpoints and methods (GET/POST) needed for the application.\n"
+        f"5.  **Route Protection:** Public routes like `/api/login`, `/api/register`, or `/api/check_session` **MUST NOT** have any session validation. Protected routes that require a logged-in user **MUST** check for a valid `session.get('user_id')` at the beginning of the function and return a 401 error if it's missing.\n"
+        f"6.  **Build Functional Logic:** Write the real logic for each route. Do not mock data. The backend must be fully functional.\n"
+        f"7.  **Database Isolation:** If using SQLite, the database file **MUST** be named `database.db`. **DO NOT** use `stellar_local.db`. Connect to a local file in the same directory.\n"
+        f"8.  **Environment Variables:** If API keys are needed, use `os.getenv('YOUR_API_KEY_NAME')` after loading `dotenv`.\n"
+        f"9.  **Standard Run Block:** Conclude the script with `if __name__ == '__main__': app.run(host='0.0.0.0', port=5000, debug=True)`.\n\n"
+        f"**CRITICAL INSTRUCTIONS FOR `index.html`:**\n"
+        f"*   All API calls made from JavaScript **MUST** use relative paths (e.g., `fetch('api/data')`). **DO NOT** use absolute paths (e.g., `fetch('/api/data')`). This is critical for the app to function.\n\n"
+        f"**CRITICAL INSTRUCTIONS FOR `requirements.txt`:**\n"
+        f"*   List ALL Python packages your `app.py` needs, one per line (e.g., `flask`, `requests`, `pandas`).\n"
+        f"*   You can use ANY Python package available on PyPI - use whatever best fits the request.\n"
+        f"*   Always include `flask` as a minimum.\n\n"
+        f"**AI Model Guidelines:**\n"
+        f"Default to using Gemini models for AI integrations. Default to gemini-2.5-flash-lite unless specified.\n"
+        f"Valid Gemini models: gemini-3-pro-preview, gemini-3-flash-preview, gemini-3-pro-image-preview, gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-image, gemini-live-2.5-flash-native-audio. All 1.0/1.5 models are deprecated.\n"
+        f"For image generation, use 'gemini-3-pro-image-preview' or 'gemini-2.5-flash-image'.\n\n"
+        f"If you need any API keys, put a custom input box in the frontend to ask the user for them.\n\n"
+        f"**Output Format:** Your entire response MUST be a single, raw, valid JSON object with three keys: \"index.html\", \"app.py\", and \"requirements.txt\". Do not include any text outside the JSON object.\n"
     )
 
 def get_forge_iteration_prompt(user_prompt, current_code_json):
@@ -475,74 +423,17 @@ def get_forge_iteration_prompt(user_prompt, current_code_json):
         f"**Current Application Codebase (JSON format):**\n---\n{current_code_json}\n---\n\n"
         f"**Core Task:** Analyze the user's new request and the provided code. Modify the code to implement the requested changes.\n\n"
         f"**Important Instructions:**\n"
-        f"1.  **Maintain Structure:** Keep the application as a single `index.html` and `app.py`.\n"
-        f"2.  **Database Isolation:** Ensure any SQLite database file is named `database.db`, not `stellar_local.db`.\n"
-        f"3.  **Relative Paths:** All API calls from the JavaScript **MUST** use relative paths (e.g., `fetch('api/data')`). This is a critical requirement.\n"
-        f"4.  If you add new libraries, they must be from this pre-installed list:  matplotlib pandas numpy scipy google-genai scikit-learn Pillow requests beautifulsoup4 lxml Flask Flask-Session werkzeug python-dotenv PyPDF2 pypandoc google-generativeai google-api-core tavily-python, Apart from these libraries you should not use anything else."
-        "Default to using gemini models for any Ai integrations unless specified default to gemini 2.0 flash lite unless specified or required an image/video generation model"
-        f" The only valid gemini models are gemini 2.0 flash, gemini 2.0 flash lite, gemini 2.5 flash, gemini 2.5 pro please search for more futher information on working of these exact gemini models all the 1.0,1.5 models are deprecated according to {naw}"
-        f"The only valid aws models are Model ID amazon.nova-premier-v1:0 amazon.nova-pro-v1:0 amazon.nova-lite-v1:0 amazon.nova-micro-v1:0 Inference Profile ID us.amazon.nova-premier-v1:0 us.amazon.nova-pro-v1:0 us.amazon.nova-lite-v1:0 us.amazon.nova-micro-v1:0"
-        '''example on how to use them:
-        import boto3
-import json
-
-#ask for these api keys in the frontend before letting the user access the website
-aws_access_key_id = 'key'
-aws_secret_access_key = 'key'
-aws_region = 'us-east-1'
-
-
-# Create Bedrock client with hardcoded credentials
-bedrock = boto3.client(
-    service_name='bedrock-runtime',
-    region_name=aws_region,
-    aws_access_key_id=aws_access_key_id,
-    aws_secret_access_key=aws_secret_access_key
-)
-
-# Example: Using Amazon Nova Premier
-def chat_with_nova_premier(message):
-    """
-    Sends a message to the Amazon Nova Premier model and returns the response.
-    """
-    try:
-        # --- UPDATED to Nova Premier model ID ---
-        model_id = 'us.amazon.nova-premier-v1:0'
-        
-        # --- MODIFIED to the maximum output token limit for Nova Premier ---
-        body = json.dumps({
-            "messages": [{"role": "user", "content": [{"text": message}]}],
-            "inferenceConfig": {"max_new_tokens": 32000} # <-- Set to the maximum for Nova Premier
-        })
-        
-        # Invoke the model
-        response = bedrock.invoke_model(
-            modelId=model_id,
-            body=body
-        )
-        
-        # Parse the response
-        result = json.loads(response['body'].read())
-        
-        # Extract and return the text content from the response
-        return result['output']['message']['content'][0]['text']
-        
-    except Exception as e:
-        # Return an error message if something goes wrong
-        return f"Error interacting with Bedrock: {str(e)}"
-
-# --- Test the function ---
-# The message to send to the model
-user_message = "Generate a comprehensive guide on how to build a full-stack web application using Python for the backend and React for the frontend. Cover everything from setting up the development environment to deployment."
-
-# Get the response from the model
-response_from_nova_premier = chat_with_nova_premier(user_message)
-
-# Print the final response
-print(f"Response (up to 32,000 tokens from Nova Premier):\n{response_from_nova_premier}")
-        '''
-        """For any project or request that requires the generation of a new visual image, you are to always and exclusively use the 'gemini-2.5-flash-image-preview' model.
-This is a non-negotiable directive."""
-        "If you need any api keys put a custom box in the frontend where you can ask the user for the api keys before letting them use the website and store the key permanently unless specified."
-        f"**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example, if only the HTML was modified, respond with `{{\"index.html\": \"<new full html code>\"}}`. If both files changed, respond with `{{\"index.html\": \"<new full html code>\", \"app.py\": \"<new full python code>\"}}`. Do not include explanations or any text outside the JSON object."
+        f"1.  **Maintain Structure:** Keep the application as `index.html`, `app.py`, and `requirements.txt`.\n"
+        f"2.  **Framework:** You MUST use Flask. No other web frameworks are allowed.\n"
+        f"3.  **Serve Frontend:** Ensure the `@app.route('/')` uses `send_from_directory('.', 'index.html')` to serve the frontend.\n"
+        f"4.  **Route Protection:** Public routes (login/register) must NOT have session validation. Protected routes MUST check `session.get('user_id')` and return 401 if missing.\n"
+        f"5.  **Database Isolation:** SQLite database must be named `database.db`, not `stellar_local.db`.\n"
+        f"6.  **Relative Paths:** All JavaScript API calls **MUST** use relative paths (e.g., `fetch('api/data')`).\n"
+        f"7.  **Environment Variables:** Use `os.getenv('KEY_NAME')` for API keys after loading `dotenv`.\n"
+        f"8.  **Run Block:** Keep `if __name__ == '__main__': app.run(host='0.0.0.0', port=5000, debug=True)`.\n"
+        f"9.  **Dependencies:** If you add new Python libraries, update `requirements.txt`. You can use ANY PyPI package.\n\n"
+        f"**AI Model Guidelines:**\n"
+        f"Default to gemini-2.5-flash-lite for AI integrations.\n"
+        f"Valid Gemini models: gemini-3-pro-preview, gemini-3-flash-preview, gemini-3-pro-image-preview, gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-image, gemini-live-2.5-flash-native-audio. All 1.0/1.5 models are deprecated.\n\n"
+        f"**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{\"index.html\": \"<code>\"}}` or `{{\"requirements.txt\": \"<deps>\"}}`. Do not include explanations or any text outside the JSON object."
     )
