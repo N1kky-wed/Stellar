@@ -3796,6 +3796,8 @@ def generate_visualization():
         "The visualization should be interactive (e.g., rotatable 3D models, clickable elements, animations) and pedagogical. "
         "Do NOT require any external assets that might be blocked (images, etc.). Use procedural generation or base64 if needed. "
         "The code should be robust and error-free. "
+        "IMPORTANT: Ensure the content fits perfectly within the viewport. Use `overflow: hidden` on the body and `width: 100vw; height: 100vh;` for the main container. "
+        "Ensure no elements are cut off or unreachable. Responsive design is a must. "
         "MAKE IT IMPRESSIVE.\n\n"
         "Context:\n"
         f"{content}"
