@@ -1,0 +1,22 @@
+# Environments
+venv/
+python/
+.env
+keys.env
+
+# Security
+*.key
+encryption.key
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Database
+*.db
+stellar_local.db
+
+# App specific
+sandbox_runs/
+uploads/
+.DS_Store

@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+WORKDIR /app
+
+# Install curl (required for Stellar readiness checks)
+RUN apt-get update \
+ && apt-get install -y curl \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+ matplotlib pandas numpy scipy google-genai scikit-learn Pillow requests \
+ beautifulsoup4 lxml Flask Flask-Session werkzeug python-dotenv PyPDF2 \
+ pypandoc google-generativeai google-api-core tavily-python sqlitecloud
