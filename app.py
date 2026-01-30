@@ -4084,15 +4084,28 @@ def forge_get_database():
     
     try:
         container = client.containers.get(container_id)
-        # Execute cat on the database file and get raw bytes
-        exit_code, output = container.exec_run("cat /app/database.db", demux=False)
-        if exit_code != 0:
+        
+        # First, find any .db files in the /app directory
+        find_result = container.exec_run("find /app -maxdepth 1 -name '*.db' -type f", demux=False)
+        db_files = find_result.output.decode('utf-8', errors='replace').strip().split('\n') if find_result.output else []
+        db_files = [f for f in db_files if f.endswith('.db')]
+        
+        if not db_files:
             return jsonify({'error': 'No database found.'}), 404
+        
+        # Use the first .db file found (prefer database.db if exists)
+        db_path = '/app/database.db' if '/app/database.db' in db_files else db_files[0]
+        db_name = db_path.split('/')[-1]
+        
+        # Read the database file
+        cat_result = container.exec_run(f"cat {db_path}", demux=False)
+        if cat_result.exit_code != 0 or not cat_result.output:
+            return jsonify({'error': 'Could not read database file.'}), 404
         
         # Return base64 encoded database
         import base64
-        db_base64 = base64.b64encode(output).decode('utf-8')
-        return jsonify({'database': db_base64})
+        db_base64 = base64.b64encode(cat_result.output).decode('utf-8')
+        return jsonify({'database': db_base64, 'name': db_name})
     except docker.errors.NotFound:
         return jsonify({'error': 'Container not found.'}), 404
     except Exception as e:

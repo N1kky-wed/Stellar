@@ -4592,11 +4592,13 @@
 
                 // Try to fetch database
                 let dbData = null;
+                let dbName = 'database.db';
                 try {
                     const dbResponse = await fetch('/codelab/forge/database');
                     if (dbResponse.ok) {
                         const dbJson = await dbResponse.json();
                         dbData = dbJson.database;
+                        dbName = dbJson.name || 'database.db';
                     }
                 } catch (dbErr) {
                     console.log('No database available:', dbErr);
@@ -4619,7 +4621,7 @@
                     <button class="forge-tab-btn active" data-editor="html">index.html</button>
                     <button class="forge-tab-btn" data-editor="py">app.py</button>
                     <button class="forge-tab-btn" data-editor="reqs">requirements.txt</button>
-                    <button class="forge-tab-btn" data-editor="db" id="forge-db-tab" style="display: ${dbData ? 'block' : 'none'};">database.db</button>
+                    <button class="forge-tab-btn" data-editor="db" id="forge-db-tab" style="display: ${dbData ? 'block' : 'none'};">${dbName}</button>
                 </div>
                 <div id="forge-editor-controls" style="display: flex; gap: 10px;">
                     <button id="forge-editor-close-btn" class="codelab-action-btn codelab-ai-btn">Close Editor</button>
