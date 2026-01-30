@@ -5368,9 +5368,10 @@
                 setTimeout(scrollToBottom, 50);
             } catch (e) { contentDiv.textContent = "Error."; scrollToBottom(); }
             if (messagesDiv) messagesDiv.appendChild(msg); updateTokenCount();
+            createAndAppendResearchButtons(msg, id, markdownText);
         }
 
-        function createAndAppendResearchButtons(msgContainer, messageId, initialHtmlContent) {
+        function createAndAppendResearchButtons(msgContainer, messageId, content, visualizationHtml = null) {
             if (!msgContainer || !msgContainer.classList.contains('research-output')) return;
             const existingButtonsDiv = msgContainer.querySelector('.message-buttons'); if (existingButtonsDiv) existingButtonsDiv.remove();
 
@@ -5379,7 +5380,116 @@
             editButton.addEventListener("click", function () { const msgDiv = this.closest('.message.research-output'); if (msgDiv) { const currentHTML = msgDiv.querySelector('.message-content').innerHTML; const id = msgDiv.dataset.id; showEditModal(id, currentHTML, msgDiv); } });
             const downloadButton = document.createElement("button"); downloadButton.textContent = "Download"; downloadButton.classList.add("download-btn");
             downloadButton.addEventListener("click", () => { const msgDiv = downloadButton.closest('.message.research-output'); if (msgDiv) { const currentHTML = msgDiv.querySelector('.message-content').innerHTML; const currentWidth = msgDiv.offsetWidth; downloadHtml(currentHTML, currentWidth); } });
-            buttonsDiv.appendChild(editButton); buttonsDiv.appendChild(downloadButton);
+
+            // Visualize Button
+            const vizBtn = document.createElement("button");
+            vizBtn.classList.add("download-btn", "visualize-btn");
+            vizBtn.innerHTML = `<svg style="width:16px;height:16px;margin-right:6px;" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>Visualize`;
+            vizBtn.style.marginLeft = "10px";
+            vizBtn.style.cursor = "pointer";
+
+            if (visualizationHtml) {
+                msgContainer.dataset.vizHtml = visualizationHtml;
+            }
+
+            vizBtn.addEventListener('click', async () => {
+                const contentDiv = msgContainer.querySelector('.message-content');
+                let vizContainer = msgContainer.querySelector('.viz-container');
+
+                if (msgContainer.classList.contains('showing-viz')) {
+                    msgContainer.classList.remove('showing-viz');
+                    contentDiv.style.display = 'block';
+                    if (vizContainer) vizContainer.style.display = 'none';
+                    vizBtn.innerHTML = `<svg style="width:16px;height:16px;margin-right:6px;" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>Visualize`;
+                    return;
+                }
+
+                const showContainer = (htmlContent) => {
+                    if (!vizContainer) {
+                        vizContainer = document.createElement('div');
+                        vizContainer.className = 'viz-container';
+                        vizContainer.style.width = '100%';
+                        vizContainer.style.height = '600px';
+                        vizContainer.style.border = '1px solid var(--model-color-border)';
+                        vizContainer.style.borderRadius = '8px';
+                        vizContainer.style.marginTop = '15px';
+                        vizContainer.style.overflow = 'hidden';
+                        vizContainer.style.position = 'relative';
+
+                        const iframe = document.createElement('iframe');
+                        iframe.style.width = '100%';
+                        iframe.style.height = '100%';
+                        iframe.style.border = 'none';
+                        iframe.srcdoc = htmlContent;
+                        vizContainer.appendChild(iframe);
+
+                        const fsBtn = document.createElement('button');
+                        fsBtn.innerHTML = `<svg style="width:20px;height:20px;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
+                        fsBtn.style.position = 'absolute';
+                        fsBtn.style.top = '10px';
+                        fsBtn.style.right = '10px';
+                        fsBtn.style.background = 'rgba(0,0,0,0.6)';
+                        fsBtn.style.color = 'white';
+                        fsBtn.style.border = 'none';
+                        fsBtn.style.borderRadius = '4px';
+                        fsBtn.style.padding = '5px';
+                        fsBtn.style.cursor = 'pointer';
+                        fsBtn.style.zIndex = '10';
+                        fsBtn.title = "Fullscreen";
+                        fsBtn.addEventListener('click', () => {
+                            if (vizContainer.requestFullscreen) vizContainer.requestFullscreen();
+                            else if (vizContainer.webkitRequestFullscreen) vizContainer.webkitRequestFullscreen(); // Safari
+                            else if (vizContainer.msRequestFullscreen) vizContainer.msRequestFullscreen(); // IE11
+                        });
+                        vizContainer.appendChild(fsBtn);
+
+                        contentDiv.parentNode.insertBefore(vizContainer, contentDiv.nextSibling);
+                    } else {
+                        vizContainer.style.display = 'block';
+                    }
+
+                    msgContainer.classList.add('showing-viz');
+                    contentDiv.style.display = 'none';
+                    vizBtn.textContent = "Show Paper";
+                };
+
+                if (msgContainer.dataset.vizHtml) {
+                    showContainer(msgContainer.dataset.vizHtml);
+                    return;
+                }
+
+                vizBtn.disabled = true;
+                vizBtn.innerHTML = "Generating...";
+
+                try {
+                    const res = await fetch('/api/visualize', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            content: content || contentDiv.innerText,
+                            message_id: messageId
+                        })
+                    });
+                    const result = await res.json();
+
+                    if (result.success && result.html) {
+                        msgContainer.dataset.vizHtml = result.html;
+                        showContainer(result.html);
+                    } else {
+                        alert("Failed to generate visualization: " + (result.error || "Unknown error"));
+                    }
+                } catch (e) {
+                    console.error("Viz error:", e);
+                    alert("Error requesting visualization.");
+                } finally {
+                    vizBtn.disabled = false;
+                    if (!msgContainer.classList.contains('showing-viz')) {
+                        vizBtn.innerHTML = `<svg style="width:16px;height:16px;margin-right:6px;" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>Visualize`;
+                    }
+                }
+            });
+
+            buttonsDiv.appendChild(editButton); buttonsDiv.appendChild(downloadButton); buttonsDiv.appendChild(vizBtn);
             msgContainer.appendChild(buttonsDiv);
         }
 
@@ -7108,7 +7218,7 @@
                                 addOutputCopyButton(msgDiv);
 
                                 if (isResearch) {
-                                    createAndAppendResearchButtons(msgDiv, msgId, contentDiv.innerHTML);
+                                    createAndAppendResearchButtons(msgDiv, msgId, content, msg.visualization_html);
                                     if (msg.html_file) {
                                         const btnsDiv = msgDiv.querySelector('.message-buttons');
                                         if (btnsDiv) {
