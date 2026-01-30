@@ -234,9 +234,20 @@ def initialize_database():
                 nebula_step3_backend TEXT,
                 nebula_step4_verification TEXT,
                 file_analysis_context TEXT,
+                visualization_html TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )''')
+
+        # Migration: Add visualization_html column if it doesn't exist
+        cursor.execute("PRAGMA table_info(messages)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'visualization_html' not in columns:
+            try:
+                cursor.execute("ALTER TABLE messages ADD COLUMN visualization_html TEXT")
+                print("Added 'visualization_html' column to 'messages' table.")
+            except Exception as e:
+                print(f"Error adding 'visualization_html' column: {e}")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_api_keys'")
         if cursor.fetchone() is None:
@@ -385,7 +396,7 @@ def get_conversation_history(chat_id):
         cursor = db.execute(
             '''SELECT id, message_type, message_content, is_research_output, html_file,
                       nebula_step1, nebula_step2_frontend, nebula_step3_backend, nebula_step4_verification,
-                      file_analysis_context, timestamp
+                      file_analysis_context, visualization_html, timestamp
                FROM messages WHERE chat_id = ? ORDER BY timestamp ASC''',
             (chat_id,)
         )
@@ -3767,7 +3778,8 @@ def generate_visualization():
 
     data = request.get_json()
     content = data.get('content')
-    model_id = data.get('model_id', 'gemini-2.5-flash-lite')
+    message_id = data.get('message_id') # Get message_id to persist visualization
+    model_id = 'gemini-2.0-pro-exp-02-05' # Use the pro preview model as requested
     api_key = RTP_API_KEY # Use RTP key for faster/cheaper generation or PRIMARY if needed
 
     if not content:
@@ -3777,9 +3789,14 @@ def generate_visualization():
          return jsonify({'error': 'API key not configured.'}), 500
 
     prompt = (
-        "Create beautiful, elegant 3D interactive visuals that explain it.\n"
-        "The app should be light mode, with great graphic design. It should be a single block of code that I can open in Chrome.\n"
-        "MAKE it better if you can.\n\n"
+        "Create beautiful, elegant 3D interactive visuals that explain the following research paper context. "
+        "The output must be a SINGLE, self-contained HTML file (including all CSS and JS). "
+        "Use modern libraries like Three.js, React (via CDN), or vanilla JS/Canvas for high-quality outcomes. "
+        "Ensure the design is Light Mode, with professional typography and a clean, 'Apple-like' aesthetic. "
+        "The visualization should be interactive (e.g., rotatable 3D models, clickable elements, animations) and pedagogical. "
+        "Do NOT require any external assets that might be blocked (images, etc.). Use procedural generation or base64 if needed. "
+        "The code should be robust and error-free. "
+        "MAKE IT IMPRESSIVE.\n\n"
         "Context:\n"
         f"{content}"
     )
@@ -3812,6 +3829,16 @@ def generate_visualization():
                  html_content = match_generic.group(1)
              else:
                  html_content = full_response # Assume raw HTML if no blocks found
+
+        # Persist to database if message_id is provided
+        if message_id:
+            try:
+                db = get_db()
+                db.execute('UPDATE messages SET visualization_html = ? WHERE id = ?', (html_content, message_id))
+                db.commit()
+                logger.info(f"Persisted visualization for message {message_id}")
+            except Exception as db_err:
+                logger.error(f"Failed to persist visualization: {db_err}")
 
         return jsonify({'success': True, 'html': html_content})
 
