@@ -3760,6 +3760,66 @@ def codelab_ai_assist():
     return Response(stream_with_context(generate_assist_stream()), mimetype='text/event-stream')
 
 
+@app.route('/api/visualize', methods=['POST'])
+def generate_visualization():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Authentication required.'}), 401
+
+    data = request.get_json()
+    content = data.get('content')
+    model_id = data.get('model_id', 'gemini-2.5-flash-lite')
+    api_key = RTP_API_KEY # Use RTP key for faster/cheaper generation or PRIMARY if needed
+
+    if not content:
+        return jsonify({'error': 'Content is required for visualization.'}), 400
+    
+    if not api_key:
+         return jsonify({'error': 'API key not configured.'}), 500
+
+    prompt = (
+        "Create beautiful, elegant 3D interactive visuals that explain it.\n"
+        "The app should be light mode, with great graphic design. It should be a single block of code that I can open in Chrome.\n"
+        "MAKE it better if you can.\n\n"
+        "Context:\n"
+        f"{content}"
+    )
+
+    try:
+        # We use a non-streaming call here for simplicity as we need the full HTML
+        # or we could stream it to the frontend effectively.
+        # For now, let's use the gemini_generate generator but collect the result.
+        
+        generator = gemini_generate(prompt, model_id, api_key)
+        full_response = ""
+        for chunk in generator:
+            if 'result' in chunk:
+                full_response = chunk['result']
+                break
+            elif 'error' in chunk:
+                 return jsonify({'error': chunk['error']}), 500
+        
+        if not full_response:
+             return jsonify({'error': 'Failed to generate visualization.'}), 500
+
+        # Extract HTML if wrapped in markdown code blocks
+        match = re.search(r'```html\s*([\s\S]*?)\s*```', full_response, re.IGNORECASE)
+        if match:
+             html_content = match.group(1)
+        else:
+             # Fallback: sometimes the model just returns the code or wraps in generic ```
+             match_generic = re.search(r'```\s*([\s\S]*?)\s*```', full_response, re.IGNORECASE)
+             if match_generic:
+                 html_content = match_generic.group(1)
+             else:
+                 html_content = full_response # Assume raw HTML if no blocks found
+
+        return jsonify({'success': True, 'html': html_content})
+
+    except Exception as e:
+        logger.error(f"Error generating visualization: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/codelab/generate_problem', methods=['POST'])
 def generate_codelab_problem():
     if 'user_id' not in session:
@@ -3983,7 +4043,6 @@ cleanup_stale_containers()
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5013))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
-
 
 
 
