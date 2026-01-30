@@ -4078,9 +4078,28 @@ def forge_get_database():
     if 'user_id' not in session or 'forge_project' not in session:
         return jsonify({'error': 'No active Forge session.'}), 404
     
-    container_id = session['forge_project'].get('container_id')
+    process_id = session['forge_project'].get('process_id')
+    if not process_id:
+        return jsonify({'error': 'No process ID found.'}), 404
+    
+    # Get container_id from Redis (since it's stored there, not in session)
+    container_id = None
+    try:
+        redis_key = _redis_forge_key(process_id)
+        cid = redis_client.hget(redis_key, "container_id")
+        if cid:
+            container_id = cid.decode() if isinstance(cid, (bytes, bytearray)) else cid
+    except Exception as e:
+        logger.error(f"Error fetching container_id from redis: {e}")
+    
+    # Fallback to active_apps if Redis didn't have it
     if not container_id:
-        return jsonify({'error': 'No running container.'}), 404
+        with active_apps_lock:
+            app_info = active_apps.get(process_id, {})
+            container_id = app_info.get('container_id')
+    
+    if not container_id:
+        return jsonify({'error': 'No running container found.'}), 404
     
     try:
         container = client.containers.get(container_id)
