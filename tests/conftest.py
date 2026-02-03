@@ -82,10 +82,6 @@ os.environ['Admin'] = 'admin'
 os.environ['RTP_API_KEY'] = 'test_key'
 os.environ['SEARCH_API_KEY'] = 'test_key'
 os.environ['PRIMARY_API_KEY'] = 'test_key'
-os.environ['NEBULA_KEY_STEP1'] = 'test_key'
-os.environ['NEBULA_KEY_STEP2'] = 'test_key'
-os.environ['NEBULA_KEY_STEP3'] = 'test_key'
-os.environ['NEBULA_KEY_STEP4'] = 'test_key'
 
 # Import app
 try:

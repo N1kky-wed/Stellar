@@ -4127,7 +4127,8 @@
         <div class="modal-content" style="max-width: 600px; height: 70vh; display: flex; flex-direction: column;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2>Forge History</h2>
-                <button id="closeForgeHistoryBtn" style="background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer;">&times;</button>
+                <button id="closeForgeHistoryBtn"
+                    style="background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer;">&times;</button>
             </div>
             <div id="forgeHistoryList" style="flex-grow: 1; overflow-y: auto;">
                 <p style="text-align: center; color: #aaa;">Loading history...</p>
@@ -4399,7 +4400,6 @@
                     <select id="modeSelector">
                         <option value="stellar" selected>Stellar</option>
                         <option value="spectrum">Spectrum</option>
-                        <option value="nebula">Nebula</option>
                         <option value="cosmos">Cosmos</option>
                         <option value="codelab">CodeLab</option>
                     </select>
@@ -4413,9 +4413,9 @@
                     <option value="gemini-2.5-flash" selected title="Balanced speed and capability. Default.">Lunarity
                     </option>
                     <option value="gemini-3-flash-preview"
-                        title="Smarter, better for complex tasks. Nebula/Cosmos compatible.">Crimson</option>
+                        title="Smarter, better for complex tasks. Cosmos compatible.">Crimson</option>
                     <option value="gemini-3-pro-preview"
-                        title="Most powerful model for in-depth analysis. Nebula/Cosmos compatible.">Obsidian</option>
+                        title="Most powerful model for in-depth analysis. Cosmos compatible.">Obsidian</option>
 
                 </select>
                 <button id="sendBtn" title="Send message (Enter)">➤</button>
@@ -4724,7 +4724,7 @@
 
                     const redeployResp = await fetch('/codelab/forge/redeploy', {
                         method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ files: data.files })
                     });
                     const redeployData = await redeployResp.json();
@@ -6018,12 +6018,6 @@
             const headerContainer = document.getElementById('modeSelectorHeaderContainer');
             const inputBarContainer = document.getElementById('modeSelectorInputContainer');
 
-            if (nebulaProcess.isActive && (isProcessing || (nebulaProcess.currentStep >= 1 && nebulaProcess.currentStep <= 3))) {
-                let reason = isProcessing ? `Wait for Nebula Step ${nebulaProcess.currentStep}.` : `Confirm/Regen Nebula Step ${nebulaProcess.currentStep}.`;
-                setStatus(`Cannot switch mode: ${reason}`, true); setTimeout(() => setStatus(currentStatusText, false), 3000); modeSelector.value = currentMode; return;
-            }
-            if (currentMode === 'nebula' && newMode !== 'nebula' && nebulaProcess.isActive) { cleanupNebulaProcess(true, "Aborted by mode change."); }
-
             currentMode = newMode;
             modeSelectorElem.classList.toggle("active-mode", newMode !== 'stellar');
 
@@ -6033,8 +6027,8 @@
                 codeLabContainer.style.display = 'flex';
                 headerContainer.appendChild(modeSelectorElem);
 
-                // Trigger the click to default to the Problem Solving view
-                document.getElementById('switchToProblemModeBtn').click();
+                // Trigger the click to default to the Forge view
+                document.getElementById('switchToForgeModeBtn').click();
                 if (codeLabEditor) setTimeout(() => codeLabEditor.refresh(), 1);
 
             } else {
@@ -6058,7 +6052,6 @@
 
             switch (currentMode) {
                 case 'spectrum': chatInput.placeholder = "Enter research query for Spectrum..."; break;
-                case 'nebula': chatInput.placeholder = "Describe the app for Nebula..."; break;
                 case 'cosmos': chatInput.placeholder = "Enter your request for Cosmos..."; break;
                 default: chatInput.placeholder = "Send a message to Stellar..."; break;
             }
@@ -6071,18 +6064,17 @@
         }
         function enableDisableModelOptions() {
             let currentModelSelected = modelSelect.value; let validModelFound = false; let firstValidModel = null;
-            const isNebula = currentMode === 'nebula'; const isCosmos = currentMode === 'cosmos';
+            const isCosmos = currentMode === 'cosmos';
             for (const option of modelSelect.options) {
                 let isCompatible = true;
-                if (isNebula) { isCompatible = NEBULA_COMPATIBLE_MODELS.includes(option.value); }
-                else if (isCosmos) { isCompatible = COSMOS_COMPATIBLE_MODELS.includes(option.value); }
+                if (isCosmos) { isCompatible = COSMOS_COMPATIBLE_MODELS.includes(option.value); }
 
                 option.disabled = !isCompatible;
                 if (isCompatible) { if (!firstValidModel) firstValidModel = option.value; if (option.value === currentModelSelected) validModelFound = true; }
                 option.style.opacity = isCompatible ? '1' : '0.5'; option.style.cursor = isCompatible ? 'pointer' : 'not-allowed';
             }
-            if ((isNebula || isCosmos) && !validModelFound) {
-                const switchTo = firstValidModel || (isNebula ? DEFAULT_NEBULA_MODEL : modelSelect.options[0].value);
+            if (isCosmos && !validModelFound) {
+                const switchTo = firstValidModel || modelSelect.options[0].value;
                 modelSelect.value = switchTo; updateModelSelectWidth(); updateModelSelectTheme();
             }
         }

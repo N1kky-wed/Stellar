@@ -7,7 +7,7 @@ Stellar is an advanced web-based AI assistant designed to streamline research, w
 *   **Multimode AI Assistance:**
     *   **Stellar Mode (Default):** General AI assistance for a wide range of queries.
     *   **Spectrum Mode:** Conducts in-depth research, integrates real-time web search (Spectral Search via Tavily API), and analyzes uploaded files to generate comprehensive research papers.
-    *   **Nebula Mode:** Guides users through a multi-step process for web and application development, generating detailed plans, frontend (HTML/CSS/JS), and backend (Python/Flask) code, including necessary API integrations (e.g., Unsplash, YouTube, Gemini).
+    *   **Stellar Forge (CodeLab Mode):** Build and deploy full-stack web applications with AI-powered code generation. Generates complete frontend (HTML/CSS/JS) and backend (Python/Flask) code with live preview capabilities.
     *   **Cosmos Mode:** Creates stunning, interactive data analysis reports with extreme infographics using HTML, Tailwind CSS, and Chart.js, based on provided data and web context.
 *   **Real-time Data Fetching:** Capable of fetching up-to-date information when needed, enhancing the relevance and accuracy of responses.
 *   **File Analysis & Upload:** Upload various file types (documents, images, videos, audio, code) for detailed AI analysis and context integration into responses.
