@@ -4331,7 +4331,7 @@
             <!-- Stellar Forge UI -->
             <div id="forge-container" style="display: flex; width: 100%; height: 100%; flex-direction: row;">
                 <div id="forge-left-panel"
-                    style="width: 280px; min-width: 280px; background: var(--stellar-msg-bg); padding: 20px; display: flex; flex-direction: column; border-right: 1px solid var(--input-border);">
+                    style="width: 280px; min-width: 280px; max-height: 100%; background: var(--stellar-msg-bg); padding: 20px; display: flex; flex-direction: column; border-right: 1px solid var(--input-border); overflow: hidden;">
                     <p style="font-size: 0.95em; color: var(--primary-text-color); margin-bottom: 8px; flex-shrink: 0;">
                         Describe the app you want to build or modify. Our AI will handle the heavy lifting.
                     </p>
@@ -6039,6 +6039,8 @@
                 inputContainer.style.display = 'none';
                 codeLabContainer.style.display = 'flex';
                 headerContainer.appendChild(modeSelectorElem);
+                // Hide scroll-to-bottom button in CodeLab mode
+                document.getElementById('chatScrollToBottomBtn').style.display = 'none';
                 // Forge container is now displayed by default
                 if (codeLabEditor) setTimeout(() => codeLabEditor.refresh(), 1);
 
@@ -6056,6 +6058,8 @@
                 codeLabContainer.style.display = 'none';
                 inputBarContainer.appendChild(modeSelectorElem);
                 updateModelSelectTheme();
+                // Show scroll-to-bottom button when leaving CodeLab mode
+                document.getElementById('chatScrollToBottomBtn').style.display = '';
             }
 
             spectrumSearchBtn.style.display = (currentMode === 'spectrum') ? "inline-block" : "none";
