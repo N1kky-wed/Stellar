@@ -4622,42 +4622,50 @@
             const forgePromptInput = document.getElementById('forgePromptInput');
             const forgeViewCodeBtn = document.getElementById('forgeViewCodeBtn');
 
-            switchToProblemModeBtn.addEventListener('click', () => {
-                if (isForgeSessionActive) {
-                    if (!confirm("This will end your current Forge session. Are you sure?")) return;
-                    handleForgeStop();
-                }
-                switchToProblemModeBtn.classList.add('active');
-                switchToForgeModeBtn.classList.remove('active');
-                forgeUI.style.display = 'none';
-                problemSolvingUI.forEach(el => { if (el) el.style.display = 'flex'; });
-                if (codeLabEditor) setTimeout(() => codeLabEditor.refresh(), 1);
-            });
+            if (switchToProblemModeBtn) {
+                switchToProblemModeBtn.addEventListener('click', () => {
+                    if (isForgeSessionActive) {
+                        if (!confirm("This will end your current Forge session. Are you sure?")) return;
+                        handleForgeStop();
+                    }
+                    switchToProblemModeBtn.classList.add('active');
+                    if (switchToForgeModeBtn) switchToForgeModeBtn.classList.remove('active');
+                    forgeUI.style.display = 'none';
+                    problemSolvingUI.forEach(el => { if (el) el.style.display = 'flex'; });
+                    if (codeLabEditor) setTimeout(() => codeLabEditor.refresh(), 1);
+                });
+            }
 
-            switchToForgeModeBtn.addEventListener('click', () => {
-                switchToForgeModeBtn.classList.add('active');
-                switchToProblemModeBtn.classList.remove('active');
-                forgeUI.style.display = 'flex';
-                problemSolvingUI.forEach(el => { if (el) el.style.display = 'none'; });
-            });
+            if (switchToForgeModeBtn) {
+                switchToForgeModeBtn.addEventListener('click', () => {
+                    switchToForgeModeBtn.classList.add('active');
+                    if (switchToProblemModeBtn) switchToProblemModeBtn.classList.remove('active');
+                    forgeUI.style.display = 'flex';
+                    problemSolvingUI.forEach(el => { if (el) el.style.display = 'none'; });
+                });
+            }
 
-            forgeStartBtn.addEventListener('click', () => {
-                if (isForgeSessionActive) {
-                    handleForgeIterate();
-                } else {
-                    handleForgeStart();
-                }
-            });
+            if (forgeStartBtn) {
+                forgeStartBtn.addEventListener('click', () => {
+                    if (isForgeSessionActive) {
+                        handleForgeIterate();
+                    } else {
+                        handleForgeStart();
+                    }
+                });
+            }
 
-            forgePromptInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    forgeStartBtn.click();
-                }
-            });
+            if (forgePromptInput) {
+                forgePromptInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (forgeStartBtn) forgeStartBtn.click();
+                    }
+                });
+            }
 
-            forgeEndSessionBtn.addEventListener('click', handleForgeStop);
-            forgeViewCodeBtn.addEventListener('click', handleForgeViewCode);
+            if (forgeEndSessionBtn) forgeEndSessionBtn.addEventListener('click', handleForgeStop);
+            if (forgeViewCodeBtn) forgeViewCodeBtn.addEventListener('click', handleForgeViewCode);
 
             const historyBtn = document.getElementById('forgeHistoryBtn');
             const closeHistoryBtn = document.getElementById('closeForgeHistoryBtn');
