@@ -4258,7 +4258,7 @@
 
     <!-- Stellar Forge (CodeLab) Container -->
     <div id="codeLabContainer"
-        style="display: none; flex-direction: row; height: calc(100vh - 60px); overflow: hidden; margin-top: 60px;">
+        style="display: none; flex-direction: row; height: calc(100vh - 60px); overflow: hidden; margin-top: 10px;">
         <div id="codelab-content-area"
             style="display: flex; flex-grow: 1; width: 100%; height: 100%; overflow: hidden;">
             <!-- Left Panel (AI Mentor) - Hidden for Forge-only mode -->
@@ -4376,8 +4376,7 @@
 
                         <div id="forge-controls" style="display: flex; gap: 10px;">
                             <button id="forgeEndSessionBtn" class="codelab-action-btn"
-                                style="background-color: var(--nebula-regenerate-end); display: none;">End
-                                Session</button>
+                                style="background-color: var(--nebula-regenerate-end); display: none;">End</button>
                             <button id="forgeHistoryBtn" class="codelab-action-btn"
                                 style="background: var(--input-bg); border: 1px solid var(--input-border); display: flex; align-items: center; gap: 6px; color: var(--primary-text-color);">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -4387,13 +4386,13 @@
                                 History
                             </button>
                             <button id="forgeViewCodeBtn" class="codelab-action-btn codelab-ai-btn"
-                                style="display: none;">View Code</button>
+                                style="display: none;">View</button>
                             <button id="forgeStartBtn" class="codelab-action-btn"
                                 style="background-color: var(--nebula-confirm-start); flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px;">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M8 5v14l11-7z" />
                                 </svg>
-                                Start Building
+                                Start
                             </button>
                         </div>
                     </div>
@@ -4828,7 +4827,7 @@
                     if (redeployData.success) {
                         isForgeSessionActive = true;
                         connectToForgeStream(redeployData.process_id);
-                        document.getElementById('forgeStartBtn').textContent = "Update Build";
+                        document.getElementById('forgeStartBtn').textContent = "Update";
                         document.getElementById('forgeEndSessionBtn').style.display = 'block';
                         document.getElementById('forgeViewCodeBtn').style.display = 'block';
                     } else {
