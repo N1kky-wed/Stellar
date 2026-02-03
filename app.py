@@ -502,6 +502,33 @@ def generate_chat_name(chat_id, first_message_content):
         except Exception as e:
             logger.error(f"Unexpected error in generate_chat_name (outer block for chat {chat_id}): {e}", exc_info=True)
 
+def generate_forge_title(user_prompt):
+    try:
+        if not user_prompt:
+            return "Untitled Project"
+            
+        prompt = f"Given the following user prompt for creating a web application, generate a very short, catchy, and descriptive title (max 5 words) for the project. Respond only with the title. Do not use quotes.\n\nUser Prompt: {user_prompt}"
+        model_name = "gemini-2.5-flash-lite"
+        api_key = os.getenv("RTP_API_KEY")
+        if not api_key:
+            return "Forge Project"
+
+        client = genai.Client(api_key=api_key, http_options={'api_version': 'v1alpha'})
+        chat = client.chats.create(model=model_name, config={'tools': []})
+        r = chat.send_message(prompt)
+        
+        generated_name = "Forge Project"
+        if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
+            response_text = r.candidates[0].content.parts[0].text.strip()
+            generated_name = response_text.replace('"', '').replace("'", '').strip()
+            if len(generated_name.split()) > 6:
+                generated_name = ' '.join(generated_name.split()[:6])
+        
+        return generated_name
+    except Exception as e:
+        logger.error(f"Error generating forge title: {e}")
+        return "Forge Project"
+
 
 def count_chat_tokens(chat_id=None):
     db = get_db()
@@ -1205,11 +1232,14 @@ def forge_start():
             raise ValueError("AI response missing required 'index.html' and 'app.py' keys.")
 
         process_id = str(uuid.uuid4())
+        
+        project_title = generate_forge_title(user_prompt)
 
         session['forge_project'] = {
             'files': project_files,
             'container_id': None,
-            'process_id': process_id
+            'process_id': process_id,
+            'project_name': project_title
         }
         session.modified = True
 
@@ -1219,7 +1249,7 @@ def forge_start():
             db.execute('''
                 INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (session['user_id'], f"Forge Project {process_id[:8]}", process_id, 'starting', json.dumps(project_files)))
+            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(project_files)))
             db.commit()
         except Exception as e:
             logger.error(f"Failed to record forge history start: {e}")
@@ -1293,9 +1323,12 @@ def forge_iterate():
         current_files.update(updated_files_partial)
 
         process_id = str(uuid.uuid4())
+        
+        project_title = generate_forge_title(user_prompt)
 
         session['forge_project']['files'] = current_files
         session['forge_project']['process_id'] = process_id
+        session['forge_project']['project_name'] = project_title
         session.modified = True
 
         # Record in history
@@ -1304,7 +1337,7 @@ def forge_iterate():
             db.execute('''
                 INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (session['user_id'], f"Forge Iteration {process_id[:8]}", process_id, 'starting', json.dumps(current_files)))
+            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(current_files)))
             db.commit()
         except Exception as e:
             logger.error(f"Failed to record forge history iteration: {e}")
@@ -1475,8 +1508,8 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         _put_event({'type': 'phase', 'phase': 'starting'})
         _put_event({'type': 'log', 'content': '🚀 Starting Flask application...'})
         
-        # Start the Flask app in the background using exec
-        container.exec_run("python app.py", detach=True)
+        # Start the Flask app in the background using exec, redirecting output to app.log
+        container.exec_run(["sh", "-c", "python app.py > app.log 2>&1"], detach=True)
         
         # Wait for the port to become available
         public_url_found = False
@@ -1500,13 +1533,20 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             _put_event({'type': 'log', 'content': f'Container is running on port {host_port}. Verifying server readiness...'})
             
             is_ready = False
-            for _ in range(20):  # Increased retries for dependency-heavy apps
-                time.sleep(0.5)
+            for _ in range(30):  # Increased retries for dependency-heavy apps
+                time.sleep(1)
                 try:
-                    exec_result = container.exec_run("curl --fail --silent http://localhost:5000/")
+                    # We accept 404 as "ready" because it means the server is answering HTTP requests,
+                    # even if the root path isn't defined.
+                    exec_result = container.exec_run("curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/")
                     if exec_result.exit_code == 0:
-                        is_ready = True
-                        break
+                        try:
+                            status_code = int(exec_result.output.decode().strip())
+                            if status_code > 0: # Any valid HTTP status means it's running
+                                is_ready = True
+                                break
+                        except ValueError:
+                            pass
                 except Exception as exec_err:
                     logger.warning(f"Health check exec error for {container.short_id}: {exec_err}")
                     break
@@ -1530,6 +1570,18 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 update_history(status='running', url=public_url)
             else:
                  _put_event({'type': 'error', 'content': 'Server verification failed. The app inside the container did not start correctly.'})
+                 
+                 # Retrieve app.log to show why it failed
+                 try:
+                     log_res = container.exec_run("cat app.log")
+                     if log_res.exit_code == 0:
+                         logs = log_res.output.decode('utf-8', 'replace')
+                         _put_event({'type': 'error', 'content': f'--- APP LOGS ---\n{logs}\n--- END APP LOGS ---'})
+                     else:
+                         _put_event({'type': 'error', 'content': 'Could not read app.log inside container.'})
+                 except Exception as e:
+                     _put_event({'type': 'error', 'content': f'Error retrieving app.log: {e}'})
+
                  update_history(status='failed')
 
         if not public_url_found:
@@ -1556,7 +1608,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         update_history(status='failed')
 
     finally:
-        update_history(final_logs="\n".join(logs_buffer))
+        update_history(status='stopped', final_logs="\n".join(logs_buffer))
         if container:
             try:
                 try:
@@ -4340,9 +4392,14 @@ def forge_redeploy():
 
     try:
         process_id = str(uuid.uuid4())
+        
+        project_title = session.get('forge_project', {}).get('project_name')
+        if not project_title:
+             project_title = f"Forge Redeploy {process_id[:8]}"
 
         session['forge_project']['files'] = updated_files
         session['forge_project']['process_id'] = process_id
+        session['forge_project']['project_name'] = project_title
         session.modified = True
 
         # Record in history
@@ -4351,7 +4408,7 @@ def forge_redeploy():
             db.execute('''
                 INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (session['user_id'], f"Forge Redeploy {process_id[:8]}", process_id, 'starting', json.dumps(updated_files)))
+            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(updated_files)))
             db.commit()
         except Exception as e:
             logger.error(f"Failed to record forge history redeploy: {e}")
@@ -4414,13 +4471,19 @@ def resume_forge_history(history_id):
 
     # Stop current project if any
     if 'forge_project' in session:
-        stop_and_cleanup_app_by_process_id(session['forge_project'].get('process_id'), app_type='forge')
+        try:
+            stop_and_cleanup_app_by_process_id(session['forge_project'].get('process_id'), app_type='forge')
+        except Exception as e:
+            logger.warning(f"Error stopping previous forge project during resume: {e}")
 
     process_id = str(uuid.uuid4())
+    project_name = entry.get('project_name') or "Forge Project"
+
     session['forge_project'] = {
         'files': files,
         'container_id': None,
-        'process_id': process_id
+        'process_id': process_id,
+        'project_name': project_name
     }
     session.modified = True
 

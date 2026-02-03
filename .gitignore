@@ -20,3 +20,4 @@ stellar_local.db
 sandbox_runs/
 uploads/
 .DS_Store
+temp_venv/

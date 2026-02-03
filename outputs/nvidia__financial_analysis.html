@@ -1,0 +1,393 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVIDIA Financial Performance Report</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Dark background for a premium feel */
+            color: #c9d1d9; /* Light grey text */
+        }
+        .card {
+            background-color: #161b22; /* Slightly lighter dark for cards */
+            border-radius: 0.75rem; /* rounded-lg */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2); /* shadow-lg */
+            padding: 1.5rem; /* p-6 */
+        }
+        .chart-container {
+            position: relative;
+            height: 400px; /* Fixed height for consistency */
+            width: 100%;
+        }
+        h1, h2, h3 {
+            color: #58a6ff; /* NVIDIA-like blue accent */
+        }
+    </style>
+</head>
+<body class="p-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="text-center mb-12">
+            <h1 class="text-5xl font-extrabold mb-4">NVIDIA Corporation</h1>
+            <h2 class="text-3xl font-semibold text-green-500">Financial Analysis Report</h2>
+            <p class="text-lg text-gray-400">Driving the Future of AI with Unprecedented Growth</p>
+        </header>
+
+        <!-- Executive Summary -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6 text-yellow-400">Executive Summary</h3>
+            <div class="card">
+                <p class="text-lg leading-relaxed">Nvidia has demonstrated extraordinary financial results, largely fueled by the booming demand for AI and data centers. The company reported record revenue for the third quarter of fiscal 2026, reaching $57.0 billion, marking a significant 62% increase from the previous year. Trailing twelve-month gross margins are approximately 70%, with net profit margins exceeding 53%, and net income climbing to roughly $99 billion in the most recent twelve-month period. Nvidia's balance sheet remains robust, boasting a total debt-to-equity ratio under 10% and an impressive return on equity surpassing 100%. Analysts anticipate continued strong performance, projecting revenue to exceed $200 billion by fiscal 2026, solidifying Nvidia's dominant position in GPUs, AI accelerators, and data-center platforms.</p>
+            </div>
+        </section>
+
+        <!-- Financial Highlights Grid -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6 text-yellow-400">Key Financial Highlights (TTM)</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="card text-center">
+                    <p class="text-xl font-medium text-gray-300">Revenue (Projected FY2026)</p>
+                    <p class="text-4xl font-bold text-green-400">$213B</p>
+                </div>
+                <div class="card text-center">
+                    <p class="text-xl font-medium text-gray-300">Net Income</p>
+                    <p class="text-4xl font-bold text-green-400">$99B</p>
+                </div>
+                <div class="card text-center">
+                    <p class="text-xl font-medium text-gray-300">Gross Margin</p>
+                    <p class="text-4xl font-bold text-green-400">70%</p>
+                </div>
+                <div class="card text-center">
+                    <p class="text-xl font-medium text-gray-300">EPS (TTM)</p>
+                    <p class="text-4xl font-bold text-green-400">~$4.00</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Revenue Growth Chart -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6 text-yellow-400">Revenue Performance & Outlook</h3>
+            <div class="card chart-container">
+                <canvas id="revenueChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Profitability Margins Chart -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6 text-yellow-400">Profitability Analysis</h3>
+            <div class="card chart-container">
+                <canvas id="marginsRadarChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Balance Sheet & Debt Health -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6 text-yellow-400">Balance Sheet Strength</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="card chart-container">
+                    <p class="text-xl font-medium text-gray-300 mb-4 text-center">Asset & Liability Distribution</p>
+                    <canvas id="balanceSheetDoughnutChart"></canvas>
+                </div>
+                <div class="card chart-container">
+                    <p class="text-xl font-medium text-gray-300 mb-4 text-center">Debt vs. Cash Position</p>
+                    <canvas id="debtCashBarChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Efficiency & Shareholder Value -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6 text-yellow-400">Efficiency & Shareholder Value</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="card text-center flex flex-col justify-center items-center">
+                    <p class="text-xl font-medium text-gray-300">Return on Equity (ROE)</p>
+                    <p class="text-4xl font-bold text-purple-400 mt-2">100%+</p>
+                    <p class="text-sm text-gray-400 mt-4">A strong indicator of management's efficiency in generating profits from shareholder investments.</p>
+                </div>
+                <div class="card chart-container">
+                    <p class="text-xl font-medium text-gray-300 mb-4 text-center">Shareholder Returns & Buyback Capacity</p>
+                    <canvas id="shareholderReturnsChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Strategic Outlook -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold mb-6 text-yellow-400">Strategic Outlook & Market Position</h3>
+            <div class="card">
+                <p class="text-lg leading-relaxed mb-4">Nvidia maintains a dominant position in the market for GPUs, AI accelerators, and data-center platforms. The company's exceptional performance is directly linked to the accelerating demand for compute across both AI training and inference, indicating a virtuous cycle within the AI ecosystem. With new foundation model makers and AI startups emerging globally, AI is expanding rapidly across industries and countries.</p>
+                <p class="text-lg leading-relaxed">Forward-looking analysts project gross margins to stabilize in the mid-70% range in fiscal year 2026. The stock is anticipated to trade at a forward P/E of approximately 40x, with a consensus target price around $220, underscoring its capacity for sustained high-growth profitability.</p>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="text-center text-gray-500 text-sm mt-12">
+            <p>&copy; 2026 NVIDIA Financial Analysis Report. Data sourced from public financial releases and analyst reports.</p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Chart.js Configuration
+        Chart.defaults.color = '#c9d1d9'; // Default text color for charts
+        Chart.defaults.borderColor = '#30363d'; // Default border color for charts
+
+        // Revenue Chart (Bar for Q3, Line for Projected FY2026)
+        const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+        new Chart(revenueCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Q3 FY2026 Revenue', 'Projected FY2026 Revenue'],
+                datasets: [
+                    {
+                        type: 'bar',
+                        label: 'Revenue (in Billions USD)',
+                        data: [57.0, 213.0],
+                        backgroundColor: ['rgba(34, 197, 94, 0.8)', 'rgba(67, 206, 162, 0.8)'],
+                        borderColor: ['rgba(34, 197, 94, 1)', 'rgba(67, 206, 162, 1)'],
+                        borderWidth: 1
+                    },
+                    {
+                        type: 'line',
+                        label: 'Y-o-Y Growth (Q3 FY2026)',
+                        data: [62, null], // Only for Q3
+                        backgroundColor: 'rgba(251, 191, 36, 0.4)',
+                        borderColor: 'rgba(251, 191, 36, 1)',
+                        borderWidth: 2,
+                        fill: false,
+                        yAxisID: 'y1',
+                        pointRadius: 5,
+                        pointBackgroundColor: 'rgba(251, 191, 36, 1)'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'NVIDIA Revenue: Q3 FY2026 vs. Projected FY2026',
+                        color: '#c9d1d9',
+                        font: { size: 18 }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Revenue (Billions USD)',
+                            color: '#c9d1d9'
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        title: {
+                            display: true,
+                            text: 'Year-over-Year Growth (%)',
+                            color: '#c9d1d9'
+                        },
+                        min: 0,
+                        max: 100 // Adjust as needed
+                    }
+                }
+            }
+        });
+
+        // Profitability Margins Radar Chart
+        const marginsRadarCtx = document.getElementById('marginsRadarChart').getContext('2d');
+        new Chart(marginsRadarCtx, {
+            type: 'radar',
+            data: {
+                labels: ['Gross Margin (TTM)', 'Gross Margin (Q3 FY2026 GAAP)', 'Gross Margin (Q3 FY2026 Non-GAAP)', 'Gross Margin (FY2026 Expected)', 'Net Profit Margin (TTM)', 'EBIT Margin (TTM)'],
+                datasets: [{
+                    label: 'Margin Percentages',
+                    data: [70, 73.4, 73.6, 75, 53, 59],
+                    backgroundColor: 'rgba(100, 255, 218, 0.4)', // Teal-like color
+                    borderColor: 'rgba(100, 255, 218, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(100, 255, 218, 1)',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgba(100, 255, 218, 1)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'NVIDIA Profitability Margins',
+                        color: '#c9d1d9',
+                        font: { size: 18 }
+                    }
+                },
+                scales: {
+                    r: {
+                        angleLines: { color: '#30363d' },
+                        grid: { color: '#30363d' },
+                        pointLabels: { color: '#c9d1d9', font: { size: 12 } },
+                        ticks: {
+                            backdropColor: '#161b22',
+                            color: '#c9d1d9',
+                            font: { size: 10 },
+                            callback: function(value, index, values) {
+                                return value + '%';
+                            }
+                        },
+                        min: 0,
+                        max: 100
+                    }
+                }
+            }
+        });
+
+        // Balance Sheet Doughnut Chart
+        const balanceSheetDoughnutCtx = document.getElementById('balanceSheetDoughnutChart').getContext('2d');
+        new Chart(balanceSheetDoughnutCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Total Assets', 'Total Liabilities', 'Shareholder Equity'],
+                datasets: [{
+                    data: [161.1, 42.3, 11.89], // In Billions USD
+                    backgroundColor: [
+                        'rgba(99, 102, 241, 0.8)', // Indigo
+                        'rgba(239, 68, 68, 0.8)',  // Red
+                        'rgba(34, 197, 94, 0.8)'   // Green
+                    ],
+                    borderColor: '#161b22',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'NVIDIA Balance Sheet Overview (Billions USD)',
+                        color: '#c9d1d9',
+                        font: { size: 18 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed !== null) {
+                                    label += context.parsed.toFixed(2) + 'B USD';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Debt vs. Cash Bar Chart
+        const debtCashBarCtx = document.getElementById('debtCashBarChart').getContext('2d');
+        new Chart(debtCashBarCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Total Debt', 'Cash & Short-Term Investments'],
+                datasets: [{
+                    label: 'Amount (in Billions USD)',
+                    data: [8.5, 60.6],
+                    backgroundColor: [
+                        'rgba(239, 68, 68, 0.8)', // Red for Debt
+                        'rgba(34, 197, 94, 0.8)'   // Green for Cash
+                    ],
+                    borderColor: [
+                        'rgba(239, 68, 68, 1)',
+                        'rgba(34, 197, 94, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'NVIDIA Debt vs. Cash Position (Billions USD)',
+                        color: '#c9d1d9',
+                        font: { size: 18 }
+                    }
+                },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Amount (Billions USD)',
+                            color: '#c9d1d9'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Shareholder Returns Doughnut Chart
+        const shareholderReturnsCtx = document.getElementById('shareholderReturnsChart').getContext('2d');
+        new Chart(shareholderReturnsCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Returned to Shareholders (Q1-Q3 FY2026)', 'Remaining Share Repurchase Authorization'],
+                datasets: [{
+                    data: [3.70, 62.2], // In Billions USD
+                    backgroundColor: [
+                        'rgba(255, 159, 64, 0.8)', // Orange
+                        'rgba(75, 192, 192, 0.8)'  // Teal
+                    ],
+                    borderColor: '#161b22',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'NVIDIA Shareholder Returns (Billions USD)',
+                        color: '#c9d1d9',
+                        font: { size: 18 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed !== null) {
+                                    label += context.parsed.toFixed(2) + 'B USD';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+```

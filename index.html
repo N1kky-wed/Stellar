@@ -4668,7 +4668,7 @@
                         const el = document.createElement('div');
                         el.className = 'forge-history-item';
 
-                        const date = new Date(item.created_at).toLocaleString();
+                        const date = new Date(item.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
                         const statusColor = item.status === 'running' ? '#00c292' : (item.status === 'failed' ? '#ff6b6b' : '#aaa');
 
                         el.innerHTML = `
@@ -5111,6 +5111,12 @@
                 document.getElementById('forgeStartBtn').disabled = false;
                 promptInput.disabled = false;
             }
+        }
+
+        function connectToForgeStream(processId) {
+            if (forgeSseSource) forgeSseSource.close();
+            forgeSseSource = new EventSource(`/codelab/forge/stream?process_id=${processId}`);
+            handleForgeStream(forgeSseSource, document.getElementById('forgePromptInput'));
         }
 
         function handleForgeStream(sse, promptInput) {
