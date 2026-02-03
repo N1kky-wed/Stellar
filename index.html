@@ -4333,38 +4333,111 @@
             <!-- Stellar Forge UI -->
             <div id="forge-container" style="display: flex; width: 100%; height: 100%; flex-direction: row;">
                 <div id="forge-left-panel"
-                    style="width: 280px; min-width: 280px; max-height: 100%; background: var(--stellar-msg-bg); padding: 20px; display: flex; flex-direction: column; border-right: 1px solid var(--input-border); overflow: hidden;">
+                    style="width: 280px; min-width: 200px; max-width: 50%; max-height: 100%; background: var(--stellar-msg-bg); padding: 20px; display: flex; flex-direction: column; border-right: 1px solid var(--input-border); overflow: hidden; position: relative;">
+                    <style>
+                        /* Custom Scrollbar for Forge */
+                        #forge-status-log::-webkit-scrollbar,
+                        .modal-content::-webkit-scrollbar {
+                            width: 6px;
+                            height: 6px;
+                        }
+
+                        #forge-status-log::-webkit-scrollbar-track,
+                        .modal-content::-webkit-scrollbar-track {
+                            background: rgba(0, 0, 0, 0.1);
+                            border-radius: 4px;
+                        }
+
+                        #forge-status-log::-webkit-scrollbar-thumb,
+                        .modal-content::-webkit-scrollbar-thumb {
+                            background: rgba(255, 255, 255, 0.2);
+                            border-radius: 4px;
+                        }
+
+                        #forge-status-log::-webkit-scrollbar-thumb:hover,
+                        .modal-content::-webkit-scrollbar-thumb:hover {
+                            background: rgba(255, 255, 255, 0.3);
+                        }
+                    </style>
                     <p style="font-size: 0.95em; color: var(--primary-text-color); margin-bottom: 8px; flex-shrink: 0;">
                         Describe the app you want to build or modify. Our AI will handle the heavy lifting.
                     </p>
-                    <textarea id="forgePromptInput"
-                        placeholder="e.g., build a to-do list app with categories and reminders..."
-                        style="width: 100%; flex-grow: 1; min-height: 80px; background: var(--input-bg); border: 1px solid var(--input-border); color: var(--primary-text-color); border-radius: 8px; padding: 12px; font-family: 'Poppins', sans-serif; resize: none; margin-bottom: 15px;"></textarea>
+
+                    <!-- Logs moved to top -->
                     <div id="forge-status-log"
-                        style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 15px; font-family: 'Fira Code', monospace; font-size: 0.85em; display: none; flex-grow: 1; overflow-y: auto; margin-bottom: 15px;">
+                        style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 15px; font-family: 'Fira Code', monospace; font-size: 0.85em; display: none; flex-grow: 1; overflow-y: auto; margin-bottom: 15px; min-height: 0;">
                     </div>
-                    <div id="forge-controls" style="display: flex; gap: 10px; flex-shrink: 0; margin-top: auto;">
-                        <button id="forgeEndSessionBtn" class="codelab-action-btn"
-                            style="background-color: var(--nebula-regenerate-end); display: none;">End Session</button>
-                        <button id="forgeHistoryBtn" class="codelab-action-btn"
-                            style="background: rgba(255,255,255,0.1); border: 1px solid var(--input-border); display: flex; align-items: center; gap: 6px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <circle cx="12" cy="12" r="10" />
-                            </svg>
-                            History
-                        </button>
-                        <button id="forgeViewCodeBtn" class="codelab-action-btn codelab-ai-btn"
-                            style="display: none;">View Code</button>
-                        <button id="forgeStartBtn" class="codelab-action-btn"
-                            style="background-color: var(--nebula-confirm-start); flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M8 5v14l11-7z" />
-                            </svg>
-                            Start Building
-                        </button>
+
+                    <!-- Input and Controls at Bottom -->
+                    <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+                        <textarea id="forgePromptInput"
+                            placeholder="e.g., build a to-do list app with categories and reminders..."
+                            style="width: 100%; height: 80px; background: var(--input-bg); border: 1px solid var(--input-border); color: var(--primary-text-color); border-radius: 8px; padding: 12px; font-family: 'Poppins', sans-serif; resize: vertical; min-height: 60px; max-height: 200px;"></textarea>
+
+                        <div id="forge-controls" style="display: flex; gap: 10px;">
+                            <button id="forgeEndSessionBtn" class="codelab-action-btn"
+                                style="background-color: var(--nebula-regenerate-end); display: none;">End
+                                Session</button>
+                            <button id="forgeHistoryBtn" class="codelab-action-btn"
+                                style="background: rgba(255,255,255,0.1); border: 1px solid var(--input-border); display: flex; align-items: center; gap: 6px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <circle cx="12" cy="12" r="10" />
+                                </svg>
+                                History
+                            </button>
+                            <button id="forgeViewCodeBtn" class="codelab-action-btn codelab-ai-btn"
+                                style="display: none;">View Code</button>
+                            <button id="forgeStartBtn" class="codelab-action-btn"
+                                style="background-color: var(--nebula-confirm-start); flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M8 5v14l11-7z" />
+                                </svg>
+                                Start Building
+                            </button>
+                        </div>
                     </div>
                 </div>
+
+                <!-- Resizer Handle -->
+                <div id="forge-resizer"
+                    style="width: 5px; cursor: col-resize; background: transparent; transition: background 0.2s; z-index: 10;">
+                </div>
+                <script>
+                    (function () {
+                        const resizer = document.getElementById('forge-resizer');
+                        const leftPanel = document.getElementById('forge-left-panel');
+                        const container = document.getElementById('forge-container');
+                        let isResizing = false;
+
+                        resizer.addEventListener('mousedown', (e) => {
+                            isResizing = true;
+                            document.body.style.cursor = 'col-resize';
+                            resizer.style.background = 'var(--link-color)';
+                        });
+
+                        document.addEventListener('mousemove', (e) => {
+                            if (!isResizing) return;
+                            const containerRect = container.getBoundingClientRect();
+                            const newWidth = e.clientX - containerRect.left;
+                            if (newWidth > 200 && newWidth < containerRect.width * 0.8) {
+                                leftPanel.style.width = newWidth + 'px';
+                            }
+                        });
+
+                        document.addEventListener('mouseup', () => {
+                            if (isResizing) {
+                                isResizing = false;
+                                document.body.style.cursor = '';
+                                resizer.style.background = 'transparent';
+                            }
+                        });
+
+                        // Resizer Hover Effect
+                        resizer.addEventListener('mouseover', () => resizer.style.background = 'rgba(255,255,255,0.1)');
+                        resizer.addEventListener('mouseout', () => { if (!isResizing) resizer.style.background = 'transparent'; });
+                    })();
+                </script>
                 <div id="forge-right-panel"
                     style="flex-grow: 1; background: var(--stellar-msg-bg); position: relative; display: flex; flex-direction: column;">
                     <div id="forge-loading-overlay"

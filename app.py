@@ -1176,6 +1176,31 @@ def _get_process_key_prefix(process_id, app_type='forge'):
         return _redis_forge_key(process_id)
     return _redis_runcode_key(process_id)
 
+
+def _extract_json_from_response(response_text):
+    """
+    Helper to extract JSON string from a potentially markdown-formatted response.
+    It looks for ```json ... ``` blocks or just tries to find the first '{' and last '}'.
+    """
+    if not response_text:
+        return None
+    
+    # Try to find markdown code blocks first
+    import re
+    code_block_pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
+    match = re.search(code_block_pattern, response_text, re.DOTALL)
+    if match:
+        return match.group(1)
+        
+    # Fallback: try to find the first '{' and last '}'
+    start_idx = response_text.find('{')
+    end_idx = response_text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        return response_text[start_idx : end_idx + 1]
+        
+    return None
+
 @app.route('/codelab/forge/start', methods=['POST'])
 def forge_start():
     if 'user_id' not in session:
