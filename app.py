@@ -302,6 +302,26 @@ def initialize_database():
                 )
             ''')
 
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='forge_history'")
+        if cursor.fetchone() is None:
+            cursor.execute('''
+                CREATE TABLE forge_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    project_name TEXT DEFAULT 'Untitled Project',
+                    process_id TEXT NOT NULL,
+                    container_id TEXT,
+                    status TEXT,
+                    deployment_url TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    resource_usage TEXT,
+                    files_snapshot TEXT,
+                    build_logs TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            ''')
+
         db.commit()
 
 initialize_database()
@@ -1193,6 +1213,17 @@ def forge_start():
         }
         session.modified = True
 
+        # Record in history
+        try:
+            db = get_db()
+            db.execute('''
+                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (session['user_id'], f"Forge Project {process_id[:8]}", process_id, 'starting', json.dumps(project_files)))
+            db.commit()
+        except Exception as e:
+            logger.error(f"Failed to record forge history start: {e}")
+
         try:
             redis_client.hset(_redis_forge_key(process_id), mapping={
                 "status": "starting",
@@ -1267,6 +1298,17 @@ def forge_iterate():
         session['forge_project']['process_id'] = process_id
         session.modified = True
 
+        # Record in history
+        try:
+            db = get_db()
+            db.execute('''
+                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (session['user_id'], f"Forge Iteration {process_id[:8]}", process_id, 'starting', json.dumps(current_files)))
+            db.commit()
+        except Exception as e:
+            logger.error(f"Failed to record forge history iteration: {e}")
+
         try:
             redis_client.hset(_redis_forge_key(process_id), mapping={
                 "status": "starting",
@@ -1288,11 +1330,44 @@ def forge_iterate():
 
 
 def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='forge'):
+    logs_buffer = []
+
     def _put_event(data):
+        if data.get('type') in ['log', 'error', 'install_log']:
+            logs_buffer.append(str(data.get('content', '')))
         try:
             redis_client.publish(process_id, json.dumps(data))
         except Exception:
             logger.exception("Failed to publish event to redis for %s", process_id)
+
+    def update_history(status=None, container_id=None, url=None, final_logs=None):
+        if app_type != 'forge': return
+        try:
+            with app_obj.app_context():
+                db = get_db()
+                updates = []
+                params = []
+                if status:
+                    updates.append("status = ?")
+                    params.append(status)
+                if container_id:
+                    updates.append("container_id = ?")
+                    params.append(container_id)
+                if url:
+                    updates.append("deployment_url = ?")
+                    params.append(url)
+                if final_logs:
+                    updates.append("build_logs = ?")
+                    params.append(final_logs)
+
+                if updates:
+                    updates.append("last_updated = CURRENT_TIMESTAMP")
+                    params.append(process_id)
+                    sql = f"UPDATE forge_history SET {', '.join(updates)} WHERE process_id = ?"
+                    db.execute(sql, tuple(params))
+                    db.commit()
+        except Exception as e:
+            logger.error(f"Failed to update forge history for {process_id}: {e}")
 
     container = None
     temp_dir_path = None
@@ -1340,11 +1415,18 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             remove=False,
             detach=True,
             stdout=True,
-            stderr=True
+            stderr=True,
+            labels={
+                "stellar_type": app_type,
+                "stellar_process_id": process_id,
+                "created_at_ts": str(time.time())
+            }
         )
 
         _put_event({'type': 'container_id', 'id': container.id})
         _put_event({'type': 'log', 'content': f'Sandbox container ({container.short_id}) created.'})
+
+        update_history(status='created', container_id=container.id)
 
         try:
             redis_client.hset(redis_key, mapping={
@@ -1445,11 +1527,14 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 _put_event({'type': 'log', 'content': f'✨ Server is ready! Available at {public_url}'})
                 _put_event({'type': 'port_info', 'url': public_url})
                 public_url_found = True
+                update_history(status='running', url=public_url)
             else:
                  _put_event({'type': 'error', 'content': 'Server verification failed. The app inside the container did not start correctly.'})
+                 update_history(status='failed')
 
         if not public_url_found:
             _put_event({'type': 'error', 'content': 'Failed to get public URL. Container may have crashed.'})
+            update_history(status='failed')
             try:
                 crashed_logs = container.logs().decode('utf-8', 'replace') if container else "No container"
                 _put_event({'type': 'log', 'content': f'--- CRASH LOGS ---\n{crashed_logs}\n--- END LOGS ---'})
@@ -1468,8 +1553,10 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
     except Exception as e:
         logger.error(f"Error in _deploy_and_stream_output thread for process {process_id}: {e}", exc_info=True)
         _put_event({'type': 'error', 'content': str(e)})
+        update_history(status='failed')
 
     finally:
+        update_history(final_logs="\n".join(logs_buffer))
         if container:
             try:
                 try:
@@ -3354,7 +3441,12 @@ def run_code():
                 working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
                 ports=ports_to_publish, mem_limit='1024m',
                 name=f"stellar-sandbox-{run_id}", remove=False, detach=True,
-                stdout=True, stderr=True
+                stdout=True, stderr=True,
+                labels={
+                    "stellar_type": "run_code",
+                    "stellar_process_id": process_id if is_server_app else run_id,
+                    "created_at_ts": str(time.time())
+                }
             )
             yield f"data: {json.dumps({'type': 'container_id', 'id': container.id})}\n\n"
 
@@ -3725,7 +3817,12 @@ def submit_codelab_solution():
                 working_dir='/app',
                 volumes={os.path.abspath(temp_dir_path): {'bind': '/app', 'mode': 'ro'}},
                 mem_limit='256m', cpu_shares=512, remove=True, detach=False,
-                stdout=True, stderr=True
+                stdout=True, stderr=True,
+                labels={
+                    "stellar_type": "codelab_submit",
+                    "stellar_process_id": run_id,
+                    "created_at_ts": str(time.time())
+                }
             )
             output_str = container.decode('utf-8')
         except docker.errors.ContainerError as e:
@@ -3982,20 +4079,103 @@ def _extract_json_from_response(text):
     
     return None
 
+class OrphanContainerMonitor:
+    def __init__(self, interval=60):
+        self.interval = interval
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
+
+    def start(self):
+        self.thread.start()
+
+    def stop(self):
+        self.stop_event.set()
+
+    def _monitor_loop(self):
+        while not self.stop_event.is_set():
+            try:
+                self._cleanup_orphans()
+            except Exception as e:
+                logger.error(f"Error in OrphanContainerMonitor: {e}")
+            time.sleep(self.interval)
+
+    def _cleanup_orphans(self):
+        if not client:
+            return
+
+        # List all containers managed by Stellar with our label
+        try:
+            containers = client.containers.list(all=True, filters={"label": "stellar_type"})
+        except Exception as e:
+            logger.error(f"OrphanContainerMonitor: Failed to list containers: {e}")
+            return
+
+        current_time = time.time()
+
+        for container in containers:
+            try:
+                labels = container.labels
+                process_id = labels.get("stellar_process_id")
+                created_ts_str = labels.get("created_at_ts")
+
+                # Check for exited containers
+                if container.status == 'exited':
+                    try:
+                        container.remove(force=True)
+                        logger.info(f"OrphanContainerMonitor: Removed exited container {container.short_id}")
+                    except docker.errors.NotFound:
+                        pass
+                    except Exception as e:
+                        logger.error(f"OrphanContainerMonitor: Error removing exited container {container.short_id}: {e}")
+                    continue
+
+                # Check for running orphans
+                if container.status == 'running':
+                    if created_ts_str:
+                        try:
+                            created_ts = float(created_ts_str)
+                            if current_time - created_ts < 60:
+                                # Grace period for startup
+                                continue
+                        except ValueError:
+                            pass
+
+                    # Check if process_id is in active_apps
+                    is_active = False
+                    with active_apps_lock:
+                        if process_id in active_apps:
+                            is_active = True
+
+                    if not is_active:
+                        logger.warning(f"OrphanContainerMonitor: Found orphan container {container.short_id} (process {process_id}). Stopping...")
+                        try:
+                            container.stop(timeout=5)
+                            container.remove(force=True)
+                            logger.info(f"OrphanContainerMonitor: Removed orphan {container.short_id}")
+                        except docker.errors.NotFound:
+                            pass
+                        except Exception as e:
+                            logger.error(f"Failed to remove orphan {container.short_id}: {e}")
+            except Exception as e:
+                logger.error(f"OrphanContainerMonitor: Error processing container {container.short_id}: {e}")
+
 def cleanup_stale_containers():
     try:
         client = docker.from_env()
-        stale_containers = client.containers.list(
-            all=True, 
-            filters={'name': 'stellar-sandbox-*'}
-        )
+        # Clean up by label first
+        stale_labeled = client.containers.list(all=True, filters={"label": "stellar_type"})
+
+        # Also clean up by name pattern for backward compatibility
+        stale_named = client.containers.list(all=True, filters={'name': 'stellar-sandbox-*'})
         
-        if not stale_containers:
+        all_stale = list(set(stale_labeled + stale_named))
+
+        if not all_stale:
             logging.info("No stale sandbox containers found on startup.")
             return
 
-        logging.warning(f"Found {len(stale_containers)} stale sandbox container(s). Cleaning up...")
-        for container in stale_containers:
+        logging.warning(f"Found {len(all_stale)} stale sandbox container(s). Cleaning up...")
+        for container in all_stale:
             try:
                 logging.warning(f"Force-removing stale container: {container.name} ({container.short_id})")
                 container.remove(force=True) 
@@ -4009,6 +4189,12 @@ def cleanup_stale_containers():
         logging.error(f"Docker is not available. Skipping stale container cleanup. Error: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred during stale container cleanup: {e}")
+
+# Start the orphan monitor
+orphan_monitor = OrphanContainerMonitor(interval=60)
+if not app.config.get('TESTING'):
+    orphan_monitor.start()
+    atexit.register(orphan_monitor.stop)
 active_apps = {}
 active_apps_lock = threading.Lock()
 @app.route("/apps/<app_id>/", defaults={"path": ""}, methods=["GET", "POST", "PUT", "DELETE"])
@@ -4159,6 +4345,17 @@ def forge_redeploy():
         session['forge_project']['process_id'] = process_id
         session.modified = True
 
+        # Record in history
+        try:
+            db = get_db()
+            db.execute('''
+                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (session['user_id'], f"Forge Redeploy {process_id[:8]}", process_id, 'starting', json.dumps(updated_files)))
+            db.commit()
+        except Exception as e:
+            logger.error(f"Failed to record forge history redeploy: {e}")
+
         try:
             redis_client.hset(_redis_forge_key(process_id), mapping={
                 "status": "starting",
@@ -4177,6 +4374,81 @@ def forge_redeploy():
     except Exception as e:
         logger.error(f"Error in forge_redeploy: {e}", exc_info=True)
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
+
+@app.route('/api/forge/history', methods=['GET'])
+def get_forge_history():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Authentication required.'}), 401
+
+    user_id = session['user_id']
+    db = get_db()
+    cursor = db.execute('''
+        SELECT * FROM forge_history
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+    ''', (user_id,))
+    history = _fetch_as_dict(cursor)
+    return jsonify({'history': history})
+
+@app.route('/api/forge/history/<int:history_id>/resume', methods=['POST'])
+def resume_forge_history(history_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Authentication required.'}), 401
+
+    user_id = session['user_id']
+    db = get_db()
+    cursor = db.execute('SELECT * FROM forge_history WHERE id = ? AND user_id = ?', (history_id, user_id))
+    entry = _fetchone_as_dict(cursor)
+
+    if not entry:
+        return jsonify({'error': 'History entry not found.'}), 404
+
+    files_snapshot = entry.get('files_snapshot')
+    if not files_snapshot:
+        return jsonify({'error': 'No files snapshot available for this project.'}), 400
+
+    try:
+        files = json.loads(files_snapshot)
+    except json.JSONDecodeError:
+        return jsonify({'error': 'Invalid file snapshot data.'}), 500
+
+    # Stop current project if any
+    if 'forge_project' in session:
+        stop_and_cleanup_app_by_process_id(session['forge_project'].get('process_id'), app_type='forge')
+
+    process_id = str(uuid.uuid4())
+    session['forge_project'] = {
+        'files': files,
+        'container_id': None,
+        'process_id': process_id
+    }
+    session.modified = True
+
+    return jsonify({'success': True, 'message': 'Project loaded.', 'files': files, 'process_id': process_id})
+
+@app.route('/api/forge/history/<int:history_id>', methods=['DELETE'])
+def delete_forge_history(history_id):
+    if 'user_id' not in session:
+        return jsonify({'error': 'Authentication required.'}), 401
+
+    user_id = session['user_id']
+    db = get_db()
+
+    cursor = db.execute('SELECT process_id, container_id FROM forge_history WHERE id = ? AND user_id = ?', (history_id, user_id))
+    entry = _fetchone_as_dict(cursor)
+
+    if not entry:
+        return jsonify({'error': 'Entry not found.'}), 404
+
+    process_id = entry['process_id']
+
+    # Stop if running
+    stop_and_cleanup_app_by_process_id(process_id, app_type='forge')
+
+    db.execute('DELETE FROM forge_history WHERE id = ?', (history_id,))
+    db.commit()
+
+    return jsonify({'success': True, 'message': 'History entry deleted.'})
 cleanup_stale_containers()
     
 if __name__ == '__main__':

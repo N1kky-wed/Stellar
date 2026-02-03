@@ -3992,6 +3992,57 @@
         }
 
         /* --- END NEW RULES --- */
+
+        /* Forge History Modal */
+        .forge-history-item {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--input-border);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s ease;
+        }
+
+        .forge-history-item:hover {
+            background: rgba(0, 0, 0, 0.3);
+            border-color: var(--model-color-border);
+        }
+
+        .forge-history-info h4 {
+            margin: 0 0 5px 0;
+            color: var(--primary-text-color);
+        }
+
+        .forge-history-info p {
+            margin: 0;
+            font-size: 0.85rem;
+            color: var(--secondary-text-color);
+        }
+
+        .forge-history-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .forge-history-btn {
+            padding: 6px 12px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: #fff;
+        }
+
+        .forge-resume-btn {
+            background-color: var(--nebula-confirm-start);
+        }
+
+        .forge-delete-btn {
+            background-color: var(--nebula-regenerate-start);
+        }
     </style>
 </head>
 
@@ -4067,6 +4118,19 @@
                         <path d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41L9 16.17z"></path>
                     </svg>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="forgeHistoryModal" class="modal-backdrop"
+        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 2000;">
+        <div class="modal-content" style="max-width: 600px; height: 70vh; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>Forge History</h2>
+                <button id="closeForgeHistoryBtn" style="background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            <div id="forgeHistoryList" style="flex-grow: 1; overflow-y: auto;">
+                <p style="text-align: center; color: #aaa;">Loading history...</p>
             </div>
         </div>
     </div>
@@ -4287,6 +4351,7 @@
                             <button id="forgeEndSessionBtn" class="codelab-action-btn"
                                 style="background-color: var(--nebula-regenerate-end); display: none;">End
                                 Session</button>
+                            <button id="forgeHistoryBtn" class="codelab-action-btn codelab-ai-btn">History</button>
                             <button id="forgeViewCodeBtn" class="codelab-action-btn codelab-ai-btn"
                                 style="display: none;">View Code</button>
                             <button id="forgeStartBtn" class="codelab-action-btn"
@@ -4578,6 +4643,133 @@
 
             forgeEndSessionBtn.addEventListener('click', handleForgeStop);
             forgeViewCodeBtn.addEventListener('click', handleForgeViewCode);
+
+            const historyBtn = document.getElementById('forgeHistoryBtn');
+            const closeHistoryBtn = document.getElementById('closeForgeHistoryBtn');
+            if (historyBtn) historyBtn.addEventListener('click', openForgeHistory);
+            if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', () => {
+                document.getElementById('forgeHistoryModal').style.display = 'none';
+            });
+        }
+
+        async function openForgeHistory() {
+            const modal = document.getElementById('forgeHistoryModal');
+            const list = document.getElementById('forgeHistoryList');
+            modal.style.display = 'flex';
+            list.innerHTML = '<p style="text-align: center; color: #aaa;">Loading history...</p>';
+
+            try {
+                const response = await fetch('/api/forge/history');
+                const data = await response.json();
+
+                if (data.history && data.history.length > 0) {
+                    list.innerHTML = '';
+                    data.history.forEach(item => {
+                        const el = document.createElement('div');
+                        el.className = 'forge-history-item';
+
+                        const date = new Date(item.created_at).toLocaleString();
+                        const statusColor = item.status === 'running' ? '#00c292' : (item.status === 'failed' ? '#ff6b6b' : '#aaa');
+
+                        el.innerHTML = `
+                            <div class="forge-history-info">
+                                <h4>${escapeHtml(item.project_name || 'Untitled')}</h4>
+                                <p>Status: <span style="color: ${statusColor}">${item.status}</span> | ${date}</p>
+                                <p style="font-size: 0.8em; opacity: 0.7;">ID: ${item.process_id.substring(0, 8)}...</p>
+                            </div>
+                            <div class="forge-history-actions">
+                                <button class="forge-history-btn forge-resume-btn" data-id="${item.id}">Resume</button>
+                                <button class="forge-history-btn forge-delete-btn" data-id="${item.id}">Delete</button>
+                            </div>
+                        `;
+
+                        el.querySelector('.forge-resume-btn').addEventListener('click', () => resumeForgeProject(item.id));
+                        el.querySelector('.forge-delete-btn').addEventListener('click', () => deleteForgeProject(item.id, el));
+
+                        list.appendChild(el);
+                    });
+                } else {
+                    list.innerHTML = '<p style="text-align: center; color: #aaa;">No history found.</p>';
+                }
+            } catch (e) {
+                list.innerHTML = `<p style="color: #ff6b6b; text-align: center;">Error loading history: ${e.message}</p>`;
+            }
+        }
+
+        async function resumeForgeProject(id) {
+            if (isForgeSessionActive) {
+                if (!confirm("This will end your current session. Continue?")) return;
+                await handleForgeStop(false); // Don't clear UI yet
+            }
+
+            const btn = document.querySelector(`.forge-resume-btn[data-id="${id}"]`);
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = "Loading...";
+            }
+
+            try {
+                const response = await fetch(`/api/forge/history/${id}/resume`, { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('forgeHistoryModal').style.display = 'none';
+                    // Reset UI
+                    document.getElementById('forge-status-log').innerHTML = '';
+                    document.getElementById('forge-status-log').style.display = 'block';
+                    addLogToForge(`Resumed project: ${data.process_id}`);
+
+                    // Trigger redeploy to get it running
+                    addLogToForge("Redeploying container...");
+
+                    const redeployResp = await fetch('/codelab/forge/redeploy', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ files: data.files })
+                    });
+                    const redeployData = await redeployResp.json();
+
+                    if (redeployData.success) {
+                        isForgeSessionActive = true;
+                        connectToForgeStream(redeployData.process_id);
+                        document.getElementById('forgeStartBtn').textContent = "Update Build";
+                        document.getElementById('forgeEndSessionBtn').style.display = 'block';
+                        document.getElementById('forgeViewCodeBtn').style.display = 'block';
+                    } else {
+                        addLogToForge("Error redeploying: " + redeployData.error, "error");
+                    }
+
+                } else {
+                    alert("Failed to resume: " + data.error);
+                }
+            } catch (e) {
+                alert("Error: " + e.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = "Resume";
+                }
+            }
+        }
+
+        async function deleteForgeProject(id, element) {
+            if (!confirm("Delete this history entry?")) return;
+
+            try {
+                const response = await fetch(`/api/forge/history/${id}`, { method: 'DELETE' });
+                const data = await response.json();
+
+                if (data.success) {
+                    element.remove();
+                    if (document.getElementById('forgeHistoryList').children.length === 0) {
+                        document.getElementById('forgeHistoryList').innerHTML = '<p style="text-align: center; color: #aaa;">No history found.</p>';
+                    }
+                } else {
+                    alert("Failed to delete: " + data.error);
+                }
+            } catch (e) {
+                alert("Error: " + e.message);
+            }
         }
 
         async function handleForgeViewCode() {
