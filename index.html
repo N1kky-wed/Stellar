@@ -4257,8 +4257,10 @@
     </div>
 
     <!-- Stellar Forge (CodeLab) Container -->
-    <div id="codeLabContainer" style="display: none; flex-direction: row; height: 100%;">
-        <div id="codelab-content-area" style="display: flex; flex-grow: 1; width: 100%; height: 100%;">
+    <div id="codeLabContainer"
+        style="display: none; flex-direction: row; height: calc(100vh - 60px); overflow: hidden;">
+        <div id="codelab-content-area"
+            style="display: flex; flex-grow: 1; width: 100%; height: 100%; overflow: hidden;">
             <!-- Left Panel (AI Mentor) - Hidden for Forge-only mode -->
             <div id="ai-mentor-panel" style="display: none;">
                 <!-- New CodeLab Mode Switcher -->
