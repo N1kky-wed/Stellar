@@ -128,7 +128,7 @@ adminpass=os.getenv("Admin")
 REFINE_API_KEY = os.getenv("RTP_API_KEY")
 SEARCH_API_KEY = os.getenv("SEARCH_API_KEY")
 RTP_API_KEY = os.getenv("RTP_API_KEY")
-COSMOS_API_KEY = os.getenv("SEARCH_API_KEY")
+COSMOS_API_KEY = os.getenv("PRIMARY_API_KEY")
 PRIMARY_API_KEY= os.getenv("PRIMARY_API_KEY")
 
 BACKUP_API_KEYS = [
@@ -3614,7 +3614,7 @@ def dynamic_proxy(app_id, path):
             cookies=request.cookies,
             allow_redirects=False,
             stream=True, 
-            timeout=20
+            timeout=600
         )
 
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
