@@ -19,5 +19,6 @@ stellar_local.db
 # App specific
 sandbox_runs/
 uploads/
+outputs/
 .DS_Store
 temp_venv/
