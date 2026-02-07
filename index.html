@@ -5055,15 +5055,12 @@
 
         function scrollToBottom() {
 
-            console.log("--- scrollToBottom function called ---");
             if (!messagesDiv) {
                 console.error("Error: The 'messagesDiv' element was not found.");
                 return;
             }
 
             const lastMessage = messagesDiv.lastElementChild;
-            console.log("Found messages container. scrollHeight:", messagesDiv.scrollHeight);
-            console.log("Last message element found:", lastMessage);
 
 
             if (lastMessage) {
@@ -5856,6 +5853,10 @@
 
 
 
+        /* DEPRECATED NEBULA CODE BLOCK REMOVED - All Nebula process management functions have been deleted */
+
+
+
 
 
 
@@ -6337,30 +6338,6 @@
             if (messagesDiv) messagesDiv.appendChild(msg);
             updateTokenCount();
         }
-        async function startNebulaProcess(userQuery, pendingFiles = []) {
-            // This console log is for debugging; you can remove it after confirming the fix.
-            console.log('startNebulaProcess: Function started. Received pendingFiles:', pendingFiles);
-
-            clearTimeout(nebulaAutoContinueTimerId);
-            nebulaAutoContinueTimerId = null;
-            isProcessing = true;
-            nebulaProcess.isActive = true;
-            sendBtn.disabled = true;
-            nebulaProcess.userQuery = userQuery;
-            nebulaProcess.processId = Date.now();
-            nebulaProcess.messageElement = createNebulaMessageContainer(nebulaProcess.processId);
-
-            // This is where the file list is correctly stored in the process state
-            nebulaProcess.pendingFiles = pendingFiles;
-
-            if (!nebulaProcess.messageElement) {
-                cleanupNebulaProcess(true, "Failed to create message container.");
-                return;
-            }
-            nebulaProcess.currentStep = 1;
-            disableAllNebulaStepActions();
-            requestNebulaStep(1);
-        }
         function appendStellarMessagePlaceholder(id, initialText, hasFiles) { }
         function updateStellarMessagePlaceholder(id, newText, isError = false, analysisDetails = null) {
             const msgDiv = messagesDiv.querySelector(`.message[data-id="${id}"]`);
@@ -6542,7 +6519,6 @@
                                 if (userMessageDbId) {
                                     const lastUserMsg = document.querySelector(`.message.user-msg[data-id="${userMessageId}"]`);
                                     if (lastUserMsg) {
-                                        console.log(`Updating user message ID from ${lastUserMsg.dataset.id} to ${userMessageDbId}`);
                                         lastUserMsg.dataset.id = userMessageDbId;
                                     }
                                 }
@@ -7298,7 +7274,6 @@
                         sseEventSource.close();
                         sseEventSource = null;
                     }
-                    resetNebulaProcessState();
                     clearInterval(tokenCounterInterval);
                     tokenCounterInterval = null;
                     currentChatId = null;
@@ -7812,9 +7787,6 @@
         if (modelSelect) { modelSelect.addEventListener("change", () => { updateModelSelectWidth(); updateModelSelectTheme(); enableDisableModelOptions(); }); }
         if (cancelEditBtn) cancelEditBtn.addEventListener("click", hideEditModal);
         if (saveEditBtn) { saveEditBtn.addEventListener("click", () => { if (currentEditingMsg && currentEditingMsgId) { const md = editMarkdownInput.value; let html = ""; try { html = marked.parse(md || ""); html = wrapTables(html); } catch (e) { html = "<p>Error parsing.</p>"; } const contentDiv = currentEditingMsg.querySelector('.message-content'); if (contentDiv) { contentDiv.innerHTML = html; processCodeBlocks(contentDiv); setTimeout(() => renderMath(contentDiv), 150); createAndAppendResearchButtons(currentEditingMsg, currentEditingMsgId, contentDiv.innerHTML); addOutputCopyButton(currentEditingMsg); } } hideEditModal(); }); }
-        if (cancelRegenerateBtn) cancelRegenerateBtn.addEventListener("click", hideRegenerateModal);
-        if (saveRegenerateBtn) saveRegenerateBtn.addEventListener("click", handleSaveRegeneration);
-        if (regenerateWithoutFeedbackBtn) { regenerateWithoutFeedbackBtn.addEventListener("click", () => { triggerRegeneration(currentRegeneratingStep); }); }
         // REPLACE the old clearHistoryBtn block with this one
         if (clearHistoryBtn) {
             clearHistoryBtn.addEventListener("click", async () => {
@@ -7823,9 +7795,6 @@
                     setStatus(msg, true);
                     setTimeout(() => setStatus(currentStatusText, false), 2000);
                     return;
-                }
-                if (nebulaProcess.isActive) {
-                    cleanupNebulaProcess(true, "Cleared");
                 }
                 setStatus("Clearing...");
                 try {
@@ -7891,7 +7860,6 @@
         }
 
         window.addEventListener("load", () => {
-            resetNebulaProcessState();
             if (modelSelect) { updateModelSelectTheme(); updateModelSelectWidth(); }
             handleModeChange();
             checkAuthStatus();
@@ -8389,11 +8357,7 @@
             }
 
             setStatus("Stopping...", false);
-            if (nebulaProcess.isActive) {
-                cleanupNebulaProcess(true, "Process stopped by user.");
-            } else {
-                cleanupStream(true, "Stopped by user.", placeholderId);
-            }
+            cleanupStream(true, "Stopped by user.", placeholderId);
 
             try {
                 await fetch('/api/stop_generation', {
