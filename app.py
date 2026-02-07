@@ -218,10 +218,6 @@ def initialize_database():
                 message_content TEXT NOT NULL,
                 is_research_output BOOLEAN DEFAULT 0,
                 html_file TEXT,
-                nebula_step1 TEXT,
-                nebula_step2_frontend TEXT,
-                nebula_step3_backend TEXT,
-                nebula_step4_verification TEXT,
                 file_analysis_context TEXT,
                 visualization_html TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -248,48 +244,6 @@ def initialize_database():
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 UNIQUE(user_id, key_name) ON CONFLICT REPLACE
             )''')
-
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='problems'")
-        if cursor.fetchone() is None:
-            cursor.execute('''
-                CREATE TABLE problems (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    difficulty TEXT NOT NULL CHECK(difficulty IN ('Easy', 'Medium', 'Hard')),
-                    topic_tags TEXT
-                )
-            ''')
-        
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='test_cases'")
-        if cursor.fetchone() is None:
-            cursor.execute('''
-                CREATE TABLE test_cases (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    problem_id INTEGER NOT NULL,
-                    input_data TEXT NOT NULL,
-                    expected_output TEXT NOT NULL,
-                    is_hidden BOOLEAN NOT NULL DEFAULT 0,
-                    FOREIGN KEY (problem_id) REFERENCES problems(id) ON DELETE CASCADE
-                )
-            ''')
-
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='submissions'")
-        if cursor.fetchone() is None:
-            cursor.execute('''
-                CREATE TABLE submissions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    problem_id INTEGER NOT NULL,
-                    code TEXT NOT NULL,
-                    language TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    output_details TEXT,
-                    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                    FOREIGN KEY (problem_id) REFERENCES problems(id) ON DELETE CASCADE
-                )
-            ''')
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='forge_history'")
         if cursor.fetchone() is None:
@@ -346,7 +300,21 @@ def get_current_chat_id(user_id):
 
 def insert_message(chat_id, message_type, message_content,
                    is_research_output=False, html_file=None,
-                   nebula_steps=None, file_analysis_context=None, user_query_for_name=None):
+                   file_analysis_context=None, user_query_for_name=None):
+    """Insert a new message into the messages table.
+    
+    Args:
+        chat_id: The chat ID to insert the message into
+        message_type: Type of message ('user', 'stellar', etc.)
+        message_content: The message content text
+        is_research_output: Whether this is a research output message
+        html_file: Optional path to associated HTML file
+        file_analysis_context: Optional file analysis context data
+        user_query_for_name: If provided, may trigger chat name generation
+    
+    Returns:
+        The ID of the inserted message, or None on failure
+    """
     if not chat_id:
         return None
     
@@ -356,23 +324,13 @@ def insert_message(chat_id, message_type, message_content,
     for attempt in range(max_retries):
         try:
             db = get_db()
-            nebula_data = nebula_steps or {}
-
-            nebula_step1 = nebula_data.get('step1')
-            nebula_step2 = nebula_data.get('step2')
-            nebula_step3 = nebula_data.get('step3')
-            nebula_step4 = nebula_data.get('step4')
-
             cursor = db.execute(
                 '''INSERT INTO messages (chat_id, message_type, message_content,
                                        is_research_output, html_file,
-                                       nebula_step1, nebula_step2_frontend, nebula_step3_backend, nebula_step4_verification,
                                        file_analysis_context)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                   VALUES (?, ?, ?, ?, ?, ?)''',
                 (chat_id, message_type, message_content,
-                 is_research_output, html_file,
-                 nebula_step1, nebula_step2, nebula_step3, nebula_step4,
-                 file_analysis_context)
+                 is_research_output, html_file, file_analysis_context)
             )
             db.commit()
             last_id = cursor.lastrowid
@@ -398,13 +356,20 @@ def insert_message(chat_id, message_type, message_content,
 
 
 def get_conversation_history(chat_id):
+    """Retrieve conversation history for a chat.
+    
+    Args:
+        chat_id: The chat ID to retrieve history for
+    
+    Returns:
+        List of message dictionaries with id, message_type, message_content, etc.
+    """
     if not chat_id:
         return []
     try:
         db = get_db()
         cursor = db.execute(
             '''SELECT id, message_type, message_content, is_research_output, html_file,
-                      nebula_step1, nebula_step2_frontend, nebula_step3_backend, nebula_step4_verification,
                       file_analysis_context, visualization_html, timestamp
                FROM messages WHERE chat_id = ? ORDER BY timestamp ASC''',
             (chat_id,)
@@ -414,17 +379,7 @@ def get_conversation_history(chat_id):
         history = []
         for row in rows:
             msg = dict(row)
-            nebula_output_data = {
-                'step1': msg.pop('nebula_step1', None),
-                'step2': msg.pop('nebula_step2_frontend', None),
-                'step3': msg.pop('nebula_step3_backend', None),
-                'step4': msg.pop('nebula_step4_verification', None),
-            }
-            if any(v is not None for v in nebula_output_data.values()):
-                msg['nebula_output'] = {k: v for k, v in nebula_output_data.items() if v is not None}
-            if msg.get('message_type') == 'nebula_output' and msg.get('html_file'):
-                 safe_filename = os.path.basename(msg['html_file'])
-                 msg['report_url'] = f'/download/{safe_filename}'
+            # Add HTML URL for research outputs
             if msg.get('is_research_output') and msg.get('html_file'):
                  safe_filename = os.path.basename(msg['html_file'])
                  msg['html_url'] = f'/view/{safe_filename}'

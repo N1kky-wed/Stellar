@@ -3549,7 +3549,6 @@
             background-color: var(--input-border);
         }
 
-        #ai-mentor-panel,
         #workspace-panel {
             padding: 20px;
             display: flex;
@@ -3559,182 +3558,14 @@
             border: none !important;
         }
 
-        #ai-mentor-panel {
-            width: 40%;
-        }
-
         #workspace-panel {
-            width: 60%;
-        }
-
-        #ai-mentor-panel {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            /* This is the key */
-        }
-
-        #newProblemBtn {
-            background: none;
-            border: 1px solid var(--input-border);
-            margin-bottom: 20px;
-            display: none;
-            flex-shrink: 0;
-        }
-
-        #mentor-content-scroller {
-            flex-grow: 1;
-            overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track-bg);
-            padding-right: 10px;
-            min-height: 0;
-        }
-
-        #problem-generation-container {
-            margin-top: auto;
-            flex-shrink: 0;
-            padding-top: 15px;
-            max-height: 250px;
-            overflow: hidden;
-            transition: max-height 0.3s ease-in-out;
-        }
-
-        #problem-generation-container>h3 {
-            text-align: center;
-            color: var(--secondary-text-color);
-            margin-bottom: 20px;
-            cursor: pointer;
-        }
-
-        #problemRequestInput {
             width: 100%;
-            height: 80px;
-            background: var(--input-bg);
-            border: 1px solid var(--input-border);
-            color: var(--primary-text-color);
-            border-radius: 6px;
-            padding: 10px;
-            font-family: 'Poppins', sans-serif;
-            resize: vertical;
+            /* Adjusted to full width since mentor panel is gone */
         }
 
-        .problem-gen-buttons {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 10px;
-        }
 
-        #loadRandomProblemBtn {
-            background: none;
-            border: 1px solid var(--input-border);
-        }
 
-        #ai-mentor-panel.html-view-active #problem-generation-container {
-            border-top: 1px solid var(--input-border);
-            max-height: 50px;
-            /* Collapsed height */
-        }
 
-        #ai-mentor-panel.html-view-active #problem-generation-container.expanded {
-            max-height: 250px;
-            /* Expanded height */
-        }
-
-        #ai-mentor-panel.html-view-active #problem-generation-container>form {
-            display: none;
-        }
-
-        #ai-mentor-panel.html-view-active #problem-generation-container.expanded>form {
-            display: block;
-        }
-
-        #ai-assist-responses-container {
-            margin-top: 20px;
-        }
-
-        .codelab-problem-title {
-            font-size: 1.6rem;
-            font-weight: 600;
-            margin-bottom: 5px;
-            color: var(--primary-text-color);
-            border-bottom: 1px solid var(--stellar-msg-border);
-            padding-bottom: 10px;
-            flex-shrink: 0;
-        }
-
-        .codelab-problem-meta {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-shrink: 0;
-        }
-
-        .codelab-difficulty-tag {
-            padding: 4px 10px;
-            border-radius: 15px;
-            font-size: 0.8rem;
-            font-weight: 500;
-            color: #fff;
-        }
-
-        .codelab-difficulty-tag.Easy {
-            background-color: rgba(0, 194, 146, 0.7);
-        }
-
-        .codelab-difficulty-tag.Medium {
-            background-color: rgba(250, 189, 47, 0.7);
-        }
-
-        .codelab-difficulty-tag.Hard {
-            background-color: rgba(211, 16, 39, 0.7);
-        }
-
-        .codelab-topic-tags {
-            font-size: 0.85rem;
-            color: var(--secondary-text-color);
-        }
-
-        .codelab-problem-description h3 {
-            margin-top: 20px;
-            margin-bottom: 10px;
-            font-size: 1.1rem;
-            color: var(--link-color);
-            border-bottom: 1px solid var(--stellar-msg-border);
-            padding-bottom: 5px;
-        }
-
-        .codelab-test-case {
-            background: rgba(0, 0, 0, 0.2);
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            border-left: 3px solid var(--model-color-border);
-        }
-
-        .codelab-test-case pre {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            background-color: rgba(0, 0, 0, 0.3) !important;
-            padding: 10px !important;
-        }
-
-        .workspace-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-bottom: 15px;
-            flex-shrink: 0;
-            gap: 10px;
-        }
-
-        .workspace-header-left {
-            display: flex;
-            gap: 10px;
-        }
 
         #codelabLanguageSelector {
             background: var(--input-bg);
@@ -3754,13 +3585,8 @@
             padding-left: 4px !important;
         }
 
-        .workspace-footer {
-            display: flex;
-            justify-content: flex-end;
-            padding-top: 15px;
-            gap: 10px;
-            flex-shrink: 0;
-        }
+
+
 
         .codelab-action-btn {
             padding: 10px 20px;
@@ -3788,46 +3614,8 @@
             cursor: not-allowed;
         }
 
-        #codelabRunBtn {
-            background-color: rgba(255, 255, 255, 0.1);
-            color: var(--secondary-text-color);
-        }
 
-        #codelabRunBtn:hover {
-            background-color: rgba(255, 255, 255, 0.2);
-            color: var(--primary-text-color);
-        }
 
-        #codelabSubmitBtn {
-            background-color: var(--nebula-confirm-start);
-            color: #fff;
-        }
-
-        #codelabSubmitBtn:hover {
-            background-color: var(--nebula-confirm-end);
-            filter: brightness(1.1);
-        }
-
-        #codelab-output-panel {
-            margin-top: 15px;
-            height: 200px;
-            background: var(--code-bg);
-            border-radius: 8px;
-            border: 1px solid var(--input-border);
-            padding: 15px;
-            font-family: 'Fira Code', monospace;
-            font-size: 0.9rem;
-            overflow-y: auto;
-            resize: vertical;
-            min-height: 100px;
-            flex-shrink: 0;
-        }
-
-        .ai-mentor-response {
-            margin-top: 20px;
-            padding-top: 15px;
-            border-top: 1px dashed var(--input-border);
-        }
 
         #live-html-preview {
             width: 100%;
@@ -4261,75 +4049,6 @@
         style="display: none; flex-direction: row; height: calc(100vh - 60px); overflow: hidden; margin-top: 10px;">
         <div id="codelab-content-area"
             style="display: flex; flex-grow: 1; width: 100%; height: 100%; overflow: hidden;">
-            <!-- Left Panel (AI Mentor) - Hidden for Forge-only mode -->
-            <div id="ai-mentor-panel" style="display: none;">
-                <!-- New CodeLab Mode Switcher -->
-                <div id="codelab-mode-switcher"
-                    style="display: flex; gap: 10px; border-bottom: 1px solid var(--input-border); padding-bottom: 15px; margin-bottom: 15px; flex-shrink: 0;">
-                    <button id="switchToProblemModeBtn" class="codelab-action-btn active">Problem Solving</button>
-
-                </div>
-
-                <!-- Container for Problem Solving UI -->
-                <div id="problem-solving-content">
-                    <button type="button" id="newProblemBtn" class="codelab-action-btn">+ New Problem</button>
-                    <div id="mentor-content-scroller">
-                        <div id="problem-display-container">
-                            <!-- Problem will be loaded here -->
-                        </div>
-                        <div id="ai-assist-responses-container">
-                            <!-- AI assistance responses will appear here -->
-                        </div>
-                    </div>
-                    <div id="problem-generation-container">
-                        <h3>Generate a New Problem</h3>
-                        <form id="generateProblemForm">
-                            <textarea id="problemRequestInput"
-                                placeholder="e.g., 'a medium difficulty problem about sorting arrays'"></textarea>
-                            <div class="problem-gen-buttons">
-                                <button type="submit" id="generateProblemBtn"
-                                    class="codelab-action-btn codelab-ai-btn">Generate Problem</button>
-                                <button type="button" id="loadRandomProblemBtn" class="codelab-action-btn">Load
-                                    Random</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Panel (Workspace) - Hidden for Forge-only mode -->
-            <div id="workspace-panel" style="display: none;">
-                <div class="workspace-header">
-                    <div class="workspace-header-left">
-                        <button id="codelabExplainBtn" class="codelab-action-btn codelab-ai-btn"
-                            title="Explain the current code in the editor">Explain</button>
-                        <button id="codelabDebugBtn" class="codelab-action-btn codelab-ai-btn"
-                            title="Get help debugging the code based on the output">Debug with AI</button>
-                        <button id="codelabOptimizeBtn" class="codelab-action-btn codelab-ai-btn"
-                            title="Get suggestions to improve the current code">Optimize</button>
-                    </div>
-                    <div class="workspace-header-right">
-                        <select id="codelabLanguageSelector">
-                            <option value="python" selected>Python</option>
-                            <option value="javascript">JavaScript</option>
-                            <option value="html">HTML</option>
-                            <option value="java" disabled>Java (soon)</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="workspace-main-content">
-                    <div id="code-editor-container"></div>
-                    <div id="html-preview-container">
-                        <iframe id="live-html-preview" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
-                    </div>
-                </div>
-                <div id="codelab-output-panel"></div>
-                <div class="workspace-footer">
-                    <button id="codelabRunBtn" class="codelab-action-btn">Run</button>
-                    <button id="codelabSubmitBtn" class="codelab-action-btn">Submit</button>
-                </div>
-            </div>
-
             <!-- Stellar Forge UI -->
             <div id="forge-container" style="display: flex; width: 100%; height: 100%; flex-direction: row;">
                 <div id="forge-left-panel"
@@ -4684,9 +4403,6 @@
         let isForgeSessionActive = false;
 
         function setupForgeUI() {
-            const switchToProblemModeBtn = document.getElementById('switchToProblemModeBtn');
-            const switchToForgeModeBtn = document.getElementById('switchToForgeModeBtn');
-            const problemSolvingUI = [document.getElementById('ai-mentor-panel'), document.getElementById('workspace-panel')];
             const forgeUI = document.getElementById('forge-container');
 
             const forgeStartBtn = document.getElementById('forgeStartBtn');
@@ -4694,28 +4410,9 @@
             const forgePromptInput = document.getElementById('forgePromptInput');
             const forgeViewCodeBtn = document.getElementById('forgeViewCodeBtn');
 
-            if (switchToProblemModeBtn) {
-                switchToProblemModeBtn.addEventListener('click', () => {
-                    if (isForgeSessionActive) {
-                        if (!confirm("This will end your current Forge session. Are you sure?")) return;
-                        handleForgeStop();
-                    }
-                    switchToProblemModeBtn.classList.add('active');
-                    if (switchToForgeModeBtn) switchToForgeModeBtn.classList.remove('active');
-                    forgeUI.style.display = 'none';
-                    problemSolvingUI.forEach(el => { if (el) el.style.display = 'flex'; });
-                    if (codeLabEditor) setTimeout(() => codeLabEditor.refresh(), 1);
-                });
-            }
+            // Force Forge UI to be visible if we are in CodeLab mode context
+            if (forgeUI) forgeUI.style.display = 'flex';
 
-            if (switchToForgeModeBtn) {
-                switchToForgeModeBtn.addEventListener('click', () => {
-                    switchToForgeModeBtn.classList.add('active');
-                    if (switchToProblemModeBtn) switchToProblemModeBtn.classList.remove('active');
-                    forgeUI.style.display = 'flex';
-                    problemSolvingUI.forEach(el => { if (el) el.style.display = 'none'; });
-                });
-            }
 
             if (forgeStartBtn) {
                 forgeStartBtn.addEventListener('click', () => {
@@ -5333,18 +5030,8 @@
                 stopBtn.style.display = 'none';
             }
         }
-        function resetNebulaProcessState() {
-            clearTimeout(nebulaAutoContinueTimerId);
-            nebulaAutoContinueTimerId = null;
-            nebulaProcess = {
-                isActive: false, processId: null, currentStep: 0, userQuery: null, planOutput: null,
-                frontendOutput: null, backendOutput: null, verificationOutput: null, reportUrl: null, messageElement: null
-            };
-        }
-
-        const NEBULA_COMPATIBLE_MODELS = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-pro"];
+        // Note: COSMOS_COMPATIBLE_MODELS kept for cosmos mode validation
         const COSMOS_COMPATIBLE_MODELS = ["gemini-3-flash-preview", "gemini-3-pro-preview"];
-        const DEFAULT_NEBULA_MODEL = "gemini-3-pro-preview";
         const katexDelimiters = [
             { left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false },
             { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }
@@ -6047,50 +5734,8 @@
         function hideEditModal() {
             if (editModalBackdrop) editModalBackdrop.style.display = "none"; currentEditingMsg = null; currentEditingMsgId = null; if (editMarkdownInput) editMarkdownInput.value = "";
         }
-        function showRegenerateModal(stepNumber) {
-            if (!nebulaProcess.isActive) return; currentRegeneratingStep = stepNumber; regenerateModalTitle.textContent = `Regenerate Step ${stepNumber}: ${getNebulaStepTitle(stepNumber)}`; regenerateFeedbackInput.value = ""; if (regenerateModalBackdrop) regenerateModalBackdrop.style.display = "flex"; if (regenerateFeedbackInput) setTimeout(() => regenerateFeedbackInput.focus(), 100);
-        }
-        function hideRegenerateModal() {
-            if (regenerateModalBackdrop) regenerateModalBackdrop.style.display = "none"; regenerateFeedbackInput.value = ""; currentRegeneratingStep = null; if (nebulaProcess.isActive && !isProcessing) { updateNebulaButtonStates(); }
-        }
 
-        function triggerRegeneration(stepToRegenerate, feedback = null) {
-            clearTimeout(nebulaAutoContinueTimerId); nebulaAutoContinueTimerId = null;
-            if (stepToRegenerate === null || !nebulaProcess.isActive || isProcessing) { setStatus("Cannot regen now.", true); setTimeout(() => setStatus(currentStatusText, false), 2500); hideRegenerateModal(); return; }
-            setStatus(`Nebula: Regenerating ${getNebulaStepTitle(stepToRegenerate)}...`); isProcessing = true; sendBtn.disabled = true; disableAllNebulaStepActions();
-            if (stepToRegenerate <= nebulaProcess.currentStep) {
-                const stepsContainer = nebulaProcess.messageElement?.querySelector('.nebula-steps-container');
-                if (stepsContainer) { for (let i = stepToRegenerate; i <= 4; i++) { const stepDiv = stepsContainer.querySelector(`.nebula-step-content[data-step="${i}"]`); if (stepDiv) stepDiv.remove(); } }
-                if (stepToRegenerate <= 1) nebulaProcess.planOutput = null; if (stepToRegenerate <= 2) nebulaProcess.frontendOutput = null; if (stepToRegenerate <= 3) nebulaProcess.backendOutput = null; if (stepToRegenerate <= 4) nebulaProcess.verificationOutput = null; nebulaProcess.reportUrl = null; nebulaProcess.currentStep = stepToRegenerate;
-            }
-            requestNebulaStep(stepToRegenerate, true, feedback); hideRegenerateModal();
-        }
-        function handleSaveRegeneration() { const feedback = regenerateFeedbackInput.value.trim(); triggerRegeneration(currentRegeneratingStep, feedback); }
-
-
-        function handleStopAutoContinue(stepNumber) {
-            if (nebulaAutoContinueTimerId && nebulaProcess.currentStep === stepNumber) {
-                clearTimeout(nebulaAutoContinueTimerId);
-                nebulaAutoContinueTimerId = null;
-                setStatus(`Nebula: Auto-continue stopped. Confirm ${getNebulaStepTitle(stepNumber)}...`);
-                const actionsDiv = nebulaProcess.messageElement?.querySelector(`.nebula-step-actions[data-step="${stepNumber}"]`);
-                const stopAutoBtn = actionsDiv?.querySelector('.nebula-stop-auto-btn');
-                if (stopAutoBtn) {
-                    stopAutoBtn.style.display = 'none';
-                    stopAutoBtn.disabled = true;
-                }
-            }
-        }
-
-        function disableAllNebulaStepActions() {
-            if (!nebulaProcess.messageElement) return;
-            const allConfirmBtns = nebulaProcess.messageElement.querySelectorAll('.nebula-confirm-btn');
-            const allRegenerateBtns = nebulaProcess.messageElement.querySelectorAll('.nebula-regenerate-btn');
-            const allStopAutoBtns = nebulaProcess.messageElement.querySelectorAll('.nebula-stop-auto-btn');
-            allConfirmBtns.forEach(btn => btn.disabled = true);
-            allRegenerateBtns.forEach(btn => btn.disabled = true);
-            allStopAutoBtns.forEach(btn => { btn.disabled = true; btn.style.display = 'none'; });
-        }
+        /* DEPRECATED NEBULA FUNCTIONS REMOVED */
         function updateSpectrumSearchButtonState(isOn) {
             useSpectrumSearch = isOn;
             if (spectrumSearchBtn) {
@@ -6106,7 +5751,6 @@
             const chatContainer = document.getElementById('chatContainer');
             const inputContainer = document.getElementById('inputContainer');
 
-            const problemSolvingUI = [document.getElementById('ai-mentor-panel'), document.getElementById('workspace-panel')];
             const forgeUI = document.getElementById('forge-container');
 
             const modeSelectorElem = document.getElementById('modeSelector');
@@ -6201,544 +5845,42 @@
             }
         }
 
-        function getNebulaStepTitle(stepNumber) { switch (stepNumber) { case 1: return "Planning"; case 2: return "Frontend Code"; case 3: return "Backend Code"; case 4: return "Verification"; default: return `Step ${stepNumber}`; } }
-        function getNebulaStepActionDescription(stepNumber) { switch (stepNumber) { case 1: return "Planning"; case 2: return "Frontend"; case 3: return "Backend"; case 4: return "Verification"; default: `Step ${stepNumber}`; } }
+        /* Additional deprecated Nebula functions removed (getNebulaStepTitle, displayNebulaStepOutput,
+           saveNebulaKeysAndContinue, _createAndAppendStepDiv, renderAllNebulaSteps, handleNebulaConfirm,
+           handleNebulaRegenerate, createNebulaMessageContainer, cleanupNebulaProcess, startNebulaProcess,
+           parsePlanAndSetupKeys, requestNebulaStep, updateNebulaButtonStates, handleNebulaCompletion) */
 
 
 
-        function displayNebulaStepOutput(stepNumber, markdownText) {
-            if (!nebulaProcess.messageElement) return;
-            const stepsContainer = nebulaProcess.messageElement.querySelector('.nebula-steps-container');
-            if (!stepsContainer) return;
+        /* DEPRECATED NEBULA CODE BLOCK REMOVED - All Nebula process management functions have been deleted */
 
-            let stepDiv = stepsContainer.querySelector(`.nebula-step-content[data-step="${stepNumber}"]`);
-            if (!stepDiv) {
-                stepDiv = document.createElement('div');
-                stepDiv.classList.add('nebula-step-content');
-                stepDiv.dataset.step = stepNumber;
-                stepsContainer.appendChild(stepDiv);
-            } else {
-                stepDiv.innerHTML = '';
-            }
 
-            const stepTitle = getNebulaStepTitle(stepNumber);
-            let stepHtml = "";
-            try {
-                stepHtml = marked.parse(String(markdownText || `(Waiting...)`));
-                stepHtml = wrapTables(stepHtml);
-            } catch (e) {
-                stepHtml = `<pre>Error parsing: ${escapeHtml(e.message)}\n\n${escapeHtml(String(markdownText || ''))}</pre>`;
-            }
 
-            stepDiv.innerHTML = `<h3>${stepTitle}</h3><div class="step-output">${stepHtml}</div>`;
 
-            if (stepNumber >= 1 && stepNumber <= 3 && !stepDiv.querySelector('.nebula-step-actions')) {
-                const actionsDiv = document.createElement('div');
-                actionsDiv.classList.add('nebula-step-actions');
-                actionsDiv.dataset.step = stepNumber;
-                actionsDiv.innerHTML = `
-            <button class="nebula-confirm-btn" onclick="handleNebulaConfirm(${stepNumber})" disabled>Confirm 👍</button>
-            <button class="nebula-regenerate-btn" onclick="handleNebulaRegenerate(${stepNumber})" disabled>Regen 🔄</button>
-            <button class="nebula-stop-auto-btn" onclick="handleStopAutoContinue(${stepNumber})" disabled style="display:none;" title="Cancel automatic continuation">Stop Auto ⏱️</button>
-        `;
-                stepDiv.appendChild(actionsDiv);
-            }
 
-            if (stepNumber === 1) {
-                const keysSectionRegex = /1\.\s+Required\s+API\s+Keys[\s\S]*?(?=2\.\s+HTML|## 2\.|Plain-Language Summary)/;
-                const keyNameRegex = /`([A-Z_]+)`/g;
-                const keysSectionMatch = markdownText.match(keysSectionRegex);
-                let requiredKeys = [];
 
-                if (keysSectionMatch && !/None/i.test(keysSectionMatch[0])) {
-                    let match;
-                    while ((match = keyNameRegex.exec(keysSectionMatch[0])) !== null) {
-                        requiredKeys.push(match[1]);
-                    }
-                }
 
-                if (requiredKeys.length > 0) {
-                    const actionsDiv = stepDiv.querySelector('.nebula-step-actions');
-                    if (actionsDiv) {
-                        const confirmBtn = actionsDiv.querySelector('.nebula-confirm-btn');
-                        if (confirmBtn) confirmBtn.disabled = true;
 
-                        const keyFormContainer = document.createElement('div');
-                        keyFormContainer.className = 'nebula-api-keys-form';
-                        keyFormContainer.style.cssText = 'margin-top: 15px; padding: 15px; border: 1px solid var(--nebula-msg-border); border-radius: 8px; background: rgba(0,0,0,0.1);';
 
-                        let formHTML = '<h4>API Keys Required</h4><p style="font-size: 0.85em; color: var(--secondary-text-color); margin-bottom: 10px;">Please provide the following keys to continue:</p>';
-                        requiredKeys.forEach(key => {
-                            formHTML += `
-                        <div style="margin-bottom: 10px;">
-                            <label for="key-input-${key}" style="display: block; margin-bottom: 3px; font-size: 0.9em;">${key}</label>
-                            <input type="password" id="key-input-${key}" name="${key}" placeholder="Enter your key here" style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--code-border); color: white; border-radius: 4px;">
-                        </div>
-                    `;
-                        });
-                        keyFormContainer.innerHTML = formHTML;
-                        stepDiv.insertBefore(keyFormContainer, actionsDiv);
+        /* ALL NEBULA FUNCTIONS REMOVED - Nebula feature deprecated */
 
-                        const saveKeysBtn = document.createElement('button');
-                        saveKeysBtn.textContent = 'Save Keys';
-                        saveKeysBtn.className = 'nebula-confirm-btn';
-                        saveKeysBtn.style.marginLeft = '10px';
-                        saveKeysBtn.onclick = () => saveNebulaKeysAndContinue(true);
-                        actionsDiv.appendChild(saveKeysBtn);
-                    }
-                }
-            }
 
-            const outputDiv = stepDiv.querySelector('.step-output');
-            if (outputDiv) {
-                processCodeBlocks(outputDiv);
-                setTimeout(() => {
-                    renderMath(outputDiv);
-                    addOutputCopyButton(nebulaProcess.messageElement);
-                    scrollToBottom();
-                }, 150);
-            } else {
-                scrollToBottom();
-            }
-        }
 
-        async function saveNebulaKeysAndContinue() {
-            if (!nebulaProcess.isActive || !nebulaProcess.messageElement) return;
 
-            const formContainer = nebulaProcess.messageElement.querySelector('.nebula-api-keys-form');
-            if (!formContainer) {
-                handleNebulaConfirm(1);
-                return;
-            }
 
-            const inputs = formContainer.querySelectorAll('input[type="password"]');
-            const apiKeys = {};
-            let allKeysProvided = true;
 
-            inputs.forEach(input => {
-                const keyName = input.name;
-                const keyValue = input.value.trim();
-                if (!keyValue) {
-                    allKeysProvided = false;
-                    input.style.borderColor = 'var(--nebula-regenerate-start)';
-                } else {
-                    input.style.borderColor = 'var(--code-border)';
-                }
-                apiKeys[keyName] = keyValue;
-            });
 
-            if (!allKeysProvided) {
-                setStatus("Please provide all required API keys.", true);
-                setTimeout(() => setStatus(currentStatusText, false), 3000);
-                return;
-            }
 
-            setStatus("Saving API keys...");
-            try {
-                const response = await fetch('/nebula/save_keys', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        processId: nebulaProcess.processId,
-                        api_keys: apiKeys
-                    })
-                });
 
-                const data = await response.json();
-                if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Failed to save keys on the server.');
-                }
 
-                formContainer.style.display = 'none';
-                handleNebulaConfirm(1);
 
-            } catch (err) {
-                setStatus(`Error saving keys: ${err.message}`, true);
-                setTimeout(() => setStatus(currentStatusText, false), 4000);
-            }
-        }
 
-        function _createAndAppendStepDiv(stepNumber, markdownText, stepsContainer) {
-            if (!markdownText) return;
 
-            const stepDiv = document.createElement('div');
-            stepDiv.classList.add('nebula-step-content');
-            stepDiv.dataset.step = stepNumber;
 
-            const stepTitle = getNebulaStepTitle(stepNumber);
-            let stepHtml = "";
-            try {
-                stepHtml = marked.parse(String(markdownText));
-                stepHtml = wrapTables(stepHtml);
-            } catch (e) {
-                stepHtml = `<p>Error rendering content.</p>`;
-            }
 
-            stepDiv.innerHTML = `<h3>${stepTitle}</h3><div class="step-output">${stepHtml}</div>`;
 
 
-            if (stepNumber >= 1 && stepNumber <= 3) {
-                const actionsDiv = document.createElement('div');
-                actionsDiv.classList.add('nebula-step-actions');
-                actionsDiv.dataset.step = stepNumber;
-                actionsDiv.innerHTML = `
-            <button class="nebula-confirm-btn" id="confirm-btn-step-${stepNumber}" onclick="handleNebulaConfirm(${stepNumber})" disabled>Confirm 👍</button>
-            <button class="nebula-regenerate-btn" id="regen-btn-step-${stepNumber}" onclick="handleNebulaRegenerate(${stepNumber})" disabled>Regen 🔄</button>
-            <button class="nebula-stop-auto-btn" id="stop-auto-btn-step-${stepNumber}" onclick="handleStopAutoContinue(${stepNumber})" disabled style="display:none;" title="Cancel the automatic continuation timer">Stop Auto ⏱️</button>
-        `;
-                stepDiv.appendChild(actionsDiv);
-            }
 
-            stepsContainer.appendChild(stepDiv);
-
-
-            const outputDiv = stepDiv.querySelector('.step-output');
-            if (outputDiv) {
-                if (stepNumber === 3) {
-                    outputDiv.querySelectorAll('pre > code').forEach(codeEl => {
-                        if (!/language-/.test(codeEl.className)) codeEl.classList.add('language-python');
-                    });
-                }
-                processCodeBlocks(outputDiv);
-                setTimeout(() => renderMath(outputDiv), 50);
-            }
-        }
-
-
-        function renderAllNebulaSteps() {
-            if (!nebulaProcess.messageElement) return;
-            const stepsContainer = nebulaProcess.messageElement.querySelector('.nebula-steps-container');
-            if (!stepsContainer) return;
-
-
-            stepsContainer.innerHTML = '';
-
-
-            _createAndAppendStepDiv(1, nebulaProcess.planOutput, stepsContainer);
-            _createAndAppendStepDiv(2, nebulaProcess.frontendOutput, stepsContainer);
-            _createAndAppendStepDiv(3, nebulaProcess.backendOutput, stepsContainer);
-            _createAndAppendStepDiv(4, nebulaProcess.verificationOutput, stepsContainer);
-
-
-            updateNebulaButtonStates();
-            addOutputCopyButton(nebulaProcess.messageElement);
-            scrollToBottom();
-        }
-
-        function handleNebulaConfirm(confirmedStepNumber) {
-            clearTimeout(nebulaAutoContinueTimerId); nebulaAutoContinueTimerId = null; if (!nebulaProcess.isActive || isProcessing || nebulaProcess.currentStep !== confirmedStepNumber) { setStatus("Cannot proceed.", true); setTimeout(() => setStatus(currentStatusText, false), 2500); return; }
-            disableAllNebulaStepActions(); const nextStep = confirmedStepNumber + 1; if (nextStep <= 4) { setStatus(`Nebula: Processing ${getNebulaStepTitle(nextStep)}...`); isProcessing = true; sendBtn.disabled = true; nebulaProcess.currentStep = nextStep; requestNebulaStep(nextStep); } else { cleanupNebulaProcess(true, "Internal error post-confirm."); }
-        }
-        function handleNebulaRegenerate(stepToRegenerate) {
-            clearTimeout(nebulaAutoContinueTimerId); nebulaAutoContinueTimerId = null; if (!nebulaProcess.isActive || isProcessing) { const msg = isProcessing ? "Cannot regen while processing." : "Nebula inactive."; setStatus(msg, true); setTimeout(() => setStatus(currentStatusText, false), 2500); return; }
-            disableAllNebulaStepActions(); showRegenerateModal(stepToRegenerate); setStatus(`Nebula: Awaiting regen feedback for ${getNebulaStepTitle(stepToRegenerate)}...`);
-        }
-        function createNebulaMessageContainer(processId) {
-            const msg = document.createElement("div"); msg.classList.add("message", "stellar-msg", "nebula-output"); msg.dataset.id = `nebula-output-${processId}`; const contentDiv = document.createElement("div"); contentDiv.classList.add("message-content"); contentDiv.innerHTML = `<h2>Nebula <span class="nebula-status">(Initializing...)</span></h2><div class="nebula-steps-container"></div><div class="nebula-final-summary"></div>`; msg.appendChild(contentDiv); if (messagesDiv) messagesDiv.appendChild(msg); addOutputCopyButton(msg); scrollToBottom(); return msg;
-        }
-        function cleanupNebulaProcess(showErrorStatus = false, errorMessage = null) {
-            toggleSendStopButtons(false);
-            clearTimeout(nebulaAutoContinueTimerId);
-            nebulaAutoContinueTimerId = null;
-            const wasActive = nebulaProcess.isActive;
-            isProcessing = false;
-            sendBtn.disabled = false;
-            const finalStatus = showErrorStatus ? (errorMessage ? `Nebula Error: ${errorMessage}` : "Nebula Error") : (wasActive ? "Nebula Finished" : "Idle");
-            setStatus(finalStatus, showErrorStatus);
-
-            if (nebulaProcess.messageElement) {
-                const statusSpan = nebulaProcess.messageElement.querySelector('.nebula-status');
-                if (statusSpan) {
-                    statusSpan.textContent = showErrorStatus ? `(Error)` : `(Finished)`;
-                }
-                if (showErrorStatus) {
-                    nebulaProcess.messageElement.style.borderColor = 'var(--nebula-regenerate-start)';
-                }
-                disableAllNebulaStepActions();
-                addOutputCopyButton(nebulaProcess.messageElement);
-            }
-
-            resetNebulaProcessState();
-
-            if (showErrorStatus) {
-                setTimeout(() => {
-                    const shouldBeIdle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0 && analysisProgressArea.childElementCount === 0;
-                    if (shouldBeIdle) setStatus("Idle");
-                }, 4000);
-            }
-
-            // FIX: Only switch mode if the process was actually active and is now finishing.
-            if (wasActive && currentMode === 'nebula') {
-                modeSelector.value = 'stellar';
-                handleModeChange();
-            }
-        }
-
-        async function startNebulaProcess(userQuery) {
-            console.log('startNebulaProcess: Function started. Received pendingFiles:', pendingFiles);
-            clearTimeout(nebulaAutoContinueTimerId); nebulaAutoContinueTimerId = null; isProcessing = true; nebulaProcess.isActive = true; sendBtn.disabled = true; nebulaProcess.userQuery = userQuery; nebulaProcess.processId = Date.now(); nebulaProcess.messageElement = createNebulaMessageContainer(nebulaProcess.processId); if (!nebulaProcess.messageElement) { cleanupNebulaProcess(true, "Failed container"); return; } nebulaProcess.currentStep = 1; disableAllNebulaStepActions(); requestNebulaStep(1);
-        }
-        function parsePlanAndSetupKeys(planMarkdown) {
-            const keysSectionRegex = /\*\*1\.\s+Required\s+API\s+Keys(?:.|\n)*?(\`[A-Z_]+\`|None)/g;
-            const keyNameRegex = /`([A-Z_]+)`/g;
-            nebulaProcess.pendingFiles = pendingFiles;
-
-            const keysMatch = planMarkdown.match(keysSectionRegex);
-            nebulaProcessState.requiredKeys = [];
-
-            if (keysMatch && !keysMatch.includes('None')) {
-                let keyNameMatch;
-                while ((keyNameMatch = keyNameRegex.exec(keysMatch)) !== null) {
-                    nebulaProcessState.requiredKeys.push(keyNameMatch);
-                }
-            }
-
-            const summaryDiv = nebulaProcess.messageElement.querySelector('.nebula-final-summary');
-            summaryDiv.innerHTML = '';
-
-            if (nebulaProcessState.requiredKeys.length > 0) {
-                const keyForm = document.createElement('div');
-                keyForm.id = 'nebula-keys-form';
-                keyForm.style.marginTop = '20px';
-                keyForm.innerHTML = '<h4>API Keys Required</h4>';
-
-                nebulaProcessState.requiredKeys.forEach(key => {
-                    keyForm.innerHTML += `
-                <div style="margin-top: 10px;">
-                    <label for="key-${key}" style="display: block; margin-bottom: 5px;">${key}</label>
-                    <input type="password" id="key-${key}" name="${key}" style="width: 100%; padding: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--code-border); color: white; border-radius: 4px;">
-                </div>
-            `;
-                });
-                summaryDiv.appendChild(keyForm);
-            }
-        }
-        async function requestNebulaStep(stepNumber, isRegeneration = false, regenerationFeedback = null) {
-            if (!nebulaProcess.isActive) return;
-
-            const stepTitle = getNebulaStepTitle(stepNumber);
-            setStatus(`Nebula: ${isRegeneration ? 'Regenerating' : 'Processing'} ${stepTitle}...`);
-            disableAllNebulaStepActions();
-            isProcessing = true;
-            sendBtn.disabled = true;
-
-            const payload = {
-                processId: nebulaProcess.processId,
-                step: stepNumber,
-                model_id: modelSelect.value,
-                regenerate: isRegeneration,
-                context: {
-                    query: nebulaProcess.userQuery,
-                    chat_id: currentChatId,
-                    step1: nebulaProcess.planOutput,
-                    step2: nebulaProcess.frontendOutput,
-                    step3: nebulaProcess.backendOutput,
-                    regeneration_feedback: regenerationFeedback,
-                    // This line correctly sends the file list during step 1
-                    pending_files: stepNumber === 1 ? nebulaProcess.pendingFiles : []
-                }
-            };
-
-            try {
-                const response = await fetch("/nebula/step", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", 'Accept': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await response.json();
-
-                if (!response.ok || data.error) {
-                    throw new Error(data.error || `HTTP error! status: ${response.status}`);
-                }
-
-                const output = data.output || `(No output received for Step ${stepNumber})`;
-
-                switch (stepNumber) {
-                    case 1: nebulaProcess.planOutput = output; break;
-                    case 2: nebulaProcess.frontendOutput = output; break;
-                    case 3: nebulaProcess.backendOutput = output; break;
-                    case 4: nebulaProcess.verificationOutput = output; break;
-                }
-
-                displayNebulaStepOutput(stepNumber, output);
-                isProcessing = false;
-
-                if (data.status === 'nebula_complete') {
-                    handleNebulaCompletion(data);
-                } else if (stepNumber < 4) {
-                    nebulaProcess.currentStep = stepNumber;
-                    setStatus(`Nebula: Confirm ${getNebulaStepTitle(stepNumber)}...`);
-                    sendBtn.disabled = true;
-                    updateNebulaButtonStates();
-                }
-
-            } catch (err) {
-                cleanupNebulaProcess(true, `Error in ${stepTitle}: ${err.message}`);
-            }
-        } function updateNebulaButtonStates() {
-            clearTimeout(nebulaAutoContinueTimerId);
-            nebulaAutoContinueTimerId = null;
-
-            if (!nebulaProcess.messageElement || !nebulaProcess.isActive) {
-                disableAllNebulaStepActions();
-                return;
-            }
-
-            const stepsContainer = nebulaProcess.messageElement.querySelector('.nebula-steps-container');
-            if (!stepsContainer) return;
-
-            let canAutoContinue = false;
-
-            for (let i = 1; i <= 3; i++) {
-                const actionsDiv = stepsContainer.querySelector(`.nebula-step-actions[data-step="${i}"]`);
-                const stepOutputDiv = stepsContainer.querySelector(`.nebula-step-content[data-step="${i}"]`);
-                if (!actionsDiv || !stepOutputDiv) continue;
-
-                const confirmBtn = actionsDiv.querySelector('.nebula-confirm-btn');
-                const regenerateBtn = actionsDiv.querySelector('.nebula-regenerate-btn');
-                const stopAutoBtn = actionsDiv.querySelector('.nebula-stop-auto-btn');
-                if (!confirmBtn || !regenerateBtn || !stopAutoBtn) continue;
-
-                let stepOutputExists = false;
-                switch (i) {
-                    case 1: stepOutputExists = !!nebulaProcess.planOutput; break;
-                    case 2: stepOutputExists = !!nebulaProcess.frontendOutput; break;
-                    case 3: stepOutputExists = !!nebulaProcess.backendOutput; break;
-                }
-
-                regenerateBtn.disabled = !(stepOutputExists && nebulaProcess.isActive && !isProcessing);
-
-                const canConfirm = (i === nebulaProcess.currentStep) && stepOutputExists && nebulaProcess.isActive && !isProcessing;
-                const apiKeyFormExists = !!stepOutputDiv.querySelector('.nebula-api-keys-form');
-
-                confirmBtn.disabled = !canConfirm || apiKeyFormExists;
-
-                if (canConfirm && !apiKeyFormExists) {
-                    canAutoContinue = true;
-                }
-
-                stopAutoBtn.style.display = 'none';
-                stopAutoBtn.disabled = true;
-            }
-
-            const currentStepActionsDiv = stepsContainer.querySelector(`.nebula-step-actions[data-step="${nebulaProcess.currentStep}"]`);
-
-            if (canAutoContinue && currentStepActionsDiv) {
-                const stopAutoBtnForCurrentStep = currentStepActionsDiv.querySelector('.nebula-stop-auto-btn');
-                nebulaAutoContinueTimerId = setTimeout(() => {
-                    if (nebulaProcess.isActive && !isProcessing) {
-                        handleNebulaConfirm(nebulaProcess.currentStep);
-                    }
-                }, NEBULA_AUTO_CONTINUE_TIMEOUT);
-
-                if (stopAutoBtnForCurrentStep) {
-                    stopAutoBtnForCurrentStep.style.display = 'inline-block';
-                    stopAutoBtnForCurrentStep.disabled = false;
-                }
-            }
-        }
-
-
-
-        function handleNebulaCompletion(data) {
-            if (!nebulaProcess.isActive || !nebulaProcess.messageElement) return;
-
-            const summaryDiv = nebulaProcess.messageElement.querySelector('.nebula-final-summary');
-            const statusSpan = nebulaProcess.messageElement.querySelector('.nebula-status');
-            if (statusSpan) statusSpan.textContent = `(Completed)`;
-            if (summaryDiv) summaryDiv.innerHTML = '';
-
-            const finalVerificationOutput = data.output || nebulaProcess.verificationOutput || "(Verification report not available)";
-            displayNebulaStepOutput(4, finalVerificationOutput);
-
-            if (summaryDiv && data.report_url) {
-                const reportLink = document.createElement('a');
-                reportLink.href = data.report_url;
-                reportLink.textContent = "Download Full Report (MD)";
-                reportLink.className = "nebula-download-btn";
-                reportLink.style.display = "inline-block";
-                reportLink.style.marginTop = "15px";
-                summaryDiv.appendChild(reportLink);
-            }
-
-            scrollToBottom();
-
-            // FIX: This is the most critical part. Update the message element's ID
-            // from the temporary one to the permanent one from the database.
-            const finalProcessId = data.message_id;
-            if (finalProcessId && nebulaProcess.messageElement) {
-                nebulaProcess.messageElement.dataset.id = `nebula-output-${finalProcessId}`;
-            }
-
-            // FIX: Call the correct cleanup function without an error flag.
-            cleanupStream(false, null, null);
-            setStatus("Nebula: Complete.", false);
-
-            // FIX: Enable regenerate buttons but keep confirm buttons disabled.
-            enableRegenButtonsForCompletedNebula(nebulaProcess.messageElement);
-
-            // FIX: Reset the state *after* all UI updates are complete.
-            resetNebulaProcessState();
-        }
-
-        async function saveNebulaKeysAndContinue(continueToNextStep = true, processIdOverride = null) {
-            const currentProcessId = processIdOverride || nebulaProcess.processId;
-            if (!currentProcessId) return;
-
-            const messageElement = document.querySelector(`.nebula-output[data-id="nebula-output-${currentProcessId}"]`);
-            if (!messageElement) return;
-
-            const formContainer = messageElement.querySelector('.nebula-api-keys-form');
-            if (!formContainer) {
-                if (continueToNextStep) handleNebulaConfirm(1);
-                return;
-            }
-
-            const inputs = formContainer.querySelectorAll('input[type="password"]');
-            const apiKeys = {};
-            let allKeysProvided = true;
-
-            inputs.forEach(input => {
-                const keyName = input.name;
-                const keyValue = input.value.trim();
-                if (!keyValue) allKeysProvided = false;
-                apiKeys[keyName] = keyValue;
-            });
-
-            if (!allKeysProvided) {
-                setStatus("Please provide all required API keys.", true);
-                inputs.forEach(input => {
-                    if (!input.value.trim()) input.style.borderColor = 'var(--nebula-regenerate-start)';
-                });
-                setTimeout(() => setStatus(currentStatusText, false), 3000);
-                return;
-            }
-
-            setStatus("Saving API keys...");
-            try {
-                const response = await fetch('/api/user/api_keys', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ api_keys: apiKeys })
-                });
-                const data = await response.json();
-                if (!response.ok || !data.success) throw new Error(data.error || 'Failed to save keys.');
-
-                setStatus("API Keys saved successfully.", false);
-                formContainer.style.border = '1px solid var(--nebula-confirm-start)';
-
-                if (continueToNextStep) {
-                    handleNebulaConfirm(1);
-                } else {
-                    const updateBtn = formContainer.querySelector('.update-keys-btn');
-                    if (updateBtn) updateBtn.style.display = 'none';
-                }
-
-            } catch (err) {
-                setStatus(`Error saving keys: ${err.message}`, true);
-                setTimeout(() => setStatus(currentStatusText, false), 4000);
-            }
-        }
 
         function downloadHtml(contentToDownload, currentWidth = 900) { if (!contentToDownload) { setStatus("No content.", true); setTimeout(() => setStatus(currentStatusText), 2000); return; } setStatus("Preparing download..."); const styles = ` body { font-family: 'Poppins', sans-serif; line-height: 1.7; color: #333; background-color: #f0f2f5; margin: 0; padding: 20px; } .main-content-wrapper { background-color: #fdfdff; border: 1px solid #eee; padding: 30px; margin: 0 auto; max-width: ${currentWidth}px; } h1, h2, h3, h4, h5, h6 { color: #302b63; margin-top: 1.5em; margin-bottom: 0.5em; } h1 { font-size: 2em; border-bottom: 1px solid #ddd; padding-bottom: 0.3em;} h2 { font-size: 1.6em; } h3 { font-size: 1.3em; } p { margin: 1em 0; } a { color: #7b61ff; text-decoration: none; } a:hover { text-decoration: underline; } pre { background-color: #f0f0f0; padding: 15px; border-radius: 4px; overflow-x: auto; border: 1px solid #ddd; color: #333; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; line-height: 1.6; } code { font-family: monospace; background-color: #eee; padding: 0.2em 0.4em; border-radius: 3px; } pre > code { background-color: transparent; padding: 0; border: none; } .table-wrapper { overflow-x: auto; max-width: 100%; margin: 1em 0; border: 1px solid #ccc; border-radius: 4px; } table { border-collapse: collapse; width: 100%; margin: 0; border: none; } th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; word-break: break-word; border-width: 0 0 1px 0; } tr td:first-child, tr th:first-child { border-left: none; } tr td:last-child, tr th:last-child { border-right: none; } tr:last-child td { border-bottom: none; } th { background-color: #f2f2f2; font-weight: 600; } ul, ol { margin-left: 2em; margin-bottom: 1em; } blockquote { border-left: 4px solid #ccc; padding-left: 1em; margin-left: 0; color: #666; } .katex { font-size: 1.1em; } .katex-display { display: block; text-align: center; margin: 1em 0; } .katex-display > .katex { display: inline-block; text-align: initial; } .dl-header, .dl-footer { padding: 10px 30px; max-width: ${currentWidth}px; margin: 20px auto; font-size: 0.9em; color: #555; text-align: center; } .dl-header { border-bottom: 1px dashed #ccc; } .dl-footer { border-top: 1px dashed #ccc; margin-top: 30px; } `; const filenameBase = (lastRefinedQuery || "stellar_research").substring(0, 50).replace(/[^a-z0-9_\-\.]/gi, '_').toLowerCase(); const html = `<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <title>Stellar Research: ${filenameBase}</title> <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" crossorigin="anonymous"> <style>${styles}</style> </head> <body> <div class="dl-header"> <h1>Stellar Research Paper</h1> <p>Generated: ${new Date().toLocaleString()}</p> ${lastRefinedQuery ? `<p>Query: "${escapeHtml(lastRefinedQuery)}"</p>` : ''} </div> <div class="main-content-wrapper"> ${contentToDownload} </div> <div class="dl-footer"> <p>Stellar AI.</p> </div> </body> </html>`; try { const blob = new Blob([html], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${filenameBase}.html`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setStatus(currentStatusText); } catch (e) { setStatus("Download failed.", true); appendStellarMessage("DL err.", Date.now() + '_dl_err'); setTimeout(() => setStatus(currentStatusText), 3000); } }
 
@@ -8755,20 +7897,7 @@
             checkAuthStatus();
             initializeCodeEditor();
 
-            // Setup for Problem Solving mode
-            document.getElementById('codelabRunBtn')?.addEventListener('click', () => handleCodeExecution('run'));
-            document.getElementById('codelabSubmitBtn')?.addEventListener('click', () => handleCodeExecution('submit'));
-            document.getElementById('codelabExplainBtn')?.addEventListener('click', () => handleAIAssist('explain'));
-            document.getElementById('codelabDebugBtn')?.addEventListener('click', () => handleAIAssist('debug'));
-            document.getElementById('codelabOptimizeBtn')?.addEventListener('click', () => handleAIAssist('optimize'));
-            document.getElementById('generateProblemForm')?.addEventListener('submit', handleGenerateProblem);
-            document.getElementById('loadRandomProblemBtn')?.addEventListener('click', () => loadCodeLabProblem());
-            document.getElementById('newProblemBtn')?.addEventListener('click', showProblemGenerator);
             document.getElementById('codelabLanguageSelector')?.addEventListener('change', handleLanguageChange);
-            document.querySelector('#problem-generation-container > h3')?.addEventListener('click', (e) => {
-                const container = e.target.parentElement;
-                if (container) container.classList.toggle('expanded');
-            });
 
             // Setup for Stellar Forge mode
             setupForgeUI();
@@ -9279,285 +8408,20 @@
         }
         if (stopBtn) stopBtn.addEventListener('click', handleStopGeneration);
 
-        let currentCodeLabProblem = null; // To store the current problem details
 
-        function handleCodeExecution(runType) {
-            if (!codeLabEditor) {
-                alert("Editor not initialized.");
-                return;
-            }
-            // MODIFIED: Only check for a loaded problem on 'submit'
-            if (runType === 'submit' && !currentCodeLabProblem) {
-                alert("A problem must be loaded from the database to use the 'Submit' button.");
-                return;
-            }
-
-            const code = codeLabEditor.getValue();
-            const language = document.getElementById('codelabLanguageSelector').value;
-            const outputPanel = document.getElementById('codelab-output-panel');
-            const runBtn = document.getElementById('codelabRunBtn');
-            const submitBtn = document.getElementById('codelabSubmitBtn');
-
-            outputPanel.innerHTML = 'Running...';
-            runBtn.disabled = true;
-            submitBtn.disabled = true;
-
-            const payload = {
-                problem_id: currentCodeLabProblem ? currentCodeLabProblem.id : null,
-                code: code,
-                language: language,
-                run_type: runType
-            };
-
-            fetch('/codelab/submit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-                .then(response => {
-                    if (!response.ok) {
-                        return response.json().then(err => { throw new Error(err.error || 'Server error'); });
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    let outputHtml = `<strong>${escapeHtml(data.final_summary || data.status)}</strong><hr style="border-color: var(--input-border); margin: 10px 0;">`;
-
-                    // Case 1: Test harness results (from Submit or Run with tests)
-                    if (data.results && data.results.length > 0) {
-                        data.results.forEach(res => {
-                            const statusClass = res.status === 'passed' ? 'color: var(--nebula-confirm-start);' : 'color: var(--nebula-regenerate-start);';
-                            outputHtml += `<div style="margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid var(--input-border);">`;
-                            outputHtml += `<p style="${statusClass}">Test Case #${res.id}: <strong>${res.status.toUpperCase()}</strong></p>`;
-                            if (res.status !== 'passed') {
-                                outputHtml += `<small>Input:</small><pre><code>${escapeHtml(JSON.stringify(res.input))}</code></pre>`;
-                                outputHtml += `<small>Expected:</small><pre><code>${escapeHtml(JSON.stringify(res.expected))}</code></pre>`;
-                                outputHtml += `<small>Got:</small><pre><code>${escapeHtml(JSON.stringify(res.actual))}</code></pre>`;
-                            }
-                            if (res.message) {
-                                outputHtml += `<p>Error: ${escapeHtml(res.message)}</p>`;
-                            }
-                            outputHtml += `</div>`;
-                        });
-                    }
-                    // Case 2: Raw output (from a simple Run)
-                    else if (data.raw_output) {
-                        outputHtml += `<pre><code>${escapeHtml(data.raw_output)}</code></pre>`;
-                    }
-                    // Case 3: Raw error (from a simple Run that failed)
-                    else if (data.raw_error) {
-                        outputHtml += `<pre><code style="color: var(--nebula-regenerate-start);">${escapeHtml(data.raw_error)}</code></pre>`;
-                    }
-                    // Case 4: Import Error from harness
-                    else if (data.status === 'Import Error' && data.results && data.results[0]?.message) {
-                        outputHtml += `<pre><code style="color: var(--nebula-regenerate-start);">${escapeHtml(data.results[0].message)}</code></pre>`;
-                    }
-
-                    outputPanel.innerHTML = outputHtml;
-                })
-                .catch(error => {
-                    outputPanel.innerHTML = `<strong style="color: var(--nebula-regenerate-start);">Execution Failed:</strong><br><pre><code>${escapeHtml(error.message)}</code></pre>`;
-                })
-                .finally(() => {
-                    runBtn.disabled = false;
-                    submitBtn.disabled = false;
-                });
-        }
-
-        function handleAIAssist(assistType) {
-            if (!codeLabEditor) { return; }
-            const code = codeLabEditor.getValue();
-            if (!code.trim()) {
-                alert("There is no code to analyze.");
-                return;
-            }
-
-            const mentorScroller = document.getElementById('mentor-content-scroller');
-            const assistContainer = document.getElementById('ai-assist-responses-container');
-            const outputPanel = document.getElementById('codelab-output-panel');
-            const aiButtons = document.querySelectorAll('.codelab-ai-btn');
-
-            aiButtons.forEach(btn => btn.disabled = true);
-
-            const payload = {
-                assist_type: assistType,
-                code: code,
-                problem_context: currentCodeLabProblem ? currentCodeLabProblem.description : "A general coding question.",
-                error_message: outputPanel.textContent,
-                test_case_context: ''
-            };
-
-            const responseContainer = document.createElement('div');
-            responseContainer.className = 'ai-mentor-response';
-            responseContainer.innerHTML = '<p><em>Stellar is thinking...</em></p>';
-
-            // Correctly append to the container INSIDE the scroller
-            assistContainer.appendChild(responseContainer);
-            mentorScroller.scrollTop = mentorScroller.scrollHeight;
-
-            let fullContent = '';
-
-            fetch('/codelab/assist', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Server error: ${response.statusText}`);
-                    }
-                    const reader = response.body.getReader();
-                    const decoder = new TextDecoder();
-                    let buffer = '';
-
-                    function processText({ done, value }) {
-                        if (done) {
-                            renderFinalAIResponse();
-                            return;
-                        }
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split('\n\n');
-                        buffer = lines.pop();
-
-                        lines.forEach(line => {
-                            if (line.startsWith('data: ')) {
-                                try {
-                                    const data = JSON.parse(line.substring(6));
-                                    if (data.status) {
-                                        responseContainer.innerHTML = `<p><em>${escapeHtml(data.status)}</em></p>`;
-                                    }
-                                    if (data.content) {
-                                        fullContent += data.content;
-                                    }
-                                    if (data.error) {
-                                        fullContent = `<p style="color: var(--nebula-regenerate-start);">Error: ${escapeHtml(data.error)}</p>`;
-                                    }
-                                } catch (e) {
-                                    console.error('Error parsing stream data:', e);
-                                }
-                            }
-                        });
-                        return reader.read().then(processText);
-                    }
-                    return reader.read().then(processText);
-                })
-                .catch(err => {
-                    fullContent = `<p style="color: var(--nebula-regenerate-start);">Error: Could not connect to AI assistant. ${err.message}</p>`;
-                    renderFinalAIResponse();
-                });
-
-            function renderFinalAIResponse() {
-                let htmlContent = marked.parse(fullContent);
-                htmlContent = wrapTables(htmlContent);
-                responseContainer.innerHTML = htmlContent;
-                processCodeBlocks(responseContainer);
-                renderMath(responseContainer);
-                mentorScroller.scrollTop = mentorScroller.scrollHeight;
-                aiButtons.forEach(btn => btn.disabled = false);
-            }
-        }
+        /* DEPRECATED CODELAB PROBLEM SOLVING CODE REMOVED - Problem solving functions have been deleted */
 
 
 
-        async function loadCodeLabProblem(problemId = null) {
-            const mentorPanel = document.getElementById('ai-mentor-panel');
-            if (!mentorPanel) return;
 
-            const problemDisplay = document.getElementById('problem-display-container');
-            const generationContainer = document.getElementById('problem-generation-container');
 
-            problemDisplay.innerHTML = '<p>Loading problem...</p>';
-            generationContainer.style.display = 'none'; // Hide form while loading
 
-            try {
-                const payload = problemId ? { problem_id: problemId } : {};
-                const response = await fetch('/codelab/problem', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
 
-                if (!response.ok) {
-                    const errData = await response.json();
-                    throw new Error(errData.error || `Server responded with status ${response.status}`);
-                }
 
-                const data = await response.json();
-                renderProblem(data.problem, data.test_cases);
 
-            } catch (error) {
-                problemDisplay.innerHTML = `<p style="color: var(--nebula-regenerate-start);">Failed to load problem: ${error.message}</p><p>You can generate a new one below.</p>`;
-                generationContainer.style.display = 'block'; // Show form on error
-                console.error("CodeLab Error:", error);
-            }
-        }
 
-        function renderProblem(problem, testCases) {
-            currentCodeLabProblem = problem;
-            const mentorPanel = document.getElementById('ai-mentor-panel');
-            const problemDisplay = document.getElementById('problem-display-container');
-            const generationContainer = document.getElementById('problem-generation-container');
-            const newProblemBtn = document.getElementById('newProblemBtn');
 
-            if (!mentorPanel || !problemDisplay || !generationContainer || !newProblemBtn) return;
 
-            generationContainer.style.display = 'none';
-            newProblemBtn.style.display = 'block';
-
-            const tagsHtml = problem.topic_tags
-                ? `<div class="codelab-topic-tags">Tags: ${escapeHtml(problem.topic_tags)}</div>`
-                : '';
-
-            let descriptionHtml = marked.parse(problem.description || "");
-
-            let testCasesHtml = '<h3>Examples</h3>';
-            if (testCases && testCases.length > 0) {
-                testCases.forEach((tc, index) => {
-                    let formattedInput = '';
-                    // This logic now correctly handles different data types from the server
-                    if (typeof tc.input_data === 'object' && tc.input_data !== null && !Array.isArray(tc.input_data)) {
-                        formattedInput = Object.entries(tc.input_data)
-                            .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
-                            .join(', ');
-                    } else {
-                        formattedInput = JSON.stringify(tc.input_data);
-                    }
-
-                    // This ensures the output is always displayed as a string
-                    const formattedOutput = JSON.stringify(tc.expected_output);
-
-                    testCasesHtml += `
-                <div class="codelab-test-case">
-                    <strong>Example ${index + 1}:</strong>
-                    <div style="margin-top: 8px; padding-left: 10px;">
-                        <p><strong>Input:</strong> <code style="background-color: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">${escapeHtml(formattedInput)}</code></p>
-                        <p><strong>Output:</strong> <code style="background-color: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">${escapeHtml(formattedOutput)}</code></p>
-                    </div>
-                </div>
-            `;
-                });
-            } else {
-                testCasesHtml += '<p>No visible test cases provided.</p>';
-            }
-
-            problemDisplay.innerHTML = `
-        <div class="codelab-problem-title">${escapeHtml(problem.title)}</div>
-        <div class="codelab-problem-meta">
-            <span class="codelab-difficulty-tag ${escapeHtml(problem.difficulty)}">${escapeHtml(problem.difficulty)}</span>
-            ${tagsHtml}
-        </div>
-        <div class="codelab-problem-description">
-            ${descriptionHtml}
-            ${testCasesHtml}
-        </div>
-    `;
-
-            problemDisplay.querySelectorAll('pre code').forEach(block => {
-                if (typeof hljs !== 'undefined') {
-                    hljs.highlightElement(block);
-                }
-            });
-        }
         let codeLabEditor = null;
 
         function initializeCodeEditor() {
@@ -9583,53 +8447,8 @@
                 });
             }
         }
-        async function handleGenerateProblem(event) {
-            event.preventDefault();
-            const input = document.getElementById('problemRequestInput');
-            const userRequest = input.value.trim();
-            if (!userRequest) {
-                alert("Please describe the kind of problem you want to generate.");
-                return;
-            }
 
-            const genBtn = document.getElementById('generateProblemBtn');
-            const randBtn = document.getElementById('loadRandomProblemBtn');
-            const problemDisplay = document.getElementById('problem-display-container');
 
-            genBtn.disabled = true;
-            randBtn.disabled = true;
-            problemDisplay.innerHTML = '<p><em>Stellar is generating a new problem... this may take a moment.</em></p>';
-
-            try {
-                const response = await fetch('/codelab/generate_problem', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_request: userRequest })
-                });
-                const data = await response.json();
-                if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Failed to generate problem.');
-                }
-
-                // Now load the newly created problem
-                await loadCodeLabProblem(data.new_problem_id);
-
-            } catch (error) {
-                problemDisplay.innerHTML = `<p style="color: var(--nebula-regenerate-start);">Error generating problem: ${error.message}</p>`;
-            } finally {
-                genBtn.disabled = false;
-                randBtn.disabled = false;
-                input.value = '';
-            }
-        }
-
-        function showProblemGenerator() {
-            document.getElementById('problem-display-container').innerHTML = '';
-            document.getElementById('ai-assist-responses-container').innerHTML = ''; // This now correctly clears the container
-            document.getElementById('problem-generation-container').style.display = 'block';
-            document.getElementById('newProblemBtn').style.display = 'none';
-            currentCodeLabProblem = null;
-        }
         function renderLivePreview() {
             if (currentMode !== 'codelab' || document.getElementById('codelabLanguageSelector').value !== 'html') return;
 
@@ -9643,21 +8462,16 @@
         function handleLanguageChange() {
             const language = document.getElementById('codelabLanguageSelector').value;
             const workspacePanel = document.getElementById('workspace-panel');
-            const mentorPanel = document.getElementById('ai-mentor-panel');
-            const aiButtons = document.querySelectorAll('#codelabExplainBtn, #codelabDebugBtn, #codelabOptimizeBtn');
 
             if (language === 'html') {
                 workspacePanel.classList.add('html-mode-active');
-                mentorPanel.classList.add('html-view-active'); // Add class to shrink generator
                 if (codeLabEditor.getOption("mode") !== "htmlmixed") {
                     codeLabEditor.setValue('<!DOCTYPE html>\n<html>\n<head>\n    <title>My Page</title>\n    <style>\n        body { font-family: sans-serif; color: #333; }\n    </style>\n</head>\n<body>\n    <h1>Hello, Stellar!</h1>\n    <p>Start coding to see your changes live.</p>\n</body>\n</html>');
                     codeLabEditor.setOption("mode", "htmlmixed");
                 }
-                aiButtons.forEach(btn => btn.disabled = false); // **THIS LINE IS THE FIX**
                 renderLivePreview();
             } else {
                 workspacePanel.classList.remove('html-mode-active');
-                mentorPanel.classList.remove('html-view-active'); // Remove class to restore generator size
                 if (codeLabEditor.getOption("mode") !== language) {
                     codeLabEditor.setOption("mode", language);
                     if (language === 'python') {
@@ -9666,7 +8480,6 @@
                         codeLabEditor.setValue(`// Start coding in ${language}`);
                     }
                 }
-                aiButtons.forEach(btn => btn.disabled = false);
             }
         }
 
