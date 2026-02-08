@@ -3464,7 +3464,7 @@ class OrphanContainerMonitor:
                     if created_ts_str:
                         try:
                             created_ts = float(created_ts_str)
-                            if current_time - created_ts < 60 * 60 * 60:
+                            if current_time - created_ts < 60 * 60:
                                 # Grace period for startup
                                 continue
                         except ValueError:
