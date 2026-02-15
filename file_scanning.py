@@ -175,7 +175,9 @@ class FileAnalyzer:
         self.session_id = session_id
         
         file_scan_keys_str = os.getenv("FILE_SCANNING_GEMINI_KEYS", "")
-        primary_keys = [key.strip() for key in file_scan_keys_str.split(',') if key.strip()]
+        scan_keys = [key.strip() for key in file_scan_keys_str.split(',') if key.strip()]
+        
+        primary_key = os.getenv("PRIMARY_API_KEY")
         
         backup_keys = []
         for i in range(1, 10):
@@ -183,10 +185,19 @@ class FileAnalyzer:
             if key:
                 backup_keys.append(key.strip())
 
-        self.api_keys = primary_keys + backup_keys
+        self.api_keys = []
+        if primary_key:
+            self.api_keys.append(primary_key.strip())
+            
+        self.api_keys.extend(scan_keys)
+        self.api_keys.extend(backup_keys)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        self.api_keys = [x for x in self.api_keys if not (x in seen or seen.add(x))]
         
         if not self.api_keys:
-            raise ValueError("FileAnalyzer requires API keys. Set FILE_SCANNING_GEMINI_KEYS and/or BACKUP_API_KEY_... in your .env file.")
+            raise ValueError("FileAnalyzer requires API keys. Set PRIMARY_API_KEY, FILE_SCANNING_GEMINI_KEYS and/or BACKUP_API_KEY_... in your .env file.")
         
         self.max_generate_retries = len(self.api_keys)
         self.api_key_cycle = itertools.cycle(self.api_keys)

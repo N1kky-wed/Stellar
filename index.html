@@ -182,6 +182,27 @@
             text-align: center;
         }
 
+        #forgeHistoryList::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        #forgeHistoryList::-webkit-scrollbar-track {
+            background: var(--scrollbar-track-bg);
+            border-radius: 0px;
+        }
+        
+        #forgeHistoryList::-webkit-scrollbar-thumb {
+            background: linear-gradient(var(--scrollbar-thumb-start), var(--scrollbar-thumb-end));
+            border-radius: 10px;
+            border: 1px solid var(--scrollbar-thumb-border);
+        }
+        
+        #forgeHistoryList::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(var(--scrollbar-thumb-hover-start), var(--scrollbar-thumb-hover-end));
+            border: 1px solid var(--scrollbar-thumb-hover-border);
+        }
+
         .code-output-container {
             margin-top: -1.2em;
             padding-top: 10px;
@@ -3961,7 +3982,8 @@
                 </form>
             </div>
             <div class="auth-card-footer">
-                <p id="authFooterText">Don't have an account? <a id="authLink">Sign up</a></p>
+                <p id="authFooterText">Don't have an account? <span style="opacity: 0.5; cursor: not-allowed;">Sign up</span></p>
+                <p style="margin-top: 0.5rem; font-size: 0.9rem; color: #666;">Under closed testing. Contact <a href="mailto:nikhil080905@gmail.com">admin</a> for beta access.</p>
             </div>
         </div>
     </div>
@@ -7691,7 +7713,9 @@
 
                     document.getElementById('authLink').addEventListener('click', toggleForms);
                 }
-                authLink.addEventListener('click', toggleForms);
+                if (authLink) {
+                    authLink.addEventListener('click', toggleForms);
+                }
 
 
                 authTitle.innerHTML = `<span id="titleText"></span><span class="text-cursor"> </span>`;

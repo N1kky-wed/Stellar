@@ -1,0 +1,66 @@
+import os
+import requests
+import logging
+import threading
+import time
+
+logger = logging.getLogger(__name__)
+
+class TelegramBot:
+    def __init__(self, token=None, default_chat_id=None):
+        self.token = token or os.getenv("TELEGRAM_BOT_TOKEN")
+        self.base_url = f"https://api.telegram.org/bot{self.token}"
+        self.chat_id = default_chat_id or os.getenv("TELEGRAM_ADMIN_CHAT_ID")
+
+    def get_updates(self):
+        if not self.token:
+            return None
+        try:
+            url = f"{self.base_url}/getUpdates"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get Telegram updates: {e}")
+            return None
+
+    def _discover_chat_id(self):
+        # First check if we already have it
+        if self.chat_id:
+            return self.chat_id
+
+        updates = self.get_updates()
+        if updates and updates.get("ok"):
+            results = updates.get("result", [])
+            if results:
+                # Take the most recent chat ID from a private message
+                for update in reversed(results):
+                    if "message" in update and "chat" in update["message"] and update["message"]["chat"]["type"] == "private":
+                         self.chat_id = str(update["message"]["chat"]["id"])
+                         logger.info(f"Discovered Telegram Chat ID: {self.chat_id}")
+                         return self.chat_id
+        return None
+
+    def send_message(self, text):
+        if not self.token:
+             logger.warning("Telegram token not set. Skipping message.")
+             return
+
+        if not self.chat_id:
+            self._discover_chat_id()
+        
+        if not self.chat_id:
+            logger.warning("Telegram Chat ID not found. Please message the bot @stellaraiforge_bot to initialize notifications.")
+            return
+
+        try:
+            url = f"{self.base_url}/sendMessage"
+            payload = {
+                "chat_id": self.chat_id,
+                "text": text
+            }
+            response = requests.post(url, json=payload, timeout=10)
+            response.raise_for_status()
+            logger.info(f"Telegram message sent to {self.chat_id}")
+        except Exception as e:
+            logger.error(f"Failed to send Telegram message: {e}")

@@ -47,37 +47,84 @@ try:
 except Exception as e:
     logging.error(f"Could not connect to Docker daemon on startup. Please ensure Docker is running. Code execution will fail. Error: {e}")
 
+from telegram_bot import TelegramBot
+
+telegram_bot = TelegramBot()
+
 def send_login_notification(username, is_new_user=False):
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-    twilio_phone = os.getenv("TWILIO_PHONE_NUMBER")
-    my_phone = os.getenv("MY_PHONE_NUMBER")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+    message_body = f"🚀 New User Registration on Stellar!\nUsername: {username}\nTime: {timestamp}" if is_new_user else f"✅ User Login on Stellar\nUsername: {username}\nTime: {timestamp}"
+    telegram_bot.send_message(message_body)
 
-    if not all([account_sid, auth_token, twilio_phone, my_phone]):
-        logger.warning("Twilio credentials not fully configured. Skipping SMS notification.")
-        return
+def scheduled_user_report():
+    # Initial brief sleep to allow system to stabilize
+    time.sleep(5)
+    
+    while True:
+        try:
+            now = time.time()
+            should_run = False
+            last_report_ts = redis_client.get("stellar:last_report_ts")
+            
+            if last_report_ts is None:
+                should_run = True
+            else:
+                try:
+                    if (now - float(last_report_ts)) >= 7200:
+                        should_run = True
+                except (ValueError, TypeError):
+                    should_run = True
 
-    try:
-        client = Client(account_sid, auth_token)
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-        
-        message_body = f"🚀 New User Registration on Stellar!\nUsername: {username}\nTime: {timestamp}" if is_new_user else f"✅ User Login on Stellar\nUsername: {username}\nTime: {timestamp}"
+            if should_run:
+                # Try to acquire lock to ensure only one worker runs the report
+                # Lock expires in 60s
+                if redis_client.set("stellar:report_execution_lock", "locked", ex=60, nx=True):
+                    with app.app_context():
+                        try:
+                            db = get_db()
+                            cursor = db.execute("SELECT username FROM users")
+                            users = cursor.fetchall()
+                            usernames = [user['username'] for user in users]
+                            if usernames:
+                                user_list_str = "\n".join(usernames)
+                                message = f"📊 **Stellar User Report (Every 2 Hours)**\n\nTotal Users: {len(usernames)}\n\n**Usernames:**\n{user_list_str}"
+                                telegram_bot.send_message(message)
+                            else:
+                                telegram_bot.send_message("📊 **Stellar User Report**\n\nNo users found in the database.")
+                            
+                            # Update timestamp after successful execution
+                            redis_client.set("stellar:last_report_ts", str(time.time()))
+                        except Exception as e:
+                            logger.error(f"Error in scheduled_user_report execution: {e}")
+            
+            # Calculate sleep time until next report
+            last_report_ts = redis_client.get("stellar:last_report_ts")
+            if last_report_ts:
+                try:
+                    elapsed = time.time() - float(last_report_ts)
+                    sleep_time = 7200 - elapsed
+                except (ValueError, TypeError):
+                    sleep_time = 60
+            else:
+                # Should not happen if run was successful, but if lock was lost or error occurred
+                sleep_time = 60
+            
+            # Ensure we don't sleep for negative time or too little
+            if sleep_time < 10:
+                sleep_time = 10
+                
+            time.sleep(sleep_time)
 
-        message = client.messages.create(
-            body=message_body,
-            from_=twilio_phone,
-            to=my_phone
-        )
-        logger.info(f"Twilio notification sent for user '{username}'. SID: {message.sid}")
-    except TwilioRestException as e:
-        logger.error(f"Failed to send Twilio SMS for user '{username}': {e}")
+        except Exception as e:
+            logger.error(f"Error in scheduled_user_report loop: {e}")
+            time.sleep(60)
 
 
 naw = datetime.datetime.now()
 script_dir = Path(__file__).resolve().parent
 keys_env_path = script_dir / 'keys.env'
 if keys_env_path.is_file():
-    load_dotenv(dotenv_path=keys_env_path)
+    load_dotenv(dotenv_path=keys_env_path, override=True)
 
 app = Flask(__name__)
 SANDBOX_DIR = 'sandbox_runs'
@@ -269,6 +316,9 @@ def initialize_database():
 
 initialize_database()
 
+# Start the user report thread
+threading.Thread(target=scheduled_user_report, daemon=True).start()
+
 def get_current_session_id():
     if 'initialized' not in session:
         session['initialized'] = True
@@ -426,7 +476,7 @@ def generate_chat_name(chat_id, first_message_content):
                 return
 
             try:
-                client = genai.Client(api_key=api_key, http_options={'api_version': 'v1alpha'})
+                client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
                 chat = client.chats.create(model=model_name, config={'tools': []})
                 r = chat.send_message(prompt)
                 
@@ -457,7 +507,7 @@ def generate_forge_title(user_prompt):
         if not api_key:
             return "Forge Project"
 
-        client = genai.Client(api_key=api_key, http_options={'api_version': 'v1alpha'})
+        client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
         chat = client.chats.create(model=model_name, config={'tools': []})
         r = chat.send_message(prompt)
         
@@ -866,7 +916,7 @@ def classify_real_time_needed(query: str, key: str = None) -> str:
     model_name = 'gemini-2.5-flash-lite'
     client = None
     try:
-        client = genai.Client(api_key=api_key, http_options={'api_version': 'v1alpha'})
+        client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
         chat = client.chats.create(model=model_name, config={'tools': []})
     except Exception as e:
         return "no"
@@ -900,7 +950,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
     )
     
     try:
-        client = genai.Client(api_key=key, http_options={'api_version': 'v1alpha'})
+        client = genai.Client(api_key=key, http_options={'api_version': 'v1beta'})
         chat = client.chats.create(model='gemini-2.5-flash-lite', config={'tools': []})
         r = chat.send_message(check_prompt)
         
@@ -937,7 +987,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
         try:
             yield {'status': f"{display_name} is thinking..."}
-            client = genai.Client(api_key=current_key, http_options={'api_version': 'v1alpha'})
+            client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
             output_this_attempt = ""
 
 
@@ -1212,6 +1262,17 @@ def forge_start():
         }
         session.modified = True
 
+        # Notify via Telegram
+        try:
+            db = get_db()
+            cursor = db.execute('SELECT username FROM users WHERE id = ?', (session['user_id'],))
+            user_row = cursor.fetchone()
+            if user_row:
+                current_username = user_row['username']
+                telegram_bot.send_message(f"🛠️ {current_username} is using forge session {project_title}")
+        except Exception as e:
+            logger.error(f"Failed to send Forge Telegram notification: {e}")
+
         # Record in history
         try:
             db = get_db()
@@ -1299,6 +1360,17 @@ def forge_iterate():
         session['forge_project']['process_id'] = process_id
         session['forge_project']['project_name'] = project_title
         session.modified = True
+
+        # Notify via Telegram
+        try:
+            db = get_db()
+            cursor = db.execute('SELECT username FROM users WHERE id = ?', (session['user_id'],))
+            user_row = cursor.fetchone()
+            if user_row:
+                current_username = user_row['username']
+                telegram_bot.send_message(f"🛠️ {current_username} is iterating on forge session {project_title}")
+        except Exception as e:
+            logger.error(f"Failed to send Forge Telegram notification: {e}")
 
         # Record in history
         try:
@@ -3718,7 +3790,8 @@ def get_forge_history():
     user_id = session['user_id']
     db = get_db()
     cursor = db.execute('''
-        SELECT * FROM forge_history
+        SELECT id, project_name, process_id, status, deployment_url, created_at, last_updated 
+        FROM forge_history
         WHERE user_id = ?
         ORDER BY created_at DESC
     ''', (user_id,))
@@ -3764,6 +3837,17 @@ def resume_forge_history(history_id):
         'project_name': project_name
     }
     session.modified = True
+
+    # Notify via Telegram
+    try:
+        db = get_db()
+        cursor = db.execute('SELECT username FROM users WHERE id = ?', (session['user_id'],))
+        user_row = cursor.fetchone()
+        if user_row:
+            current_username = user_row['username']
+            telegram_bot.send_message(f"🛠️ {current_username} resumed forge session: {project_name}")
+    except Exception as e:
+        logger.error(f"Failed to send Forge Resume Telegram notification: {e}")
 
     return jsonify({'success': True, 'message': 'Project loaded.', 'files': files, 'process_id': process_id})
 
