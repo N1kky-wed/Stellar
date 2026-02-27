@@ -165,7 +165,7 @@ MODEL_NAMES = {
     "gemini-2.5-flash-lite": "Emerald",
     "gemini-2.5-flash": "Lunarity",
     "gemini-3-flash-preview": "Crimson",
-    "gemini-3.1-pro-preview": "Obsidian",
+    "gemini-3-pro-preview": "Obsidian",
 }
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
@@ -1223,7 +1223,7 @@ def forge_start():
 
     try:
         prompt = get_forge_initial_build_prompt(user_prompt)
-        model_id = "gemini-3.1-pro-preview"
+        model_id = "gemini-3-pro-preview"
         api_key = PRIMARY_API_KEY
         if not api_key:
             raise ValueError("Primary API key for Forge is not configured.")
@@ -1326,7 +1326,7 @@ def forge_iterate():
     try:
         current_files = session['forge_project']['files']
         prompt = get_forge_iteration_prompt(user_prompt, json.dumps(current_files))
-        model_id = "gemini-3.1-pro-preview"
+        model_id = "gemini-3-pro-preview"
         api_key = PRIMARY_API_KEY
         if not api_key:
             raise ValueError("Primary API key for Forge is not configured.")
@@ -3422,7 +3422,7 @@ def generate_visualization():
     data = request.get_json()
     content = data.get('content')
     message_id = data.get('message_id') # Get message_id to persist visualization
-    model_id = 'gemini-3.1-pro-preview' # Use the pro preview model as requested
+    model_id = 'gemini-3-pro-preview' # Use the pro preview model as requested
     api_key = RTP_API_KEY # Use RTP key for faster/cheaper generation or PRIMARY if needed
 
     if not content:
