@@ -282,6 +282,89 @@
             display: none !important;
         }
 
+        /* ===== Chat Background Image ===== */
+        #chatBgImage {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url('/image.png') center center / cover no-repeat;
+            z-index: -1;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+        #chatBgImage::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 12, 41, 0.35);
+            pointer-events: none;
+        }
+        body.bg-off #chatBgImage {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .bg-toggle-btn {
+            font-size: 1.2rem;
+            background: none;
+            border: none;
+            color: var(--secondary-text-color);
+            cursor: pointer;
+            padding: 4px;
+            transition: color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
+        }
+        .bg-toggle-btn:hover {
+            color: var(--primary-text-color);
+            transform: translateY(-2px) scale(1.1);
+            filter: brightness(1.2);
+        }
+        body.bg-off .bg-toggle-btn {
+            opacity: 0.5;
+        }
+
+        /* ===== Forge Glitch Symbols ===== */
+        #forgeSymbolsOverlay {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+        }
+        #forge-loading-overlay > div,
+        #forge-loading-overlay > p {
+            position: relative;
+            z-index: 1;
+        }
+        .symbol-column {
+            position: absolute;
+            top: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            line-height: 1.8;
+            white-space: nowrap;
+            animation: scrollSymbols linear infinite;
+            opacity: 0.25;
+            text-shadow: 0 0 6px currentColor;
+        }
+        @keyframes scrollSymbols {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-50%); }
+        }
+        @keyframes glitchFlicker {
+            0%, 100% { opacity: 0.25; }
+            5% { opacity: 0.45; transform: skewX(2deg); }
+            10% { opacity: 0.2; transform: skewX(-1deg); }
+            15% { opacity: 0.35; transform: skewX(0); }
+        }
+
         :root {
             --model-color-start: #7b61ff;
             --model-color-end: #b554ff;
@@ -4003,6 +4086,7 @@
         <div class="header-right">
             <div id="modeSelectorHeaderContainer" style="margin-right: 10px;"></div>
 
+            <button class="bg-toggle-btn" id="bgToggleBtn" title="Toggle background image">🖼️</button>
             <button class="clear-icon" id="clearHistoryBtn" title="Clear current chat history">🗑️</button>
             <div id="profileIcon" title="View Profile"></div>
         </div>
@@ -4060,6 +4144,7 @@
 
     <div id="tokenCountBar"></div>
 
+    <div id="chatBgImage"></div>
     <div id="chatContainer" style="display:none;">
         <div id="messages"></div>
         <div id="analysis-progress-area"></div>
@@ -4182,6 +4267,7 @@
                     style="flex-grow: 1; background: var(--stellar-msg-bg); position: relative; display: flex; flex-direction: column;">
                     <div id="forge-loading-overlay"
                         style="position: absolute; inset: 0; background: var(--stellar-msg-bg); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--secondary-text-color); font-size: 1rem; z-index: 2; gap: 12px;">
+                        <div id="forgeSymbolsOverlay"></div>
                         <div
                             style="width: 48px; height: 48px; background: rgba(255,255,255,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -8470,6 +8556,63 @@
                 }
             }
         }
+
+        // ===== Background Image Toggle =====
+        (function() {
+            const bgToggleBtn = document.getElementById('bgToggleBtn');
+            const savedPref = localStorage.getItem('stellar_bg_off');
+            if (savedPref === 'true') {
+                document.body.classList.add('bg-off');
+            }
+            if (bgToggleBtn) {
+                bgToggleBtn.addEventListener('click', () => {
+                    document.body.classList.toggle('bg-off');
+                    const isOff = document.body.classList.contains('bg-off');
+                    localStorage.setItem('stellar_bg_off', isOff ? 'true' : 'false');
+                });
+            }
+        })();
+
+        // ===== Forge Glitch Symbols Generator =====
+        (function() {
+            const overlay = document.getElementById('forgeSymbolsOverlay');
+            if (!overlay) return;
+
+            const symbols = '!@#$%^&*()';
+            const colors = [
+                '#00f5ff', '#ff00e5', '#39ff14', '#ffd700', '#ff6b6b',
+                '#c084fc', '#f472b6', '#22d3ee', '#fb923c', '#a3e635',
+                '#e879f9', '#2dd4bf', '#f87171', '#60a5fa', '#facc15'
+            ];
+            const columnCount = 14;
+            const charsPerColumn = 40;
+
+            for (let i = 0; i < columnCount; i++) {
+                const col = document.createElement('div');
+                col.className = 'symbol-column';
+
+                const leftPercent = (i / columnCount) * 100 + (Math.random() * (100 / columnCount / 2));
+                const duration = 8 + Math.random() * 14;
+                const delay = Math.random() * -20;
+
+                col.style.left = leftPercent + '%';
+                col.style.animationDuration = duration + 's';
+                col.style.animationDelay = delay + 's';
+                col.style.animation = `scrollSymbols ${duration}s linear ${delay}s infinite, glitchFlicker ${3 + Math.random() * 4}s ease-in-out ${Math.random() * 2}s infinite`;
+
+                // Build two copies of symbol set for seamless loop
+                let html = '';
+                for (let copy = 0; copy < 2; copy++) {
+                    for (let j = 0; j < charsPerColumn; j++) {
+                        const char = symbols[Math.floor(Math.random() * symbols.length)];
+                        const color = colors[Math.floor(Math.random() * colors.length)];
+                        html += '<span style="color:' + color + ';display:block;">' + char + '</span>';
+                    }
+                }
+                col.innerHTML = html;
+                overlay.appendChild(col);
+            }
+        })();
 
     </script>
 
