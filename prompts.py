@@ -189,7 +189,7 @@ def get_forge_initial_build_prompt(user_prompt):
         f"*   Always include `flask` as a minimum.\n\n"
         f"**AI Model Guidelines:**\n"
         f"Default to using Gemini models for AI integrations. Default to gemini-2.5-flash-lite unless specified.\n"
-        f"Valid Gemini models: gemini-3-pro-preview, gemini-3-flash-preview, gemini-3-pro-image-preview, gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-image, gemini-live-2.5-flash-native-audio. All 1.0/1.5 models are deprecated.\n"
+        f"Valid Gemini models: gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-3-pro-image-preview, gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-image, gemini-live-2.5-flash-native-audio. All 1.0/1.5 models are deprecated.\n"
         f"For image generation, use 'gemini-3-pro-image-preview' or 'gemini-2.5-flash-image'.\n\n"
 """For any application requiring Generative AI use the Gemini SDK (v1.0+),
 act as a strict implementation engineer.
@@ -273,7 +273,7 @@ When streaming structured responses, the SDK returns partial JSON chunks.
 ---
 
 ## 3. Gemini 3 Configuration Rules
-**Rule:** Gemini 3 models (`gemini-3-pro-preview`, `gemini-3-flash-preview`) require specific parameter tuning that differs from Gemini 2.0.
+**Rule:** Gemini 3 models (`gemini-3.1-pro-preview`, `gemini-3-flash-preview`) require specific parameter tuning that differs from Gemini 2.0.
 
 ### 3.1 Temperature & Reasoning
 *   **STRICT RULE:** For Gemini 3, set `temperature=1.0` (default). Lowering this (e.g., 0.1) creates reasoning loops.
@@ -469,7 +469,7 @@ def get_forge_iteration_prompt(user_prompt, current_code_json):
         f"9.  **Dependencies:** If you add new Python libraries, update `requirements.txt`. You can use ANY PyPI package.\n\n"
         f"**AI Model Guidelines:**\n"
         f"Default to gemini-2.5-flash-lite for AI integrations.\n"
-        f"Valid Gemini models: gemini-3-pro-preview, gemini-3-flash-preview, gemini-3-pro-image-preview, gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-image, gemini-live-2.5-flash-native-audio. All 1.0/1.5 models are deprecated.\n\n"
+        f"Valid Gemini models: gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-3-pro-image-preview, gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-image, gemini-live-2.5-flash-native-audio. All 1.0/1.5 models are deprecated.\n\n"
         """For any application requiring Generative AI use the Gemini SDK (v1.0+),
 act as a strict implementation engineer.
 ### AI System Guidelines: Google GenAI SDK (Python)
@@ -552,7 +552,7 @@ When streaming structured responses, the SDK returns partial JSON chunks.
 ---
 
 ## 3. Gemini 3 Configuration Rules
-**Rule:** Gemini 3 models (`gemini-3-pro-preview`, `gemini-3-flash-preview`) require specific parameter tuning that differs from Gemini 2.0.
+**Rule:** Gemini 3 models (`gemini-3.1-pro-preview`, `gemini-3-flash-preview`) require specific parameter tuning that differs from Gemini 2.0.
 
 ### 3.1 Temperature & Reasoning
 *   **STRICT RULE:** For Gemini 3, set `temperature=1.0` (default). Lowering this (e.g., 0.1) creates reasoning loops.
