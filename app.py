@@ -1215,6 +1215,7 @@ def forge_start():
 
     data = request.get_json(silent=True) or {}
     user_prompt = data.get('prompt')
+    pending_files = data.get('pending_files', [])
     if not user_prompt:
         return jsonify({'error': 'Initial prompt is required.'}), 400
 
@@ -1222,8 +1223,16 @@ def forge_start():
         stop_and_cleanup_app_by_process_id(session['forge_project'].get('process_id'), app_type='forge')
 
     try:
-        prompt = get_forge_initial_build_prompt(user_prompt)
-        model_id = "gemini-3-pro-preview"
+        # Analyze uploaded files if any
+        file_context = ""
+        if pending_files:
+            session_id = get_current_session_id()
+            if session_id:
+                file_context, _ = run_analysis_for_files(session_id, pending_files, user_query=user_prompt)
+
+        enriched_prompt = file_context + user_prompt if file_context else user_prompt
+        prompt = get_forge_initial_build_prompt(enriched_prompt)
+        model_id = "gemini-3.1-pro-preview"
         api_key = PRIMARY_API_KEY
         if not api_key:
             raise ValueError("Primary API key for Forge is not configured.")
@@ -1313,6 +1322,7 @@ def forge_iterate():
 
     data = request.get_json(silent=True) or {}
     user_prompt = data.get('prompt')
+    pending_files = data.get('pending_files', [])
     if not user_prompt:
         return jsonify({'error': 'Follow-up prompt is required.'}), 400
 
@@ -1324,9 +1334,17 @@ def forge_iterate():
             active_apps.pop(old_process_id, None)
 
     try:
+        # Analyze uploaded files if any
+        file_context = ""
+        if pending_files:
+            session_id = get_current_session_id()
+            if session_id:
+                file_context, _ = run_analysis_for_files(session_id, pending_files, user_query=user_prompt)
+
+        enriched_prompt = file_context + user_prompt if file_context else user_prompt
         current_files = session['forge_project']['files']
-        prompt = get_forge_iteration_prompt(user_prompt, json.dumps(current_files))
-        model_id = "gemini-3-pro-preview"
+        prompt = get_forge_iteration_prompt(enriched_prompt, json.dumps(current_files))
+        model_id = "gemini-3.1-pro-preview"
         api_key = PRIMARY_API_KEY
         if not api_key:
             raise ValueError("Primary API key for Forge is not configured.")

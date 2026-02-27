@@ -4231,6 +4231,10 @@
 
                     <!-- Input and Controls at Bottom -->
                     <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+                        <div id="forgeStagedFilesContainer"
+                            style="font-size: 0.8em; color: var(--secondary-text-color); margin-bottom: 2px; max-height: 70px; overflow-y: auto; display: none; padding: 5px 8px; border: 1px dashed rgba(255,255,255,0.15); border-radius: 6px; background: rgba(0,0,0,0.15);">
+                        </div>
+                        <input type="file" id="forgeFileUpload" multiple style="display:none">
                         <textarea id="forgePromptInput"
                             placeholder="e.g., build a to-do list app with categories and reminders..."
                             style="width: 100%; height: 80px; background: var(--input-bg); border: 1px solid var(--input-border); color: var(--primary-text-color); border-radius: 8px; padding: 12px; font-family: 'Poppins', sans-serif; resize: vertical; min-height: 60px; max-height: 200px;"></textarea>
@@ -4238,6 +4242,16 @@
                         <div id="forge-controls" style="display: flex; gap: 10px;">
                             <button id="forgeEndSessionBtn" class="codelab-action-btn"
                                 style="background-color: var(--nebula-regenerate-end); display: none;">End</button>
+                            <button id="forgeAttachBtn" class="codelab-action-btn"
+                                style="background: var(--input-bg); border: 1px solid var(--input-border); display: flex; align-items: center; gap: 5px; color: var(--primary-text-color); padding: 6px 10px; cursor: pointer;"
+                                title="Attach files">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path
+                                        d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                                </svg>
+                                📎
+                            </button>
                             <button id="forgeHistoryBtn" class="codelab-action-btn"
                                 style="background: var(--input-bg); border: 1px solid var(--input-border); display: flex; align-items: center; gap: 6px; color: var(--primary-text-color);">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -4248,8 +4262,8 @@
                             </button>
                             <button id="forgeViewCodeBtn" class="codelab-action-btn codelab-ai-btn"
                                 style="display: none;">View</button>
-                            <button id="forgeStartBtn" class="codelab-action-btn" disabled
-                                style="background-color: var(--nebula-confirm-start); flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px; opacity: 0.5; cursor: not-allowed;">
+                            <button id="forgeStartBtn" class="codelab-action-btn"
+                                style="background-color: var(--nebula-confirm-start); flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px;">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M8 5v14l11-7z" />
                                 </svg>
@@ -4572,6 +4586,47 @@
                     if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         if (forgeStartBtn) forgeStartBtn.click();
+                    }
+                });
+
+                // Drag & drop files onto forge prompt
+                forgePromptInput.addEventListener('dragover', (e) => { e.preventDefault(); forgePromptInput.style.borderColor = 'var(--link-color)'; });
+                forgePromptInput.addEventListener('dragleave', () => { forgePromptInput.style.borderColor = ''; });
+                forgePromptInput.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    forgePromptInput.style.borderColor = '';
+                    if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+                        stageForgeFiles(e.dataTransfer.files);
+                    }
+                });
+
+                // Paste images into forge prompt
+                forgePromptInput.addEventListener('paste', (e) => {
+                    const items = e.clipboardData?.items;
+                    if (!items) return;
+                    const files = [];
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].kind === 'file') {
+                            const file = items[i].getAsFile();
+                            if (file) files.push(file);
+                        }
+                    }
+                    if (files.length > 0) {
+                        e.preventDefault();
+                        stageForgeFiles(files);
+                    }
+                });
+            }
+
+            // Attach button
+            const forgeAttachBtn = document.getElementById('forgeAttachBtn');
+            const forgeFileInput = document.getElementById('forgeFileUpload');
+            if (forgeAttachBtn && forgeFileInput) {
+                forgeAttachBtn.addEventListener('click', () => forgeFileInput.click());
+                forgeFileInput.addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        stageForgeFiles(e.target.files);
+                        e.target.value = ''; // reset so same file can be re-selected
                     }
                 });
             }
@@ -4974,6 +5029,73 @@
         }
 
         // REPLACE the existing handleForgeStart function
+        // ===== Forge File Staging =====
+        let forgeStagedFiles = [];
+
+        function stageForgeFiles(fileList) {
+            for (let i = 0; i < fileList.length; i++) {
+                // Avoid duplicates by name
+                if (!forgeStagedFiles.some(f => f.name === fileList[i].name)) {
+                    forgeStagedFiles.push(fileList[i]);
+                }
+            }
+            updateForgeStagedFilesUI();
+        }
+
+        function updateForgeStagedFilesUI() {
+            const container = document.getElementById('forgeStagedFilesContainer');
+            if (!container) return;
+            if (forgeStagedFiles.length === 0) {
+                container.innerHTML = '';
+                container.style.display = 'none';
+                return;
+            }
+            container.style.display = 'block';
+            container.innerHTML = '<small style="opacity:0.7;">📎 Attached files:</small>';
+            const list = document.createElement('div');
+            list.style.display = 'flex';
+            list.style.flexWrap = 'wrap';
+            list.style.gap = '4px';
+            list.style.marginTop = '4px';
+
+            forgeStagedFiles.forEach((file, index) => {
+                const chip = document.createElement('span');
+                chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:2px 6px;font-size:0.9em;';
+                chip.innerHTML = `<span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${file.name} (${(file.size / 1024).toFixed(1)} KB)">${file.name}</span>`;
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = '✖';
+                removeBtn.style.cssText = 'background:none;border:none;color:var(--secondary-text-color);cursor:pointer;font-size:0.8em;padding:0 2px;opacity:0.6;';
+                removeBtn.title = 'Remove';
+                removeBtn.addEventListener('click', () => {
+                    forgeStagedFiles.splice(index, 1);
+                    updateForgeStagedFilesUI();
+                });
+                chip.appendChild(removeBtn);
+                list.appendChild(chip);
+            });
+            container.appendChild(list);
+        }
+
+        async function uploadForgeFiles() {
+            if (forgeStagedFiles.length === 0) return [];
+            const formData = new FormData();
+            forgeStagedFiles.forEach(file => formData.append('file', file));
+            try {
+                addLogToForge(`Uploading ${forgeStagedFiles.length} file(s)...`);
+                const response = await fetch('/upload_files', { method: 'POST', body: formData });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Upload failed');
+                const uploaded = data.uploaded_files || [];
+                addLogToForge(`Uploaded ${uploaded.length} file(s) successfully.`);
+                forgeStagedFiles = [];
+                updateForgeStagedFilesUI();
+                return uploaded;
+            } catch (err) {
+                addLogToForge(`File upload error: ${err.message}`, 'error');
+                return [];
+            }
+        }
+
         async function handleForgeStart() {
             const promptInput = document.getElementById('forgePromptInput');
             const prompt = promptInput.value.trim();
@@ -4988,10 +5110,13 @@
             promptInput.disabled = true;
 
             try {
+                // Upload staged files first
+                const pendingFiles = await uploadForgeFiles();
+
                 const response = await fetch('/codelab/forge/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: prompt })
+                    body: JSON.stringify({ prompt: prompt, pending_files: pendingFiles })
                 });
 
                 const data = await response.json();
@@ -5013,7 +5138,7 @@
         }
 
         async function handleForgeIterate() {
-            if (forgeSseSource) forgeSseSource.close(); // <-- ADD THIS LINE
+            if (forgeSseSource) forgeSseSource.close();
             const promptInput = document.getElementById('forgePromptInput');
             const prompt = promptInput.value.trim();
             if (!prompt) {
@@ -5026,10 +5151,13 @@
             promptInput.disabled = true;
 
             try {
+                // Upload staged files first
+                const pendingFiles = await uploadForgeFiles();
+
                 const response = await fetch('/codelab/forge/iterate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: prompt })
+                    body: JSON.stringify({ prompt: prompt, pending_files: pendingFiles })
                 });
 
                 const data = await response.json();
