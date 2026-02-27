@@ -1227,10 +1227,13 @@ def forge_start():
         file_context = ""
         if pending_files:
             session_id = get_current_session_id()
+            logger.info(f"Forge: pending_files={pending_files}, session_id={session_id}")
             if session_id:
-                file_context, _ = run_analysis_for_files(session_id, pending_files, user_query=user_prompt)
-
+                file_context, analysis_dict = run_analysis_for_files(session_id, pending_files, user_query=user_prompt)
+                logger.info(f"Forge: file_context length={len(file_context)}, analysis_keys={list(analysis_dict.keys()) if analysis_dict else 'None'}")
+        
         enriched_prompt = file_context + user_prompt if file_context else user_prompt
+        logger.info(f"Forge: enriched_prompt length={len(enriched_prompt)}, starts_with_file_context={enriched_prompt.startswith('**Analysis') if file_context else False}")
         prompt = get_forge_initial_build_prompt(enriched_prompt)
         model_id = "gemini-3.1-pro-preview"
         api_key = PRIMARY_API_KEY
