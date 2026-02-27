@@ -186,18 +186,18 @@
             width: 8px;
             height: 8px;
         }
-        
+
         #forgeHistoryList::-webkit-scrollbar-track {
             background: var(--scrollbar-track-bg);
             border-radius: 0px;
         }
-        
+
         #forgeHistoryList::-webkit-scrollbar-thumb {
             background: linear-gradient(var(--scrollbar-thumb-start), var(--scrollbar-thumb-end));
             border-radius: 10px;
             border: 1px solid var(--scrollbar-thumb-border);
         }
-        
+
         #forgeHistoryList::-webkit-scrollbar-thumb:hover {
             background: linear-gradient(var(--scrollbar-thumb-hover-start), var(--scrollbar-thumb-hover-end));
             border: 1px solid var(--scrollbar-thumb-hover-border);
@@ -294,6 +294,7 @@
             pointer-events: none;
             transition: opacity 0.5s ease;
         }
+
         #chatBgImage::after {
             content: '';
             position: absolute;
@@ -301,6 +302,7 @@
             background: rgba(15, 12, 41, 0.35);
             pointer-events: none;
         }
+
         body.bg-off #chatBgImage {
             opacity: 0;
             pointer-events: none;
@@ -316,11 +318,13 @@
             transition: color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
             position: relative;
         }
+
         .bg-toggle-btn:hover {
             color: var(--primary-text-color);
             transform: translateY(-2px) scale(1.1);
             filter: brightness(1.2);
         }
+
         body.bg-off .bg-toggle-btn {
             opacity: 0.5;
         }
@@ -333,11 +337,13 @@
             pointer-events: none;
             z-index: 0;
         }
-        #forge-loading-overlay > div,
-        #forge-loading-overlay > p {
+
+        #forge-loading-overlay>div:not(#forgeSymbolsOverlay),
+        #forge-loading-overlay>p {
             position: relative;
             z-index: 1;
         }
+
         .symbol-column {
             position: absolute;
             top: 0;
@@ -351,18 +357,41 @@
             line-height: 1.8;
             white-space: nowrap;
             animation: scrollSymbols linear infinite;
-            opacity: 0.25;
-            text-shadow: 0 0 6px currentColor;
+            opacity: 0.4;
+            text-shadow: 0 0 8px currentColor, 0 0 2px currentColor;
         }
+
         @keyframes scrollSymbols {
-            0% { transform: translateY(0); }
-            100% { transform: translateY(-50%); }
+            0% {
+                transform: translateY(0);
+            }
+
+            100% {
+                transform: translateY(-50%);
+            }
         }
+
         @keyframes glitchFlicker {
-            0%, 100% { opacity: 0.25; }
-            5% { opacity: 0.45; transform: skewX(2deg); }
-            10% { opacity: 0.2; transform: skewX(-1deg); }
-            15% { opacity: 0.35; transform: skewX(0); }
+
+            0%,
+            100% {
+                opacity: 0.4;
+            }
+
+            5% {
+                opacity: 0.6;
+                transform: skewX(2deg);
+            }
+
+            10% {
+                opacity: 0.3;
+                transform: skewX(-1deg);
+            }
+
+            15% {
+                opacity: 0.5;
+                transform: skewX(0);
+            }
         }
 
         :root {
@@ -4065,8 +4094,10 @@
                 </form>
             </div>
             <div class="auth-card-footer">
-                <p id="authFooterText">Don't have an account? <span style="opacity: 0.5; cursor: not-allowed;">Sign up</span></p>
-                <p style="margin-top: 0.5rem; font-size: 0.9rem; color: #666;">Under closed testing. Contact <a href="mailto:nikhil080905@gmail.com">admin</a> for beta access.</p>
+                <p id="authFooterText">Don't have an account? <span style="opacity: 0.5; cursor: not-allowed;">Sign
+                        up</span></p>
+                <p style="margin-top: 0.5rem; font-size: 0.9rem; color: #666;">Under closed testing. Contact <a
+                        href="mailto:nikhil080905@gmail.com">admin</a> for beta access.</p>
             </div>
         </div>
     </div>
@@ -8558,7 +8589,7 @@
         }
 
         // ===== Background Image Toggle =====
-        (function() {
+        (function () {
             const bgToggleBtn = document.getElementById('bgToggleBtn');
             const savedPref = localStorage.getItem('stellar_bg_off');
             if (savedPref === 'true') {
@@ -8574,7 +8605,7 @@
         })();
 
         // ===== Forge Glitch Symbols Generator =====
-        (function() {
+        (function () {
             const overlay = document.getElementById('forgeSymbolsOverlay');
             if (!overlay) return;
 
