@@ -2422,78 +2422,83 @@ def cosmos_stream():
                 file_analysis_context, analysis_results_dict = run_analysis_for_files(session_id, pending_files,user_query=user_query)
                 yield f"data: {json.dumps({'status': 'File analysis complete.', 'phase': 'context_gathering', 'analysis_results': analysis_results_dict })}\n\n"
             
-            yield f"data: {json.dumps({'status': 'Performing Web Search...', 'phase': 'context_gathering'})}\n\n"
-            if check_and_log_stop(query_id, "cosmos search query generation"): return
-            try:
-                if file_analysis_context:
-                    instruction_prompt = file_analysis_context + """\nAnalyze the file analysis results provided. Identify key themes, entities, unresolved questions, or areas that would benefit from current external information. Generate concise instructions for another AI on how to formulate up to 5 effective Tavily search queries to gather relevant external context based on this analysis."""
-                    instruction_gen = gemini_generate(prompt=instruction_prompt, model_id="gemini-2.5-flash-lite", key=RTP_API_KEY, attempts=1)
-                    instruction = next((item['result'] for item in instruction_gen if 'result' in item), None)
+            if pending_files:
+                # Skip web search when files are uploaded to avoid "query too long" errors
+                yield f"data: {json.dumps({'status': 'Skipping web search (file upload detected).', 'phase': 'context_gathering'})}\n\n"
+                web_search_context = ""
+            else:
+                yield f"data: {json.dumps({'status': 'Performing Web Search...', 'phase': 'context_gathering'})}\n\n"
+                if check_and_log_stop(query_id, "cosmos search query generation"): return
+                try:
+                    if file_analysis_context:
+                        instruction_prompt = file_analysis_context + """\nAnalyze the file analysis results provided. Identify key themes, entities, unresolved questions, or areas that would benefit from current external information. Generate concise instructions for another AI on how to formulate up to 5 effective Tavily search queries to gather relevant external context based on this analysis."""
+                        instruction_gen = gemini_generate(prompt=instruction_prompt, model_id="gemini-2.5-flash-lite", key=RTP_API_KEY, attempts=1)
+                        instruction = next((item['result'] for item in instruction_gen if 'result' in item), None)
 
-                    generated_query = None
-                    if instruction and not instruction.startswith(ERROR_CODE):
-                        query_gen_prompt = instruction + f"\nBased on the instruction derived from the file analysis, create a specific Tavily search query (or up to 5 separate queries, comma-separated if multiple distinct areas are identified) for:\nOriginal User Query: {user_query}\nReturn *only ONE SMALL* the search query string(s)."
-                        query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=RTP_API_KEY, attempts=1)
-                        generated_query = next((item['result'] for item in query_gen if 'result' in item), None)
-                        if generated_query and not generated_query.startswith(ERROR_CODE):
-                            search_query = generated_query.strip().strip('"')
+                        generated_query = None
+                        if instruction and not instruction.startswith(ERROR_CODE):
+                            query_gen_prompt = instruction + f"\nBased on the instruction derived from the file analysis, create a specific Tavily search query (or up to 5 separate queries, comma-separated if multiple distinct areas are identified) for:\nOriginal User Query: {user_query}\nReturn *only ONE SMALL* the search query string(s)."
+                            query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=RTP_API_KEY, attempts=1)
+                            generated_query = next((item['result'] for item in query_gen if 'result' in item), None)
+                            if generated_query and not generated_query.startswith(ERROR_CODE):
+                                search_query = generated_query.strip().strip('"')
+                            else:
+                                search_query = user_query
                         else:
                             search_query = user_query
                     else:
                         search_query = user_query
-                else:
-                    search_query = user_query
-            except Exception as e:
-                logger.error(f"Error in generating search query for Cosmos: {e}", exc_info=True)
-                search_query = user_query
-
-            tavily_success = False
-            for attempt in range(2):
-                try:
-                    if check_and_log_stop(query_id, f"cosmos search attempt {attempt+1}"): return
-                    status_msg = 'Performing Web Search...' if attempt == 0 else f'Retrying Web Search... (Attempt {attempt + 1})'
-                    yield f"data: {json.dumps({'status': status_msg, 'phase': 'context_gathering'})}\n\n"
-                    tavily_response = tavily_search(search_query, max_results=10)
-                    if isinstance(tavily_response, dict) and "error" in tavily_response:
-                        raise ValueError(f"Tavily API Error: {tavily_response['error']}")
-                    if not isinstance(tavily_response, dict) or "results" not in tavily_response:
-                        raise TypeError(f"Tavily returned unexpected/invalid response format: {type(tavily_response)}")
-                    
-                    tavily_answer = tavily_response.get("answer", "")
-                    results = tavily_response.get("results", [])
-                    current_web_context = f"**Web Search Summary:**\n{tavily_answer if tavily_answer else 'No summary provided.'}\n\n**Scraped Content Details:**\n"
-                    scraped_contents = []
-                    urls_to_scrape = [r.get("url") for r in results if r.get("url")]
-                    urls_scraped_count = 0
-
-                    for url in urls_to_scrape:
-                        if not url or not isinstance(url, str) or not (url.startswith('http://') or url.startswith('https://')): continue
-                        if check_and_log_stop(query_id, f"scraping {url}"): return
-                        yield f"data: {json.dumps({'status': f'Scraping {url}...', 'phase': 'context_gathering'})}\n\n"
-                        content = scrape_url(url)
-                        if content and isinstance(content, str) and not content.startswith("Error scraping"):
-                            scraped_contents.append(f"<details><summary>Content from: {url}</summary>\n\n```text\n{content}\n```\n\n</details>\n")
-                            urls_scraped_count += 1
-                        elif content and content.startswith("Error scraping"):
-                            scraped_contents.append(f"*   Content from {url}: [Scraping Error: {content}]*\n")
-                        else:
-                            scraped_contents.append(f"*   Content from {url}: [No Content Scraped]*\n")
-                    
-                    current_web_context += "\n".join(scraped_contents) if scraped_contents else "No content could be scraped from search results.\n"
-                    current_web_context += "\n---\n"
-                    web_search_context = current_web_context
-                    tavily_success = True
-                    yield f"data: {json.dumps({'status': f'Web Search completed ({urls_scraped_count} sources scraped).', 'phase': 'context_gathering'})}\n\n"
-                    break
                 except Exception as e:
-                    logger.error(f"Tavily search or scraping failed in cosmos_stream: {e}", exc_info=True)
-                    if attempt < 1:
-                        yield f"data: {json.dumps({'status': f'Web Search failed (Attempt {attempt+1}). Retrying...', 'error': True, 'phase': 'context_gathering'})}\n\n"
-                        time.sleep(1.5)
-                    else:
-                        yield f"data: {json.dumps({'status': 'Web Search failed after retries. Proceeding without web context.', 'error': True, 'phase': 'context_gathering'})}\n\n"
-                        web_search_context = "**Web Search Attempted:** Failed after retries.\n\n---\n"
+                    logger.error(f"Error in generating search query for Cosmos: {e}", exc_info=True)
+                    search_query = user_query
+
+                tavily_success = False
+                for attempt in range(2):
+                    try:
+                        if check_and_log_stop(query_id, f"cosmos search attempt {attempt+1}"): return
+                        status_msg = 'Performing Web Search...' if attempt == 0 else f'Retrying Web Search... (Attempt {attempt + 1})'
+                        yield f"data: {json.dumps({'status': status_msg, 'phase': 'context_gathering'})}\n\n"
+                        tavily_response = tavily_search(search_query, max_results=10)
+                        if isinstance(tavily_response, dict) and "error" in tavily_response:
+                            raise ValueError(f"Tavily API Error: {tavily_response['error']}")
+                        if not isinstance(tavily_response, dict) or "results" not in tavily_response:
+                            raise TypeError(f"Tavily returned unexpected/invalid response format: {type(tavily_response)}")
+                        
+                        tavily_answer = tavily_response.get("answer", "")
+                        results = tavily_response.get("results", [])
+                        current_web_context = f"**Web Search Summary:**\n{tavily_answer if tavily_answer else 'No summary provided.'}\n\n**Scraped Content Details:**\n"
+                        scraped_contents = []
+                        urls_to_scrape = [r.get("url") for r in results if r.get("url")]
+                        urls_scraped_count = 0
+
+                        for url in urls_to_scrape:
+                            if not url or not isinstance(url, str) or not (url.startswith('http://') or url.startswith('https://')): continue
+                            if check_and_log_stop(query_id, f"scraping {url}"): return
+                            yield f"data: {json.dumps({'status': f'Scraping {url}...', 'phase': 'context_gathering'})}\n\n"
+                            content = scrape_url(url)
+                            if content and isinstance(content, str) and not content.startswith("Error scraping"):
+                                scraped_contents.append(f"<details><summary>Content from: {url}</summary>\n\n```text\n{content}\n```\n\n</details>\n")
+                                urls_scraped_count += 1
+                            elif content and content.startswith("Error scraping"):
+                                scraped_contents.append(f"*   Content from {url}: [Scraping Error: {content}]*\n")
+                            else:
+                                scraped_contents.append(f"*   Content from {url}: [No Content Scraped]*\n")
+                        
+                        current_web_context += "\n".join(scraped_contents) if scraped_contents else "No content could be scraped from search results.\n"
+                        current_web_context += "\n---\n"
+                        web_search_context = current_web_context
+                        tavily_success = True
+                        yield f"data: {json.dumps({'status': f'Web Search completed ({urls_scraped_count} sources scraped).', 'phase': 'context_gathering'})}\n\n"
                         break
+                    except Exception as e:
+                        logger.error(f"Tavily search or scraping failed in cosmos_stream: {e}", exc_info=True)
+                        if attempt < 1:
+                            yield f"data: {json.dumps({'status': f'Web Search failed (Attempt {attempt+1}). Retrying...', 'error': True, 'phase': 'context_gathering'})}\n\n"
+                            time.sleep(1.5)
+                        else:
+                            yield f"data: {json.dumps({'status': 'Web Search failed after retries. Proceeding without web context.', 'error': True, 'phase': 'context_gathering'})}\n\n"
+                            web_search_context = "**Web Search Attempted:** Failed after retries.\n\n---\n"
+                            break
 
             full_context = file_analysis_context + web_search_context
 
