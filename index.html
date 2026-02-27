@@ -329,6 +329,10 @@
             opacity: 0.5;
         }
 
+        body.bg-off #forgeSymbolsOverlay {
+            display: none;
+        }
+
         /* ===== Forge Glitch Symbols ===== */
         #forgeSymbolsOverlay {
             position: absolute;
@@ -8588,11 +8592,14 @@
             }
         }
 
-        // ===== Background Image Toggle =====
+        // ===== Background Image + Symbols Toggle =====
         (function () {
             const bgToggleBtn = document.getElementById('bgToggleBtn');
             const savedPref = localStorage.getItem('stellar_bg_off');
-            if (savedPref === 'true') {
+            // Default to OFF — only enable if user explicitly turned it on
+            if (savedPref === 'false') {
+                document.body.classList.remove('bg-off');
+            } else {
                 document.body.classList.add('bg-off');
             }
             if (bgToggleBtn) {
