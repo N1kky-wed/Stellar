@@ -2747,6 +2747,10 @@ def serve_marked():
 def serve_turndown():
     return send_from_directory('.', 'turndown.js')
 
+@app.route('/image.png')
+def serve_bg_image():
+    return send_from_directory('.', 'image.png')
+
 @app.route('/register', methods=['POST'])
 def register_user():
     data = request.get_json()
