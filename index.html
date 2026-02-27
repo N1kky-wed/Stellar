@@ -3971,7 +3971,7 @@
     </style>
 </head>
 
-<body>
+<body class="bg-off">
     <svg width="0" height="0" style="position:absolute">
         <symbol id="icon-mic" viewBox="0 0 24 24" fill="currentColor">
             <path
@@ -5966,7 +5966,7 @@
         function updateModelSelectTheme() {
             if (!modelSelect || !bodyElement) return; const selectedOption = modelSelect.options[modelSelect.selectedIndex];
             if (selectedOption) {
-                const modelKey = selectedOption.value; const themeName = selectedOption.text.toLowerCase().replace(/\s+/g, '-'); const theme = modelThemes[modelKey] || modelThemes[themeName] || modelThemes.lunarity; const root = document.documentElement; bodyElement.className = `theme-${themeName}`;
+                const modelKey = selectedOption.value; const themeName = selectedOption.text.toLowerCase().replace(/\s+/g, '-'); const theme = modelThemes[modelKey] || modelThemes[themeName] || modelThemes.lunarity; const root = document.documentElement; const preserveBgOff = bodyElement.classList.contains('bg-off'); bodyElement.className = `theme-${themeName}`; if (preserveBgOff) bodyElement.classList.add('bg-off');
                 Object.keys(theme).forEach(key => {
                     let cssVarName;
                     if (key.startsWith('h_')) { if (key === 'h_strong') cssVarName = '--model-hover-shadow-strong'; else if (key === 'h_inset') cssVarName = '--model-hover-color-shadow-inset'; else if (key === 'h_shadow') cssVarName = '--model-hover-color-shadow'; else if (key === 'h_border') cssVarName = '--model-hover-color-border'; else cssVarName = `--model-hover-color-${key.substring(2).replace('_', '-')}`; }
