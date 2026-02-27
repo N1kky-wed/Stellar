@@ -70,7 +70,7 @@ def scheduled_user_report():
                 should_run = True
             else:
                 try:
-                    if (now - float(last_report_ts)) >= 7200:
+                    if (now - float(last_report_ts)) >= 72000:
                         should_run = True
                 except (ValueError, TypeError):
                     should_run = True
@@ -966,7 +966,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
         return False
 
 
-def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None):
+def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None):
     display_name = model_display_name or MODEL_NAMES.get(model_id)
     
     last_exception = None
@@ -995,7 +995,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             tools_config = []
             models_without_search = ["gemini-2.5-flash-lite"]
 
-            if model_id not in models_without_search:
+            if model_id not in models_without_search and username != "Bhumi":
                     tools_config = [
                     types.Tool(google_search=types.GoogleSearch())
                     ]
@@ -2000,13 +2000,15 @@ def refine_stream():
                     yield f"data: {json.dumps({'status': f'Initial model failed. Falling back to {display_name}...', 'phase': 'refining'})}\n\n"
                     time.sleep(1)
                 yield f"data: {json.dumps({'status': f'Thinking with {display_name}...', 'phase': 'refining'})}\n\n"
-                prompt = get_refinement_prompt(user_query_for_llm, conv_hist_list)
+                username = session.get('username')
+                prompt = get_refinement_prompt(user_query_for_llm, conv_hist_list, username=username)
                 generator_output = gemini_generate(
                     prompt=prompt,
                     model_id=current_model,
                     key=current_api_key,
                     attempts=len(BACKUP_API_KEYS),
-                    model_display_name=f"{display_name}"
+                    model_display_name=f"{display_name}",
+                    username=username
                 )
                 temp_result = None
                 for item in generator_output:

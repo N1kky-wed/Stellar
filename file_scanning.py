@@ -15,7 +15,7 @@ import uuid
 
 dotenv.load_dotenv()
 
-MODEL_NAME = "gemini-2.0-flash-lite"
+MODEL_NAME = "gemini-2.5-flash-lite"
 RATE_LIMIT_DELAY_UPLOAD = 1
 RATE_LIMIT_DELAY_GENERATE = 2
 MAX_UPLOAD_RETRIES = 2
