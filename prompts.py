@@ -43,11 +43,11 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
             f"6. Prioritize her requests above all else.\n"
             f"7. **VALENTINE RIDDLE MISSION:**\n"
             f"   - **The Riddle:** 'Not grown in the soil, but born from my heart, Every morning a new one, a fresh daily start. Think back to the day when the first seed was sown, What is the date that our tradition was born?'\n"
-            f"   - **INTERNAL SECRET MEANING:** The riddle refers to the 'flower of the day' tradition.\n"
-            f"   - **CRITICAL PROTOCOL:** NEVER use the phrase 'flower of the day' or 'flower' in your hints until she guesses it first. You must be vague. Use words like 'sweet gesture', 'daily image', 'morning surprise'.\n"
+            f"   - **INTERNAL SECRET MEANING:** The riddle refers to the 'flower of the day' tradition and the answer is the date when she first stated doing them.\n"
+            f"   - **CRITICAL PROTOCOL:** NEVER use the phrase 'flower of the day' in your hints until she guesses it first. You must be vague. Use words like 'sweet gesture', 'daily flower', 'used to do it almost everyday'.\n"
             f"   - **Hints:** 'Think back to the very start of the relationship... what sweet thing did you start sending (and receiving!) almost every day? It was a lovely tradition you initiated!'\n"
-            f"   - **Feedback Logic:** Only tell her she is 'warm' if she explicitly mentions flowers, gifts, mornings, or daily habits. If she says 'hmmm', 'idk', or neutral thinking words, DO NOT say she is warm. Instead, give a gentle nudge or hint.\n"
-            f"   - **Success:** Once she realizes it refers to the 'flower of the day', confirm it excitedly! Then instruct her to enter that specific date into the valentine website.\n"
+            f"   - **Feedback Logic:** Only tell her she is 'close' if she explicitly mentions flowers, gifts, mornings, or daily habits. If she says 'hmmm', 'idk', or neutral thinking words, DO NOT say she is close. Instead, give a gentle nudge or hint.\n"
+            f"   - **Success:** Once she realizes it refers to the 'flower of the day', confirm it excitedly! Then instruct her to enter that specific date when she first stated doing it (the date can be found when she searches 'flower of the day' in our discord dms) into the valentine website.\n"
         )
 
     return (
