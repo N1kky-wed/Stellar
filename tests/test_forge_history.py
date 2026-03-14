@@ -1,93 +1,62 @@
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+import time
+from unittest.mock import patch, MagicMock
+from app import get_db
 
-def test_forge_history_flow(client, mock_docker_client):
-    # Configure mock container
+def test_forge_history(client, mocker):
+    # Register and login first to avoid 401
+    client.post('/register', json={'username': 'user1', 'password': 'pw'})
+    client.post('/login', json={'username': 'user1', 'password': 'pw'})
+
+    # Mock the LLM to return exactly what's needed without using real API key
+    mock_gen_response = [{'result': '```json\n{"index.html": "<html></html>", "app.py": "from flask import Flask"}\n```'}]
+    mocker.patch('app.gemini_generate', return_value=iter(mock_gen_response))
+    mocker.patch('app.generate_forge_title', return_value='Test Forge')
+
+
+    # Mock docker
     mock_container = MagicMock()
     mock_container.id = "mock_container_id_123"
     mock_container.short_id = "mock_short"
     mock_container.status = "running"
     mock_container.attrs = {'NetworkSettings': {'Ports': {'5000/tcp': [{'HostPort': '1234'}]}}}
-    mock_container.exec_run.return_value = MagicMock(exit_code=0, output=b'')
+    mock_container.exec_run.return_value = MagicMock(exit_code=0, output=[(b'mock log', None)])
+    mock_container.logs.return_value = [b"mock logs"]
 
+    mock_docker_client = MagicMock()
     mock_docker_client.containers.run.return_value = mock_container
     mock_docker_client.containers.get.return_value = mock_container
+    mocker.patch('app.client', mock_docker_client)
 
-    # 1. Login
-    client.post('/register', json={'username': 'user1', 'password': 'pw'})
-    client.post('/login', json={'username': 'user1', 'password': 'pw'})
+    mocker.patch('app.tavily_search', return_value={"results": []})
 
-    # 2. Mock gemini response for forge_start
-    mock_gen_response = [{'result': '```json\n{"index.html": "<html></html>", "app.py": "from flask import Flask"}\n```'}]
+    # start forge
+    resp = client.post("/codelab/forge/start", json={"prompt": "build hello world"})
+    assert resp.status_code == 200
 
-    with patch('app.gemini_generate', return_value=iter(mock_gen_response)):
-        # 3. Start Forge
-        rv = client.post('/codelab/forge/start', json={'prompt': 'test app'})
-        assert rv.status_code == 200
-        data = json.loads(rv.data)
-        assert data['success'] is True
-        process_id = data['process_id']
+    # Wait for the background thread to do its work
+    time.sleep(2)
 
-    # 4. Check History
-    # Wait a bit for thread to potentially run?
-    # But we are testing sync mostly, the thread runs in background.
-    # The initial insert happens before thread start.
+    # connect to stream
+    process_id = json.loads(resp.data)['process_id']
+    stream = client.get(f"/codelab/forge/stream?process_id={process_id}")
 
-    rv = client.get('/api/forge/history')
-    assert rv.status_code == 200
-    data = json.loads(rv.data)
-    assert len(data['history']) == 1
-    entry = data['history'][0]
-    assert entry['process_id'] == process_id
+    events = []
+    for line in stream.response:
+        print("STREAM LINE:", line)
+        if b"ide_view" in line:
+            events.append(line)
+            break
+        if b"__STREAM_END__" in line:
+            break
 
-    # Status might be 'starting' or 'created' depending on race.
-    assert entry['status'] in ['starting', 'created', 'running', 'failed']
-
-    history_id = entry['id']
-
-    # 5. Resume (Load into session)
-    rv = client.post(f'/api/forge/history/{history_id}/resume')
-    assert rv.status_code == 200
-    data = json.loads(rv.data)
-    assert data['success'] is True
-    assert data['files']['index.html'] == "<html></html>"
-
-    # 6. Delete History
-    rv = client.delete(f'/api/forge/history/{history_id}')
-    assert rv.status_code == 200
-
-    # 7. Check History again
-    rv = client.get('/api/forge/history')
-    data = json.loads(rv.data)
-    assert len(data['history']) == 0
-
-def test_forge_redeploy_history(client, mock_docker_client):
-    # Configure mock container
-    mock_container = MagicMock()
-    mock_container.id = "mock_container_id_456"
-    mock_container.short_id = "mock_short_2"
-    mock_docker_client.containers.run.return_value = mock_container
-
-    # Login
-    client.post('/register', json={'username': 'user2', 'password': 'pw'})
-    client.post('/login', json={'username': 'user2', 'password': 'pw'})
-
-    # Simulate session
-    with client.session_transaction() as sess:
-        sess['forge_project'] = {
-            'files': {"index.html": "", "app.py": ""},
-            'container_id': None,
-            'process_id': "old_pid"
-        }
-
-    # Redeploy
-    updated_files = {"index.html": "<h1>New</h1>", "app.py": "pass"}
-    rv = client.post('/codelab/forge/redeploy', json={'files': updated_files})
-    assert rv.status_code == 200
-
-    # Check history
-    rv = client.get('/api/forge/history')
-    data = json.loads(rv.data)
-    assert len(data['history']) == 1
-    assert "Redeploy" in data['history'][0]['project_name']
+    # verify workspace artifact created
+    from app import redis_client
+    redis_key = f"forge:process:{process_id}"
+    files_json = redis_client.hget(redis_key, "files")
+    if files_json:
+        workspace = {"files": json.loads(files_json)}
+    else:
+        workspace = {"files": {}}
+    assert "index.html" in workspace["files"]

@@ -168,7 +168,7 @@ def get_cosmos_report_prompt(user_query: str, full_context: str) -> str:
 
 def get_forge_initial_build_prompt(user_prompt):
     return (
-        f"**Role:** You are an expert full-stack developer specializing in rapid prototyping. Your task is to generate a complete, functional, single-page web application based on a user's request.\n\n"
+        f"**Role:** You are the Lead Engineer (Builder Agent) in the Stellar Universal Forge War Room.\n\n"
         f"**User's Request:**\n---\n{user_prompt}\n---\n\n"
         f"**Core Task:** Generate a complete `index.html`, a Python `app.py` file using Flask, and a `requirements.txt` file listing all Python dependencies.\n\n"
         f"**CRITICAL INSTRUCTIONS FOR `app.py`:**\n"
@@ -453,7 +453,7 @@ client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])"""
 
 def get_forge_iteration_prompt(user_prompt, current_code_json):
     return (
-        f"**Role:** You are an expert full-stack developer modifying an existing application based on a user's request.\n\n"
+        f"**Role:** You are the Lead Engineer (Builder Agent) in the Stellar Universal Forge War Room.\n\n"
         f"**User's New Request:**\n---\n{user_prompt}\n---\n\n"
         f"**Current Application Codebase (JSON format):**\n---\n{current_code_json}\n---\n\n"
         f"**Core Task:** Analyze the user's new request and the provided code. Modify the code to implement the requested changes.\n\n"

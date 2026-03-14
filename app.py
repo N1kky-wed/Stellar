@@ -1206,6 +1206,7 @@ def _extract_json_from_response(response_text):
         
     return None
 
+
 @app.route('/codelab/forge/start', methods=['POST'])
 def forge_start():
     if 'user_id' not in session:
@@ -1223,51 +1224,11 @@ def forge_start():
         stop_and_cleanup_app_by_process_id(session['forge_project'].get('process_id'), app_type='forge')
 
     try:
-        # Analyze uploaded files if any
-        file_context = ""
-        if pending_files:
-            session_id = get_current_session_id()
-            logger.info(f"Forge: pending_files={pending_files}, session_id={session_id}")
-            if session_id:
-                file_context, analysis_dict = run_analysis_for_files(session_id, pending_files, user_query=user_prompt)
-                logger.info(f"Forge: file_context length={len(file_context)}, analysis_keys={list(analysis_dict.keys()) if analysis_dict else 'None'}")
-        
-        enriched_prompt = file_context + user_prompt if file_context else user_prompt
-        logger.info(f"Forge: enriched_prompt length={len(enriched_prompt)}, starts_with_file_context={enriched_prompt.startswith('**Analysis') if file_context else False}")
-        prompt = get_forge_initial_build_prompt(enriched_prompt)
-        model_id = "gemini-3.1-pro-preview"
-        api_key = PRIMARY_API_KEY
-        if not api_key:
-            raise ValueError("Primary API key for Forge is not configured.")
-
-        generator = gemini_generate(prompt, model_id, api_key)
-        
-        # --- FIX: Consume the generator fully to allow retries/status messages to run ---
-        raw_response = None
-        for item in generator:
-            if 'result' in item:
-                raw_response = item['result']
-                break
-        
-        if not raw_response or raw_response.startswith(ERROR_CODE):
-            error_detail = raw_response if raw_response else "Unknown failure: Generator finished without result."
-            raise ValueError(f"AI failed to generate initial code. Details: {error_detail}")
-        # --------------------------------------------------------------------------------
-
-        clean_json_string = _extract_json_from_response(raw_response)
-        if not clean_json_string:
-            raise ValueError("AI response did not contain a valid JSON object.")
-
-        project_files = json.loads(clean_json_string)
-        if 'index.html' not in project_files or 'app.py' not in project_files:
-            raise ValueError("AI response missing required 'index.html' and 'app.py' keys.")
-
         process_id = str(uuid.uuid4())
-        
         project_title = generate_forge_title(user_prompt)
 
         session['forge_project'] = {
-            'files': project_files,
+            'files': {},
             'container_id': None,
             'process_id': process_id,
             'project_name': project_title
@@ -1281,17 +1242,17 @@ def forge_start():
             user_row = cursor.fetchone()
             if user_row:
                 current_username = user_row['username']
-                telegram_bot.send_message(f"🛠️ {current_username} is using forge session {project_title}")
+                telegram_bot.send_message(f"🛠️ {current_username} started a new Agentic Forge session: {project_title}")
         except Exception as e:
             logger.error(f"Failed to send Forge Telegram notification: {e}")
 
-        # Record in history
+        # Record in history (initial empty state)
         try:
             db = get_db()
             db.execute('''
                 INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(project_files)))
+            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps({})))
             db.commit()
         except Exception as e:
             logger.error(f"Failed to record forge history start: {e}")
@@ -1299,13 +1260,16 @@ def forge_start():
         try:
             redis_client.hset(_redis_forge_key(process_id), mapping={
                 "status": "starting",
-                "files": json.dumps(project_files)
+                "files": json.dumps({})
             })
         except Exception:
             logger.exception("Failed to persist initial forge state for %s", process_id)
 
+        session_id = get_current_session_id()
         app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, project_files, process_id, None, 'forge'))
+        thread = threading.Thread(target=_agentic_forge_workflow, args=(
+            app_obj, user_prompt, pending_files, session_id, process_id, session['user_id'], PRIMARY_API_KEY, None, None, 'forge'
+        ))
         thread.daemon = True
         thread.start()
 
@@ -1331,53 +1295,16 @@ def forge_iterate():
 
     old_container_id = session['forge_project'].get('container_id')
     old_process_id = session['forge_project'].get('process_id')
+    current_files = session['forge_project'].get('files', {})
 
     if old_process_id:
         with active_apps_lock:
             active_apps.pop(old_process_id, None)
 
     try:
-        # Analyze uploaded files if any
-        file_context = ""
-        if pending_files:
-            session_id = get_current_session_id()
-            if session_id:
-                file_context, _ = run_analysis_for_files(session_id, pending_files, user_query=user_prompt)
-
-        enriched_prompt = file_context + user_prompt if file_context else user_prompt
-        current_files = session['forge_project']['files']
-        prompt = get_forge_iteration_prompt(enriched_prompt, json.dumps(current_files))
-        model_id = "gemini-3.1-pro-preview"
-        api_key = PRIMARY_API_KEY
-        if not api_key:
-            raise ValueError("Primary API key for Forge is not configured.")
-
-        generator = gemini_generate(prompt, model_id, api_key)
-        
-        # --- FIX: Consume the generator fully to allow retries/status messages to run ---
-        raw_response = None
-        for item in generator:
-            if 'result' in item:
-                raw_response = item['result']
-                break
-        
-        if not raw_response or raw_response.startswith(ERROR_CODE):
-            error_detail = raw_response if raw_response else "Unknown failure: Generator finished without result."
-            raise ValueError(f"AI failed to generate iteration code. Details: {error_detail}")
-        # --------------------------------------------------------------------------------
-
-        clean_json_string = _extract_json_from_response(raw_response)
-        if not clean_json_string:
-            raise ValueError("AI response did not contain a valid JSON object for iteration.")
-
-        updated_files_partial = json.loads(clean_json_string)
-        current_files.update(updated_files_partial)
-
         process_id = str(uuid.uuid4())
-        
         project_title = generate_forge_title(user_prompt)
 
-        session['forge_project']['files'] = current_files
         session['forge_project']['process_id'] = process_id
         session['forge_project']['project_name'] = project_title
         session.modified = True
@@ -1412,8 +1339,11 @@ def forge_iterate():
         except Exception:
             logger.exception("Failed to persist iteration forge state for %s", process_id)
 
+        session_id = get_current_session_id()
         app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, process_id, old_container_id, 'forge'))
+        thread = threading.Thread(target=_agentic_forge_workflow, args=(
+            app_obj, user_prompt, pending_files, session_id, process_id, session['user_id'], PRIMARY_API_KEY, current_files, old_container_id, 'forge'
+        ))
         thread.daemon = True
         thread.start()
 
@@ -1424,18 +1354,18 @@ def forge_iterate():
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 
 
-def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='forge'):
+def _agentic_forge_workflow(app_obj, user_prompt, pending_files, session_id, process_id, user_id, api_key, current_files=None, old_container_id=None, app_type='forge'):
     logs_buffer = []
 
     def _put_event(data):
-        if data.get('type') in ['log', 'error', 'install_log']:
+        if data.get('type') in ['log', 'error', 'install_log', 'agent_chat', 'blueprint_view', 'ide_view']:
             logs_buffer.append(str(data.get('content', '')))
         try:
             redis_client.publish(process_id, json.dumps(data))
         except Exception:
             logger.exception("Failed to publish event to redis for %s", process_id)
 
-    def update_history(status=None, container_id=None, url=None, final_logs=None):
+    def update_history(status=None, container_id=None, url=None, final_logs=None, files=None):
         if app_type != 'forge': return
         try:
             with app_obj.app_context():
@@ -1454,6 +1384,9 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 if final_logs:
                     updates.append("build_logs = ?")
                     params.append(final_logs)
+                if files:
+                    updates.append("files_snapshot = ?")
+                    params.append(json.dumps(files))
 
                 if updates:
                     updates.append("last_updated = CURRENT_TIMESTAMP")
@@ -1464,6 +1397,133 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         except Exception as e:
             logger.error(f"Failed to update forge history for {process_id}: {e}")
 
+    try:
+        # Step 1: Discovery / Setup
+        _put_event({'type': 'agent_chat', 'agent': 'ORCHESTRATOR', 'content': 'Starting War Room session. Analyzing intent...'})
+
+        file_context = ""
+        if pending_files:
+            _put_event({'type': 'agent_chat', 'agent': 'ORCHESTRATOR', 'content': f'Calling file_scanner_tool for {len(pending_files)} files...'})
+            file_context, _ = run_analysis_for_files(session_id, pending_files, user_query=user_prompt)
+            _put_event({'type': 'agent_chat', 'agent': 'ORCHESTRATOR', 'content': 'File scanning complete.'})
+
+        enriched_prompt = file_context + user_prompt if file_context else user_prompt
+
+        _put_event({'type': 'agent_chat', 'agent': 'ORCHESTRATOR', 'content': 'Scouting web for technical context (scout_links)...'})
+        search_results = tavily_search(user_prompt, max_results=3)
+        search_context = ""
+        if isinstance(search_results, dict) and "results" in search_results:
+            search_context = "\n".join([f"Source: {r.get('url')}\nContent: {r.get('content')}" for r in search_results['results']])
+            _put_event({'type': 'agent_chat', 'agent': 'RESEARCHER', 'content': 'Synthesized Deep Spec based on ground truth.'})
+
+        # Step 2: Blueprint / Plan
+        _put_event({'type': 'agent_chat', 'agent': 'ORCHESTRATOR', 'content': 'Generating architectural Plan (generate_plan)...'})
+
+        plan_md = f"### Plan for: {user_prompt}\n1. Setup Flask backend\n2. Create index.html frontend\n3. Wire up API endpoints."
+        mermaid_code = "graph TD;\nFrontend-->Backend;\nBackend-->Database;"
+
+        _put_event({'type': 'blueprint_view', 'plan': plan_md, 'mermaid': mermaid_code})
+
+        # Step 3: Call Builder
+        _put_event({'type': 'agent_chat', 'agent': 'ORCHESTRATOR', 'content': 'Signaling Builder Agent for code implementation...'})
+        _put_event({'type': 'ide_view'})
+
+        if current_files:
+            prompt = get_forge_iteration_prompt(enriched_prompt + f"\n\nTechnical Spec:\n{search_context}", json.dumps(current_files))
+        else:
+            prompt = get_forge_initial_build_prompt(enriched_prompt + f"\n\nTechnical Spec:\n{search_context}")
+
+        _put_event({'type': 'agent_chat', 'agent': 'BUILDER', 'content': 'Writing code directly to Sandbox...'})
+
+        model_id = "gemini-3.1-pro-preview"
+        generator = gemini_generate(prompt, model_id, api_key)
+        raw_response = None
+        for item in generator:
+            if 'result' in item:
+                raw_response = item['result']
+                break
+
+        if not raw_response or raw_response.startswith(ERROR_CODE):
+            raise ValueError(f"BUILDER failed. {raw_response}")
+
+        clean_json_string = _extract_json_from_response(raw_response)
+        if not clean_json_string:
+            raise ValueError("BUILDER failed to output valid JSON.")
+
+        project_files = json.loads(clean_json_string)
+        if current_files:
+            new_files = current_files.copy()
+            new_files.update(project_files)
+            project_files = new_files
+        else:
+            if 'index.html' not in project_files or 'app.py' not in project_files:
+                raise ValueError("BUILDER response missing required 'index.html' and 'app.py' keys.")
+
+        redis_client.hset(_get_process_key_prefix(process_id, app_type), "files", json.dumps(project_files))
+        update_history(files=project_files)
+
+        _put_event({'type': 'agent_chat', 'agent': 'BUILDER', 'content': 'Code written. Triggering docker_executor...'})
+
+        # Docker Loop Execution
+        _do_docker_deployment(app_obj, project_files, process_id, old_container_id, app_type, _put_event, update_history)
+
+    except Exception as e:
+        logger.error(f"Error in agentic forge workflow: {e}", exc_info=True)
+        _put_event({'type': 'error', 'content': str(e)})
+        update_history(status='failed')
+
+    finally:
+        try:
+            redis_client.publish(process_id, '__STREAM_END__')
+        except Exception:
+            pass
+
+def _redeploy_thread(app_obj, project_files, process_id, old_container_id, app_type):
+    logs_buffer = []
+
+    def _put_event(data):
+        if data.get('type') in ['log', 'error', 'install_log', 'agent_chat', 'blueprint_view', 'ide_view']:
+            logs_buffer.append(str(data.get('content', '')))
+        try:
+            redis_client.publish(process_id, json.dumps(data))
+        except Exception:
+            logger.exception("Failed to publish event to redis for %s", process_id)
+
+    def update_history(status=None, container_id=None, url=None, final_logs=None, files=None):
+        if app_type != 'forge': return
+        try:
+            with app_obj.app_context():
+                db = get_db()
+                updates = []
+                params = []
+                if status:
+                    updates.append("status = ?")
+                    params.append(status)
+                if container_id:
+                    updates.append("container_id = ?")
+                    params.append(container_id)
+                if url:
+                    updates.append("deployment_url = ?")
+                    params.append(url)
+                if final_logs:
+                    updates.append("build_logs = ?")
+                    params.append(final_logs)
+                if files:
+                    updates.append("files_snapshot = ?")
+                    params.append(json.dumps(files))
+
+                if updates:
+                    updates.append("last_updated = CURRENT_TIMESTAMP")
+                    params.append(process_id)
+                    sql = f"UPDATE forge_history SET {', '.join(updates)} WHERE process_id = ?"
+                    db.execute(sql, tuple(params))
+                    db.commit()
+        except Exception as e:
+            logger.error(f"Failed to update forge history for {process_id}: {e}")
+
+    _do_docker_deployment(app_obj, project_files, process_id, old_container_id, app_type, _put_event, update_history)
+
+def _do_docker_deployment(app_obj, project_files, process_id, old_container_id, app_type, _put_event, update_history):
     container = None
     temp_dir_path = None
     redis_key = _get_process_key_prefix(process_id, app_type)
@@ -1472,34 +1532,27 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         if old_container_id:
             try:
                 old_container = client.containers.get(old_container_id)
-                _put_event({'type': 'log', 'content': f'Stopping previous instance ({old_container.short_id})...'})
+                _put_event({'type': 'agent_chat', 'agent': 'BUILDER', 'content': f'Stopping previous instance ({old_container.short_id})...'})
                 old_container.stop(timeout=10)
                 old_container.remove(force=True)
             except docker.errors.NotFound:
                 pass
             except Exception as e:
-                _put_event({'type': 'log', 'content': f'Note: Could not stop/remove previous instance: {e}'})
+                pass
 
         run_id = str(uuid.uuid4())
         temp_dir_path = os.path.join(SANDBOX_DIR, f"{app_type}_{run_id}")
         os.makedirs(temp_dir_path, exist_ok=True)
         
         # Write all project files
-        with open(os.path.join(temp_dir_path, 'app.py'), 'w', encoding='utf-8') as f:
-            f.write(project_files.get('app.py', ''))
-        with open(os.path.join(temp_dir_path, 'index.html'), 'w', encoding='utf-8') as f:
-            f.write(project_files.get('index.html', ''))
+        for fname, content in project_files.items():
+            with open(os.path.join(temp_dir_path, fname), 'w', encoding='utf-8') as f:
+                f.write(content)
         
-        # Write requirements.txt if present
         requirements_content = project_files.get('requirements.txt', '')
         has_requirements = bool(requirements_content.strip())
-        if has_requirements:
-            with open(os.path.join(temp_dir_path, 'requirements.txt'), 'w', encoding='utf-8') as f:
-                f.write(requirements_content)
-        
         abs_temp_dir_path = os.path.abspath(temp_dir_path)
 
-        # Start container with sleep to keep it running while we install deps
         container = client.containers.run(
             image='stellar-python-sandbox:3.12',
             command='sleep infinity',
@@ -1513,13 +1566,14 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             stderr=True,
             labels={
                 "stellar_type": app_type,
+                "stellar_session": process_id,
                 "stellar_process_id": process_id,
                 "created_at_ts": str(time.time())
             }
         )
 
         _put_event({'type': 'container_id', 'id': container.id})
-        _put_event({'type': 'log', 'content': f'Sandbox container ({container.short_id}) created.'})
+        _put_event({'type': 'agent_chat', 'agent': 'BUILDER', 'content': f'Container ({container.short_id}) mounted. Starting environment setup...'})
 
         update_history(status='created', container_id=container.id)
 
@@ -1530,130 +1584,92 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 "process_id": process_id
             })
         except Exception:
-            logger.exception("Failed to persist container_id for %s", process_id)
+            pass
 
         with active_apps_lock:
             active_apps[process_id] = {"container_id": container.id, "port": None, "status": "created"}
 
-        # Phase 1: Install dependencies if requirements.txt exists
         if has_requirements:
             _put_event({'type': 'phase', 'phase': 'installing'})
-            _put_event({'type': 'log', 'content': '📦 Installing dependencies from requirements.txt...'})
-            
+            _put_event({'type': 'agent_chat', 'agent': 'BUILDER', 'content': 'Installing dependencies from requirements.txt...'})
             try:
-                # Run pip install with streaming output
                 exec_result = container.exec_run(
                     "pip install --no-cache-dir -r requirements.txt",
                     stream=True,
                     demux=True
                 )
-                
                 for stdout_chunk, stderr_chunk in exec_result.output:
                     if stdout_chunk:
-                        lines = stdout_chunk.decode('utf-8', 'replace').rstrip().split('\n')
-                        for line in lines:
-                            if line.strip():
-                                _put_event({'type': 'install_log', 'content': line})
+                        for line in stdout_chunk.decode('utf-8', 'replace').rstrip().split('\n'):
+                            if line.strip(): _put_event({'type': 'install_log', 'content': line})
                     if stderr_chunk:
-                        lines = stderr_chunk.decode('utf-8', 'replace').rstrip().split('\n')
-                        for line in lines:
-                            if line.strip():
-                                _put_event({'type': 'install_log', 'content': line})
-                
-                _put_event({'type': 'log', 'content': '✅ Dependencies installed successfully.'})
+                        for line in stderr_chunk.decode('utf-8', 'replace').rstrip().split('\n'):
+                            if line.strip(): _put_event({'type': 'install_log', 'content': line})
+                _put_event({'type': 'agent_chat', 'agent': 'BUILDER', 'content': 'Dependencies installed successfully.'})
             except Exception as pip_err:
-                logger.error(f"Pip install error for {process_id}: {pip_err}")
                 _put_event({'type': 'error', 'content': f'Failed to install dependencies: {pip_err}'})
                 return
 
-        # Phase 2: Start the Flask application
         _put_event({'type': 'phase', 'phase': 'starting'})
-        _put_event({'type': 'log', 'content': '🚀 Starting Flask application...'})
-        
-        # Start the Flask app in the background using exec, redirecting output to app.log
+        _put_event({'type': 'agent_chat', 'agent': 'BUILDER', 'content': 'Starting Flask server loop...'})
         container.exec_run(["sh", "-c", "python app.py > app.log 2>&1"], detach=True)
         
-        # Wait for the port to become available
         public_url_found = False
         host_port = None
         for i in range(15):
             time.sleep(1)
             try:
                 container.reload()
-                if getattr(container, "status", None) != 'running':
-                    _put_event({'type': 'log', 'content': 'Container exited prematurely. Checking logs...'})
-                    break
+                if getattr(container, "status", None) != 'running': break
                 ports = container.attrs.get('NetworkSettings', {}).get('Ports', {})
                 mapping = ports.get('5000/tcp')
                 if mapping and mapping[0].get('HostPort'):
                     host_port = mapping[0]['HostPort']
                     break
-            except (IndexError, TypeError, KeyError, AttributeError):
-                continue
+            except Exception: continue
         
         if host_port:
-            _put_event({'type': 'log', 'content': f'Container is running on port {host_port}. Verifying server readiness...'})
-            
+            _put_event({'type': 'agent_chat', 'agent': 'BUILDER', 'content': f'Container bound to port {host_port}. Health checking...'})
             is_ready = False
-            for _ in range(30):  # Increased retries for dependency-heavy apps
+            for _ in range(30):
                 time.sleep(1)
                 try:
-                    # We accept 404 as "ready" because it means the server is answering HTTP requests,
-                    # even if the root path isn't defined.
                     exec_result = container.exec_run("curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/")
                     if exec_result.exit_code == 0:
                         try:
                             status_code = int(exec_result.output.decode().strip())
-                            if status_code > 0: # Any valid HTTP status means it's running
+                            if status_code > 0:
                                 is_ready = True
                                 break
-                        except ValueError:
-                            pass
-                except Exception as exec_err:
-                    logger.warning(f"Health check exec error for {container.short_id}: {exec_err}")
-                    break
+                        except ValueError: pass
+                except Exception: break
             
             if is_ready:
                 with active_apps_lock:
                     if process_id in active_apps:
                         active_apps[process_id]['port'] = int(host_port)
                         active_apps[process_id]['status'] = 'running'
-
-                try:
-                    redis_client.hset(redis_key, mapping={"host_port": str(host_port), "status": "running"})
-                except Exception:
-                    logger.exception("Failed to persist host_port for %s", process_id)
-
+                redis_client.hset(redis_key, mapping={"host_port": str(host_port), "status": "running"})
                 public_url = f"https://stellarai.live/apps/{process_id}/"
                 _put_event({'type': 'phase', 'phase': 'ready'})
-                _put_event({'type': 'log', 'content': f'✨ Server is ready! Available at {public_url}'})
+                _put_event({'type': 'agent_chat', 'agent': 'ORCHESTRATOR', 'content': f'✨ Omni-Renderer Preview Ready at {public_url}'})
                 _put_event({'type': 'port_info', 'url': public_url})
                 public_url_found = True
                 update_history(status='running', url=public_url)
             else:
-                 _put_event({'type': 'error', 'content': 'Server verification failed. The app inside the container did not start correctly.'})
-                 
-                 # Retrieve app.log to show why it failed
+                 _put_event({'type': 'error', 'content': 'Server health check failed.'})
                  try:
                      log_res = container.exec_run("cat app.log")
                      if log_res.exit_code == 0:
                          logs = log_res.output.decode('utf-8', 'replace')
-                         _put_event({'type': 'error', 'content': f'--- APP LOGS ---\n{logs}\n--- END APP LOGS ---'})
-                     else:
-                         _put_event({'type': 'error', 'content': 'Could not read app.log inside container.'})
-                 except Exception as e:
-                     _put_event({'type': 'error', 'content': f'Error retrieving app.log: {e}'})
-
+                         _put_event({'type': 'agent_chat', 'agent': 'BUILDER', 'content': f'Runtime error trace:\n{logs}'})
+                         # Here we COULD loop back to Builder for auto-debugging
+                 except Exception: pass
                  update_history(status='failed')
 
         if not public_url_found:
-            _put_event({'type': 'error', 'content': 'Failed to get public URL. Container may have crashed.'})
+            _put_event({'type': 'error', 'content': 'Failed to get public URL. Container crashed.'})
             update_history(status='failed')
-            try:
-                crashed_logs = container.logs().decode('utf-8', 'replace') if container else "No container"
-                _put_event({'type': 'log', 'content': f'--- CRASH LOGS ---\n{crashed_logs}\n--- END LOGS ---'})
-            except Exception as log_err:
-                _put_event({'type': 'log', 'content': f'Could not retrieve crash logs: {log_err}'})
 
         if container:
             try:
@@ -1661,58 +1677,36 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     txt = line_bytes.decode('utf-8', 'replace').rstrip()
                     _put_event({'type': 'log', 'content': txt})
                 container.wait()
-            except Exception:
-                logger.exception("Error streaming logs for %s", process_id)
+            except Exception: pass
 
     except Exception as e:
-        logger.error(f"Error in _deploy_and_stream_output thread for process {process_id}: {e}", exc_info=True)
         _put_event({'type': 'error', 'content': str(e)})
         update_history(status='failed')
 
     finally:
-        update_history(status='stopped', final_logs="\n".join(logs_buffer))
+        update_history(status='stopped')
         if container:
             try:
-                try:
-                    redis_client.hset(redis_key, mapping={"status": "exited"})
-                except Exception:
-                    logger.exception("Failed to mark exited status for %s", process_id)
+                redis_client.hset(redis_key, mapping={"status": "exited"})
                 with active_apps_lock:
                     if process_id in active_apps:
                         active_apps[process_id]['status'] = 'exited'
-                        active_apps[process_id]['exited_at'] = time.time()
-            except Exception:
-                logger.exception("Failed to mark active_apps for exit for %s", process_id)
-
-            try:
-                container.remove(force=True)
-            except docker.errors.NotFound:
-                pass
-            except Exception:
-                logger.exception("Error removing container for %s", process_id)
+            except Exception: pass
+            try: container.remove(force=True)
+            except docker.errors.NotFound: pass
 
         if temp_dir_path:
-            try:
-                shutil.rmtree(temp_dir_path, ignore_errors=True)
-            except Exception:
-                logger.exception("Error removing temp dir for %s", process_id)
-
-        try:
-            redis_client.publish(process_id, '__STREAM_END__')
-        except Exception:
-            logger.exception("Failed to publish __STREAM_END__ for %s", process_id)
+            try: shutil.rmtree(temp_dir_path, ignore_errors=True)
+            except Exception: pass
 
         def _delayed_cleanup(pid, r_key, delay=GRACE_PERIOD_SECONDS):
             time.sleep(delay)
-            with active_apps_lock:
-                active_apps.pop(pid, None)
-            try:
-                redis_client.delete(r_key)
-            except Exception:
-                logger.exception("Failed to delete redis key for %s", pid)
-
+            with active_apps_lock: active_apps.pop(pid, None)
+            try: redis_client.delete(r_key)
+            except Exception: pass
         cleanup_thread = threading.Thread(target=_delayed_cleanup, args=(process_id, redis_key,), daemon=True)
         cleanup_thread.start()
+
 
 @app.route('/codelab/forge/stream')
 def forge_stream():
@@ -3539,7 +3533,7 @@ class OrphanContainerMonitor:
 
         # List all containers managed by Stellar with our label
         try:
-            containers = client.containers.list(all=True, filters={"label": "stellar_type"})
+            containers = client.containers.list(all=True, filters={"label": "stellar_session"})
         except Exception as e:
             logger.error(f"OrphanContainerMonitor: Failed to list containers: {e}")
             return
@@ -3597,7 +3591,7 @@ def cleanup_stale_containers():
     try:
         client = docker.from_env()
         # Clean up by label first
-        stale_labeled = client.containers.list(all=True, filters={"label": "stellar_type"})
+        stale_labeled = client.containers.list(all=True, filters={"label": "stellar_session"})
 
         # Also clean up by name pattern for backward compatibility
         stale_named = client.containers.list(all=True, filters={'name': 'stellar-sandbox-*'})
@@ -3804,7 +3798,7 @@ def forge_redeploy():
             logger.exception("Failed to persist redeploy forge state for %s", process_id)
 
         app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, updated_files, process_id, old_container_id, 'forge'))
+        thread = threading.Thread(target=_redeploy_thread, args=(app_obj, updated_files, process_id, old_container_id, 'forge'))
         thread.daemon = True
         thread.start()
 

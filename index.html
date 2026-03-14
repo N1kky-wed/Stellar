@@ -3831,7 +3831,12 @@
             font-weight: bold;
         }
 
-        #forge-status-log .log-line.install {
+
+        #forge-status-log .log-line.agent {
+            color: #00ff88;
+            font-weight: 500;
+        }
+#forge-status-log .log-line.install {
             color: #00ccff;
             opacity: 0.85;
             font-family: monospace;
@@ -4997,6 +5002,251 @@
             }
         }
         function updateForgeUIForSessionState(isActive) {
+            const forgeStatusLog = document.getElementById('forge-status-log');
+            const forgeControls = document.getElementById('forge-controls');
+            const forgeStartBtn = document.getElementById('forgeStartBtn');
+            const forgeEndSessionBtn = document.getElementById('forgeEndSessionBtn');
+            const forgeViewCodeBtn = document.getElementById('forgeViewCodeBtn');
+
+            isForgeSessionActive = isActive;
+            forgeStatusLog.style.display = isActive ? 'block' : 'none';
+            forgeStartBtn.textContent = isActive ? 'Submit Change' : 'Start Building';
+            forgeEndSessionBtn.style.display = isActive ? 'block' : 'none';
+            forgeViewCodeBtn.style.display = isActive ? 'block' : 'none';
+
+            if (isActive) {
+                forgeControls.style.marginTop = '10px';
+            } else {
+                forgeStatusLog.innerHTML = '';
+                document.getElementById('forge-loading-overlay').style.display = 'grid';
+                document.getElementById('forgePreviewFrame').src = 'about:blank';
+                forgeControls.style.marginTop = 'auto';
+            }
+        }
+
+        function addLogToForge(message, type = 'info') {
+            const logContainer = document.getElementById('forge-status-log');
+            const line = document.createElement('span');
+            line.className = `log-line ${type}`;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(line);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // REPLACE the existing handleForgeStart function
+        // ===== Forge File Staging =====
+        let forgeStagedFiles = [];
+
+        function stageForgeFiles(fileList) {
+            for (let i = 0; i < fileList.length; i++) {
+                // Avoid duplicates by name
+                if (!forgeStagedFiles.some(f => f.name === fileList[i].name)) {
+                    forgeStagedFiles.push(fileList[i]);
+                }
+            }
+            updateForgeStagedFilesUI();
+        }
+
+        function updateForgeStagedFilesUI() {
+            const container = document.getElementById('forgeStagedFilesContainer');
+            if (!container) return;
+            if (forgeStagedFiles.length === 0) {
+                container.innerHTML = '';
+                container.style.display = 'none';
+                return;
+            }
+            container.style.display = 'block';
+            container.innerHTML = '<small style="opacity:0.7;">📎 Attached files:</small>';
+            const list = document.createElement('div');
+            list.style.display = 'flex';
+            list.style.flexWrap = 'wrap';
+            list.style.gap = '4px';
+            list.style.marginTop = '4px';
+
+            forgeStagedFiles.forEach((file, index) => {
+                const chip = document.createElement('span');
+                chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:4px;padding:2px 6px;font-size:0.9em;';
+                chip.innerHTML = `<span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${file.name} (${(file.size / 1024).toFixed(1)} KB)">${file.name}</span>`;
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = '✖';
+                removeBtn.style.cssText = 'background:none;border:none;color:var(--secondary-text-color);cursor:pointer;font-size:0.8em;padding:0 2px;opacity:0.6;';
+                removeBtn.title = 'Remove';
+                removeBtn.addEventListener('click', () => {
+                    forgeStagedFiles.splice(index, 1);
+                    updateForgeStagedFilesUI();
+                });
+                chip.appendChild(removeBtn);
+                list.appendChild(chip);
+            });
+            container.appendChild(list);
+        }
+
+        async function uploadForgeFiles() {
+            if (forgeStagedFiles.length === 0) return [];
+            const formData = new FormData();
+            forgeStagedFiles.forEach(file => formData.append('file', file));
+            try {
+                addLogToForge(`Uploading ${forgeStagedFiles.length} file(s)...`);
+                const response = await fetch('/upload_files', { method: 'POST', body: formData });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Upload failed');
+                const uploaded = data.uploaded_files || [];
+                addLogToForge(`Uploaded ${uploaded.length} file(s) successfully.`);
+                forgeStagedFiles = [];
+                updateForgeStagedFilesUI();
+                return uploaded;
+            } catch (err) {
+                addLogToForge(`File upload error: ${err.message}`, 'error');
+                return [];
+            }
+        }
+
+        async function handleForgeStart() {
+            const promptInput = document.getElementById('forgePromptInput');
+            const prompt = promptInput.value.trim();
+            if (!prompt) {
+                alert("Please describe the application you want to build.");
+                return;
+            }
+
+            updateForgeUIForSessionState(true);
+            addLogToForge("Sending request to Stellar...");
+            document.getElementById('forgeStartBtn').disabled = true;
+            promptInput.disabled = true;
+
+            try {
+                // Upload staged files first
+                const pendingFiles = await uploadForgeFiles();
+
+                const response = await fetch('/codelab/forge/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: prompt, pending_files: pendingFiles })
+                });
+
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Failed to start Forge session.');
+                }
+
+                // Now connect to the streaming endpoint
+                const processId = data.process_id;
+                forgeSseSource = new EventSource(`/codelab/forge/stream?process_id=${processId}`);
+                handleForgeStream(forgeSseSource, promptInput);
+
+            } catch (error) {
+                addLogToForge(`Error: ${error.message}`, 'error');
+                updateForgeUIForSessionState(false); // Reset UI on failure
+                document.getElementById('forgeStartBtn').disabled = false;
+                promptInput.disabled = false;
+            }
+        }
+
+        async function handleForgeIterate() {
+            if (forgeSseSource) forgeSseSource.close();
+            const promptInput = document.getElementById('forgePromptInput');
+            const prompt = promptInput.value.trim();
+            if (!prompt) {
+                alert("Please describe the change you want to make.");
+                return;
+            }
+
+            addLogToForge(`Sending modification request: "${prompt}"`);
+            document.getElementById('forgeStartBtn').disabled = true;
+            promptInput.disabled = true;
+
+            try {
+                // Upload staged files first
+                const pendingFiles = await uploadForgeFiles();
+
+                const response = await fetch('/codelab/forge/iterate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: prompt, pending_files: pendingFiles })
+                });
+
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Failed to iterate on Forge project.');
+                }
+
+                const processId = data.process_id;
+                forgeSseSource = new EventSource(`/codelab/forge/stream?process_id=${processId}`);
+                handleForgeStream(forgeSseSource, promptInput);
+
+            } catch (error) {
+                addLogToForge(`Error: ${error.message}`, 'error');
+                document.getElementById('forgeStartBtn').disabled = false;
+                promptInput.disabled = false;
+            }
+        }
+
+        function connectToForgeStream(processId) {
+            if (forgeSseSource) forgeSseSource.close();
+            forgeSseSource = new EventSource(`/codelab/forge/stream?process_id=${processId}`);
+            handleForgeStream(forgeSseSource, document.getElementById('forgePromptInput'));
+        }
+
+
+        function handleForgeStream(sse, promptInput) {
+            const loadingOverlay = document.getElementById('forge-loading-overlay');
+            const previewFrame = document.getElementById('forgePreviewFrame');
+            const startBtn = document.getElementById('forgeStartBtn');
+            let currentPhase = 'connecting';
+
+            loadingOverlay.style.display = 'grid';
+            loadingOverlay.innerHTML = '<div class="forge-phase-indicator">Initiating War Room...</div>';
+
+            sse.onmessage = (event) => {
+                try {
+                    if (event.data.startsWith(':')) return;
+                    const data = JSON.parse(event.data);
+
+                    if (data.type === 'agent_chat') {
+                        addLogToForge(`[${data.agent}] ${data.content}`, 'agent');
+                        loadingOverlay.innerHTML = `<div class="forge-phase-indicator">${data.agent} is working...</div><p style="text-align:center;max-width:80%;">${data.content}</p>`;
+                    } else if (data.type === 'blueprint_view') {
+                        // For simplicity, just append to log for now
+                        addLogToForge(`[ORCHESTRATOR] Generated Blueprint Plan.`, 'agent');
+                    } else if (data.type === 'ide_view') {
+                        addLogToForge(`[ORCHESTRATOR] Switching to IDE View.`, 'agent');
+                    } else if (data.type === 'install_log') {
+                        addLogToForge(data.content, 'install');
+                    } else if (data.type === 'log') {
+                        addLogToForge(data.content);
+                    } else if (data.error || (data.type === 'error' && data.content)) {
+                        addLogToForge(`ERROR: ${data.error || data.content}`, 'error');
+                        sse.close();
+                        alert(`An error occurred: ${data.error || data.content}`);
+                        startBtn.disabled = false;
+                        promptInput.disabled = false;
+                        promptInput.value = '';
+                    } else if (data.type === 'port_info' && data.url) {
+                        addLogToForge(`Deployment successful! URL: ${data.url}`, 'success');
+                        setTimeout(() => {
+                            previewFrame.src = data.url;
+                            loadingOverlay.style.display = 'none';
+                        }, 1500);
+                        sse.close();
+                        document.getElementById('forgeStartBtn').textContent = "Update";
+                        document.getElementById('forgeStartBtn').disabled = false;
+                        promptInput.disabled = false;
+                        promptInput.value = '';
+                        document.getElementById('forgeEndSessionBtn').style.display = 'block';
+                        document.getElementById('forgeViewCodeBtn').style.display = 'block';
+                    }
+                } catch (err) {
+                    console.error("SSE parse error", err);
+                }
+            };
+            sse.onerror = () => {
+                addLogToForge("Stream connection error.", "error");
+                sse.close();
+                startBtn.disabled = false;
+                promptInput.disabled = false;
+            };
+        }
+function updateForgeUIForSessionState(isActive) {
             const forgeStatusLog = document.getElementById('forge-status-log');
             const forgeControls = document.getElementById('forge-controls');
             const forgeStartBtn = document.getElementById('forgeStartBtn');
