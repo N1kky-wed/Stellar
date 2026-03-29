@@ -282,6 +282,109 @@
             display: none !important;
         }
 
+        /* ===== Presentation Viewer Styles ===== */
+        .pres-viewer {
+            background: #111;
+            border: 1px solid var(--stellar-msg-border);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            width: 100%;
+            margin-top: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+        }
+        .pres-slide-container {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+        .pres-slide-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            transition: opacity 0.3s ease;
+        }
+        .pres-controls {
+            background: rgba(0,0,0,0.8);
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .pres-nav {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        .pres-arrow {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            font-size: 1.2rem;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .pres-arrow:hover {
+            background: var(--model-color-start);
+            transform: scale(1.1);
+            border-color: transparent;
+        }
+        .pres-arrow:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .pres-info {
+            font-size: 0.9rem;
+            color: var(--secondary-text-color);
+            font-weight: 500;
+        }
+        .pres-actions {
+            display: flex;
+            gap: 12px;
+        }
+        .pres-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            border: none;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .pres-download-btn {
+            background: linear-gradient(45deg, #00c292, #00d8b6);
+            color: white;
+        }
+        .pres-regen-btn {
+            background: linear-gradient(45deg, #ff8e8e, #ff6b6b);
+            color: white;
+        }
+        .pres-btn:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .pres-btn:active {
+            transform: translateY(0);
+        }
+
         /* ===== Chat Background Image ===== */
         #chatBgImage {
             position: fixed;
@@ -2643,15 +2746,18 @@
             background-color: var(--code-btn-bg);
             color: var(--code-btn-color);
             border: 1px solid transparent;
-            border-radius: 2px;
-            padding: 6px 12px;
-            font-size: 0.8rem;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 0.7rem;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 5px;
+            justify-content: center;
+            height: 24px;
+            line-height: 1;
+            white-space: nowrap;
+            gap: 4px;
             transition: background-color var(--transition-duration-fast) ease, color var(--transition-duration-fast) ease, transform 0.2s ease;
-            text-shadow: 0.5px 0.5px 0 black, -0.5px -0.5px 0 black, 0.5px -0.5px 0 black, -0.5px 0.5px 0 black;
         }
 
         .code-controls button:hover {
@@ -2667,8 +2773,8 @@
         }
 
         .code-controls svg {
-            width: 14px;
-            height: 14px;
+            width: 12px;
+            height: 12px;
             fill: currentColor;
         }
 
@@ -2816,8 +2922,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 28px;
-            height: 28px;
+            width: 24px;
+            height: 24px;
             position: relative;
             transition: background var(--tooltip-transition-duration) ease, color var(--tooltip-transition-duration) ease;
         }
@@ -2828,8 +2934,8 @@
         }
 
         .output-copy-btn svg {
-            width: 16px;
-            height: 16px;
+            width: 14px;
+            height: 14px;
             fill: currentColor;
         }
 
@@ -3968,6 +4074,57 @@
         .forge-delete-btn {
             background-color: var(--nebula-regenerate-start);
         }
+        
+        .stellar-msg .message-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            display: block;
+            margin: 10px auto;
+        }
+
+        .stellar-msg .message-content svg {
+            max-width: 85%;
+            width: auto;
+            height: auto;
+            background: transparent;
+            display: block;
+            margin: 15px auto;
+            border-radius: 12px;
+            transition: transform 0.3s ease;
+        }
+
+        .stellar-msg .message-content svg:hover {
+            transform: scale(1.02);
+        }
+
+        /* Prevent general SVG styling from breaking UI icons */
+        .stellar-msg .message-content .code-controls svg,
+        .stellar-msg .message-content .tool-spinner {
+            max-width: none;
+            display: inline-block;
+            margin: 0;
+            border-radius: 0;
+            transform: none;
+        }
+
+        .stellar-msg .message-content .code-controls svg {
+            width: 12px;
+            height: 12px;
+        }
+
+        .stellar-msg .message-content .code-controls svg:hover,
+        .stellar-msg .message-content .tool-spinner:hover {
+            transform: none;
+        }
+
+        @keyframes tool-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .tool-spinner {
+            animation: tool-spin 1.2s linear infinite;
+        }
     </style>
 </head>
 
@@ -4377,7 +4534,7 @@
                     </option>
                     <option value="gemini-3-flash-preview"
                         title="Smarter, better for complex tasks. Cosmos compatible.">Crimson</option>
-                    <option value="gemini-3-pro-preview"
+                    <option value="gemini-3.1-pro-preview"
                         title="Most powerful model for in-depth analysis. Cosmos compatible.">Obsidian</option>
 
                 </select>
@@ -5302,7 +5459,7 @@
             }
         }
         // Note: COSMOS_COMPATIBLE_MODELS kept for cosmos mode validation
-        const COSMOS_COMPATIBLE_MODELS = ["gemini-3-flash-preview", "gemini-3-pro-preview"];
+        const COSMOS_COMPATIBLE_MODELS = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"];
         const katexDelimiters = [
             { left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false },
             { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }
@@ -5398,7 +5555,7 @@
                 if (isRunnable && lang !== 'html') {
                     const runBtn = document.createElement('button');
                     runBtn.className = 'run-code-btn';
-                    runBtn.innerHTML = '<svg style="width:14px; height:14px;"><use xlink:href="#icon-play"></use></svg> Run';
+                    runBtn.innerHTML = '<svg style="width:12px; height:12px;"><use xlink:href="#icon-play"></use></svg> Run';
                     runBtn.setAttribute('aria-label', 'Run code');
                     controls.appendChild(runBtn);
                 }
@@ -5412,7 +5569,7 @@
 
                 const downloadBtn = document.createElement('button');
                 downloadBtn.className = 'download-code-btn';
-                downloadBtn.innerHTML = '<svg style="width:14px; height:14px;"><use xlink:href="#icon-download"></use></svg> Download';
+                downloadBtn.innerHTML = '<svg style="width:12px; height:12px;"><use xlink:href="#icon-download"></use></svg> Download';
                 downloadBtn.setAttribute('aria-label', 'Download code file');
                 controls.appendChild(downloadBtn);
 
@@ -5448,7 +5605,7 @@
 
                     const fullscreenBtn = document.createElement('button');
                     fullscreenBtn.className = 'fullscreen-btn';
-                    fullscreenBtn.innerHTML = `<svg style="width:14px; height:14px;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
+                    fullscreenBtn.innerHTML = `<svg style="width:12px; height:12px;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
                     fullscreenBtn.setAttribute('aria-label', 'Toggle fullscreen preview');
                     fullscreenBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -6620,7 +6777,15 @@
             const detailsDiv = msgDiv.querySelector('.analysis-content');
 
             if (statusSpan) {
-                statusSpan.textContent = newText;
+                statusSpan.innerHTML = '';
+                const isToolAction = ['Searching', 'Performing', 'Generating', 'Drawing', 'Creating', 'Controlling', 'Using tool'].some(w => newText.startsWith(w));
+                if (isToolAction && !isError) {
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = `<svg class="tool-spinner" viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;vertical-align:middle;margin-right:6px;"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+                    statusSpan.appendChild(iconSpan);
+                }
+                statusSpan.appendChild(document.createTextNode(newText));
+
                 if (isError) {
 
                     msgDiv.classList.remove("placeholder-message");
@@ -6657,6 +6822,113 @@
                 detailsDiv.innerHTML = html;
             }
         }
+        function renderPresentationViewer(container, data) {
+            if (!data || !data.slides || data.slides.length === 0) return;
+
+            let currentIndex = 0;
+            const viewer = document.createElement('div');
+            viewer.className = 'pres-viewer';
+            viewer.dataset.presId = data.presentation_id;
+            viewer.dataset.topic = data.topic;
+            viewer.dataset.style = data.style;
+            viewer.dataset.context = data.additional_context || "";
+            viewer.dataset.numSlides = data.num_slides;
+
+            const slideContainer = document.createElement('div');
+            slideContainer.className = 'pres-slide-container';
+            
+            const img = document.createElement('img');
+            img.className = 'pres-slide-img';
+            img.src = data.slides[0];
+            slideContainer.appendChild(img);
+
+            const controls = document.createElement('div');
+            controls.className = 'pres-controls';
+
+            const nav = document.createElement('div');
+            nav.className = 'pres-nav';
+
+            const prevBtn = document.createElement('button');
+            prevBtn.className = 'pres-arrow';
+            prevBtn.innerHTML = '❮';
+            prevBtn.disabled = true;
+
+            const nextBtn = document.createElement('button');
+            nextBtn.className = 'pres-arrow';
+            nextBtn.innerHTML = '❯';
+            if (data.slides.length <= 1) nextBtn.disabled = true;
+
+            const info = document.createElement('span');
+            info.className = 'pres-info';
+            info.textContent = `Slide 1 of ${data.slides.length}`;
+
+            nav.appendChild(prevBtn);
+            nav.appendChild(info);
+            nav.appendChild(nextBtn);
+
+            const actions = document.createElement('div');
+            actions.className = 'pres-actions';
+
+            const regenBtn = document.createElement('button');
+            regenBtn.className = 'pres-btn pres-regen-btn';
+            regenBtn.innerHTML = `<svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/></svg> Regenerate`;
+
+            const downloadBtn = document.createElement('a');
+            downloadBtn.className = 'pres-btn pres-download-btn';
+            downloadBtn.href = data.pptx_url;
+            downloadBtn.innerHTML = `<svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="currentColor"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z"/></svg> Download PPTX`;
+
+            actions.appendChild(regenBtn);
+            actions.appendChild(downloadBtn);
+
+            controls.appendChild(nav);
+            controls.appendChild(actions);
+
+            viewer.appendChild(slideContainer);
+            viewer.appendChild(controls);
+            container.appendChild(viewer);
+
+            const updateSlide = (index) => {
+                currentIndex = index;
+                img.style.opacity = '0';
+                setTimeout(() => {
+                    img.src = data.slides[currentIndex];
+                    img.style.opacity = '1';
+                }, 200);
+                info.textContent = `Slide ${currentIndex + 1} of ${data.slides.length}`;
+                prevBtn.disabled = currentIndex === 0;
+                nextBtn.disabled = currentIndex === data.slides.length - 1;
+            };
+
+            prevBtn.onclick = () => { if (currentIndex > 0) updateSlide(currentIndex - 1); };
+            nextBtn.onclick = () => { if (currentIndex < data.slides.length - 1) updateSlide(currentIndex + 1); };
+
+            regenBtn.onclick = () => {
+                const feedback = prompt(`How should I improve slide ${currentIndex + 1}? (e.g. "Add more detail about X", "Change colors to Y")`);
+                if (feedback === null) return;
+                
+                const promptText = `Regenerate slide ${currentIndex} of presentation ${data.presentation_id} with this feedback: ${feedback}. Original topic: ${data.topic}, style: ${data.style}, context: ${data.additional_context || ""}`;
+                
+                // Send this as a user message
+                userInput.value = promptText;
+                handleSend();
+            };
+
+            // Store references for easy update
+            viewer._slides = data.slides;
+            viewer._updateSlide = updateSlide;
+        }
+
+        function handleRegeneratedSlide(data) {
+            const viewers = document.querySelectorAll(`.pres-viewer[data-pres-id="${data.presentation_id}"]`);
+            viewers.forEach(viewer => {
+                if (viewer._slides && data.slide_index < viewer._slides.length) {
+                    viewer._slides[data.slide_index] = data.url;
+                    viewer._updateSlide(data.slide_index);
+                }
+            });
+        }
+
         function finalizeStellarMessage(placeholderId, finalContent, messageDbId, analysisContextUsed = null) {
             const placeholderDiv = messagesDiv.querySelector(`.message[data-id="${placeholderId}"]`);
             if (!placeholderDiv) { if (analysisContextUsed) { appendStellarMessageWithAnalysis(finalContent, messageDbId, analysisContextUsed); } else { appendStellarMessage(finalContent, messageDbId); } return; }
@@ -6667,7 +6939,24 @@
             let contentDiv = placeholderDiv.querySelector('.message-content'); if (!contentDiv) { contentDiv = document.createElement('div'); contentDiv.classList.add('message-content'); placeholderDiv.innerHTML = ''; placeholderDiv.appendChild(contentDiv); } else { contentDiv.innerHTML = ''; }
 
             try {
-                let htmlContent = marked.parse(finalContent || ""); htmlContent = wrapTables(htmlContent); contentDiv.innerHTML = htmlContent;
+                let htmlContent = "";
+                if (finalContent.includes("PRESENTATION_DATA:")) {
+                    const parts = finalContent.split("PRESENTATION_DATA:");
+                    htmlContent = marked.parse(parts[0] || "");
+                    const jsonData = JSON.parse(parts[1].trim());
+                    contentDiv.innerHTML = htmlContent;
+                    renderPresentationViewer(contentDiv, jsonData);
+                } else if (finalContent.includes("REGENERATED_SLIDE:")) {
+                    const parts = finalContent.split("REGENERATED_SLIDE:");
+                    htmlContent = marked.parse(parts[0] || "");
+                    const jsonData = JSON.parse(parts[1].trim());
+                    contentDiv.innerHTML = htmlContent;
+                    handleRegeneratedSlide(jsonData);
+                } else {
+                    htmlContent = marked.parse(finalContent || "");
+                    htmlContent = wrapTables(htmlContent);
+                    contentDiv.innerHTML = htmlContent;
+                }
                 processCodeBlocks(contentDiv);
                 if (analysisContextUsed) { addAnalysisIndicator(placeholderDiv, analysisContextUsed); }
 
@@ -7122,9 +7411,26 @@
 
                                 const contentDiv = document.createElement("div");
                                 contentDiv.classList.add("message-content");
-                                let htmlContent = marked.parse(content || "");
-                                htmlContent = wrapTables(htmlContent);
-                                contentDiv.innerHTML = htmlContent;
+                                
+                                let htmlContent = "";
+                                if (content.includes("PRESENTATION_DATA:")) {
+                                    const parts = content.split("PRESENTATION_DATA:");
+                                    htmlContent = marked.parse(parts[0] || "");
+                                    const jsonData = JSON.parse(parts[1].trim());
+                                    contentDiv.innerHTML = htmlContent;
+                                    renderPresentationViewer(contentDiv, jsonData);
+                                } else if (content.includes("REGENERATED_SLIDE:")) {
+                                    const parts = content.split("REGENERATED_SLIDE:");
+                                    htmlContent = marked.parse(parts[0] || "");
+                                    const jsonData = JSON.parse(parts[1].trim());
+                                    contentDiv.innerHTML = htmlContent;
+                                    handleRegeneratedSlide(jsonData);
+                                } else {
+                                    htmlContent = marked.parse(content || "");
+                                    htmlContent = wrapTables(htmlContent);
+                                    contentDiv.innerHTML = htmlContent;
+                                }
+                                
                                 msgDiv.appendChild(contentDiv);
 
                                 processCodeBlocks(contentDiv);

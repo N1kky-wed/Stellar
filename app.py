@@ -165,7 +165,7 @@ MODEL_NAMES = {
     "gemini-2.5-flash-lite": "Emerald",
     "gemini-2.5-flash": "Lunarity",
     "gemini-3-flash-preview": "Crimson",
-    "gemini-3-pro-preview": "Obsidian",
+    "gemini-3.1-pro-preview": "Obsidian",
 }
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
@@ -342,7 +342,7 @@ def get_current_chat_id(user_id):
         cursor = db.execute('INSERT INTO chats (user_id, name) VALUES (?, ?)', (user_id, 'New Chat'))
         db.commit()
         session['current_chat_id'] = cursor.lastrowid
-        welcome_message = "Heyy there! I'm Stellar, and I can help you with research papers using Spectrum Mode, which includes Spectral Search! I can also build full-stack web apps with Stellar Forge, and generate data analysis reports with extreme infographics using Cosmos! You can even Preview code blocks to see them live! I've got different models too, like Emerald for quick stuff or Obsidian for super complex things! ✨ "
+        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, full-stack application development via Stellar Forge, and data analysis reports using Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
         insert_message(session['current_chat_id'], "stellar", welcome_message)
 
     session.modified = True
@@ -992,20 +992,36 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
 
 
-            tools_config = []
-            models_without_search = ["gemini-2.5-flash-lite"]
+            try:
+                from agent_tools import available_tools
+            except ImportError:
+                available_tools = []
+                
+            tools_config = available_tools.copy()
+            
+            # Extract system instruction if present in the prompt
+            system_instruction = None
+            if "<!-- Internal Processing Guidelines -->" in current_effective_prompt:
+                parts = current_effective_prompt.split("<!-- End Internal Guidelines -->")
+                if len(parts) > 1:
+                    system_instruction = parts[0].replace("<!-- Internal Processing Guidelines -->", "").strip()
+                    current_effective_prompt = parts[1].strip()
 
-            if model_id not in models_without_search and username != "Bhumi":
-                    tools_config = [
-                    types.Tool(google_search=types.GoogleSearch())
-                    ]
-            else:
-                    pass
-
-            chat = client.chats.create(model=model_id, config={'tools': tools_config})
-            r = chat.send_message(current_effective_prompt)
-
-            if not r.candidates:
+            chat_config = types.GenerateContentConfig(
+                tools=tools_config,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                temperature=1.0,
+                system_instruction=system_instruction
+            )
+            chat = client.chats.create(model=model_id, config=chat_config)
+            
+            message_to_send = current_effective_prompt
+            
+            import agent_tools
+            
+            while True:
+                r = chat.send_message(message_to_send)
+                if not r.candidates:
                     finish_reason_obj = getattr(r, 'prompt_feedback', {}).get('finish_reason', 'UNKNOWN')
                     finish_reason = finish_reason_obj.name if hasattr(finish_reason_obj, 'name') else str(finish_reason_obj)
                     safety_ratings = getattr(r, 'prompt_feedback', {}).get('safety_ratings', [])
@@ -1014,38 +1030,94 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     if finish_reason == 'SAFETY':
                         last_exception = ValueError(f"Prompt blocked by API due to safety ({safety_details}).")
                         yield {'status': f'Prompt blocked due to safety. Retrying...'}
-                        continue
+                        break
                     elif finish_reason == 'RECITATION':
                         last_exception = ValueError("Prompt blocked by API due to recitation.")
                         yield {'status': f'Prompt blocked due to recitation. Retrying...'}
-                        continue
+                        break
                     else:
                         raise ValueError(error_msg)
+                
+                candidate = r.candidates[0]
+                parts = getattr(candidate.content, 'parts', [])
+                
+                # DEBUG LOG
+                part_types = [type(p).__name__ for p in parts]
+                logger.info(f"[DEBUG] Model parts received: {part_types}")
+                for p in parts:
+                    if getattr(p, 'text', None): logger.info(f"[DEBUG] Text part length: {len(p.text)}")
+                    if getattr(p, 'function_call', None): logger.info(f"[DEBUG] Function call: {p.function_call.name}")
+                
+                if not parts:
+                    yield {'result': ""}
+                    return
+                    
+                function_calls = [p.function_call for p in parts if getattr(p, 'function_call', None)]
+                
+                # Capture and yield any introductory text that comes WITH the function calls
+                intro_text = ""
+                for part in parts:
+                    if getattr(part, 'text', None):
+                        intro_text += part.text
+                
+                if intro_text:
+                    yield {'result': intro_text}
+                    accumulated_full_output += intro_text
 
-            candidate = r.candidates[0]
-
-            parts = getattr(candidate.content, 'parts', None)
-            if parts is None:
-                yield {'result': ""}
-                return
-            for part in parts:
-                if hasattr(part, 'text') and part.text:
-                    output_this_attempt += part.text
-                elif hasattr(part, 'executable_code') and part.executable_code:
-                    lang = part.executable_code.language.lower() if hasattr(part.executable_code, 'language') else 'python'
-                    output_this_attempt += f"\n```python\n{part.executable_code.code}\n```\n"
-                elif hasattr(part, 'function_call') and part.function_call:
-                    output_this_attempt += f"\n[Function Call: {part.function_call.name}]\n"
-                elif hasattr(part, 'google_search_result') and part.google_search_result:
-                        output_this_attempt += "\n[Google Search Result Data Received]\n"
+                if not function_calls:
+                    break
                 else:
-                    try:
-                        dump = json.dumps(part.model_dump(exclude_none=True), indent=2)
-                        output_this_attempt += f"\n```json\n# Unsupported Part Type\n{dump}\n```\n"
-                    except Exception:
-                        output_this_attempt += "\n[Unsupported/Undumpable part type]\n"
+                    # We have function calls! Let's animate and execute
+                    function_responses = []
+                    for fc in function_calls:
+                        func_name = fc.name
+                        if func_name == "native_search":
+                            yield {'status': 'Searching the web...'}
+                        elif func_name == "extensive_search":
+                            yield {'status': 'Performing extensive web research...'}
+                        elif func_name == "generate_image":
+                            yield {'status': 'Generating your image...'}
+                        elif func_name == "render_svg":
+                            yield {'status': 'Drawing SVG...'}
+                        elif func_name == "make_presentation":
+                            yield {'status': 'Creating presentation slides...'}
+                        elif func_name == "forge_control":
+                            yield {'status': 'Controlling Forge environment...'}
+                        else:
+                            yield {'status': f'Using tool: {func_name}...'}
+                            
+                        # execute
+                        try:
+                            func_to_call = getattr(agent_tools, func_name)
+                            args_dict = dict(fc.args) if fc.args else {}
+                            
+                            # Dynamically pass the current model_id to render_svg
+                            if func_name == "render_svg":
+                                if 'model_id' not in args_dict:
+                                    args_dict['model_id'] = model_id
 
-            accumulated_full_output += output_this_attempt
+                            res = func_to_call(**args_dict)
+                            
+                            # For visual tools, we do NOT yield or accumulate the result here.
+                            # Instead, we rely on the model to incorporate the tool's result (FunctionResponse)
+                            # into its final text response. This prevents duplication in the chat bubble.
+                            if func_name not in ["render_svg", "generate_image", "make_presentation"]:
+                                if isinstance(res, str):
+                                    yield {'result': f"\n{res}\n"}
+                                    accumulated_full_output += f"\n\n{res}\n\n"
+                        except Exception as e:
+                            res = f"Error: {str(e)}"
+                            
+                        # Create response part
+                        function_responses.append(
+                            types.Part(function_response=types.FunctionResponse(
+                                name=fc.name,
+                                id=fc.id,
+                                response={'result': res}
+                            ))
+                        )
+                    message_to_send = function_responses
+
 
             candidate_finish_reason_obj = getattr(candidate, 'finish_reason', 'UNKNOWN')
             candidate_finish_reason = candidate_finish_reason_obj.name if hasattr(candidate_finish_reason_obj, 'name') else str(candidate_finish_reason_obj)
@@ -1097,7 +1169,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                  else:
                      pass
 
-            yield {'result': accumulated_full_output.strip()}
             return
 
         except Exception as e:
@@ -1243,11 +1314,10 @@ def forge_start():
         generator = gemini_generate(prompt, model_id, api_key)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
-        raw_response = None
+        raw_response = ""
         for item in generator:
             if 'result' in item:
-                raw_response = item['result']
-                break
+                raw_response += item['result']
         
         if not raw_response or raw_response.startswith(ERROR_CODE):
             error_detail = raw_response if raw_response else "Unknown failure: Generator finished without result."
@@ -1262,7 +1332,7 @@ def forge_start():
         if 'index.html' not in project_files or 'app.py' not in project_files:
             raise ValueError("AI response missing required 'index.html' and 'app.py' keys.")
 
-        process_id = str(uuid.uuid4())
+        process_id = old_process_id if old_process_id else str(uuid.uuid4())
         
         project_title = generate_forge_title(user_prompt)
 
@@ -1329,10 +1399,18 @@ def forge_iterate():
     if not user_prompt:
         return jsonify({'error': 'Follow-up prompt is required.'}), 400
 
-    old_container_id = session['forge_project'].get('container_id')
     old_process_id = session['forge_project'].get('process_id')
-
+    old_container_id = None
+    
     if old_process_id:
+        redis_key = _get_process_key_prefix(old_process_id, 'forge')
+        try:
+            cached_data = redis_client.hgetall(redis_key)
+            if cached_data:
+                old_container_id = cached_data.get('container_id')
+        except Exception:
+            pass
+            
         with active_apps_lock:
             active_apps.pop(old_process_id, None)
 
@@ -1355,11 +1433,10 @@ def forge_iterate():
         generator = gemini_generate(prompt, model_id, api_key)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
-        raw_response = None
+        raw_response = ""
         for item in generator:
             if 'result' in item:
-                raw_response = item['result']
-                break
+                raw_response += item['result']
         
         if not raw_response or raw_response.startswith(ERROR_CODE):
             error_detail = raw_response if raw_response else "Unknown failure: Generator finished without result."
@@ -1373,7 +1450,7 @@ def forge_iterate():
         updated_files_partial = json.loads(clean_json_string)
         current_files.update(updated_files_partial)
 
-        process_id = str(uuid.uuid4())
+        process_id = old_process_id if old_process_id else str(uuid.uuid4())
         
         project_title = generate_forge_title(user_prompt)
 
@@ -1469,59 +1546,96 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
     redis_key = _get_process_key_prefix(process_id, app_type)
 
     try:
+        container = None
+        temp_dir_path = None
+        reuse_container = False
+        run_id = str(uuid.uuid4())
+        
+        # Check if we can reuse the old container
         if old_container_id:
             try:
                 old_container = client.containers.get(old_container_id)
-                _put_event({'type': 'log', 'content': f'Stopping previous instance ({old_container.short_id})...'})
-                old_container.stop(timeout=10)
-                old_container.remove(force=True)
+                
+                # Check if requirements.txt changed
+                old_reqs = ""
+                try:
+                    res = old_container.exec_run("cat /app/requirements.txt")
+                    if res.exit_code == 0:
+                        old_reqs = res.output.decode('utf-8')
+                except Exception:
+                    pass
+                
+                new_reqs = project_files.get('requirements.txt', '')
+                if old_reqs.strip() == new_reqs.strip():
+                    reuse_container = True
+                    container = old_container
+                    _put_event({'type': 'log', 'content': f'Reusing existing container ({container.short_id})...'})
+                    
+                    # Stop old app process
+                    container.exec_run("pkill -f 'python app.py'")
+                    
+                    # Find mount path to update files
+                    for mount in container.attrs.get('Mounts', []):
+                        if mount['Destination'] == '/app':
+                            temp_dir_path = mount['Source']
+                            break
+                else:
+                    _put_event({'type': 'log', 'content': f'Dependencies changed. Rebuilding container ({old_container.short_id})...'})
+                    old_container.stop(timeout=10)
+                    old_container.remove(force=True)
             except docker.errors.NotFound:
                 pass
             except Exception as e:
-                _put_event({'type': 'log', 'content': f'Note: Could not stop/remove previous instance: {e}'})
+                _put_event({'type': 'log', 'content': f'Note: Could not inspect/remove previous instance: {e}'})
 
-        run_id = str(uuid.uuid4())
-        temp_dir_path = os.path.join(SANDBOX_DIR, f"{app_type}_{run_id}")
-        os.makedirs(temp_dir_path, exist_ok=True)
-        
+        if not reuse_container:
+            temp_dir_path = os.path.join(SANDBOX_DIR, f"{app_type}_{run_id}")
+            os.makedirs(temp_dir_path, exist_ok=True)
+            
         # Write all project files
-        with open(os.path.join(temp_dir_path, 'app.py'), 'w', encoding='utf-8') as f:
-            f.write(project_files.get('app.py', ''))
-        with open(os.path.join(temp_dir_path, 'index.html'), 'w', encoding='utf-8') as f:
-            f.write(project_files.get('index.html', ''))
-        
-        # Write requirements.txt if present
-        requirements_content = project_files.get('requirements.txt', '')
-        has_requirements = bool(requirements_content.strip())
-        if has_requirements:
-            with open(os.path.join(temp_dir_path, 'requirements.txt'), 'w', encoding='utf-8') as f:
-                f.write(requirements_content)
-        
-        abs_temp_dir_path = os.path.abspath(temp_dir_path)
+        if temp_dir_path:
+            with open(os.path.join(temp_dir_path, 'app.py'), 'w', encoding='utf-8') as f:
+                f.write(project_files.get('app.py', ''))
+            with open(os.path.join(temp_dir_path, 'index.html'), 'w', encoding='utf-8') as f:
+                f.write(project_files.get('index.html', ''))
+            
+            # Write requirements.txt if present
+            requirements_content = project_files.get('requirements.txt', '')
+            has_requirements = bool(requirements_content.strip())
+            if has_requirements:
+                with open(os.path.join(temp_dir_path, 'requirements.txt'), 'w', encoding='utf-8') as f:
+                    f.write(requirements_content)
+            
+            abs_temp_dir_path = os.path.abspath(temp_dir_path)
 
-        # Start container with sleep to keep it running while we install deps
-        container = client.containers.run(
-            image='stellar-python-sandbox:3.12',
-            command='sleep infinity',
-            working_dir='/app',
-            volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
-            ports={'5000/tcp': ('0.0.0.0', 0)},
-            name=f"stellar-{app_type}-{run_id}",
-            remove=False,
-            detach=True,
-            stdout=True,
-            stderr=True,
-            labels={
-                "stellar_type": app_type,
-                "stellar_process_id": process_id,
-                "created_at_ts": str(time.time())
-            }
-        )
+        if not reuse_container:
+            # Start container with sleep to keep it running while we install deps
+            container = client.containers.run(
+                image='stellar-python-sandbox:3.12',
+                command='sleep infinity',
+                working_dir='/app',
+                volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
+                ports={'5000/tcp': ('0.0.0.0', 0)},
+                name=f"stellar-{app_type}-{run_id}",
+                remove=False,
+                detach=True,
+                stdout=True,
+                stderr=True,
+                labels={
+                    "stellar_type": app_type,
+                    "stellar_process_id": process_id,
+                    "created_at_ts": str(time.time()),
+                    "forge_app_id": process_id
+                }
+            )
 
-        _put_event({'type': 'container_id', 'id': container.id})
-        _put_event({'type': 'log', 'content': f'Sandbox container ({container.short_id}) created.'})
+            _put_event({'type': 'container_id', 'id': container.id})
+            _put_event({'type': 'log', 'content': f'Sandbox container ({container.short_id}) created.'})
 
-        update_history(status='created', container_id=container.id)
+            update_history(status='created', container_id=container.id)
+        else:
+            _put_event({'type': 'container_id', 'id': container.id})
+            update_history(status='reused', container_id=container.id)
 
         try:
             redis_client.hset(redis_key, mapping={
@@ -1536,7 +1650,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             active_apps[process_id] = {"container_id": container.id, "port": None, "status": "created"}
 
         # Phase 1: Install dependencies if requirements.txt exists
-        if has_requirements:
+        if has_requirements and not reuse_container:
             _put_event({'type': 'phase', 'phase': 'installing'})
             _put_event({'type': 'log', 'content': '📦 Installing dependencies from requirements.txt...'})
             
@@ -2031,17 +2145,17 @@ def refine_stream():
                     model_display_name=f"{display_name}",
                     username=username
                 )
-                temp_result = None
+                refined_query_result = ""
                 for item in generator_output:
                     if 'status' in item:
                         yield f"data: {json.dumps({'status': item['status'], 'phase': 'refining'})}\n\n"
                     elif 'result' in item:
                         temp_result = item['result']
                         if isinstance(temp_result, str) and temp_result.startswith(ERROR_CODE):
-                            temp_result = None
+                            refined_query_result = None
+                            break
                         else:
-                            refined_query_result = temp_result
-                        break
+                            refined_query_result += temp_result
                 if refined_query_result is not None:
                     break
                 else:
@@ -2244,17 +2358,17 @@ def search_stream():
                     attempts=len(BACKUP_API_KEYS),
                     model_display_name=f"{display_name} (Analysis)"
                 )
-                temp_result_analysis = None
+                research_analysis_result = ""
                 for item in generator_output_analysis:
                     if 'status' in item:
                         yield f"data: {json.dumps({'status': item['status'], 'phase': 'analysis_llm'})}\n\n"
                     elif 'result' in item:
                         temp_result_analysis = item['result']
                         if isinstance(temp_result_analysis, str) and temp_result_analysis.startswith(ERROR_CODE):
-                            temp_result_analysis = None
+                            research_analysis_result = None
+                            break
                         else:
-                            research_analysis_result = temp_result_analysis
-                        break
+                            research_analysis_result += temp_result_analysis
                 if research_analysis_result is not None:
                      break
                 else:
@@ -2292,17 +2406,17 @@ def search_stream():
                     attempts=len(BACKUP_API_KEYS),
                     model_display_name=f"{display_name} (Expansion)"
                 )
-                temp_result_expansion = None
+                final_result = ""
                 for item in generator_output_expansion:
                     if 'status' in item:
                          yield f"data: {json.dumps({'status': item['status'], 'phase': 'expansion_llm'})}\n\n"
                     elif 'result' in item:
                         temp_result_expansion = item['result']
                         if isinstance(temp_result_expansion, str) and temp_result_expansion.startswith(ERROR_CODE):
-                            temp_result_expansion = None
+                            final_result = None
+                            break
                         else:
-                            final_result = temp_result_expansion
-                        break
+                            final_result += temp_result_expansion
                 if final_result is not None:
                     break
                 else:
@@ -2715,7 +2829,7 @@ def clear_history():
         deleted_count = cursor.rowcount
         db.commit()
         
-        welcome_message = "Heyy there! I'm Stellar, and I can help you with research papers using Spectrum Mode, which includes Spectral Search! and building websites/apps with Nebula Mode!  I can also generate data analysis reports with extreme infographics using Cosmos! You can even Preview code blocks to see them live! I've got different models too, like Emerald for quick stuff or Obsidian for super complex things! ✨ "
+        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, building applications with Nebula Mode, and data analysis reports via Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
         insert_message(chat_id, "stellar", welcome_message)
         
         return jsonify({'status': 'Success', 'message': 'Conversation history cleared'})
@@ -2731,31 +2845,39 @@ def download_file(filename):
     if '..' in filename or filename.startswith('/'):
         return "Invalid path", 400
     directory = os.path.abspath(os.path.join(os.path.dirname(__file__), "outputs"))
-    safe_filename = os.path.basename(filename)
-    file_path = os.path.join(directory, safe_filename)
+    file_path = os.path.join(directory, filename)
     if not os.path.abspath(file_path).startswith(directory):
          return "Access denied", 403
     if not os.path.exists(file_path) or not os.path.isfile(file_path):
         return jsonify({'status': 'Failed: File not found'}), 404
-    return send_from_directory(directory, safe_filename, as_attachment=True)
+    
+    # Use dirname and basename for send_from_directory to correctly serve sub-paths
+    subdir = os.path.dirname(filename)
+    basename = os.path.basename(filename)
+    return send_from_directory(os.path.join(directory, subdir), basename, as_attachment=True)
 
 @app.route('/view/<path:filename>')
 def view_file(filename):
     if '..' in filename or filename.startswith('/'):
         return "Invalid path", 400
     directory = os.path.abspath(os.path.join(os.path.dirname(__file__), "outputs"))
-    safe_filename = os.path.basename(filename)
-    file_path = os.path.join(directory, safe_filename)
+    file_path = os.path.join(directory, filename)
     if not os.path.abspath(file_path).startswith(directory):
          return "Access denied", 403
     if not os.path.exists(file_path) or not os.path.isfile(file_path):
          return "File not found", 404
+         
+    safe_filename = os.path.basename(filename)
     mimetype = 'text/plain'
     if safe_filename.lower().endswith(('.html', '.htm')): mimetype = 'text/html'
     elif safe_filename.lower().endswith('.md'): mimetype = 'text/markdown'
     elif safe_filename.lower().endswith('.css'): mimetype = 'text/css'
     elif safe_filename.lower().endswith('.js'): mimetype = 'application/javascript'
-    return send_from_directory(directory, safe_filename, mimetype=mimetype)
+    elif safe_filename.lower().endswith(('.png', '.jpg', '.jpeg')): mimetype = 'image/png'
+    
+    subdir = os.path.dirname(filename)
+    basename = os.path.basename(filename)
+    return send_from_directory(os.path.join(directory, subdir), basename, mimetype=mimetype)
 
 @app.route('/default.min.css')
 def serve_highlight_css():
@@ -2889,7 +3011,7 @@ def create_new_chat():
         db.commit()
         new_chat_id = cursor.lastrowid
         
-        welcome_message = "Heyy there! I'm Stellar, and I can help you with research papers using Spectrum Mode, which includes Spectral Search! and building websites/apps with Nebula Mode!  I can also generate data analysis reports with extreme infographics using Cosmos! You can even Preview code blocks to see them live! I've got different models too, like Emerald for quick stuff or Obsidian for super complex things! ✨ "
+        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, building applications with Nebula Mode, and data analysis reports via Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
         insert_message(new_chat_id, "stellar", welcome_message)
 
         session['current_chat_id'] = new_chat_id
@@ -3257,7 +3379,7 @@ def run_code():
         process_id = None
         try:
             if is_server_app:
-                process_id = str(uuid.uuid4())
+                process_id = old_process_id if old_process_id else str(uuid.uuid4())
                 with app.app_context():
                     session['last_run_code_process_id'] = process_id
                     session.modified = True
@@ -3443,7 +3565,7 @@ def generate_visualization():
     data = request.get_json()
     content = data.get('content')
     message_id = data.get('message_id') # Get message_id to persist visualization
-    model_id = 'gemini-3-pro-preview' # Use the pro preview model as requested
+    model_id = 'gemini-3.1-pro-preview' # Use the pro preview model as requested
     api_key = RTP_API_KEY # Use RTP key for faster/cheaper generation or PRIMARY if needed
 
     if not content:
@@ -3765,15 +3887,23 @@ def forge_redeploy():
     if 'index.html' not in updated_files or 'app.py' not in updated_files:
         return jsonify({'error': "Request must contain 'index.html' and 'app.py'."}), 400
 
-    old_container_id = session['forge_project'].get('container_id')
     old_process_id = session['forge_project'].get('process_id')
-
+    old_container_id = None
+    
     if old_process_id:
+        redis_key = _get_process_key_prefix(old_process_id, 'forge')
+        try:
+            cached_data = redis_client.hgetall(redis_key)
+            if cached_data:
+                old_container_id = cached_data.get('container_id')
+        except Exception:
+            pass
+            
         with active_apps_lock:
             active_apps.pop(old_process_id, None)
 
     try:
-        process_id = str(uuid.uuid4())
+        process_id = old_process_id if old_process_id else str(uuid.uuid4())
         
         project_title = session.get('forge_project', {}).get('project_name')
         if not project_title:
