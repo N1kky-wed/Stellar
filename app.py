@@ -1757,6 +1757,16 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 continue
         
         if host_port:
+            # Set the port in active_apps and Redis as soon as we find it
+            with active_apps_lock:
+                if process_id in active_apps:
+                    active_apps[process_id]['port'] = int(host_port)
+
+            try:
+                redis_client.hset(redis_key, mapping={"host_port": str(host_port)})
+            except Exception:
+                pass
+
             _put_event({'type': 'log', 'content': f'Container is running on port {host_port}. Verifying server readiness...'})
             
             is_ready = False
@@ -1781,11 +1791,10 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             if is_ready:
                 with active_apps_lock:
                     if process_id in active_apps:
-                        active_apps[process_id]['port'] = int(host_port)
                         active_apps[process_id]['status'] = 'running'
 
                 try:
-                    redis_client.hset(redis_key, mapping={"host_port": str(host_port), "status": "running"})
+                    redis_client.hset(redis_key, mapping={"status": "running"})
                 except Exception:
                     logger.exception("Failed to persist host_port for %s", process_id)
 
@@ -1810,10 +1819,14 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                      _put_event({'type': 'error', 'content': f'Error retrieving app.log: {e}'})
 
                  update_history(status='failed')
+                 try: redis_client.hset(redis_key, mapping={"status": "failed"})
+                 except: pass
 
         if not public_url_found:
             _put_event({'type': 'error', 'content': 'Failed to get public URL. Container may have crashed.'})
             update_history(status='failed')
+            try: redis_client.hset(redis_key, mapping={"status": "failed"})
+            except: pass
             try:
                 crashed_logs = container.logs().decode('utf-8', 'replace') if container else "No container"
                 _put_event({'type': 'log', 'content': f'--- CRASH LOGS ---\n{crashed_logs}\n--- END LOGS ---'})
@@ -1833,18 +1846,31 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         logger.error(f"Error in _deploy_and_stream_output thread for process {process_id}: {e}", exc_info=True)
         _put_event({'type': 'error', 'content': str(e)})
         update_history(status='failed')
+        try: redis_client.hset(redis_key, mapping={"status": "failed"})
+        except: pass
 
     finally:
-        update_history(status='stopped', final_logs="\n".join(logs_buffer))
+        # Check current status before marking as stopped
+        current_status = 'starting'
+        try:
+            val = redis_client.hget(redis_key, "status")
+            if val: current_status = val
+        except: pass
+
+        if current_status != 'failed':
+            update_history(status='stopped', final_logs="\n".join(logs_buffer))
+        
         if container:
             try:
                 try:
-                    redis_client.hset(redis_key, mapping={"status": "exited"})
+                    if current_status != 'failed':
+                        redis_client.hset(redis_key, mapping={"status": "exited"})
                 except Exception:
                     logger.exception("Failed to mark exited status for %s", process_id)
                 with active_apps_lock:
                     if process_id in active_apps:
-                        active_apps[process_id]['status'] = 'exited'
+                        if current_status != 'failed':
+                            active_apps[process_id]['status'] = 'exited'
                         active_apps[process_id]['exited_at'] = time.time()
             except Exception:
                 logger.exception("Failed to mark active_apps for exit for %s", process_id)

@@ -32,9 +32,16 @@ def extensive_search(query: str, topic: str = "general", days: int = 3, max_resu
             return "No results found."
         
         formatted = "### Search Results:\n\n"
+        from bs4 import BeautifulSoup
+        import re
         for r in results:
-            formatted += f"**[{r['title']}]({r['url']})**\n"
-            formatted += f"{r['content']}\n\n"
+            content = r.get('content', '')
+            if content:
+                content = BeautifulSoup(content, 'html.parser').get_text(separator=' ', strip=True)
+                content = re.sub(r'\s+', ' ', content)
+            
+            formatted += f"**[{r.get('title', 'Unknown Title')}]({r.get('url', '#')})**\n"
+            formatted += f"{content}\n\n"
         return formatted
     except Exception as e:
         return f"Error during search: {str(e)}"
@@ -535,10 +542,34 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
             except: pass
             
             app_obj = current_app._get_current_object()
-            threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, actual_app_id, old_container_id, 'forge'), daemon=True).start()
+            thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, actual_app_id, old_container_id, 'forge'), daemon=True)
+            thread.start()
+
+            # Wait for deployment result (up to 30 seconds for agent feedback)
+            start_wait = time.time()
+            final_status = "starting"
+            public_url = f"https://stellarai.live/apps/{actual_app_id}/"
+            
+            while time.time() - start_wait < 30:
+                time.sleep(1.5)
+                # Check Redis or active_apps for status updates
+                try:
+                    data = redis_client.hgetall(_redis_forge_key(actual_app_id))
+                    if data:
+                        final_status = data.get('status', 'starting')
+                        if final_status in ['running', 'failed', 'stopped', 'exited']:
+                            break
+                except:
+                    pass
             
             msg_prefix = f"Modification applied to '{project_title}'" if (prompt or changes) else f"Redeploying '{project_title}'"
-            return f"{msg_prefix}! ID: `{actual_app_id}`. Live URL: https://stellarai.live/apps/{actual_app_id}/"
+            
+            if final_status == 'running':
+                return f"{msg_prefix} successfully! ID: `{actual_app_id}`. Live URL: {public_url}"
+            elif final_status == 'failed':
+                return f"Error: {msg_prefix} failed during health checks. The application code might have a bug. Please check the CodeLab for logs. ID: `{actual_app_id}`"
+            else:
+                return f"{msg_prefix} started! It is still initializing (Current status: {final_status}). You can check it in a few moments at: {public_url}"
 
         return f"Error: Unknown action '{action}'."
     except Exception as e:
