@@ -1818,13 +1818,13 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                  except Exception as e:
                      _put_event({'type': 'error', 'content': f'Error retrieving app.log: {e}'})
 
-                 update_history(status='failed')
+                 update_history(status='failed', final_logs="\n".join(logs_buffer))
                  try: redis_client.hset(redis_key, mapping={"status": "failed"})
                  except: pass
 
         if not public_url_found:
             _put_event({'type': 'error', 'content': 'Failed to get public URL. Container may have crashed.'})
-            update_history(status='failed')
+            update_history(status='failed', final_logs="\n".join(logs_buffer))
             try: redis_client.hset(redis_key, mapping={"status": "failed"})
             except: pass
             try:
@@ -1845,7 +1845,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
     except Exception as e:
         logger.error(f"Error in _deploy_and_stream_output thread for process {process_id}: {e}", exc_info=True)
         _put_event({'type': 'error', 'content': str(e)})
-        update_history(status='failed')
+        update_history(status='failed', final_logs="\n".join(logs_buffer))
         try: redis_client.hset(redis_key, mapping={"status": "failed"})
         except: pass
 

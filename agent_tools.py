@@ -390,13 +390,14 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
     return f"REGENERATED_SLIDE:{json.dumps({'presentation_id': presentation_id, 'slide_index': slide_index, 'url': f'/view/pres_{presentation_id}/{slide_img_filename}'})}"
 
 
-def forge_control(action: str, app_id: str = None, changes: dict = None, prompt: str = None) -> str:
+def forge_control(action: str, app_id: str = None, changes: dict = None, prompt: str = None, project_name: str = None) -> str:
     """Control the user's Forge deployments.
     Args:
         action: "list_history", "create", or "modify"
         app_id: the Forge application identifier or Project Title (required for 'modify')
         changes: key-value config/code changes to apply (e.g. {'app.py': '...'})
         prompt: Instruction for AI-driven modification or creation
+        project_name: Optional name for a new project (if omitted, one is generated)
     Returns:
         deployment status, history list, or live URL
     """
@@ -424,6 +425,12 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
                 res += f"- **{row['project_name']}** (ID: `{row['process_id']}`) - Status: {row['status']} - Created: {row['created_at']}{url_str}\n"
             return res
 
+        actual_app_id = None
+        project_title = None
+        current_files = {}
+        old_container_id = None
+        db = get_db()
+
         if action == "create":
             if not prompt:
                 return "Error: A prompt is required to create a new Forge project."
@@ -443,135 +450,108 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
             if not clean_json_string:
                 return "Error: AI failed to return valid project files."
                 
-            project_files = json.loads(clean_json_string)
-            process_id = str(uuid.uuid4())
-            project_title = generate_forge_title(prompt)
+            current_files = json.loads(clean_json_string)
+            actual_app_id = str(uuid.uuid4())
+            project_title = project_name if project_name else generate_forge_title(prompt)
             
-            session['forge_project'] = {'files': project_files, 'container_id': None, 'process_id': process_id, 'project_name': project_title}
+            session['forge_project'] = {'files': current_files, 'container_id': None, 'process_id': actual_app_id, 'project_name': project_title}
             session.modified = True
             
-            db = get_db()
             db.execute('INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot) VALUES (?, ?, ?, ?, ?)',
-                       (session['user_id'], project_title, process_id, 'starting', json.dumps(project_files)))
+                       (session['user_id'], project_title, actual_app_id, 'starting', json.dumps(current_files)))
             db.commit()
-            
-            from app import _deploy_and_stream_output, redis_client
-            try: redis_client.hset(_redis_forge_key(process_id), mapping={"status": "starting", "files": json.dumps(project_files)})
-            except: pass
-            
-            app_obj = current_app._get_current_object()
-            threading.Thread(target=_deploy_and_stream_output, args=(app_obj, project_files, process_id, None, 'forge'), daemon=True).start()
-            
-            return f"Project '{project_title}' creation started! ID: `{process_id}`. Live URL: https://stellarai.live/apps/{process_id}/"
 
-        if action == "modify":
+        elif action == "modify":
             if not app_id:
                 return "Error: app_id or Project Title is required for modification."
             
-            db = get_db()
             # Resolve title/ID with fuzzy matching
-            # Try exact match first (either ID or Title)
             cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ?) AND user_id = ?', (app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             
             if not row:
-                # Try fuzzy match on title
                 fuzzy_query = f"%{app_id}%"
                 cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE project_name LIKE ? AND user_id = ? ORDER BY created_at DESC', (fuzzy_query, session.get('user_id')))
                 row = cursor.fetchone()
 
             if not row:
-                # Targeted search failed, provide the full history as a fallback
                 cursor = db.execute('SELECT project_name, process_id, status, created_at FROM forge_history WHERE user_id = ? ORDER BY created_at DESC', (session['user_id'],))
                 history = cursor.fetchall()
-                if not history:
-                    return f"Error: Project '{app_id}' not found and you have no past Forge deployments."
-                
-                res = f"Error: Project '{app_id}' not found in your history. Here are your existing projects:\n"
-                for r in history:
-                    res += f"- **{r['project_name']}** (ID: `{r['process_id']}`) - Status: {r['status']}\n"
-                res += "\nPlease specify which project you meant or providing the correct ID."
+                if not history: return f"Error: Project '{app_id}' not found and you have no past Forge deployments."
+                res = f"Error: Project '{app_id}' not found in your history. Existing projects:\n"
+                for r in history: res += f"- **{r['project_name']}** (ID: `{r['process_id']}`) - Status: {r['status']}\n"
                 return res
             
             actual_app_id = row['process_id']
             project_title = row['project_name']
             current_files = json.loads(row['files_snapshot'])
             
-            # 1. AI-Driven Iteration (if prompt provided)
             if prompt:
                 model_id = "gemini-3.1-pro-preview"
                 from app import PRIMARY_API_KEY
                 iter_prompt = get_forge_iteration_prompt(prompt, json.dumps(current_files))
                 generator = gemini_generate(iter_prompt, model_id, PRIMARY_API_KEY)
                 raw_response = "".join([item['result'] for item in generator if 'result' in item])
-                
-                if not raw_response or raw_response.startswith(ERROR_CODE):
-                    return f"Error: AI iteration failed. {raw_response}"
-                
+                if not raw_response or raw_response.startswith(ERROR_CODE): return f"Error: AI iteration failed. {raw_response}"
                 clean_json_string = _extract_json_from_response(raw_response)
-                if clean_json_string:
-                    current_files.update(json.loads(clean_json_string))
+                if clean_json_string: current_files.update(json.loads(clean_json_string))
             
-            # 2. Manual Modification (if changes provided)
-            if changes:
-                current_files.update(changes)
+            if changes: current_files.update(changes)
                 
-            # Update Session & DB
             session['forge_project'] = {'files': current_files, 'container_id': None, 'process_id': actual_app_id, 'project_name': project_title}
             session.modified = True
             db.execute('UPDATE forge_history SET files_snapshot = ?, status = ? WHERE process_id = ?', (json.dumps(current_files), 'starting', actual_app_id))
             db.commit()
-            
-            # Handle Deployment
-            from app import _deploy_and_stream_output, redis_client, active_apps, active_apps_lock
-            
-            old_container_id = None
+
+            from app import redis_client, active_apps, active_apps_lock
             try:
                 cached_data = redis_client.hgetall(_redis_forge_key(actual_app_id))
                 if cached_data:
                     old_container_id = cached_data.get(b'container_id') or cached_data.get('container_id')
-                    if isinstance(old_container_id, bytes):
-                        old_container_id = old_container_id.decode('utf-8')
-            except Exception:
-                pass
-            
-            with active_apps_lock:
-                active_apps.pop(actual_app_id, None)
-
-            try: redis_client.hset(_redis_forge_key(actual_app_id), mapping={"status": "starting", "files": json.dumps(current_files)})
+                    if isinstance(old_container_id, bytes): old_container_id = old_container_id.decode('utf-8')
             except: pass
-            
-            app_obj = current_app._get_current_object()
-            thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, actual_app_id, old_container_id, 'forge'), daemon=True)
-            thread.start()
+            with active_apps_lock: active_apps.pop(actual_app_id, None)
 
-            # Wait for deployment result (up to 30 seconds for agent feedback)
-            start_wait = time.time()
-            final_status = "starting"
-            public_url = f"https://stellarai.live/apps/{actual_app_id}/"
-            
-            while time.time() - start_wait < 30:
-                time.sleep(1.5)
-                # Check Redis or active_apps for status updates
-                try:
-                    data = redis_client.hgetall(_redis_forge_key(actual_app_id))
-                    if data:
-                        final_status = data.get('status', 'starting')
-                        if final_status in ['running', 'failed', 'stopped', 'exited']:
-                            break
-                except:
-                    pass
-            
+        else:
+            return f"Error: Unknown action '{action}'."
+
+        # Trigger Deployment
+        from app import _deploy_and_stream_output, redis_client
+        try: redis_client.hset(_redis_forge_key(actual_app_id), mapping={"status": "starting", "files": json.dumps(current_files)})
+        except: pass
+        
+        app_obj = current_app._get_current_object()
+        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, actual_app_id, old_container_id, 'forge'), daemon=True)
+        thread.start()
+
+        # Shared Wait Loop
+        start_wait = time.time()
+        final_status = "starting"
+        public_url = f"https://stellarai.live/apps/{actual_app_id}/"
+        
+        while time.time() - start_wait < 35:
+            time.sleep(2)
+            try:
+                data = redis_client.hgetall(_redis_forge_key(actual_app_id))
+                if data:
+                    final_status = data.get('status', 'starting')
+                    if final_status in ['running', 'failed', 'stopped', 'exited']: break
+            except: pass
+        
+        msg_prefix = f"Project '{project_title}'"
+        if action == "modify":
             msg_prefix = f"Modification applied to '{project_title}'" if (prompt or changes) else f"Redeploying '{project_title}'"
-            
-            if final_status == 'running':
-                return f"{msg_prefix} successfully! ID: `{actual_app_id}`. Live URL: {public_url}"
-            elif final_status == 'failed':
-                return f"Error: {msg_prefix} failed during health checks. The application code might have a bug. Please check the CodeLab for logs. ID: `{actual_app_id}`"
-            else:
-                return f"{msg_prefix} started! It is still initializing (Current status: {final_status}). You can check it in a few moments at: {public_url}"
+        
+        if final_status == 'running':
+            return f"{msg_prefix} successfully! ID: `{actual_app_id}`. Live URL: {public_url}"
+        elif final_status == 'failed':
+            cursor = db.execute('SELECT build_logs FROM forge_history WHERE process_id = ?', (actual_app_id,))
+            row = cursor.fetchone()
+            logs = row['build_logs'] if row and row['build_logs'] else "No logs available."
+            return f"Error: {msg_prefix} failed during health checks.\n\nBUILD/APP LOGS:\n{logs}\n\nID: `{actual_app_id}`. Please analyze the logs and use action='modify' to fix the code."
+        else:
+            return f"{msg_prefix} started! It is still initializing (Current status: {final_status}). Check it in a few moments: {public_url}"
 
-        return f"Error: Unknown action '{action}'."
     except Exception as e:
         return f"Error in forge_control: {str(e)}"
 
