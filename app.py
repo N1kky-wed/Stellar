@@ -1779,8 +1779,12 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     if exec_result.exit_code == 0:
                         try:
                             status_code = int(exec_result.output.decode().strip())
-                            if status_code > 0: # Any valid HTTP status means it's running
+                            # Treat 5xx as "not ready/failed" to trigger auto-fix
+                            if 0 < status_code < 500:
                                 is_ready = True
+                                break
+                            elif status_code >= 500:
+                                # Explicit failure if it's a server error
                                 break
                         except ValueError:
                             pass
