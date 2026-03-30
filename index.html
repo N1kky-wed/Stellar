@@ -6832,6 +6832,38 @@
                 detailsDiv.innerHTML = html;
             }
         }
+        function extractJson(str) {
+            let firstOpen = str.indexOf('{');
+            if (firstOpen === -1) return null;
+            let braceCount = 0;
+            for (let i = firstOpen; i < str.length; i++) {
+                if (str[i] === '{') braceCount++;
+                else if (str[i] === '}') braceCount--;
+                if (braceCount === 0) {
+                    return {
+                        json: str.substring(firstOpen, i + 1),
+                        rest: str.substring(i + 1)
+                    };
+                }
+            }
+            return null;
+        }
+
+        function robustParseSpecial(content, marker) {
+            const index = content.indexOf(marker);
+            if (index === -1) return null;
+            const before = content.substring(0, index);
+            const afterMarker = content.substring(index + marker.length).trim();
+            const extracted = extractJson(afterMarker);
+            if (!extracted) return { before: content, json: null, after: "" };
+            try {
+                return { before, json: JSON.parse(extracted.json), after: extracted.rest };
+            } catch (e) {
+                console.error("Failed to parse special data JSON:", e);
+                return { before: content, json: null, after: "" };
+            }
+        }
+
         function renderPresentationViewer(container, data) {
             if (!data || !data.slides || data.slides.length === 0) return;
 
@@ -6984,22 +7016,32 @@
 
             try {
                 let htmlContent = "";
-                if (finalContent.includes("PRESENTATION_DATA:")) {
-                    const parts = finalContent.split("PRESENTATION_DATA:");
-                    htmlContent = marked.parse(parts[0] || "");
-                    const jsonData = JSON.parse(parts[1].trim());
+                let spec = robustParseSpecial(finalContent, "PRESENTATION_DATA:");
+                if (spec && spec.json) {
+                    htmlContent = marked.parse(spec.before || "");
                     contentDiv.innerHTML = htmlContent;
-                    renderPresentationViewer(contentDiv, jsonData);
-                } else if (finalContent.includes("REGENERATED_SLIDE:")) {
-                    const parts = finalContent.split("REGENERATED_SLIDE:");
-                    htmlContent = marked.parse(parts[0] || "");
-                    const jsonData = JSON.parse(parts[1].trim());
-                    contentDiv.innerHTML = htmlContent;
-                    handleRegeneratedSlide(jsonData);
+                    renderPresentationViewer(contentDiv, spec.json);
+                    if (spec.after && spec.after.trim()) {
+                        const extraDiv = document.createElement('div');
+                        extraDiv.innerHTML = marked.parse(spec.after);
+                        contentDiv.appendChild(extraDiv);
+                    }
                 } else {
-                    htmlContent = marked.parse(finalContent || "");
-                    htmlContent = wrapTables(htmlContent);
-                    contentDiv.innerHTML = htmlContent;
+                    spec = robustParseSpecial(finalContent, "REGENERATED_SLIDE:");
+                    if (spec && spec.json) {
+                        htmlContent = marked.parse(spec.before || "");
+                        contentDiv.innerHTML = htmlContent;
+                        handleRegeneratedSlide(spec.json);
+                        if (spec.after && spec.after.trim()) {
+                            const extraDiv = document.createElement('div');
+                            extraDiv.innerHTML = marked.parse(spec.after);
+                            contentDiv.appendChild(extraDiv);
+                        }
+                    } else {
+                        htmlContent = marked.parse(finalContent || "");
+                        htmlContent = wrapTables(htmlContent);
+                        contentDiv.innerHTML = htmlContent;
+                    }
                 }
                 unwrapVisuals(contentDiv);
                 processCodeBlocks(contentDiv);
@@ -7486,26 +7528,35 @@
                                 contentDiv.classList.add("message-content");
                                 
                                 let htmlContent = "";
-                                if (content.includes("PRESENTATION_DATA:")) {
-                                    const parts = content.split("PRESENTATION_DATA:");
-                                    htmlContent = marked.parse(parts[0] || "");
-                                    const jsonData = JSON.parse(parts[1].trim());
+                                let spec = robustParseSpecial(content, "PRESENTATION_DATA:");
+                                if (spec && spec.json) {
+                                    htmlContent = marked.parse(spec.before || "");
                                     contentDiv.innerHTML = htmlContent;
-                                    renderPresentationViewer(contentDiv, jsonData);
-                                } else if (content.includes("REGENERATED_SLIDE:")) {
-                                    const parts = content.split("REGENERATED_SLIDE:");
-                                    htmlContent = marked.parse(parts[0] || "");
-                                    const jsonData = JSON.parse(parts[1].trim());
-                                    contentDiv.innerHTML = htmlContent;
-                                    handleRegeneratedSlide(jsonData);
+                                    renderPresentationViewer(contentDiv, spec.json);
+                                    if (spec.after && spec.after.trim()) {
+                                        const extraDiv = document.createElement('div');
+                                        extraDiv.innerHTML = marked.parse(spec.after);
+                                        contentDiv.appendChild(extraDiv);
+                                    }
                                 } else {
-                                    htmlContent = marked.parse(content || "");
-                                    htmlContent = wrapTables(htmlContent);
-                                    contentDiv.innerHTML = htmlContent;
+                                    spec = robustParseSpecial(content, "REGENERATED_SLIDE:");
+                                    if (spec && spec.json) {
+                                        htmlContent = marked.parse(spec.before || "");
+                                        contentDiv.innerHTML = htmlContent;
+                                        handleRegeneratedSlide(spec.json);
+                                        if (spec.after && spec.after.trim()) {
+                                            const extraDiv = document.createElement('div');
+                                            extraDiv.innerHTML = marked.parse(spec.after);
+                                            contentDiv.appendChild(extraDiv);
+                                        }
+                                    } else {
+                                        htmlContent = marked.parse(content || "");
+                                        htmlContent = wrapTables(htmlContent);
+                                        contentDiv.innerHTML = htmlContent;
+                                    }
                                 }
-                                
-                                msgDiv.appendChild(contentDiv);
 
+                                msgDiv.appendChild(contentDiv);
                                 unwrapVisuals(contentDiv);
                                 processCodeBlocks(contentDiv);
                                 if (analysisContext) { addAnalysisIndicator(msgDiv, analysisContext); }
