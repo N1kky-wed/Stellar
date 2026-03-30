@@ -300,10 +300,106 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #000;
+            background: #050505;
             overflow: hidden;
             min-height: 200px;
             width: 100%;
+            border-radius: 12px;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.8);
+        }
+
+        .pres-slide-bg-blur {
+            position: absolute;
+            inset: -20px;
+            background-size: cover;
+            background-position: center;
+            filter: blur(20px) brightness(0.3);
+            opacity: 0.5;
+            z-index: 0;
+        }
+
+        .pres-feedback-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(8px);
+            padding: 20px;
+        }
+
+        .pres-feedback-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .pres-feedback-box {
+            width: 100%;
+            max-width: 400px;
+            transform: translateY(20px);
+            transition: transform 0.3s ease;
+        }
+
+        .pres-feedback-overlay.active .pres-feedback-box {
+            transform: translateY(0);
+        }
+
+        .pres-feedback-input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            border-radius: 8px;
+            color: white;
+            padding: 12px 15px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9em;
+            margin-bottom: 15px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .pres-feedback-input:focus {
+            border-color: #00E5FF;
+            box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
+        }
+
+        .pres-feedback-actions {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            justify-content: flex-end;
+        }
+
+        .pres-feedback-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.8em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .pres-btn-cancel {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ccc;
+        }
+
+        .pres-btn-confirm {
+            background: #00E5FF;
+            border: 1px solid #00E5FF;
+            color: #000;
+        }
+
+        .pres-btn-confirm:hover {
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+            transform: translateY(-1px);
         }
 
         .pres-regen-loader {
@@ -369,6 +465,8 @@
             display: block;
             object-fit: contain;
             transition: opacity 0.3s ease;
+            z-index: 1;
+            position: relative;
         }
         .pres-controls {
             background: rgba(0,0,0,0.8);
@@ -6928,6 +7026,8 @@
             if (!data || !data.slides || data.slides.length === 0) return;
 
             let currentIndex = 0;
+            const regeneratingSlides = new Set();
+            
             const viewer = document.createElement('div');
             viewer.className = 'pres-viewer';
             viewer.dataset.presId = data.presentation_id;
@@ -6939,10 +7039,33 @@
             const slideContainer = document.createElement('div');
             slideContainer.className = 'pres-slide-container';
             
+            const bgBlur = document.createElement('div');
+            bgBlur.className = 'pres-slide-bg-blur';
+            bgBlur.style.backgroundImage = `url(${data.slides[0]})`;
+            slideContainer.appendChild(bgBlur);
+
             const loader = document.createElement('div');
             loader.className = 'pres-regen-loader';
             loader.innerHTML = `<div class="wave-dots"><div class="wave-dot"></div><div class="wave-dot"></div><div class="wave-dot"></div></div><div class="pres-regen-text">Regenerating Slide...</div>`;
             slideContainer.appendChild(loader);
+
+            const feedbackOverlay = document.createElement('div');
+            feedbackOverlay.className = 'pres-feedback-overlay';
+            feedbackOverlay.innerHTML = `
+                <div class="pres-feedback-box">
+                    <div style="font-family: 'Inter', sans-serif; font-weight: 900; color: #00E5FF; margin-bottom: 15px; font-size: 0.8em; letter-spacing: 1px; text-transform: uppercase;">Improve Slide ${currentIndex + 1}</div>
+                    <input type="text" class="pres-feedback-input" placeholder="e.g. Add more statistics, change the image to a factory...">
+                    <div class="pres-feedback-actions">
+                        <button class="pres-feedback-btn pres-btn-cancel">Cancel</button>
+                        <button class="pres-feedback-btn pres-btn-confirm">Regenerate</button>
+                    </div>
+                </div>
+            `;
+            slideContainer.appendChild(feedbackOverlay);
+
+            const feedbackInput = feedbackOverlay.querySelector('.pres-feedback-input');
+            const cancelBtn = feedbackOverlay.querySelector('.pres-btn-cancel');
+            const confirmBtn = feedbackOverlay.querySelector('.pres-btn-confirm');
 
             const img = document.createElement('img');
             img.className = 'pres-slide-img';
@@ -6997,11 +7120,17 @@
             viewer.appendChild(controls);
             container.appendChild(viewer);
 
-            const updateSlide = (index, isRegen = false) => {
+            const updateSlide = (index, isRegenFinished = false) => {
                 currentIndex = index;
-                if (isRegen) {
+                
+                if (isRegenFinished) {
+                    regeneratingSlides.delete(index);
+                }
+
+                if (regeneratingSlides.has(index)) {
                     loader.classList.add('active');
                 } else {
+                    loader.classList.remove('active');
                     img.style.opacity = '0.3';
                 }
 
@@ -7009,8 +7138,11 @@
                 nextImg.src = data.slides[currentIndex];
                 nextImg.onload = () => {
                     img.src = nextImg.src;
+                    bgBlur.style.backgroundImage = `url(${nextImg.src})`;
                     img.style.opacity = '1';
-                    loader.classList.remove('active');
+                    if (!regeneratingSlides.has(index)) {
+                        loader.classList.remove('active');
+                    }
                 };
                 
                 info.textContent = `Slide ${currentIndex + 1} of ${data.slides.length}`;
@@ -7022,14 +7154,37 @@
             nextBtn.onclick = () => { if (currentIndex < data.slides.length - 1) updateSlide(currentIndex + 1); };
 
             regenBtn.onclick = () => {
-                const feedback = prompt(`How should I improve slide ${currentIndex + 1}? (e.g. "Add more detail about X", "Change colors to Y")`);
-                if (feedback === null) return;
+                feedbackOverlay.querySelector('div').textContent = `Improve Slide ${currentIndex + 1}`;
+                feedbackOverlay.classList.add('active');
+                feedbackInput.focus();
+            };
+
+            cancelBtn.onclick = () => {
+                feedbackOverlay.classList.remove('active');
+                feedbackInput.value = '';
+            };
+
+            confirmBtn.onclick = () => {
+                const feedback = feedbackInput.value.trim();
+                if (!feedback) return;
                 
+                regeneratingSlides.add(currentIndex);
                 loader.classList.add('active');
+                feedbackOverlay.classList.remove('active');
+                feedbackInput.value = '';
+
                 const promptText = `Regenerate slide ${currentIndex} of presentation ${data.presentation_id} with this feedback: ${feedback}. Original topic: ${data.topic}, style: ${data.style}, context: ${data.additional_context || ""}`;
                 
-                userInput.value = promptText;
-                handleSend();
+                const chatField = document.getElementById('chatInput');
+                if (chatField) {
+                    chatField.value = promptText;
+                    handleSend();
+                }
+            };
+
+            feedbackInput.onkeydown = (e) => {
+                if (e.key === 'Enter') confirmBtn.click();
+                if (e.key === 'Escape') cancelBtn.click();
             };
 
             // Store references for easy update
