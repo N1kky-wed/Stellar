@@ -215,8 +215,8 @@ def get_forge_initial_build_prompt(user_prompt):
 **CRITICAL INSTRUCTIONS FOR `app.py`:**
 1.  **Framework:** You MUST use Flask. No other web frameworks are allowed.
 2.  **Complete Setup:** Include all necessary imports and Flask app initialization at the top.
-3.  **Serve the Frontend:** CRITICAL - You **must** include a `@app.route('/')` that uses `send_from_directory('.', 'index.html')` to serve the frontend.
-4.  **API Routes:** Create all Flask API routes with the exact endpoints and methods (GET/POST) needed for the application.
+3.  **Serve the Frontend (CRITICAL):** You **must** include a `@app.route('/')` that uses `send_from_directory('.', 'index.html')` to serve the frontend. **DO NOT** use `render_template()`. **DO NOT** assume a `templates/` or `static/` folder exists; all files are in the root directory.
+4.  **No Mocking:** All routes must contain real logic. Use the SQLite `database.db` for persistence.
 5.  **Route Protection:** Public routes like `/api/login`, `/api/register`, or `/api/check_session` **MUST NOT** have any session validation. Protected routes that require a logged-in user **MUST** check for a valid `session.get('user_id')` at the beginning of the function and return a 401 error if it's missing.
 6.  **Build Functional Logic:** Write the real logic for each route. Do not mock data. The backend must be fully functional.
 7.  **Database Naming:** If using SQLite, you MUST define `DB_NAME = 'database.db'` at the top of app.py and use this constant. The database file MUST be named exactly `database.db`. DO NOT use any other name like `stellar_local.db` or `students.db`.
@@ -513,8 +513,8 @@ def get_forge_iteration_prompt(user_prompt, current_code_json):
 **Important Instructions:**
 1.  **Maintain Structure:** Keep the application as `index.html`, `app.py`, and `requirements.txt`.
 2.  **Framework:** You MUST use Flask. No other web frameworks are allowed.
-3.  **Serve Frontend:** Ensure the `@app.route('/')` uses `send_from_directory('.', 'index.html')` to serve the frontend.
-4.  **Route Protection:** Public routes (login/register) must NOT have session validation. Protected routes MUST check `session.get('user_id')` and return 401 if missing.
+3.  **Serve Frontend (CRITICAL):** Ensure the `@app.route('/')` uses `send_from_directory('.', 'index.html')` to serve the frontend. **DO NOT** use `render_template()`.
+4.  **No Folders:** Assume all files (`app.py`, `index.html`, `database.db`) are in the root directory. Do not use `templates/` or `static/`.
 5.  **Database Naming:** If using SQLite, define `DB_NAME = 'database.db'` at the top and use this constant. The database MUST be named exactly `database.db`.
 6.  **Relative Paths:** All JavaScript API calls **MUST** use relative paths (e.g., `fetch('api/data')`).
 7.  **Environment Variables:** Use `os.getenv('KEY_NAME')` for API keys after loading `dotenv`.
