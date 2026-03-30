@@ -516,12 +516,26 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
             db.commit()
             
             # Handle Deployment
-            from app import _deploy_and_stream_output, redis_client
+            from app import _deploy_and_stream_output, redis_client, active_apps, active_apps_lock
+            
+            old_container_id = None
+            try:
+                cached_data = redis_client.hgetall(_redis_forge_key(actual_app_id))
+                if cached_data:
+                    old_container_id = cached_data.get(b'container_id') or cached_data.get('container_id')
+                    if isinstance(old_container_id, bytes):
+                        old_container_id = old_container_id.decode('utf-8')
+            except Exception:
+                pass
+            
+            with active_apps_lock:
+                active_apps.pop(actual_app_id, None)
+
             try: redis_client.hset(_redis_forge_key(actual_app_id), mapping={"status": "starting", "files": json.dumps(current_files)})
             except: pass
             
             app_obj = current_app._get_current_object()
-            threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, actual_app_id, None, 'forge'), daemon=True).start()
+            threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, actual_app_id, old_container_id, 'forge'), daemon=True).start()
             
             msg_prefix = f"Modification applied to '{project_title}'" if (prompt or changes) else f"Redeploying '{project_title}'"
             return f"{msg_prefix}! ID: `{actual_app_id}`. Live URL: https://stellarai.live/apps/{actual_app_id}/"
