@@ -5445,6 +5445,15 @@
 
 
 
+        // --- Configure Marked.js for external links ---
+        const renderer = new marked.Renderer();
+        const originalLink = renderer.link.bind(renderer);
+        renderer.link = (href, title, text) => {
+            const html = originalLink(href, title, text);
+            return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
+        };
+        marked.setOptions({ renderer: renderer });
+
         const MAX_TOKEN_LIMIT = 1048576;
         const TOKEN_COUNT_INTERVAL_MS = 600000;
 
@@ -6755,6 +6764,7 @@
                 htmlContent = wrapTables(htmlContent);
                 contentDiv.innerHTML = htmlContent;
                 msg.appendChild(contentDiv);
+                unwrapVisuals(contentDiv);
                 processCodeBlocks(contentDiv);
                 renderMath(contentDiv);
                 addOutputCopyButton(msg);
@@ -6876,6 +6886,8 @@
             const downloadBtn = document.createElement('a');
             downloadBtn.className = 'pres-btn pres-download-btn';
             downloadBtn.href = data.pptx_url;
+            downloadBtn.target = '_blank';
+            downloadBtn.rel = 'noopener noreferrer';
             downloadBtn.innerHTML = `<svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="currentColor"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z"/></svg> Download PPTX`;
 
             actions.appendChild(regenBtn);
@@ -6929,6 +6941,38 @@
             });
         }
 
+        function unwrapVisuals(container) {
+            if (!container) return;
+            // 1. Fix SVGs trapped in <pre><code> blocks (markdown)
+            container.querySelectorAll('pre code').forEach(code => {
+                const text = code.textContent.trim();
+                if (text.startsWith('<svg') && text.endsWith('</svg>')) {
+                    const pre = code.parentElement;
+                    const div = document.createElement('div');
+                    div.className = 'rendered-visual-wrapper';
+                    div.innerHTML = text;
+                    if (pre && pre.parentNode) {
+                        pre.parentNode.replaceChild(div, pre);
+                    }
+                }
+            });
+            // 2. Ensure all rendered SVGs are transparent and responsive
+            container.querySelectorAll('svg').forEach(svg => {
+                svg.style.backgroundColor = 'transparent';
+                svg.style.maxWidth = '100%';
+                svg.style.height = 'auto';
+                // Remove any solid background rects if they somehow got through
+                const firstRect = svg.querySelector('rect:first-child');
+                if (firstRect && (firstRect.getAttribute('width') === '100%' || firstRect.getAttribute('width') === svg.getAttribute('width')) && (firstRect.getAttribute('height') === '100%' || firstRect.getAttribute('height') === svg.getAttribute('height'))) {
+                    const fill = firstRect.getAttribute('fill');
+                    if (fill && fill !== 'none' && fill !== 'transparent') {
+                        // If it's a solid dark or light background, hide it
+                        firstRect.style.display = 'none';
+                    }
+                }
+            });
+        }
+
         function finalizeStellarMessage(placeholderId, finalContent, messageDbId, analysisContextUsed = null) {
             const placeholderDiv = messagesDiv.querySelector(`.message[data-id="${placeholderId}"]`);
             if (!placeholderDiv) { if (analysisContextUsed) { appendStellarMessageWithAnalysis(finalContent, messageDbId, analysisContextUsed); } else { appendStellarMessage(finalContent, messageDbId); } return; }
@@ -6957,6 +7001,7 @@
                     htmlContent = wrapTables(htmlContent);
                     contentDiv.innerHTML = htmlContent;
                 }
+                unwrapVisuals(contentDiv);
                 processCodeBlocks(contentDiv);
                 if (analysisContextUsed) { addAnalysisIndicator(placeholderDiv, analysisContextUsed); }
 
@@ -6971,7 +7016,35 @@
         }
         function addAnalysisIndicator(messageDiv, analysisContext) { if (!messageDiv || !analysisContext) return; const contentDiv = messageDiv.querySelector('.message-content'); if (!contentDiv) return; contentDiv.querySelectorAll('.analysis-indicator, .analysis-content').forEach(el => el.remove()); const ind = document.createElement("span"); ind.className = "analysis-indicator clickable"; ind.textContent = " Analyzed files"; ind.style.marginLeft = '10px'; const det = document.createElement("div"); det.className = "analysis-content"; det.style.display = "none"; det.style.marginTop = "10px"; det.style.paddingTop = "10px"; det.style.borderTop = "1px dashed var(--stellar-msg-border)"; det.innerHTML = `<small><i>Context:</i></small><div class="formatted-analysis-context">${formatAnalysisContextForDisplay(analysisContext)}</div>`; contentDiv.appendChild(ind); contentDiv.appendChild(det); }
         function formatAnalysisContextForDisplay(rawContext) { if (!rawContext || typeof rawContext !== 'string') return "<p>No context.</p>"; try { let html = ''; try { html = marked.parse(rawContext || ""); } catch (e) { return `<pre>Parse err: ${escapeHtml(e.message)}\n\n${escapeHtml(rawContext)}</pre>`; } const p = new DOMParser(); const d = p.parseFromString(`<div id="ctx-wrap">${html}</div>`, 'text/html'); const w = d.getElementById('ctx-wrap'); if (!w) return `<pre>${escapeHtml(rawContext)}</pre>`; w.querySelectorAll('details').forEach(det => { let s = det.querySelector('summary'); if (!s) { s = d.createElement('summary'); s.textContent = 'Details'; det.insertBefore(s, det.firstChild); } s.style.cursor = 'pointer'; s.style.fontWeight = 'bold'; s.style.color = 'var(--primary-text-color)'; s.style.padding = '8px'; s.style.display = 'block'; s.style.backgroundColor = 'rgba(255, 255, 255, 0.03)'; s.style.borderRadius = '4px 4px 0 0'; let cw = s.nextElementSibling; if (cw && (cw.tagName === 'DIV' || cw.tagName === 'PRE')) { cw.style.padding = '10px'; cw.style.borderTop = '1px dashed rgba(255, 255, 255, 0.1)'; cw.style.marginTop = '0'; cw.style.backgroundColor = 'rgba(0,0,0,0.1)'; } else { const nw = d.createElement('div'); nw.style.padding = '10px'; nw.style.borderTop = '1px dashed rgba(255, 255, 255, 0.1)'; nw.style.marginTop = '0'; nw.style.backgroundColor = 'rgba(0,0,0,0.1)'; while (s.nextSibling) { nw.appendChild(s.nextSibling); } det.appendChild(nw); } det.style.border = '1px solid rgba(255, 255, 255, 0.1)'; det.style.borderRadius = '4px'; det.style.marginBottom = '10px'; det.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; }); w.querySelectorAll(':scope > pre').forEach(pre => { if (pre.closest('details')) return; pre.style.marginTop = '10px'; pre.style.marginBottom = '10px'; pre.style.padding = '12px'; pre.style.fontSize = '0.9em'; pre.style.backgroundColor = 'rgba(0,0,0,0.25)'; pre.style.border = '1px solid rgba(255,255,255,0.15)'; pre.style.borderRadius = '4px'; pre.style.whiteSpace = 'pre-wrap'; pre.style.wordWrap = 'break-word'; }); let finalHtml = w.innerHTML; finalHtml = finalHtml.replace(/##\s*(.*?)\s*(<br\s*\/?>)?/g, '<h3>$1</h3>'); finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'); finalHtml = finalHtml.replace(/__(.*?)__/g, '<strong>$1</strong>'); finalHtml = finalHtml.replace(/\*(.*?)\*/g, '<em>$1</em>'); finalHtml = finalHtml.replace(/_(.*?)_/g, '<em>$1</em>'); finalHtml = finalHtml.replace(/`([^`]+)`/g, '<code>$1</code>'); return finalHtml; } catch (e) { return `<pre>${escapeHtml(rawContext)}</pre>`; } }
-        function appendStellarMessageWithAnalysis(markdownText, id, analysisContext) { const msg = document.createElement("div"); msg.classList.add("message", "stellar-msg"); msg.dataset.id = id; const contentDiv = document.createElement("div"); contentDiv.classList.add("message-content"); try { let htmlContent = marked.parse(markdownText || ""); htmlContent = wrapTables(htmlContent); contentDiv.innerHTML = htmlContent; processCodeBlocks(contentDiv); addAnalysisIndicator(msg, analysisContext); addOutputCopyButton(msg); setTimeout(() => { renderMath(contentDiv); const analysisEl = msg.querySelector('.analysis-content .formatted-analysis-context'); if (analysisEl) renderMath(analysisEl); scrollToBottom(); }, 150); } catch (e) { contentDiv.textContent = "Error."; addAnalysisIndicator(msg, analysisContext); addOutputCopyButton(msg); scrollToBottom(); } msg.appendChild(contentDiv); if (messagesDiv) messagesDiv.appendChild(msg); }
+        function appendStellarMessageWithAnalysis(markdownText, id, analysisContext) {
+            const msg = document.createElement("div");
+            msg.classList.add("message", "stellar-msg");
+            msg.dataset.id = id;
+            const contentDiv = document.createElement("div");
+            contentDiv.classList.add("message-content");
+            try {
+                let htmlContent = marked.parse(markdownText || "");
+                htmlContent = wrapTables(htmlContent);
+                contentDiv.innerHTML = htmlContent;
+                unwrapVisuals(contentDiv);
+                processCodeBlocks(contentDiv);
+                addAnalysisIndicator(msg, analysisContext);
+                addOutputCopyButton(msg);
+                setTimeout(() => {
+                    renderMath(contentDiv);
+                    const analysisEl = msg.querySelector('.analysis-content .formatted-analysis-context');
+                    if (analysisEl) renderMath(analysisEl);
+                    scrollToBottom();
+                }, 150);
+            } catch (e) {
+                contentDiv.textContent = "Error.";
+                addAnalysisIndicator(msg, analysisContext);
+                addOutputCopyButton(msg);
+                scrollToBottom();
+            }
+            msg.appendChild(contentDiv);
+            if (messagesDiv) messagesDiv.appendChild(msg);
+        }
 
         async function initAndStartStreaming(userQuery, modelId, modeForBackend, pendingFiles, chatId, placeholderId, userMessageId, isResearchOutputExpected) {
             if (currentStreamQueryId) {
@@ -7433,6 +7506,7 @@
                                 
                                 msgDiv.appendChild(contentDiv);
 
+                                unwrapVisuals(contentDiv);
                                 processCodeBlocks(contentDiv);
                                 if (analysisContext) { addAnalysisIndicator(msgDiv, analysisContext); }
                                 addOutputCopyButton(msgDiv);
@@ -8181,7 +8255,7 @@
                     material = new THREE.ShaderMaterial({ vertexShader, fragmentShader, uniforms: { u_balls: { value: [] }, u_ball_size: { value: BALL_SIZE }, u_color_1: { value: new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--color-1')) }, u_color_2: { value: new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--color-2')) }, u_color_3: { value: new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--color-3')) } }, transparent: true });
                     scene.add(new THREE.Mesh(geometry, material));
                     for (let i = 0; i < NUM_BALLS; i++) { balls.push({ x: Math.random(), y: Math.random(), z: 0.6 + Math.random() * 0.4, vx: (Math.random() - 0.5) * 0.0008, vy: (Math.random() - 0.5) * 0.0008 }); }
-                    const animate = () => { if (metaballCanvas.style.display === 'none' && !window.logoutInProgress) { requestAnimationFrame(animate); return; } window.logoutInProgress = false; requestAnimationFrame(animate); let ball_data = []; balls.forEach(ball => { ball.x += ball.vx; ball.y += ball.vy; if (ball.x < 0 || ball.x > 1) ball.vx *= -1; if (ball.y < 0 || ball.y > 1) ball.vy *= -1; ball_data.push(new THREE.Vector3(ball.x * window.innerWidth, ball.y * window.innerHeight, ball.z)); }); material.uniforms.u_balls.value = ball_data; renderer.render(scene, camera); };
+                    const animate = () => { if (metaballCanvas.style.display === 'none' && !window.logoutInProgress) { setTimeout(animate, 100); return; } window.logoutInProgress = false; requestAnimationFrame(animate); let ball_data = []; balls.forEach(ball => { ball.x += ball.vx; ball.y += ball.vy; if (ball.x < 0 || ball.x > 1) ball.vx *= -1; if (ball.y < 0 || ball.y > 1) ball.vy *= -1; ball_data.push(new THREE.Vector3(ball.x * window.innerWidth, ball.y * window.innerHeight, ball.z)); }); material.uniforms.u_balls.value = ball_data; renderer.render(scene, camera); };
                     const resize = () => renderer.setSize(window.innerWidth, window.innerHeight);
                     window.addEventListener('resize', resize); resize(); animate();
                 } catch (e) { console.error("Three.js initialization failed:", e); }
@@ -8570,6 +8644,7 @@
                         audioContext.close();
                     }
                     audioContext = null;
+                    analyser = null;
                     voiceOverlay.classList.remove('visible');
                     canvas.classList.remove('visible');
                     window.removeEventListener('resize', resizeCanvas);

@@ -12,71 +12,57 @@ from google.genai import types
 import logging
 logger = logging.getLogger(__name__)
 
-def extensive_search(query: str, search_depth: str = "basic", topic: str = "general", days: int = 3, max_results: int = 5, include_domains: list[str] = None, exclude_domains: list[str] = None, include_answer: bool = False, include_raw_content: bool = False, include_images: bool = False, include_image_descriptions: bool = False) -> str:
-    """Performs an extensive web search using the Tavily API.
+def extensive_search(query: str, topic: str = "general", days: int = 3, max_results: int = 10) -> str:
+    """Performs a deep web search using Tavily API.
     Args:
-        query: search query
-        search_depth: "basic" or "advanced"
-        topic: "general" or "news"
-        days: number of days back for news topic
-        max_results: max number of results
-        include_domains: list of domains to include
-        exclude_domains: list of domains to exclude
-        include_answer: include a short answer
-        include_raw_content: include raw HTML content
-        include_images: include image URLs
-        include_image_descriptions: include image descriptions
+        query: The search query
+        topic: 'general' or 'news'
+        days: for news, how many days back
+        max_results: number of results to return
     """
-    from app import TAVILY_API_KEY
-    if not TAVILY_API_KEY:
-        return json.dumps({"error": "Tavily API key not found."})
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        return "Error: Tavily API key not found."
     
-    client = TavilyClient(api_key=TAVILY_API_KEY)
+    client = TavilyClient(api_key=api_key)
     try:
-        response = client.search(
-            query=query,
-            search_depth=search_depth,
-            topic=topic,
-            days=days,
-            max_results=max_results,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains,
-            include_answer=include_answer,
-            include_raw_content=include_raw_content,
-            include_images=include_images,
-            include_image_descriptions=include_image_descriptions
-        )
-        return json.dumps(response)
+        response = client.search(query=query, topic=topic, days=days, max_results=max_results, search_depth="advanced")
+        results = response.get('results', [])
+        if not results:
+            return "No results found."
+        
+        formatted = "### Search Results:\n\n"
+        for r in results:
+            formatted += f"**[{r['title']}]({r['url']})**\n"
+            formatted += f"{r['content']}\n\n"
+        return formatted
     except Exception as e:
-        return json.dumps({"error": str(e)})
-
+        return f"Error during search: {str(e)}"
 
 def generate_image(model: str, prompt: str, quality: str = "standard", aspect_ratio: str = "1:1") -> str:
-    """Generates an image using Gemini API.
+    """Generates an image using Gemini's Imagen model.
     Args:
-        model: one of gemini-3.1-flash-image-preview or gemini-3-pro-image-preview
-        prompt: description of the image to generate
-        quality: e.g. "standard" or "hd"
-        aspect_ratio: e.g. "1:1", "16:9", "9:16", "4:3"
+        model: 'gemini-3.1-flash-image-preview' or 'gemini-3-pro-image-preview'
+        prompt: detailed descriptive prompt for the image
+        quality: 'standard' or 'hd'
+        aspect_ratio: '1:1', '16:9', '4:3', etc.
     """
     from app import PRIMARY_API_KEY
+    client = genai.Client(api_key=PRIMARY_API_KEY)
     try:
-        client = genai.Client(api_key=PRIMARY_API_KEY)
-        
-        result = client.models.generate_content(
+        response = client.models.generate_content(
             model=model,
             contents=prompt,
+            config=types.GenerateContentConfig(
+                # Specific config for Imagen if needed, else standard
+            )
         )
-        
-        if not result.candidates or not result.candidates[0].content.parts:
-            return "No image generated."
-
-        for part in result.candidates[0].content.parts:
+        # Look for the image in the response parts
+        for part in response.candidates[0].content.parts:
             if hasattr(part, 'inline_data') and part.inline_data:
-                img_bytes = part.inline_data.data
-                mime_type = part.inline_data.mime_type or "image/jpeg"
-                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                return f"![Generated Image](data:{mime_type};base64,{img_b64})"
+                img_data = part.inline_data.data
+                img_b64 = base64.b64encode(img_data).decode('utf-8')
+                return f"![Generated Image](data:image/png;base64,{img_b64})"
         
         return "No image data found in response."
     except Exception as e:
@@ -126,8 +112,12 @@ def render_svg(instructions: str, model_id: str = 'gemini-3.1-pro-preview') -> s
         sys_instruct = (
             "You are an expert SVG designer. You must return ONLY valid, self-contained, and interactive/animated SVG code "
             "based on the user's instructions. "
-            "Ensure the SVG uses <animate>, <animateTransform>, or embedded <script> tags when appropriate, "
-            "and that the background is transparent (or fits the design) so it blends in."
+            "STRICT RULES:\n"
+            "1. DO NOT include any markdown wrappers (no ```svg, no ```xml, etc.).\n"
+            "2. DO NOT include a solid background rectangle (e.g. <rect width='100%' height='100%' fill='#...'>). The background MUST remain transparent to blend into the UI.\n"
+            "3. Ensure all shapes, text, and animations are clearly visible against both light and dark backgrounds (use high contrast or glow effects).\n"
+            "4. Use <animate>, <animateTransform>, or <animateMotion> for professional animations.\n"
+            "5. The output must be a single, complete <svg> element."
         )
         response = client.models.generate_content(
             model=model_id,
@@ -140,7 +130,12 @@ def render_svg(instructions: str, model_id: str = 'gemini-3.1-pro-preview') -> s
             )
         )
         data = json.loads(response.text)
-        return data.get("svg_code", "").strip()
+        svg_code = data.get("svg_code", "").strip()
+        # Robustly strip markdown wrappers just in case the model ignored sys_instruct
+        import re
+        svg_code = re.sub(r'^```(?:svg|xml)?\s*', '', svg_code, flags=re.IGNORECASE)
+        svg_code = re.sub(r'\s*```$', '', svg_code)
+        return svg_code.strip()
     except Exception as e:
         return f"<svg width='200' height='50'><text x='10' y='30' fill='red'>Error: {str(e)}</text></svg>"
 
@@ -337,6 +332,7 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
         "INSTRUCTIONS:\n"
         "- Use professional, clean sans-serif typography.\n"
         "- Integrate the text aesthetically into a multi-column or structured infographic layout.\n"
+        "- Include relevant icons, charts, or transition diagrams if mentioned in the layout description.\n"
         "- The result must be a single, complete, polished slide design. No watermarks. Legible text."
     )
 
@@ -372,14 +368,9 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
     if os.path.exists(pptx_filepath):
         try:
             prs = Presentation(pptx_filepath)
-            # Find the slide to replace. python-pptx doesn't have an easy "replace image", 
-            # so we might have to add a new slide and move it, or just re-save the whole thing.
-            # For now, let's just update the image on that slide if we can find it.
             if slide_index < len(prs.slides):
                 slide = prs.slides[slide_index]
-                # Remove old shapes?
                 for shape in list(slide.shapes):
-                    # Keep it simple: remove all and add new picture
                     sp = shape._element
                     sp.getparent().remove(sp)
                 
@@ -392,51 +383,152 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
     return f"REGENERATED_SLIDE:{json.dumps({'presentation_id': presentation_id, 'slide_index': slide_index, 'url': f'/view/pres_{presentation_id}/{slide_img_filename}'})}"
 
 
-def forge_control(action: str, app_id: str, changes: dict = None) -> str:
+def forge_control(action: str, app_id: str = None, changes: dict = None, prompt: str = None) -> str:
     """Control the user's Forge deployments.
     Args:
-        action: "redeploy" or "modify"
-        app_id: the Forge application identifier
+        action: "list_history", "create", or "modify"
+        app_id: the Forge application identifier or Project Title (required for 'modify')
         changes: key-value config/code changes to apply (e.g. {'app.py': '...'})
+        prompt: Instruction for AI-driven modification or creation
     Returns:
-        deployment status + live URL of the application
+        deployment status, history list, or live URL
     """
-    from app import db, run_forge_deployment, get_current_session_id
-    from flask import session
+    from app import get_current_session_id, get_db, ERROR_CODE, gemini_generate, _extract_json_from_response, generate_forge_title, _redis_forge_key
+    from prompts import get_forge_initial_build_prompt, get_forge_iteration_prompt
+    from flask import session, current_app
+    import os
+    import json
+    import uuid
+    import threading
     
     try:
-        import docker
-        client = docker.from_env()
-        containers = client.containers.list(filters={"label": f"forge_app_id={app_id}"})
-        if not containers:
-            containers = client.containers.list(filters={"label": f"stellar_process_id={app_id}"})
-        
-        if not containers:
-            return f"Error: App {app_id} is stopped or not found. It must be running to modify."
+        if action == "list_history":
+            if 'user_id' not in session:
+                return "Error: Authentication required."
+            db = get_db()
+            cursor = db.execute('SELECT project_name, process_id, status, created_at FROM forge_history WHERE user_id = ? ORDER BY created_at DESC', (session['user_id'],))
+            history = cursor.fetchall()
+            if not history:
+                return "You have no past Forge deployments."
             
-        container = containers[0]
-        
-        if action == "modify" and changes:
-            temp_dir_path = None
-            for mount in container.attrs.get('Mounts', []):
-                if mount['Destination'] == '/app':
-                    temp_dir_path = mount['Source']
-                    break
-            
-            if temp_dir_path:
-                for file_path, content in changes.items():
-                    full_path = os.path.join(temp_dir_path, file_path)
-                    with open(full_path, "w", encoding="utf-8") as f:
-                        f.write(content)
-            else:
-                return "Error: Could not find sandbox directory for the app."
+            res = "### Your Forge Deployment History:\n"
+            for row in history:
+                url_str = f" - [Visit App](https://stellarai.live/apps/{row['process_id']}/)" if row['status'] == 'running' else ""
+                res += f"- **{row['project_name']}** (ID: `{row['process_id']}`) - Status: {row['status']} - Created: {row['created_at']}{url_str}\n"
+            return res
+
+        if action == "create":
+            if not prompt:
+                return "Error: A prompt is required to create a new Forge project."
+            if 'user_id' not in session:
+                return "Error: Authentication required."
                 
-        container.exec_run("pkill -f 'python app.py'")
-        container.exec_run(["sh", "-c", "python app.py > app.log 2>&1"], detach=True)
-        
-        return f"Deployment successful. App {app_id} modified/restarted. Live URL: /apps/{app_id}/"
+            model_id = "gemini-3.1-pro-preview"
+            from app import PRIMARY_API_KEY
+            build_prompt = get_forge_initial_build_prompt(prompt)
+            generator = gemini_generate(build_prompt, model_id, PRIMARY_API_KEY)
+            raw_response = "".join([item['result'] for item in generator if 'result' in item])
+            
+            if not raw_response or raw_response.startswith(ERROR_CODE):
+                return f"Error: Failed to generate code. {raw_response}"
+                
+            clean_json_string = _extract_json_from_response(raw_response)
+            if not clean_json_string:
+                return "Error: AI failed to return valid project files."
+                
+            project_files = json.loads(clean_json_string)
+            process_id = str(uuid.uuid4())
+            project_title = generate_forge_title(prompt)
+            
+            session['forge_project'] = {'files': project_files, 'container_id': None, 'process_id': process_id, 'project_name': project_title}
+            session.modified = True
+            
+            db = get_db()
+            db.execute('INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot) VALUES (?, ?, ?, ?, ?)',
+                       (session['user_id'], project_title, process_id, 'starting', json.dumps(project_files)))
+            db.commit()
+            
+            from app import _deploy_and_stream_output, redis_client
+            try: redis_client.hset(_redis_forge_key(process_id), mapping={"status": "starting", "files": json.dumps(project_files)})
+            except: pass
+            
+            app_obj = current_app._get_current_object()
+            threading.Thread(target=_deploy_and_stream_output, args=(app_obj, project_files, process_id, None, 'forge'), daemon=True).start()
+            
+            return f"Project '{project_title}' creation started! ID: `{process_id}`. Live URL: https://stellarai.live/apps/{process_id}/"
+
+        if action == "modify":
+            if not app_id:
+                return "Error: app_id or Project Title is required for modification."
+            
+            db = get_db()
+            # Resolve title/ID with fuzzy matching
+            # Try exact match first (either ID or Title)
+            cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ?) AND user_id = ?', (app_id, app_id, session.get('user_id')))
+            row = cursor.fetchone()
+            
+            if not row:
+                # Try fuzzy match on title
+                fuzzy_query = f"%{app_id}%"
+                cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE project_name LIKE ? AND user_id = ? ORDER BY created_at DESC', (fuzzy_query, session.get('user_id')))
+                row = cursor.fetchone()
+
+            if not row:
+                # Targeted search failed, provide the full history as a fallback
+                cursor = db.execute('SELECT project_name, process_id, status, created_at FROM forge_history WHERE user_id = ? ORDER BY created_at DESC', (session['user_id'],))
+                history = cursor.fetchall()
+                if not history:
+                    return f"Error: Project '{app_id}' not found and you have no past Forge deployments."
+                
+                res = f"Error: Project '{app_id}' not found in your history. Here are your existing projects:\n"
+                for r in history:
+                    res += f"- **{r['project_name']}** (ID: `{r['process_id']}`) - Status: {r['status']}\n"
+                res += "\nPlease specify which project you meant or providing the correct ID."
+                return res
+            
+            actual_app_id = row['process_id']
+            project_title = row['project_name']
+            current_files = json.loads(row['files_snapshot'])
+            
+            # 1. AI-Driven Iteration (if prompt provided)
+            if prompt:
+                model_id = "gemini-3.1-pro-preview"
+                from app import PRIMARY_API_KEY
+                iter_prompt = get_forge_iteration_prompt(prompt, json.dumps(current_files))
+                generator = gemini_generate(iter_prompt, model_id, PRIMARY_API_KEY)
+                raw_response = "".join([item['result'] for item in generator if 'result' in item])
+                
+                if not raw_response or raw_response.startswith(ERROR_CODE):
+                    return f"Error: AI iteration failed. {raw_response}"
+                
+                clean_json_string = _extract_json_from_response(raw_response)
+                if clean_json_string:
+                    current_files.update(json.loads(clean_json_string))
+            
+            # 2. Manual Modification (if changes provided)
+            if changes:
+                current_files.update(changes)
+                
+            # Update Session & DB
+            session['forge_project'] = {'files': current_files, 'container_id': None, 'process_id': actual_app_id, 'project_name': project_title}
+            session.modified = True
+            db.execute('UPDATE forge_history SET files_snapshot = ?, status = ? WHERE process_id = ?', (json.dumps(current_files), 'starting', actual_app_id))
+            db.commit()
+            
+            # Handle Deployment
+            from app import _deploy_and_stream_output, redis_client
+            try: redis_client.hset(_redis_forge_key(actual_app_id), mapping={"status": "starting", "files": json.dumps(current_files)})
+            except: pass
+            
+            app_obj = current_app._get_current_object()
+            threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, actual_app_id, None, 'forge'), daemon=True).start()
+            
+            msg_prefix = f"Modification applied to '{project_title}'" if (prompt or changes) else f"Redeploying '{project_title}'"
+            return f"{msg_prefix}! ID: `{actual_app_id}`. Live URL: https://stellarai.live/apps/{actual_app_id}/"
+
+        return f"Error: Unknown action '{action}'."
     except Exception as e:
-        return f"Error controlling forge: {str(e)}"
+        return f"Error in forge_control: {str(e)}"
 
 # Define the tools list for Gemini
 available_tools = [

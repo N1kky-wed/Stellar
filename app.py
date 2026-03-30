@@ -470,9 +470,9 @@ def generate_chat_name(chat_id, first_message_content):
         try:
             prompt = f"Given the following first message of a conversation, generate a very short, descriptive name (max 5 words) for this chat. Respond only with the name.\n\nMessage: {first_message_content}"
             model_name = "gemini-2.5-flash-lite"
-            api_key = os.getenv("RTP_API_KEY")
+            api_key = PRIMARY_API_KEY
             if not api_key:
-                logger.warning("RTP_API_KEY not found for chat name generation. Skipping name generation.")
+                logger.warning("PRIMARY_API_KEY not found for chat name generation. Skipping name generation.")
                 return
 
             try:
@@ -503,7 +503,7 @@ def generate_forge_title(user_prompt):
             
         prompt = f"Given the following user prompt for creating a web application, generate a very short, catchy, and descriptive title (max 5 words) for the project. Respond only with the title. Do not use quotes.\n\nUser Prompt: {user_prompt}"
         model_name = "gemini-2.5-flash-lite"
-        api_key = os.getenv("RTP_API_KEY")
+        api_key = PRIMARY_API_KEY
         if not api_key:
             return "Forge Project"
 
@@ -539,7 +539,7 @@ def count_chat_tokens(chat_id=None):
         if not history_for_tokens:
             return 0
          
-        client = genai.Client(api_key=RTP_API_KEY)
+        client = genai.Client(api_key=PRIMARY_API_KEY)
         token_count_response = client.models.count_tokens(
             model="gemini-2.5-flash-lite", contents=history_for_tokens
         )
@@ -910,7 +910,7 @@ def classify_real_time_needed(query: str, key: str = None) -> str:
     for keyword in real_time_keywords:
         if re.search(r'\b' + re.escape(keyword) + r'\b', check_segment, re.IGNORECASE):
             return "yes"
-    api_key = key or RTP_API_KEY
+    api_key = key or PRIMARY_API_KEY
     if not api_key:
         return "no"
     model_name = 'gemini-2.5-flash-lite'
@@ -989,8 +989,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             yield {'status': f"{display_name} is thinking..."}
             client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
             output_this_attempt = ""
-
-
+            output_this_attempt_parts = []
+            called_tools_results = []
 
             try:
                 from agent_tools import available_tools
@@ -1055,14 +1055,16 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 function_calls = [p.function_call for p in parts if getattr(p, 'function_call', None)]
                 
                 # Capture and yield any introductory text that comes WITH the function calls
-                intro_text = ""
+                current_parts_text = []
                 for part in parts:
                     if getattr(part, 'text', None):
-                        intro_text += part.text
+                        current_parts_text.append(part.text)
                 
+                intro_text = "".join(current_parts_text)
                 if intro_text:
                     yield {'result': intro_text}
                     accumulated_full_output += intro_text
+                    output_this_attempt_parts.append(intro_text)
 
                 if not function_calls:
                     break
@@ -1078,7 +1080,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         elif func_name == "generate_image":
                             yield {'status': 'Generating your image...'}
                         elif func_name == "render_svg":
-                            yield {'status': 'Drawing SVG...'}
+                            yield {'status': 'Drawing...'}
                         elif func_name == "make_presentation":
                             yield {'status': 'Creating presentation slides...'}
                         elif func_name == "forge_control":
@@ -1098,13 +1100,13 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
                             res = func_to_call(**args_dict)
                             
-                            # For visual tools, we do NOT yield or accumulate the result here.
-                            # Instead, we rely on the model to incorporate the tool's result (FunctionResponse)
-                            # into its final text response. This prevents duplication in the chat bubble.
-                            if func_name not in ["render_svg", "generate_image", "make_presentation"]:
-                                if isinstance(res, str):
-                                    yield {'result': f"\n{res}\n"}
-                                    accumulated_full_output += f"\n\n{res}\n\n"
+                            # Store result for final verification/forced inclusion
+                            called_tools_results.append({'name': func_name, 'result': res})
+
+                            # We no longer yield any tool results immediately. 
+                            # Instead, we provide them to the model as a FunctionResponse part,
+                            # and rely on the model to include the information naturally in its final text turn.
+                            # This prevents the "double output" issue where the system yielded it and then the model repeated it.
                         except Exception as e:
                             res = f"Error: {str(e)}"
                             
@@ -1118,6 +1120,40 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         )
                     message_to_send = function_responses
 
+            # Forcibly add tool results if the model forgot to include them or mangled them
+            import re
+            
+            # First, clean up any SVGs the model might have wrapped in markdown code blocks
+            # This allows them to render correctly even if the model ignored instructions.
+            accumulated_full_output = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', accumulated_full_output, flags=re.IGNORECASE)
+
+            for tool in called_tools_results:
+                if not isinstance(tool['result'], str): continue
+                clean_res = tool['result'].strip()
+                
+                # Check if the result (or a significant part of it) is already in the output
+                already_present = False
+                if clean_res in accumulated_full_output:
+                    already_present = True
+                elif tool['name'] == 'render_svg' and '<svg' in accumulated_full_output:
+                    # If some SVG is already there, assume it's this one (prevents double rendering)
+                    already_present = True
+                else:
+                    # Look for unique identifiers like UUIDs or URLs in the tool result
+                    matches = re.findall(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|https?://\S+', clean_res)
+                    for m in matches:
+                        if m in accumulated_full_output:
+                            already_present = True
+                            break
+                
+                if not already_present:
+                    yield {'result': f"\n{clean_res}\n"}
+                    accumulated_full_output += f"\n{clean_res}\n"
+                    output_this_attempt_parts.append(f"\n{clean_res}\n")
+
+            output_this_attempt = "".join(output_this_attempt_parts)
+            # Re-apply markdown stripping to the final joined output to be safe
+            output_this_attempt = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', output_this_attempt, flags=re.IGNORECASE)
 
             candidate_finish_reason_obj = getattr(candidate, 'finish_reason', 'UNKNOWN')
             candidate_finish_reason = candidate_finish_reason_obj.name if hasattr(candidate_finish_reason_obj, 'name') else str(candidate_finish_reason_obj)
@@ -1125,7 +1161,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             if candidate_finish_reason == 'MAX_TOKENS':
                 yield {'status': f'Model hit MAX_TOKENS. Checking if output is cut off...', 'phase': 'continuation_check'}
 
-                if is_output_cut_off(output_this_attempt.strip(), RTP_API_KEY):
+                if is_output_cut_off(output_this_attempt.strip(), PRIMARY_API_KEY):
                     yield {'status': 'Output is cut off. Attempting to continue...', 'phase': 'continuation_attempt'}
                     
                     current_effective_prompt = (
@@ -1290,8 +1326,9 @@ def forge_start():
     if not user_prompt:
         return jsonify({'error': 'Initial prompt is required.'}), 400
 
+    old_process_id = session.get('forge_project', {}).get('process_id')
     if 'forge_project' in session:
-        stop_and_cleanup_app_by_process_id(session['forge_project'].get('process_id'), app_type='forge')
+        stop_and_cleanup_app_by_process_id(old_process_id, app_type='forge')
 
     try:
         # Analyze uploaded files if any
@@ -2077,7 +2114,7 @@ def refine_stream():
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
 
-    fallback_model="gemini-2.5-flash"
+    fallback_model="gemini-2.5-flash-lite"
     max_model_attempts = 2
     user_message_id = insert_message(chat_id, "user", user_query_from_frontend, user_query_for_name=user_query_from_frontend)
     if not user_message_id:
@@ -2126,7 +2163,7 @@ def refine_stream():
                 if check_and_log_stop(query_id, f"LLM call attempt {model_attempt+1}"): return
                 current_model = selected_model
                 display_name = MODEL_NAMES.get(current_model, current_model)
-                current_api_key = REFINE_API_KEY
+                current_api_key = PRIMARY_API_KEY
                 if not current_api_key:
                     yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
                     llm_error_occurred = True
@@ -2244,7 +2281,7 @@ def search_stream():
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
 
-    fallback_model="gemini-2.5-flash"
+    fallback_model="gemini-2.5-flash-lite"
     max_model_attempts = 2
     user_message_id = insert_message(chat_id, "user", user_query, user_query_for_name=user_query)
     if not user_message_id:
@@ -2342,7 +2379,7 @@ def search_stream():
             for model_attempt in range(max_model_attempts):
                 current_model = selected_analysis_model
                 display_name = MODEL_NAMES.get(current_model, current_model)
-                current_api_key = SEARCH_API_KEY
+                current_api_key = PRIMARY_API_KEY
                 if not current_api_key:
                     yield f"data: {json.dumps({'status': 'Error: API Key for Search Analysis is missing.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
                     error_occurred = True
@@ -2390,7 +2427,7 @@ def search_stream():
             for model_attempt in range(max_model_attempts):
                 current_model = selected_expansion_model
                 display_name = MODEL_NAMES.get(current_model, current_model)
-                current_api_key = SEARCH_API_KEY
+                current_api_key = PRIMARY_API_KEY
                 if not current_api_key:
                     yield f"data: {json.dumps({'status': 'Error: API Key for Search Expansion is missing.', 'error': True, 'phase': 'expansion_llm'})}\n\n"
                     error_occurred = True
@@ -2534,7 +2571,7 @@ def cosmos_stream():
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
 
-    fallback_model="gemini-2.5-flash"
+    fallback_model="gemini-2.5-flash-lite"
     max_model_attempts = len(BACKUP_API_KEYS)
     user_message_id = insert_message(chat_id, "user", user_query, user_query_for_name=user_query)
     if not user_message_id:
@@ -2567,14 +2604,22 @@ def cosmos_stream():
                 try:
                     if file_analysis_context:
                         instruction_prompt = file_analysis_context + """\nAnalyze the file analysis results provided. Identify key themes, entities, unresolved questions, or areas that would benefit from current external information. Generate concise instructions for another AI on how to formulate up to 5 effective Tavily search queries to gather relevant external context based on this analysis."""
-                        instruction_gen = gemini_generate(prompt=instruction_prompt, model_id="gemini-2.5-flash-lite", key=RTP_API_KEY, attempts=1)
-                        instruction = next((item['result'] for item in instruction_gen if 'result' in item), None)
+                        instruction_gen = gemini_generate(prompt=instruction_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1)
+                        instruction = ""
+                        for item in instruction_gen:
+                             if 'result' in item:
+                                 instruction += item['result']
+                        if not instruction: instruction = None
 
                         generated_query = None
                         if instruction and not instruction.startswith(ERROR_CODE):
                             query_gen_prompt = instruction + f"\nBased on the instruction derived from the file analysis, create a specific Tavily search query (or up to 5 separate queries, comma-separated if multiple distinct areas are identified) for:\nOriginal User Query: {user_query}\nReturn *only ONE SMALL* the search query string(s)."
-                            query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=RTP_API_KEY, attempts=1)
-                            generated_query = next((item['result'] for item in query_gen if 'result' in item), None)
+                            query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1)
+                            generated_query = ""
+                            for item in query_gen:
+                                if 'result' in item:
+                                    generated_query += item['result']
+                            if not generated_query: generated_query = None
                             if generated_query and not generated_query.startswith(ERROR_CODE):
                                 search_query = generated_query.strip().strip('"')
                             else:
@@ -2644,7 +2689,7 @@ def cosmos_stream():
             for model_attempt in range(max_model_attempts):
                 current_model = selected_model
                 display_name = MODEL_NAMES.get(current_model, current_model)
-                current_api_key = COSMOS_API_KEY
+                current_api_key = PRIMARY_API_KEY
                 if not current_api_key:
                     yield f"data: {json.dumps({'status': 'Error: API Key for Cosmos generation is missing.', 'error': True, 'phase': 'generation_llm'})}\n\n"
                     error_occurred = True
@@ -2821,15 +2866,12 @@ def clear_history():
         cleared_pending = session.pop('pending_queries', None)
         if cleared_pending is not None:
             session.modified = True
-        cleared_nebula = session.pop('nebula_processes', None)
-        if cleared_nebula is not None:
-            session.modified = True
         
         cursor = db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
         deleted_count = cursor.rowcount
         db.commit()
         
-        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, building applications with Nebula Mode, and data analysis reports via Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
+        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, building applications using Forge Mode, and data analysis reports via Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
         insert_message(chat_id, "stellar", welcome_message)
         
         return jsonify({'status': 'Success', 'message': 'Conversation history cleared'})
@@ -3011,7 +3053,7 @@ def create_new_chat():
         db.commit()
         new_chat_id = cursor.lastrowid
         
-        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, building applications with Nebula Mode, and data analysis reports via Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
+        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, building applications using Forge Mode, and data analysis reports via Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
         insert_message(new_chat_id, "stellar", welcome_message)
 
         session['current_chat_id'] = new_chat_id
@@ -3257,8 +3299,6 @@ def search_messages_route():
                         snippet = "You: " + snippet
                     elif message_type == 'stellar':
                         snippet = "Stellar: " + snippet
-                    elif message_type == 'nebula_output':
-                        snippet = "Nebula: " + snippet
                 
             found_chats_info[chat_id] = {
                 'chat_name': chat_name,
@@ -3285,11 +3325,11 @@ def run_code():
     data = request.get_json()
     code = data.get('code')
     language = data.get('language')
-    nebula_message_id = data.get('processId')
 
     if not code or not language:
         return jsonify({'error': 'Missing code or language.'}), 400
 
+    old_process_id = session.get('last_run_code_process_id')
     if 'last_run_code_process_id' in session:
         stop_and_cleanup_app_by_process_id(session.pop('last_run_code_process_id', None), app_type='run_code')
         session.modified = True
@@ -3298,40 +3338,6 @@ def run_code():
     api_keys = {}
     db = get_db()
     user_id = session['user_id']
-
-    if nebula_message_id and language == 'python':
-        try:
-            message_id = int(nebula_message_id)
-            cursor = db.execute(
-                '''SELECT m.nebula_step1, m.nebula_step2_frontend, c.user_id
-                   FROM messages m JOIN chats c ON m.chat_id = c.id
-                   WHERE m.id = ? AND c.user_id = ?''', (message_id, user_id)
-            )
-            result = _fetchone_as_dict(cursor)
-            if result:
-                raw_code_from_db = result.get('nebula_step2_frontend')
-                if raw_code_from_db:
-                    match = re.search(r'```html\s*\n(<!DOCTYPE html>[\s\S]*?<\/html>)\s*\n```', raw_code_from_db, re.IGNORECASE | re.DOTALL)
-                    if match:
-                        final_frontend_code = match.group(1).strip()
-                
-                step1_plan = result.get('nebula_step1')
-                if step1_plan:
-                    keys_section_regex = r"1\.\s+Required\s+API\s+Keys"
-                    key_name_regex = r'`([A-Z_]+)`'
-                    plan_parts = re.split(keys_section_regex, step1_plan, flags=re.IGNORECASE)
-                    if len(plan_parts) > 1:
-                        key_section_content = plan_parts[1].split('2.')[0]
-                        required_key_names = re.findall(key_name_regex, key_section_content)
-                        for key_name in required_key_names:
-                            key_cursor = db.execute('SELECT encrypted_value FROM user_api_keys WHERE user_id = ? AND key_name = ?', (user_id, key_name))
-                            encrypted_key_data = _fetchone_as_dict(key_cursor)
-                            if encrypted_key_data:
-                                api_keys[key_name] = cipher_suite.decrypt(encrypted_key_data['encrypted_value']).decode('utf-8')
-                            else:
-                                return jsonify({'error': f"Execution failed: Required API key '{key_name}' is missing."}), 400
-        except Exception as e:
-            logger.error(f"Error during pre-run data retrieval: {e}", exc_info=True)
 
     main_code_basename = "app"
     if language == 'java':
@@ -3479,36 +3485,6 @@ def manage_api_keys():
 
 
 
-@app.route('/nebula/save_keys', methods=['POST'])
-def nebula_save_keys():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'No JSON data received.'}), 400
-
-    process_id = data.get('processId')
-    api_keys = data.get('api_keys')
-
-    if not process_id or not isinstance(api_keys, dict):
-        return jsonify({'error': 'Missing or invalid parameters: processId and api_keys are required.'}), 400
-
-    process_id_str = str(process_id)
-    if 'nebula_processes' in session and process_id_str in session['nebula_processes']:
-        process_state = session['nebula_processes'][process_id_str]
-        
-        if process_state.get('chat_id') and get_current_chat_id(session['user_id']) != process_state.get('chat_id'):
-             return jsonify({'error': 'Authorization error.'}), 403
-
-        process_state['api_keys'] = api_keys
-        session['nebula_processes'][process_id_str] = process_state
-        session.modified = True
-        logging.info(f"Successfully saved API keys for Nebula process {process_id_str}.")
-        return jsonify({'success': True, 'message': 'API keys saved successfully.'}), 200
-    else:
-        return jsonify({'error': f'Nebula process {process_id_str} not found.'}), 404
-
 @app.route('/api/stop_container', methods=['POST'])
 def stop_container():
     if 'user_id' not in session:
@@ -3566,7 +3542,8 @@ def generate_visualization():
     content = data.get('content')
     message_id = data.get('message_id') # Get message_id to persist visualization
     model_id = 'gemini-3.1-pro-preview' # Use the pro preview model as requested
-    api_key = RTP_API_KEY # Use RTP key for faster/cheaper generation or PRIMARY if needed
+    api_key = PRIMARY_API_KEY
+ # Use RTP key for faster/cheaper generation or PRIMARY if needed
 
     if not content:
         return jsonify({'error': 'Content is required for visualization.'}), 400
@@ -3598,8 +3575,7 @@ def generate_visualization():
         full_response = ""
         for chunk in generator:
             if 'result' in chunk:
-                full_response = chunk['result']
-                break
+                full_response += chunk['result']
             elif 'error' in chunk:
                  return jsonify({'error': chunk['error']}), 500
         
@@ -3717,6 +3693,16 @@ class OrphanContainerMonitor:
 
 def cleanup_stale_containers():
     try:
+        # Always reset any stuck statuses in the database to 'stopped' on startup
+        try:
+            with app.app_context():
+                db = get_db()
+                db.execute("UPDATE forge_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created')")
+                db.commit()
+                logging.info("Database status for forge_history reset to 'stopped'.")
+        except Exception as db_err:
+            logging.error(f"Failed to reset database statuses: {db_err}")
+
         client = docker.from_env()
         # Clean up by label first
         stale_labeled = client.containers.list(all=True, filters={"label": "stellar_type"})
@@ -3740,7 +3726,7 @@ def cleanup_stale_containers():
             except Exception as e:
                 logging.error(f"Error during cleanup of container {container.name}: {e}")
         logging.info("Stale container cleanup complete.")
-        
+
     except docker.errors.DockerException as e:
         logging.error(f"Docker is not available. Skipping stale container cleanup. Error: {e}")
     except Exception as e:
