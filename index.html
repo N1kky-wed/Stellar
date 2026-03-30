@@ -7053,7 +7053,7 @@
             feedbackOverlay.className = 'pres-feedback-overlay';
             feedbackOverlay.innerHTML = `
                 <div class="pres-feedback-box">
-                    <div style="font-family: 'Inter', sans-serif; font-weight: 900; color: #00E5FF; margin-bottom: 15px; font-size: 0.8em; letter-spacing: 1px; text-transform: uppercase;">Improve Slide ${currentIndex + 1}</div>
+                    <div class="pres-feedback-title" style="font-family: 'Inter', sans-serif; font-weight: 900; color: #00E5FF; margin-bottom: 15px; font-size: 0.8em; letter-spacing: 1px; text-transform: uppercase;">Improve Slide ${currentIndex + 1}</div>
                     <input type="text" class="pres-feedback-input" placeholder="e.g. Add more statistics, change the image to a factory...">
                     <div class="pres-feedback-actions">
                         <button class="pres-feedback-btn pres-btn-cancel">Cancel</button>
@@ -7154,7 +7154,7 @@
             nextBtn.onclick = () => { if (currentIndex < data.slides.length - 1) updateSlide(currentIndex + 1); };
 
             regenBtn.onclick = () => {
-                feedbackOverlay.querySelector('div').textContent = `Improve Slide ${currentIndex + 1}`;
+                feedbackOverlay.querySelector('.pres-feedback-title').textContent = `Improve Slide ${currentIndex + 1}`;
                 feedbackOverlay.classList.add('active');
                 feedbackInput.focus();
             };
