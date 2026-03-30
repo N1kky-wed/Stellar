@@ -367,7 +367,7 @@ def set_light_color(color: str, brightness: int) -> dict:
         color: The hex code or name of the color.
         brightness: 0-100 integer level.
     '''
-    return {"status": "ok"}
+    return {{ "status": "ok" }}
 
 # Pass function directly
 response = client.models.generate_content(
@@ -475,7 +475,7 @@ interaction = client.interactions.create(
 | `import google.generativeai` | `from google import genai` |
 | `genai.GenerativeModel(...)` | `client = genai.Client()` |
 | `model.generate_content(...)` | `client.models.generate_content(...)` |
-| `response_schema = {...}` (Dict) | `response_schema = MyPydanticClass` |
+| `response_schema = {{...}}` (Dict) | `response_schema = MyPydanticClass` |
 | `chat.history` (List access) | Handled internally or manual list management |
 | `genai.upload_file(...)` | `client.files.upload(...)` |
 
@@ -656,7 +656,7 @@ def set_light_color(color: str, brightness: int) -> dict:
         color: The hex code or name of the color.
         brightness: 0-100 integer level.
     '''
-    return {"status": "ok"}
+    return {{ "status": "ok" }}
 
 # Pass function directly
 response = client.models.generate_content(
@@ -764,7 +764,7 @@ interaction = client.interactions.create(
 | `import google.generativeai` | `from google import genai` |
 | `genai.GenerativeModel(...)` | `client = genai.Client()` |
 | `model.generate_content(...)` | `client.models.generate_content(...)` |
-| `response_schema = {...}` (Dict) | `response_schema = MyPydanticClass` |
+| `response_schema = {{...}}` (Dict) | `response_schema = MyPydanticClass` |
 | `chat.history` (List access) | Handled internally or manual list management |
 | `genai.upload_file(...)` | `client.files.upload(...)` |
 
