@@ -1128,6 +1128,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             accumulated_full_output = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', accumulated_full_output, flags=re.IGNORECASE)
 
             for tool in called_tools_results:
+                # Do not force-attach raw data from search tools; let the model format it naturally
+                if tool['name'] in ['extensive_search', 'native_search']:
+                    continue
+
                 if not isinstance(tool['result'], str): continue
                 clean_res = tool['result'].strip()
                 
