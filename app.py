@@ -1609,7 +1609,17 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     _put_event({'type': 'log', 'content': f'Reusing existing container ({container.short_id})...'})
                     
                     # Stop old app process
-                    container.exec_run("pkill -f 'python app.py'")
+                    container.exec_run("pkill -9 -f 'python app.py'")
+                    
+                    # Wait for the port to be fully released to prevent false-positive readiness
+                    for _ in range(20):
+                        time.sleep(0.5)
+                        try:
+                            res = container.exec_run("curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/")
+                            if res.exit_code != 0 or res.output.decode().strip() == '000':
+                                break
+                        except Exception:
+                            break
                     
                     # Find mount path to update files
                     for mount in container.attrs.get('Mounts', []):
