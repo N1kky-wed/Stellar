@@ -1131,8 +1131,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             accumulated_full_output = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', accumulated_full_output, flags=re.IGNORECASE)
 
             for tool in called_tools_results:
-                # Do not force-attach raw data from search tools or project history; let the model format it naturally
-                if tool['name'] in ['extensive_search', 'native_search']:
+                # Do not force-attach raw data from search tools, project history, or SVGs
+                # render_svg uses structured output, so the model is fully responsible for placing it.
+                if tool['name'] in ['extensive_search', 'native_search', 'render_svg']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and "Your Forge Deployment History" in tool['result']:
                     continue
