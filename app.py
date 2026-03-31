@@ -421,7 +421,7 @@ def get_conversation_history(chat_id):
         cursor = db.execute(
             '''SELECT id, message_type, message_content, is_research_output, html_file,
                       file_analysis_context, visualization_html, timestamp
-               FROM messages WHERE chat_id = ? ORDER BY timestamp ASC''',
+               FROM messages WHERE chat_id = ? AND hidden = 0 ORDER BY timestamp ASC''',
             (chat_id,)
         )
         rows = _fetch_as_dict(cursor)
@@ -2090,6 +2090,7 @@ def register_query():
         mode = data.get('mode')
         pending_files = data.get('pending_files', [])
         chat_id = data.get('chat_id')
+        hidden = data.get('hidden', False)
 
         if not query or not model_id or not mode or not chat_id:
             return jsonify({'error': 'Missing required data: query, model_id, mode, chat_id'}), 400
@@ -2108,7 +2109,8 @@ def register_query():
             'mode': mode,
             'pending_files': pending_files,
             'timestamp': time.time(),
-            'chat_id': chat_id
+            'chat_id': chat_id,
+            'hidden': hidden
         }
         session.modified = True
 
@@ -2153,6 +2155,7 @@ def refine_stream():
     model_id = query_data.get('model_id')
     pending_files = query_data.get('pending_files', [])
     chat_id = query_data.get('chat_id')
+    hidden = query_data.get('hidden', False)
 
     if not user_query_from_frontend or not model_id or not chat_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
@@ -2160,7 +2163,7 @@ def refine_stream():
 
     fallback_model="gemini-2.5-flash-lite"
     max_model_attempts = 2
-    user_message_id = insert_message(chat_id, "user", user_query_from_frontend, user_query_for_name=user_query_from_frontend)
+    user_message_id = insert_message(chat_id, "user", user_query_from_frontend, user_query_for_name=user_query_from_frontend, hidden=hidden)
     if not user_message_id:
          pass
 
@@ -2251,7 +2254,8 @@ def refine_stream():
                     chat_id,
                     "stellar",
                     refined_query_result,
-                    file_analysis_context=file_analysis_context
+                    file_analysis_context=file_analysis_context,
+                    hidden=hidden
                 )
                 if stellar_message_id:
                      final_stellar_message_id = stellar_message_id

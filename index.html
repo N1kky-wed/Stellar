@@ -6890,7 +6890,7 @@
                 if (messagesDiv) messagesDiv.appendChild(placeholderMsg);
                 scrollToBottom();
 
-                const registerPayload = { query: originalQuery || " ", model_id: selectedModel, mode: modeForBackend, pending_files: serverFileIds, chat_id: currentChatId };
+                const registerPayload = { query: originalQuery || " ", model_id: selectedModel, mode: modeForBackend, pending_files: serverFileIds, chat_id: currentChatId, hidden: silent };
                 const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(registerPayload) });
                 if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error || `Register fail HTTP ${response.status}`); }
                 const data = await response.json(); if (!data.query_id) { throw new Error("No query_id received from registration."); }
@@ -6903,7 +6903,8 @@
                     currentChatId,
                     placeholderId,
                     userMsgId,
-                    isResearchOutputExpected
+                    isResearchOutputExpected,
+                    silent
                 );
             } catch (err) {
                 const errorMsg = `Error: ${err.message}`;
@@ -7137,7 +7138,13 @@
                 }
 
                 const nextImg = new Image();
-                nextImg.src = data.slides[currentIndex];
+                let slideUrl = viewer._slides[currentIndex];
+                // Cache bust if we just regenerated this slide
+                if (isRegenFinished) {
+                    slideUrl += (slideUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+                }
+                nextImg.src = slideUrl;
+                
                 nextImg.onload = () => {
                     img.src = nextImg.src;
                     bgBlur.style.backgroundImage = `url(${nextImg.src})`;
@@ -7147,9 +7154,9 @@
                     }
                 };
                 
-                info.textContent = `Slide ${currentIndex + 1} of ${data.slides.length}`;
+                info.textContent = `Slide ${currentIndex + 1} of ${viewer._slides.length}`;
                 prevBtn.disabled = currentIndex === 0;
-                nextBtn.disabled = currentIndex === data.slides.length - 1;
+                nextBtn.disabled = currentIndex === viewer._slides.length - 1;
             };
 
             prevBtn.onclick = () => { if (currentIndex > 0) updateSlide(currentIndex - 1); };
@@ -7319,7 +7326,7 @@
             if (messagesDiv) messagesDiv.appendChild(msg);
         }
 
-        async function initAndStartStreaming(userQuery, modelId, modeForBackend, pendingFiles, chatId, placeholderId, userMessageId, isResearchOutputExpected) {
+        async function initAndStartStreaming(userQuery, modelId, modeForBackend, pendingFiles, chatId, placeholderId, userMessageId, isResearchOutputExpected, silent = false) {
             if (currentStreamQueryId) {
                 currentStreamQueryId = null;
             }
@@ -7334,7 +7341,8 @@
                         model_id: modelId,
                         mode: modeForBackend,
                         pending_files: pendingFiles,
-                        chat_id: chatId
+                        chat_id: chatId,
+                        hidden: silent
                     };
 
                     const registerResponse = await fetch('/register_query', {
