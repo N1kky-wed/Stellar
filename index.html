@@ -4832,7 +4832,25 @@
         let currentEditingMsg = null, currentEditingMsgId = null;
         let lastRefinedQuery = "";
         let isProcessing = false;
+        let taskStartTime = null;
+        let notifiedForLongTask = false;
         let currentStatusText = "Idle";
+
+        async function requestNotificationPermission() {
+            if (!("Notification" in window)) return;
+            if (Notification.permission === "default") {
+                await Notification.requestPermission();
+            }
+        }
+
+        function notifyUser(title, body) {
+            if (!("Notification" in window) || Notification.permission !== "granted") return;
+            new Notification(title, {
+                body: body,
+                icon: "/static/favicon.svg" // We don't have a static one, but browser might fallback or use default
+            });
+        }
+
         let historyLoaded = false;
         let currentRegeneratingStep = null;
         let sseEventSource = null;
@@ -6305,10 +6323,20 @@
         }
 
         function setStatus(text, isError = false) {
-            if (!statusBar) return; currentStatusText = text; statusBar.textContent = text;
+            if (!statusBar) return; 
+            
+            let displayMsg = text;
+            if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
+                if (text.toLowerCase().includes("thinking") || text.toLowerCase().includes("generating") || text.toLowerCase().includes("drawing") || text.toLowerCase().includes("controlling")) {
+                    displayMsg = text + " (I'll notify you when it's done)";
+                }
+            }
+
+            currentStatusText = text; 
+            statusBar.textContent = displayMsg;
             const analysisAreaHasContent = document.getElementById('analysis-progress-area')?.childElementCount > 0;
             const stagedFilesExist = stagedFilesContainer?.childElementCount > 0 && stagedFilesContainer?.style.display !== 'none';
-
+            
             const isActive = text.toLowerCase() !== "idle" || isProcessing || nebulaProcess.isActive || analysisAreaHasContent || stagedFilesExist;
             statusBar.classList.toggle("active", isActive && !isError); statusBar.classList.toggle("error", isError);
             if (isActive && !isError) { statusBar.style.animation = ''; requestAnimationFrame(() => { statusBar.style.animation = 'statusBarPulse 2.5s infinite alternate ease-in-out'; }); } else { statusBar.style.animation = ''; }
@@ -6819,6 +6847,10 @@
 
             const selectedModel = modelSelect.value;
             isProcessing = true;
+            taskStartTime = Date.now();
+            notifiedForLongTask = false;
+            requestNotificationPermission();
+
             sendBtn.disabled = true;
             toggleSendStopButtons(true);
             setStatus("Processing...");
@@ -7686,6 +7718,12 @@
 
 
             sendBtn.disabled = false;
+
+            if (!showErrorStatus && taskStartTime && (Date.now() - taskStartTime > 60000)) {
+                notifyUser("Task Complete", "Stellar has finished processing your long-running request.");
+            }
+            taskStartTime = null;
+            notifiedForLongTask = false;
 
             const finalStatus = showErrorStatus ? (errorMsg || "Stream Error") : "Idle";
             const shouldBeIdle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0 && analysisProgressArea?.childElementCount === 0;
