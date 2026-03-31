@@ -338,7 +338,7 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
             contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
 
         resp = client.models.generate_content(
-            model='gemini-2.0-flash', # Use 2.0 or 1.5 for vision support
+            model='gemini-2.5-flash',
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -351,23 +351,25 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
 
     # Generate image for this slide
     full_image_prompt = (
-        f"A professional, high-resolution 16:9 presentation infographic slide. Style: '{style}'.\n"
-        f"LAYOUT: {slide_data.get('background_description')}.\n"
-        f"CONTENT TO RENDER DIRECTLY IN IMAGE:\n"
+        f"Using the attached image as a reference, modify it based on this feedback: '{feedback}'.\n"
+        f"Target Infographic Layout: {slide_data.get('background_description')}.\n"
+        f"CONTENT TO RENDER:\n"
         f"Main Header: '{slide_data.get('title')}'\n"
         f"Body Text: '{slide_data.get('summary')}'\n"
-        f"ADDITIONAL FEEDBACK: {feedback}\n"
         "INSTRUCTIONS:\n"
-        "- Use professional, clean sans-serif typography.\n"
-        "- Integrate the text aesthetically into a multi-column or structured infographic layout.\n"
-        "- Include relevant icons, charts, or transition diagrams if mentioned in the layout description.\n"
-        "- The result must be a single, complete, polished slide design. No watermarks. Legible text."
+        "- Maintain the professional style: '{style}'.\n"
+        "- Ensure high-resolution, clean typography, and 3D infographics if requested.\n"
+        "- The result must be a single, complete, polished slide design."
     )
 
     try:
+        image_contents = [full_image_prompt]
+        if existing_image_part:
+            image_contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
+
         result = client.models.generate_content(
             model='gemini-3.1-flash-image-preview',
-            contents=full_image_prompt,
+            contents=image_contents,
         )
         img_bytes = None
         if result.candidates and result.candidates[0].content.parts:
