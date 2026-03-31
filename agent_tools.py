@@ -301,13 +301,30 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
 
     client = genai.Client(api_key=PRIMARY_API_KEY)
     
+    # Load existing slide image for reference if it exists
+    existing_image_part = None
+    try:
+        pres_dir = os.path.join("outputs", f"pres_{presentation_id}")
+        slide_path = os.path.join(pres_dir, f"slide_{slide_index + 1}.png")
+        if os.path.exists(slide_path):
+            with open(slide_path, "rb") as f:
+                img_data = f.read()
+                existing_image_part = {
+                    'mime_type': 'image/png',
+                    'data': img_data
+                }
+    except:
+        pass
+
     # Re-plan only this slide
     slide_plan_prompt = (
-        f"Re-plan slide index {slide_index} for a presentation on '{topic}'.\n"
-        f"Original Style: {style}.\n"
-        f"Context: {additional_context}.\n"
-        f"USER FEEDBACK FOR REGENERATION: {feedback}.\n"
-        "Design it as a complete visual experience. Include specific sections, diagrams, or icons in the background description."
+        f"Analyze the attached image (Slide {slide_index + 1} of presentation {presentation_id}) and re-plan it based on this feedback: '{feedback}'.\n"
+        f"Original Topic: {topic}.\n"
+        f"Target Style: {style}.\n"
+        "Instructions:\n"
+        "1. Identify what is currently on the slide.\n"
+        "2. Apply the user feedback to create a NEW plan.\n"
+        "3. Ensure the new design is a complete visual experience. Include specific sections, diagrams, or 3D elements in the background description as requested."
     )
 
     class Slide(BaseModel):
@@ -316,9 +333,13 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
         background_description: str = Field(description="Detailed description of the visual layout.")
 
     try:
+        contents = [slide_plan_prompt]
+        if existing_image_part:
+            contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
+
         resp = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=slide_plan_prompt,
+            model='gemini-2.0-flash', # Use 2.0 or 1.5 for vision support
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=Slide

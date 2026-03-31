@@ -313,8 +313,8 @@
             inset: -20px;
             background-size: cover;
             background-position: center;
-            filter: blur(20px) brightness(0.3);
-            opacity: 0.5;
+            filter: blur(25px) brightness(0.4);
+            opacity: 0.9;
             z-index: 0;
         }
 
@@ -6764,7 +6764,7 @@
                 }, 10000);
             };
         }
-        async function handleSend() {
+        async function handleSend(silent = false) {
             const lastEditIcon = document.querySelector('.user-msg:last-of-type .edit-prompt-wrapper');
             if (lastEditIcon) {
                 lastEditIcon.remove();
@@ -6791,7 +6791,9 @@
 
             const userMsgId = Date.now() + '_user';
             if (query) {
+            if (!silent) {
                 appendUserMessage(query, userMsgId);
+            }
             }
             updateTokenCount();
             const originalQuery = query;
@@ -7173,12 +7175,12 @@
                 feedbackOverlay.classList.remove('active');
                 feedbackInput.value = '';
 
-                const promptText = `Regenerate slide ${currentIndex} of presentation ${data.presentation_id} with this feedback: ${feedback}. Original topic: ${data.topic}, style: ${data.style}, context: ${data.additional_context || ""}`;
+                const promptText = `Regenerate slide number ${currentIndex + 1} (index ${currentIndex}) of presentation ${data.presentation_id} with this feedback: ${feedback}. Original topic: ${data.topic}, style: ${data.style}, context: ${data.additional_context || ""}`;
                 
                 const chatField = document.getElementById('chatInput');
                 if (chatField) {
                     chatField.value = promptText;
-                    handleSend();
+                    handleSend(true);
                 }
             };
 
