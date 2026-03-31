@@ -350,7 +350,8 @@ def get_current_chat_id(user_id):
 
 def insert_message(chat_id, message_type, message_content,
                    is_research_output=False, html_file=None,
-                   file_analysis_context=None, user_query_for_name=None):
+                   file_analysis_context=None, user_query_for_name=None,
+                   hidden=False):
     """Insert a new message into the messages table.
     
     Args:
@@ -371,21 +372,23 @@ def insert_message(chat_id, message_type, message_content,
     max_retries = 3
     retry_delay_seconds = 1
 
+    hidden_val = 1 if hidden else 0
+
     for attempt in range(max_retries):
         try:
             db = get_db()
             cursor = db.execute(
                 '''INSERT INTO messages (chat_id, message_type, message_content,
                                        is_research_output, html_file,
-                                       file_analysis_context)
-                   VALUES (?, ?, ?, ?, ?, ?)''',
+                                       file_analysis_context, hidden)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
                 (chat_id, message_type, message_content,
-                 is_research_output, html_file, file_analysis_context)
+                 is_research_output, html_file, file_analysis_context, hidden_val)
             )
             db.commit()
             last_id = cursor.lastrowid
 
-            if message_type == "user" and user_query_for_name:
+            if message_type == "user" and user_query_for_name and not hidden:
                 num_messages_in_chat = db.execute('SELECT COUNT(*) FROM messages WHERE chat_id = ?', (chat_id,)).fetchone()[0]
                 if num_messages_in_chat == 1 or (num_messages_in_chat -1) % 10 == 0:
                     def thread_target(app_instance, target_chat_id, target_query):
