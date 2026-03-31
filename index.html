@@ -4845,10 +4845,13 @@
 
         function notifyUser(title, body) {
             if (!("Notification" in window) || Notification.permission !== "granted") return;
-            new Notification(title, {
-                body: body,
-                icon: "/static/favicon.svg" // We don't have a static one, but browser might fallback or use default
-            });
+            try {
+                new Notification(title, {
+                    body: body
+                });
+            } catch (e) {
+                console.error("Failed to create notification:", e);
+            }
         }
 
         let historyLoaded = false;
@@ -6327,7 +6330,7 @@
             
             let displayMsg = text;
             if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
-                if (text.toLowerCase().includes("thinking") || text.toLowerCase().includes("generating") || text.toLowerCase().includes("drawing") || text.toLowerCase().includes("controlling")) {
+                if (text.toLowerCase().includes("thinking") || text.toLowerCase().includes("generating") || text.toLowerCase().includes("drawing") || text.toLowerCase().includes("controlling") || text.toLowerCase().includes("processing")) {
                     displayMsg = text + " (I'll notify you when it's done)";
                 }
             }
@@ -7719,8 +7722,8 @@
 
             sendBtn.disabled = false;
 
-            if (!showErrorStatus && taskStartTime && (Date.now() - taskStartTime > 60000)) {
-                notifyUser("Task Complete", "Stellar has finished processing your long-running request.");
+            if (!showErrorStatus && taskStartTime && (Date.now() - taskStartTime > 30000)) {
+                notifyUser("Task Complete", "Stellar has finished processing your request.");
             }
             taskStartTime = null;
             notifiedForLongTask = false;
