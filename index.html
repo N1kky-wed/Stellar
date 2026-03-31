@@ -7139,10 +7139,6 @@
 
                 const nextImg = new Image();
                 let slideUrl = viewer._slides[currentIndex];
-                // Cache bust if we just regenerated this slide
-                if (isRegenFinished) {
-                    slideUrl += (slideUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
-                }
                 nextImg.src = slideUrl;
                 
                 nextImg.onload = () => {
@@ -7203,9 +7199,10 @@
 
         function handleRegeneratedSlide(data) {
             const viewers = document.querySelectorAll(`.pres-viewer[data-pres-id="${data.presentation_id}"]`);
+            const timestampedUrl = data.url + (data.url.includes('?') ? '&' : '?') + 't=' + Date.now();
             viewers.forEach(viewer => {
                 if (viewer._slides && data.slide_index < viewer._slides.length) {
-                    viewer._slides[data.slide_index] = data.url;
+                    viewer._slides[data.slide_index] = timestampedUrl;
                     viewer._updateSlide(data.slide_index, true);
                 }
             });
