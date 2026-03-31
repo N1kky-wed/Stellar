@@ -1162,7 +1162,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
             output_this_attempt = "".join(output_this_attempt_parts)
             # Re-apply markdown stripping to the final joined output to be safe
-            output_this_attempt = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', output_this_attempt, flags=re.IGNORECASE)
+            # Use a more aggressive regex to find <svg> blocks even if they have surrounding junk inside the backticks
+            output_this_attempt = re.sub(r'```(?:svg|xml)?[\s\S]*?(<svg[\s\S]*?</svg>)[\s\S]*?```', r'\1', output_this_attempt, flags=re.IGNORECASE)
 
             candidate_finish_reason_obj = getattr(candidate, 'finish_reason', 'UNKNOWN')
             candidate_finish_reason = candidate_finish_reason_obj.name if hasattr(candidate_finish_reason_obj, 'name') else str(candidate_finish_reason_obj)

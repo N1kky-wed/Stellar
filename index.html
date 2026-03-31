@@ -4835,6 +4835,35 @@
         let taskStartTime = null;
         let notifiedForLongTask = false;
         let currentStatusText = "Idle";
+        let longTaskStatusInterval = null;
+
+        function startLongTaskMonitor(id) {
+            if (longTaskStatusInterval) clearInterval(longTaskStatusInterval);
+            longTaskStatusInterval = setInterval(() => {
+                if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
+                    // Update main status bar
+                    setStatus(currentStatusText);
+                    // Update current placeholder status if id provided
+                    if (id) {
+                        const msgDiv = messagesDiv.querySelector(`.message[data-id="${id}"]`);
+                        if (msgDiv) {
+                            const statusSpan = msgDiv.querySelector('.placeholder-status');
+                            if (statusSpan) {
+                                // This triggers the re-render with the "I'll notify you" text
+                                updateStellarMessagePlaceholder(id, currentStatusText);
+                            }
+                        }
+                    }
+                }
+            }, 5000);
+        }
+
+        function stopLongTaskMonitor() {
+            if (longTaskStatusInterval) {
+                clearInterval(longTaskStatusInterval);
+                longTaskStatusInterval = null;
+            }
+        }
 
         async function requestNotificationPermission() {
             if (!("Notification" in window)) return;
@@ -6964,6 +6993,7 @@
                 if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error || `Register fail HTTP ${response.status}`); }
                 const data = await response.json(); if (!data.query_id) { throw new Error("No query_id received from registration."); }
                 const query_id = data.query_id;
+                startLongTaskMonitor(placeholderId);
                 initAndStartStreaming(
                     originalQuery,
                     selectedModel,
@@ -7018,13 +7048,22 @@
 
             if (statusSpan) {
                 statusSpan.innerHTML = '';
+                
+                let displayMsg = newText;
+                const lowerText = newText.toLowerCase();
+                if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
+                    if (lowerText.includes("thinking") || lowerText.includes("generating") || lowerText.includes("drawing") || lowerText.includes("controlling") || lowerText.includes("processing")) {
+                        displayMsg = newText + " (I'll notify you when it's done)";
+                    }
+                }
+
                 const isToolAction = ['Searching', 'Performing', 'Generating', 'Drawing', 'Creating', 'Controlling', 'Using tool'].some(w => newText.startsWith(w));
                 if (isToolAction && !isError) {
                     const iconSpan = document.createElement('span');
                     iconSpan.innerHTML = `<svg class="tool-spinner" viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;vertical-align:middle;margin-right:6px;"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
                     statusSpan.appendChild(iconSpan);
                 }
-                statusSpan.appendChild(document.createTextNode(newText));
+                statusSpan.appendChild(document.createTextNode(displayMsg));
 
                 if (isError) {
 
@@ -7279,19 +7318,46 @@
 
         function unwrapVisuals(container) {
             if (!container) return;
-            // 1. Fix SVGs trapped in <pre><code> blocks (markdown)
-            container.querySelectorAll('pre code').forEach(code => {
-                const text = code.textContent.trim();
-                if (text.startsWith('<svg') && text.endsWith('</svg>')) {
-                    const pre = code.parentElement;
-                    const div = document.createElement('div');
-                    div.className = 'rendered-visual-wrapper';
-                    div.innerHTML = text;
-                    if (pre && pre.parentNode) {
-                        pre.parentNode.replaceChild(div, pre);
+            
+            // 1. Fix SVGs trapped in <pre><code> blocks (markdown) or just as text
+            container.querySelectorAll('pre code, .message-content').forEach(el => {
+                let content = el.innerHTML;
+                // If it's a code block, use textContent to avoid double-escaping issues
+                if (el.tagName === 'CODE') content = el.textContent;
+
+                const svgMatch = content.match(/<svg[\s\S]*?<\/svg>/i);
+                if (svgMatch) {
+                    let svgCode = svgMatch[0];
+                    
+                    // CRITICAL: Strip hallucinated tool-call metadata/file paths
+                    svgCode = svgCode.replace(/@[^'"\s>]*\.txt/g, '');
+                    svgCode = svgCode.replace(/@\/home\/stellaradmin\/[^'"\s>]+/g, '');
+                    svgCode = svgCode.replace(/my_app\/venv\/[^'"\s>]+/g, '');
+
+                    if (el.tagName === 'CODE') {
+                        const pre = el.parentElement;
+                        const div = document.createElement('div');
+                        div.className = 'rendered-visual-wrapper';
+                        div.innerHTML = svgCode;
+                        if (pre && pre.parentNode) {
+                            pre.parentNode.replaceChild(div, pre);
+                        }
+                    } else if (el.classList.contains('message-content')) {
+                        // If it's the main container, we need to replace the raw string with the actual DOM nodes
+                        // but only if it's not already rendered. We'll do a surgical replacement.
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'rendered-visual-wrapper';
+                        wrapper.innerHTML = svgCode;
+                        
+                        // Replace the first occurrence of the raw SVG string in the container's HTML
+                        // We use a safe temporary placeholder to avoid recursive regex mess
+                        const placeholder = `__SVG_PLACEHOLDER_${Date.now()}__`;
+                        el.innerHTML = el.innerHTML.replace(svgMatch[0], placeholder);
+                        el.innerHTML = el.innerHTML.replace(placeholder, wrapper.outerHTML);
                     }
                 }
             });
+
             // 2. Ensure all rendered SVGs are transparent and responsive
             container.querySelectorAll('svg').forEach(svg => {
                 svg.style.backgroundColor = 'transparent';
@@ -7708,6 +7774,7 @@
             attemptStreamConnection();
         }
         function cleanupStream(showErrorStatus = false, errorMsg = null, placeholderId) {
+            stopLongTaskMonitor();
             toggleSendStopButtons(false);
             if (sseEventSource) {
                 sseEventSource.close();
