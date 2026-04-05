@@ -1100,15 +1100,22 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             
                         # execute
                         try:
-                            func_to_call = getattr(agent_tools, func_name)
-                            args_dict = dict(fc.args) if fc.args else {}
+                            # STRICT SECURITY CHECK: Only allow tools that were actually provided in the config
+                            allowed_tool_names = [getattr(t, '__name__', '') for t in tools_config]
                             
-                            # Dynamically pass the current model_id to render_svg
-                            if func_name == "render_svg":
-                                if 'model_id' not in args_dict:
-                                    args_dict['model_id'] = model_id
+                            if func_name not in allowed_tool_names:
+                                res = f"Error: The tool '{func_name}' is restricted for this model level."
+                                logger.warning(f"[SECURITY] Model {model_id} tried to call unauthorized tool: {func_name}")
+                            else:
+                                func_to_call = getattr(agent_tools, func_name)
+                                args_dict = dict(fc.args) if fc.args else {}
+                                
+                                # Dynamically pass the current model_id to render_svg
+                                if func_name == "render_svg":
+                                    if 'model_id' not in args_dict:
+                                        args_dict['model_id'] = model_id
 
-                            res = func_to_call(**args_dict)
+                                res = func_to_call(**args_dict)
                             
                             # Store result for final verification/forced inclusion
                             called_tools_results.append({'name': func_name, 'result': res})
