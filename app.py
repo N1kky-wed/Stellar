@@ -1087,7 +1087,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         elif func_name == "make_presentation":
                             yield {'status': 'Creating presentation slides...'}
                         elif func_name == "forge_control":
-                            yield {'status': 'Controlling Forge environment...'}
+                            yield {'status': 'Controlling project environment...'}
+                        elif func_name == "lab_execute":
+                            yield {'status': 'Using Lab...'}
                         else:
                             yield {'status': f'Using tool: {func_name}...'}
                             
@@ -1131,9 +1133,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             accumulated_full_output = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', accumulated_full_output, flags=re.IGNORECASE)
 
             for tool in called_tools_results:
-                # Do not force-attach raw data from search tools, project history, or SVGs
+                # Do not force-attach raw data from search tools, project history, Lab execution logs, or SVGs
                 # render_svg uses structured output, so the model is fully responsible for placing it.
-                if tool['name'] in ['extensive_search', 'native_search', 'render_svg']:
+                if tool['name'] in ['extensive_search', 'native_search', 'render_svg', 'lab_execute']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and "Your Forge Deployment History" in tool['result']:
                     continue
