@@ -613,7 +613,7 @@ def lab_execute(command: str, timeout: int = 60) -> str:
     except docker.errors.NotFound:
         try:
             # Create a shared workspace for the lab
-            lab_workspace = os.path.join(SANDBOX_DIR, "lab_workspace")
+            lab_workspace = os.path.abspath(os.path.join(SANDBOX_DIR, "lab_workspace"))
             os.makedirs(lab_workspace, exist_ok=True)
             
             container = client.containers.run(
