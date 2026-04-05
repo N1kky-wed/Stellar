@@ -1002,6 +1002,11 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 
             tools_config = available_tools.copy()
             
+            # Restrict lab_execute to Elite models (Crimson and Obsidian)
+            elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+            if model_id not in elite_models:
+                tools_config = [t for t in tools_config if getattr(t, '__name__', '') != 'lab_execute']
+            
             # Extract system instruction if present in the prompt
             system_instruction = None
             if "<!-- Internal Processing Guidelines -->" in current_effective_prompt:
