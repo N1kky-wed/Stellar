@@ -3747,10 +3747,12 @@
 
         .edit-prompt-wrapper {
             position: absolute;
-            left: -35px;
+            left: -40px;
             top: 50%;
             transform: translateY(-50%);
             display: flex;
+            flex-direction: column;
+            gap: 5px;
             align-items: center;
             justify-content: center;
             opacity: 0;
@@ -6084,7 +6086,43 @@
             });
 
             container.appendChild(button); container.appendChild(tooltip);
+
+            const delButton = document.createElement('button');
+            delButton.className = 'output-copy-btn';
+            delButton.style.marginLeft = '8px';
+            delButton.title = 'Delete Message';
+            delButton.innerHTML = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg>`;
+            delButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const msgId = messageElement.dataset.id;
+                if (msgId) {
+                    deleteMessageFromServer(msgId, messageElement);
+                }
+            });
+            container.appendChild(delButton);
+
             messageElement.appendChild(container);
+        }
+
+        async function deleteMessageFromServer(messageId, messageElement) {
+            if (!confirm("Are you sure you want to delete this message? This cannot be undone.")) return;
+            try {
+                const response = await fetch('/api/messages/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message_id: messageId })
+                });
+                if (response.ok) {
+                    messageElement.remove();
+                    updateStatusBarPosition();
+                } else {
+                    const err = await response.json();
+                    alert("Failed to delete message: " + (err.error || "Unknown error"));
+                }
+            } catch (e) {
+                console.error("Delete error:", e);
+                alert("An error occurred while deleting the message.");
+            }
         }
 
         function appendUserMessage(text, id) {
@@ -6110,8 +6148,20 @@
             editIcon.title = 'Edit & Resubmit Prompt';
             editIcon.innerHTML = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>`;
 
+            const deleteIcon = document.createElement('span');
+            deleteIcon.className = 'edit-prompt-icon delete-msg-icon';
+            deleteIcon.title = 'Delete Message';
+            deleteIcon.style.marginLeft = '8px';
+            deleteIcon.innerHTML = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg>`;
+
             editWrapper.appendChild(editIcon);
+            editWrapper.appendChild(deleteIcon);
             msg.appendChild(editWrapper);
+
+            deleteIcon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteMessageFromServer(id, msg);
+            });
 
             editIcon.addEventListener('click', (e) => {
                 e.stopPropagation();

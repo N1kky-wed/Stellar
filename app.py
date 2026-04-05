@@ -2873,6 +2873,41 @@ def check_and_log_stop(query_id, stage=""):
             return True
     return False
 
+@app.route('/api/messages/delete', methods=['POST'])
+def delete_message():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Authentication required.'}), 401
+
+    data = request.get_json()
+    message_id = data.get('message_id')
+
+    if not message_id:
+        return jsonify({'error': 'Missing message_id.'}), 400
+    
+    user_id = session['user_id']
+    db = get_db()
+    
+    try:
+        # Verify ownership by checking the chat the message belongs to
+        cursor = db.execute('''
+            SELECT 1 FROM messages m
+            JOIN chats c ON m.chat_id = c.id
+            WHERE m.id = ? AND c.user_id = ?
+        ''', (message_id, user_id))
+        
+        if not cursor.fetchone():
+            return jsonify({'error': 'Message not found or unauthorized.'}), 403
+
+        db.execute('DELETE FROM messages WHERE id = ?', (message_id,))
+        db.commit()
+
+        logging.info(f"User {user_id} deleted message {message_id}.")
+        return jsonify({'success': True})
+
+    except Exception as e:
+        logger.error(f"Error in delete_message: {e}", exc_info=True)
+        return jsonify({'error': 'An internal error occurred.'}), 500
+
 @app.route('/api/messages/delete_after', methods=['POST'])
 def delete_messages_after():
     if 'user_id' not in session:
