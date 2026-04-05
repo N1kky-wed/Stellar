@@ -645,7 +645,7 @@ def lab_execute(command: str, timeout: int = 60) -> str:
         if exit_code != 0:
             return f"Command failed with exit code {exit_code}.\nOutput:\n{output}"
         
-        return f"Command executed successfully.\nOutput:\n{output}" if output else "Command executed successfully with no output."
+        return output if output else "Command executed successfully with no output."
         
     except Exception as e:
         return f"Error executing command in Lab: {str(e)}"
