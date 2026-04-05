@@ -4,6 +4,7 @@ import requests
 import json
 import base64
 import os
+import re
 from tavily import TavilyClient
 import asyncio
 from google import genai
@@ -11,6 +12,10 @@ from google.genai import types
 
 import logging
 logger = logging.getLogger(__name__)
+
+# Pre-compiled regex patterns for SVG markdown stripping
+SVG_START_RE = re.compile(r'^```(?:svg|xml)?\s*', re.IGNORECASE)
+SVG_END_RE = re.compile(r'\s*```$')
 
 def extensive_search(query: str, topic: str = "general", days: int = 3, max_results: int = 10) -> str:
     """Performs a deep web search using Tavily API.
@@ -139,9 +144,8 @@ def render_svg(instructions: str, model_id: str = 'gemini-3.1-pro-preview') -> s
         data = json.loads(response.text)
         svg_code = data.get("svg_code", "").strip()
         # Robustly strip markdown wrappers just in case the model ignored sys_instruct
-        import re
-        svg_code = re.sub(r'^```(?:svg|xml)?\s*', '', svg_code, flags=re.IGNORECASE)
-        svg_code = re.sub(r'\s*```$', '', svg_code)
+        svg_code = SVG_START_RE.sub('', svg_code)
+        svg_code = SVG_END_RE.sub('', svg_code)
         return svg_code.strip()
     except Exception as e:
         return f"<svg width='200' height='50'><text x='10' y='30' fill='red'>Error: {str(e)}</text></svg>"
