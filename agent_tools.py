@@ -582,6 +582,74 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
     except Exception as e:
         return f"Error in forge_control: {str(e)}"
 
+def lab_execute(command: str, timeout: int = 60) -> str:
+    """Executes a bash command in a persistent, isolated Docker sandbox.
+    Use this tool to experiment, test Python code, install libraries (apt-get/pip), run shell scripts, clone git repos, or inspect external APIs.
+    The sandbox persists across turns, so you can install a tool in one turn and use it in the next.
+    
+    Args:
+        command: The bash command to run (e.g. `python3 script.py`, `pip install x`, `curl -I https...`).
+        timeout: Execution timeout in seconds (default 60).
+    """
+    import subprocess
+    import docker
+    from app import SANDBOX_DIR
+    import os
+    
+    container_name = "stellar-lab-sandbox"
+    image_name = "stellar-lab-core:latest"
+    
+    try:
+        client = docker.from_env()
+    except Exception as e:
+        return f"Error: Docker client not available: {str(e)}"
+        
+    # Ensure sandbox container is running
+    container = None
+    try:
+        container = client.containers.get(container_name)
+        if container.status != 'running':
+            container.start()
+    except docker.errors.NotFound:
+        try:
+            # Create a shared workspace for the lab
+            lab_workspace = os.path.join(SANDBOX_DIR, "lab_workspace")
+            os.makedirs(lab_workspace, exist_ok=True)
+            
+            container = client.containers.run(
+                image_name,
+                name=container_name,
+                detach=True,
+                tty=True,
+                working_dir='/lab',
+                volumes={lab_workspace: {'bind': '/lab', 'mode': 'rw'}},
+                restart_policy={"Name": "unless-stopped"}
+            )
+        except Exception as e:
+            return f"Failed to start Lab sandbox: {str(e)}"
+    
+    # Execute the command
+    try:
+        # Wrap command to capture stdout and stderr together and handle errors gracefully
+        wrapped_cmd = f"bash -c {subprocess.list2cmdline([command])}"
+        
+        exec_result = container.exec_run(
+            wrapped_cmd,
+            demux=False, # Get combined stdout/stderr
+            workdir="/lab"
+        )
+        
+        output = exec_result.output.decode('utf-8', 'replace')
+        exit_code = exec_result.exit_code
+        
+        if exit_code != 0:
+            return f"Command failed with exit code {exit_code}.\nOutput:\n{output}"
+        
+        return f"Command executed successfully.\nOutput:\n{output}" if output else "Command executed successfully with no output."
+        
+    except Exception as e:
+        return f"Error executing command in Lab: {str(e)}"
+
 # Define the tools list for Gemini
 available_tools = [
     native_search,
@@ -590,5 +658,6 @@ available_tools = [
     render_svg,
     make_presentation,
     regenerate_presentation_slide,
-    forge_control
+    forge_control,
+    lab_execute
 ]

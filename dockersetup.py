@@ -49,6 +49,24 @@ WORKDIR /app
     "Dockerfile.ruby": """# Ruby sandbox
 FROM ruby:3.2-alpine
 WORKDIR /app
+""",
+    "Dockerfile.lab": """# Stellar Lab Core Sandbox
+FROM python:3.12-slim
+WORKDIR /lab
+# Install common system tools, git, nodejs, and build essentials so the agent can build its own tools
+RUN apt-get update && apt-get install -y \\
+    curl \\
+    git \\
+    wget \\
+    build-essential \\
+    procps \\
+    iputils-ping \\
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \\
+    && apt-get install -y nodejs \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Keep container running indefinitely so we can exec into it
+CMD ["tail", "-f", "/dev/null"]
 """
 }
 
@@ -63,6 +81,7 @@ IMAGES_TO_BUILD = {
     "Dockerfile.rust": "stellar-rust-sandbox:latest",
     "Dockerfile.php": "stellar-php-sandbox:latest",
     "Dockerfile.ruby": "stellar-ruby-sandbox:latest",
+    "Dockerfile.lab": "stellar-lab-core:latest",
 }
 
 def check_docker_dependencies():
