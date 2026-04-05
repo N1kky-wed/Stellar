@@ -312,6 +312,17 @@ def initialize_database():
                 )
             ''')
 
+        cursor.execute('''CREATE TABLE IF NOT EXISTS tool_calls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            message_id INTEGER,
+            tool_name TEXT NOT NULL,
+            input_params TEXT,
+            result TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+        )''')
+
         db.commit()
 
 initialize_database()
@@ -446,6 +457,24 @@ def get_conversation_history(chat_id):
     except Exception as e:
         logger.error(f"Unexpected error in get_conversation_history: {e}", exc_info=True)
         return []
+
+def get_tool_history(chat_id):
+    """Retrieve all tool calls for context injection without any limits."""
+    if not chat_id: return ""
+    try:
+        db = get_db()
+        cursor = db.execute('SELECT tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? ORDER BY timestamp ASC', (chat_id,))
+        rows = cursor.fetchall()
+        if not rows: return ""
+        
+        # Format into a clean context string
+        context = "\n**Internal Tool Execution History (Full Metadata):**\n"
+        for r in rows:
+            context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` | Input: `{r['input_params']}` | Result: `{r['result']}`\n"
+        return context + "---\n"
+    except Exception as e:
+        logger.error(f"Error fetching tool history: {e}")
+        return ""
 
 def update_message(message_id, content):
     try:
@@ -969,8 +998,19 @@ def is_output_cut_off(text: str, key: str) -> bool:
         return False
 
 
-def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None):
+def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None, chat_id=None):
     display_name = model_display_name or MODEL_NAMES.get(model_id)
+
+    def record_tool_call(t_name, t_input, t_result):
+        if not chat_id: return
+        try:
+            with app.app_context():
+                db = get_db()
+                db.execute('INSERT INTO tool_calls (chat_id, tool_name, input_params, result) VALUES (?, ?, ?, ?)',
+                           (chat_id, t_name, json.dumps(t_input), str(t_result)))
+                db.commit()
+        except Exception as e:
+            logger.error(f"Error recording tool call: {e}")
     
     last_exception = None
 
@@ -1117,6 +1157,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
                                 res = func_to_call(**args_dict)
                             
+                            # Record tool call in DB for context persistence
+                            record_tool_call(func_name, args_dict, res)
+
                             # Store result for final verification/forced inclusion
                             called_tools_results.append({'name': func_name, 'result': res})
 
@@ -1373,7 +1416,8 @@ def forge_start():
         if not api_key:
             raise ValueError("Primary API key for Forge is not configured.")
 
-        generator = gemini_generate(prompt, model_id, api_key)
+        chat_id = session.get('current_chat_id')
+        generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
         raw_response = ""
@@ -1492,7 +1536,8 @@ def forge_iterate():
         if not api_key:
             raise ValueError("Primary API key for Forge is not configured.")
 
-        generator = gemini_generate(prompt, model_id, api_key)
+        chat_id = session.get('current_chat_id')
+        generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
         raw_response = ""
@@ -2223,6 +2268,11 @@ def refine_stream():
                     conv_hist_list.append(f"{role}: {content}")
                     if msg.get('file_analysis_context'):
                         conv_hist_list.append(f"Stellar: {msg.get('file_analysis_context')} ")
+            
+            # Dynamically add tool execution history to context
+            tool_hist_context = get_tool_history(chat_id)
+            if tool_hist_context:
+                conv_hist_list.append(tool_hist_context)
 
             refined_query_result = None
             selected_model = model_id
@@ -2248,7 +2298,8 @@ def refine_stream():
                     key=current_api_key,
                     attempts=len(BACKUP_API_KEYS),
                     model_display_name=f"{display_name}",
-                    username=username
+                    username=username,
+                    chat_id=chat_id
                 )
                 refined_query_result = ""
                 for item in generator_output:
@@ -2462,7 +2513,8 @@ def search_stream():
                 generator_output_analysis = gemini_generate(
                     prompt=research_prompt, model_id=current_model, key=current_api_key,
                     attempts=len(BACKUP_API_KEYS),
-                    model_display_name=f"{display_name} (Analysis)"
+                    model_display_name=f"{display_name} (Analysis)",
+                    chat_id=chat_id
                 )
                 research_analysis_result = ""
                 for item in generator_output_analysis:
@@ -2510,7 +2562,8 @@ def search_stream():
                 generator_output_expansion = gemini_generate(
                     prompt=final_prompt, model_id=current_model, key=current_api_key,
                     attempts=len(BACKUP_API_KEYS),
-                    model_display_name=f"{display_name} (Expansion)"
+                    model_display_name=f"{display_name} (Expansion)",
+                    chat_id=chat_id
                 )
                 final_result = ""
                 for item in generator_output_expansion:
@@ -2673,7 +2726,7 @@ def cosmos_stream():
                 try:
                     if file_analysis_context:
                         instruction_prompt = file_analysis_context + """\nAnalyze the file analysis results provided. Identify key themes, entities, unresolved questions, or areas that would benefit from current external information. Generate concise instructions for another AI on how to formulate up to 5 effective Tavily search queries to gather relevant external context based on this analysis."""
-                        instruction_gen = gemini_generate(prompt=instruction_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1)
+                        instruction_gen = gemini_generate(prompt=instruction_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id)
                         instruction = ""
                         for item in instruction_gen:
                              if 'result' in item:
@@ -2683,7 +2736,7 @@ def cosmos_stream():
                         generated_query = None
                         if instruction and not instruction.startswith(ERROR_CODE):
                             query_gen_prompt = instruction + f"\nBased on the instruction derived from the file analysis, create a specific Tavily search query (or up to 5 separate queries, comma-separated if multiple distinct areas are identified) for:\nOriginal User Query: {user_query}\nReturn *only ONE SMALL* the search query string(s)."
-                            query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1)
+                            query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id)
                             generated_query = ""
                             for item in query_gen:
                                 if 'result' in item:
@@ -2772,7 +2825,8 @@ def cosmos_stream():
                 generator_output = gemini_generate(
                     prompt=cosmos_prompt, model_id=current_model, key=current_api_key,
                     attempts=1,
-                    model_display_name=f"{display_name} (Cosmos)"
+                    model_display_name=f"{display_name} (Cosmos)",
+                    chat_id=chat_id
                 )
                 temp_result_html = None
                 for item in generator_output:
@@ -3675,7 +3729,16 @@ def generate_visualization():
         # or we could stream it to the frontend effectively.
         # For now, let's use the gemini_generate generator but collect the result.
         
-        generator = gemini_generate(prompt, model_id, api_key)
+        chat_id = session.get('current_chat_id')
+        if message_id:
+            try:
+                db = get_db()
+                cursor = db.execute('SELECT chat_id FROM messages WHERE id = ?', (message_id,))
+                msg_row = cursor.fetchone()
+                if msg_row: chat_id = msg_row['chat_id']
+            except: pass
+
+        generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id)
         full_response = ""
         for chunk in generator:
             if 'result' in chunk:
