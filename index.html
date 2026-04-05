@@ -6108,7 +6108,6 @@
         }
 
         async function deleteMessageFromServer(messageId, messageElement) {
-            if (!confirm("Are you sure you want to delete this message? This cannot be undone.")) return;
             try {
                 const response = await fetch('/api/messages/delete', {
                     method: 'POST',
