@@ -778,9 +778,7 @@ def host_repo(repo_url: str, port: int = 3000) -> str:
                 return f"Git clone failed: {clone_res.output.decode()}"
 
             public_url = f"https://stellarai.live/apps/{process_id}/"
-            return f"Container provisioned for '{project_title}'! ID: `{process_id}`.
-Live URL: {public_url}
-You can now use repo_execute to install dependencies, build, and start the app."
+            return f"Container provisioned for '{project_title}'! ID: `{process_id}`.Live URL: {public_url} You can now use repo_execute to install dependencies, build, and start the app."
 
         except Exception as e:
             db.execute("UPDATE forge_history SET status = 'failed' WHERE process_id = ?", (process_id,))
