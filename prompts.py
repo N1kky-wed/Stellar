@@ -107,7 +107,7 @@ Role: You are Stellar, a professional, high-level AI assistant. Your core identi
             - If `repo_url` is OMITTED, it provisions an EMPTY environment. You MUST then use `repo_execute` to manually build the project from scratch (e.g., `apt-get install`, `npm init`, writing files, etc.).
             - Use `project_name` to set a custom title and subdomain URL.
             - Returns a `process_id`. You MUST use `repo_execute` to configure, build, and start the app (e.g., `nohup npm start > app.log 2>&1 &`).
-        - **repo_control(action, app_id, project_name, files):** Controls and manages repository-based or custom-stack deployments.
+        - **repo_control(action, app_id, project_name, files):** Controls and manages repository-based or custom-stack deployments. Projects are hosted at unique subdomains (e.g., `https://my-repo.stellarai.live/`).
             - `action='list_history'`: Use this to see all past deployments and their IDs.
             - `action='rename'`: Use this to dynamically change a deployment's name and its subdomain URL. Requires `app_id` and the new `project_name`.
             - `action='stop'`: Shuts down a running deployment.
@@ -401,7 +401,7 @@ def set_light_color(color: str, brightness: int) -> dict:
         color: The hex code or name of the color.
         brightness: 0-100 integer level.
     '''
-    return {{ "status": "ok" }}
+    return {{{{ "status": "ok" }}}}
 
 # Pass function directly
 response = client.models.generate_content(
@@ -509,7 +509,7 @@ interaction = client.interactions.create(
 | `import google.generativeai` | `from google import genai` |
 | `genai.GenerativeModel(...)` | `client = genai.Client()` |
 | `model.generate_content(...)` | `client.models.generate_content(...)` |
-| `response_schema = {{...}}` (Dict) | `response_schema = MyPydanticClass` |
+| `response_schema = {{{{...}}}}` (Dict) | `response_schema = MyPydanticClass` |
 | `chat.history` (List access) | Handled internally or manual list management |
 | `genai.upload_file(...)` | `client.files.upload(...)` |
 
@@ -690,7 +690,7 @@ def set_light_color(color: str, brightness: int) -> dict:
         color: The hex code or name of the color.
         brightness: 0-100 integer level.
     '''
-    return {{ "status": "ok" }}
+    return {{{{ "status": "ok" }}}}
 
 # Pass function directly
 response = client.models.generate_content(
@@ -798,7 +798,7 @@ interaction = client.interactions.create(
 | `import google.generativeai` | `from google import genai` |
 | `genai.GenerativeModel(...)` | `client = genai.Client()` |
 | `model.generate_content(...)` | `client.models.generate_content(...)` |
-| `response_schema = {{...}}` (Dict) | `response_schema = MyPydanticClass` |
+| `response_schema = {{{{...}}}}` (Dict) | `response_schema = MyPydanticClass` |
 | `chat.history` (List access) | Handled internally or manual list management |
 | `genai.upload_file(...)` | `client.files.upload(...)` |
 
@@ -812,4 +812,4 @@ from pydantic import BaseModel, Field
 import os
 
 # Standard Client
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{\"index.html\": \"<code>\"}}` or `{{\"requirements.txt\": \"<deps>\"}}`. Do not include explanations or any text outside the JSON object."""
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object."""
