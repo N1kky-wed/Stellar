@@ -420,13 +420,13 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
 def forge_control(action: str, app_id: str = None, changes: dict = None, prompt: str = None, project_name: str = None) -> str:
     """Control the user's Forge deployments.
     Args:
-        action: "list_history", "create", or "modify"
-        app_id: the Forge application identifier or Project Title (required for 'modify')
+        action: "list_history", "read_files", "create", or "modify"
+        app_id: the Forge application identifier, Project Title, or Subdomain (required for 'read_files' and 'modify')
         changes: key-value config/code changes to apply (e.g. {'app.py': '...'})
         prompt: Instruction for AI-driven modification or creation
         project_name: Optional name for a new project (if omitted, one is generated)
     Returns:
-        deployment status, history list, or live URL
+        deployment status, history list, source code, or live URL
     """
     from app import get_current_session_id, get_db, ERROR_CODE, gemini_generate, _extract_json_from_response, generate_forge_title, _redis_forge_key
     from prompts import get_forge_initial_build_prompt, get_forge_iteration_prompt
@@ -467,6 +467,26 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
         old_container_id = None
         db = get_db()
 
+        if action == "read_files":
+            if not app_id:
+                return "Error: app_id, Project Title, or Subdomain is required to read files."
+            
+            # Resolve the project (checking Title, ID, or Subdomain)
+            cursor = db.execute('SELECT project_name, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            row = cursor.fetchone()
+            
+            if not row:
+                return f"Error: Project '{app_id}' not found."
+
+            project_name = row['project_name']
+            files = json.loads(row['files_snapshot'])
+            
+            output = f"### Source Code for Project: {project_name}\n"
+            for filename, content in files.items():
+                output += f"\n**File: {filename}**\n```\n{content}\n```\n"
+            
+            return output
+
         if action == "create":
             if not prompt:
                 return "Error: A prompt is required to create a new Forge project."
@@ -503,13 +523,13 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
             if not app_id:
                 return "Error: app_id or Project Title is required for modification."
             
-            # Resolve title/ID with fuzzy matching
-            cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ?) AND user_id = ?', (app_id, app_id, session.get('user_id')))
+            # Resolve title/ID/subdomain with fuzzy matching
+            cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             
             if not row:
                 fuzzy_query = f"%{app_id}%"
-                cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE project_name LIKE ? AND user_id = ? ORDER BY created_at DESC', (fuzzy_query, session.get('user_id')))
+                cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE (project_name LIKE ? OR subdomain LIKE ?) AND user_id = ? ORDER BY created_at DESC', (fuzzy_query, fuzzy_query, session.get('user_id')))
                 row = cursor.fetchone()
 
             if not row:
