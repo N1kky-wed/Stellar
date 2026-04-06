@@ -725,11 +725,12 @@ def repo_execute(process_id: str, command: str, timeout: int = 60) -> str:
     except Exception as e:
         return f"Error executing command in repo container: {str(e)}"
 
-def host_repo(repo_url: str, port: int = 3000) -> str:
-    """Clones a GitHub repository and provisions a dedicated deployment container.
-    Use this tool to deploy external repositories. After provisioning, use repo_execute to build and start the app.
+def host_repo(repo_url: str = None, port: int = 3000) -> str:
+    """Clones a GitHub repository (optional) and provisions a dedicated deployment container.
+    Use this tool to deploy external repositories or provision a custom environment for non-Python/HTML stacks.
+    After provisioning, use repo_execute to build and start the app.
     Args:
-        repo_url: The full URL to the git repository (e.g., https://github.com/user/repo.git).
+        repo_url: Optional full URL to a git repository. If omitted, an empty container is provisioned.
         port: The internal port the application will listen on (default 3000).
     Returns:
         The deployment status, process_id, and the live public URL.
@@ -746,13 +747,17 @@ def host_repo(repo_url: str, port: int = 3000) -> str:
             return "Error: Authentication required to host repos."
 
         process_id = str(uuid.uuid4())
-        project_title = f"Repo: {repo_url.split('/')[-1].replace('.git', '')}"
+        if repo_url:
+            project_title = f"Repo: {repo_url.split('/')[-1].replace('.git', '')}"
+        else:
+            project_title = "Custom Stack Project"
+            
         subdomain = generate_unique_subdomain(project_title)
 
         # Record in DB
         db = get_db()
         db.execute('INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain) VALUES (?, ?, ?, ?, ?, ?)',
-                   (session['user_id'], project_title, process_id, 'created', json.dumps({"repo": repo_url}), subdomain))
+                   (session['user_id'], project_title, process_id, 'created', json.dumps({"repo": repo_url} if repo_url else {}), subdomain))
         db.commit()
 
         try:
@@ -795,7 +800,7 @@ def host_repo(repo_url: str, port: int = 3000) -> str:
                 "status": "running", 
                 "process_id": process_id,
                 "host_port": str(host_port),
-                "files": json.dumps({"repo": repo_url})
+                "files": json.dumps({"repo": repo_url} if repo_url else {})
             })
             
             with active_apps_lock:
@@ -804,13 +809,17 @@ def host_repo(repo_url: str, port: int = 3000) -> str:
             db.execute("UPDATE forge_history SET status = 'running', deployment_url = ? WHERE process_id = ?", (f"https://{subdomain}.stellarai.live/", process_id))
             db.commit()
             
-            # Clone repo
-            clone_res = container.exec_run(f"git clone {repo_url} .", workdir="/app")
-            if clone_res.exit_code != 0:
-                return f"Git clone failed: {clone_res.output.decode()}"
+            # Clone repo if provided
+            if repo_url:
+                clone_res = container.exec_run(f"git clone {repo_url} .", workdir="/app")
+                if clone_res.exit_code != 0:
+                    return f"Git clone failed: {clone_res.output.decode()}"
 
             public_url = f"https://{subdomain}.stellarai.live/"
-            return f"Container provisioned for '{project_title}'! ID: `{process_id}`. Live URL: {public_url} You can now use repo_execute to install dependencies, build, and start the app."
+            if repo_url:
+                return f"Container provisioned for '{project_title}'! ID: `{process_id}`. Live URL: {public_url} You can now use repo_execute to install dependencies, build, and start the app."
+            else:
+                return f"Custom environment provisioned! ID: `{process_id}`. Live URL: {public_url} Use repo_execute to manually build your project from scratch (e.g. creating files, installing Node.js/React/etc)."
 
         except Exception as e:
             db.execute("UPDATE forge_history SET status = 'failed' WHERE process_id = ?", (process_id,))
