@@ -632,6 +632,64 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
     except Exception as e:
         return f"Error in forge_control: {str(e)}"
 
+def repo_control(action: str, app_id: str = None, project_name: str = None) -> str:
+    """Control and manage repository-based deployments.
+    Args:
+        action: "list_history", "rename", or "stop"
+        app_id: the Deployment ID, Project Title, or Subdomain (required for 'rename' and 'stop')
+        project_name: New name for the project (required for 'rename')
+    Returns:
+        status message or history list
+    """
+    from app import get_db, generate_unique_subdomain
+    from flask import session
+    import json
+
+    try:
+        db = get_db()
+        if action == "list_history":
+            if 'user_id' not in session: return "Error: Authentication required."
+            cursor = db.execute('SELECT project_name, process_id, status, deployment_url, subdomain, created_at FROM forge_history WHERE user_id = ? ORDER BY created_at DESC', (session['user_id'],))
+            history = cursor.fetchall()
+            if not history: return "You have no past deployments."
+            res = "### Your Deployment History:\n"
+            for row in history:
+                url = row['deployment_url'] or (f"https://{row['subdomain']}.stellarai.live/" if row['subdomain'] else f"https://{row['process_id']}.stellarai.live/")
+                url_str = f" - [Visit App]({url})" if row['status'] == 'running' else ""
+                res += f"- **{row['project_name']}** (ID: `{row['process_id']}`) - Status: {row['status']} - Created: {row['created_at']}{url_str}\n"
+            return res
+
+        if action == "rename":
+            if not app_id or not project_name:
+                return "Error: Both 'app_id' (current project) and 'project_name' (new name) are required for rename."
+            
+            cursor = db.execute('SELECT process_id, project_name FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            row = cursor.fetchone()
+            if not row: return f"Error: Deployment '{app_id}' not found."
+            
+            actual_id = row['process_id']
+            new_subdomain = generate_unique_subdomain(project_name)
+            new_url = f"https://{new_subdomain}.stellarai.live/"
+            
+            db.execute("UPDATE forge_history SET project_name = ?, subdomain = ?, deployment_url = ? WHERE process_id = ?", (project_name, new_subdomain, new_url, actual_id))
+            db.commit()
+            return f"Deployment renamed to '{project_name}'! New URL: {new_url}"
+
+        if action == "stop":
+            if not app_id: return "Error: app_id is required to stop a deployment."
+            from app import stop_and_cleanup_app_by_process_id
+            # Resolve ID first
+            cursor = db.execute('SELECT process_id FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            row = cursor.fetchone()
+            if not row: return f"Error: Deployment '{app_id}' not found."
+            
+            stop_and_cleanup_app_by_process_id(row['process_id'], app_type='forge')
+            return f"Deployment '{app_id}' has been stopped."
+
+        return f"Error: Unknown action '{action}'."
+    except Exception as e:
+        return f"Error in repo_control: {str(e)}"
+
 def lab_execute(command: str, timeout: int = 60) -> str:
     """Executes a bash command in a persistent, isolated Docker sandbox.
     Use this tool to experiment, test Python code, install libraries (apt-get/pip), run shell scripts, clone git repos, or inspect external APIs.
@@ -861,6 +919,7 @@ available_tools = [
     make_presentation,
     regenerate_presentation_slide,
     forge_control,
+    repo_control,
     lab_execute,
     repo_execute,
     host_repo
