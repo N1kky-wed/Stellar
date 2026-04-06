@@ -2,7 +2,7 @@ import file_scanning
 import threading
 from werkzeug.utils import secure_filename
 import queue
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, g, session, current_app
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, g, session, current_app, make_response
 from flask_session import Session
 import os
 import re
@@ -1135,6 +1135,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             yield {'status': 'Controlling project environment...'}
                         elif func_name == "lab_execute":
                             yield {'status': 'Using Lab...'}
+                        elif func_name == "host_repo":
+                            yield {'status': 'Deploying repository...'}
                         else:
                             yield {'status': f'Using tool: {func_name}...'}
                             
@@ -1190,7 +1192,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             for tool in called_tools_results:
                 # Do not force-attach raw data from search tools, project history, Lab execution logs, or SVGs
                 # render_svg uses structured output, so the model is fully responsible for placing it.
-                if tool['name'] in ['extensive_search', 'native_search', 'render_svg', 'lab_execute']:
+                if tool['name'] in ['extensive_search', 'native_search', 'render_svg', 'lab_execute', 'host_repo']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and "Your Forge Deployment History" in tool['result']:
                     continue
@@ -2994,6 +2996,10 @@ def delete_messages_after():
             (chat_id, target_timestamp)
         )
         deleted_count = cursor.rowcount
+        db.execute(
+            'DELETE FROM tool_calls WHERE chat_id = ? AND timestamp >= ?',
+            (chat_id, target_timestamp)
+        )
         db.commit()
 
         logging.info(f"User {user_id} deleted {deleted_count} message(s) in chat {chat_id} after message {message_id}.")
@@ -3027,6 +3033,7 @@ def clear_history():
         
         cursor = db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
         deleted_count = cursor.rowcount
+        db.execute('DELETE FROM tool_calls WHERE chat_id = ?', (chat_id,))
         db.commit()
         
         welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, building applications using Forge Mode, and data analysis reports via Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
@@ -3260,6 +3267,7 @@ def delete_chat_route(chat_id):
             return jsonify({'error': 'Unauthorized to delete this chat.'}), 403
         
         db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
+        db.execute('DELETE FROM tool_calls WHERE chat_id = ?', (chat_id,))
         db.execute('DELETE FROM chats WHERE id = ?', (chat_id,))
         db.commit()
         
@@ -3391,7 +3399,11 @@ def index():
     if 'initialized' not in session:
         session['initialized'] = True
         session.permanent = True
-    return send_from_directory('.', 'index.html')
+    response = make_response(send_from_directory('.', 'index.html'))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/api/chats/search_messages', methods=['GET'])
 def search_messages_route():

@@ -4262,14 +4262,16 @@
             transform: scale(1.02);
         }
 
-        /* Prevent general SVG styling from breaking UI icons */
+        /* Prevent general SVG styling from breaking UI icons and KaTeX */
         .stellar-msg .message-content .code-controls svg,
-        .stellar-msg .message-content .tool-spinner {
+        .stellar-msg .message-content .tool-spinner,
+        .stellar-msg .message-content .katex svg {
             max-width: none;
             display: inline-block;
             margin: 0;
             border-radius: 0;
             transform: none;
+            background: none;
         }
 
         .stellar-msg .message-content .code-controls svg {
@@ -5667,6 +5669,26 @@
             return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
         };
         marked.setOptions({ renderer: renderer });
+
+        // --- Protect Math Blocks from Marked.js Escaping ---
+        const originalMarkedParse = marked.parse;
+        marked.parse = function(text, options) {
+            if (!text) return "";
+            const mathBlocks = [];
+            // Regex matches block math $$, inline math $, and escaped brackets \[ \] and \( \)
+            let processedText = text.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?!\s)[^$\n]+?(?<!\s)\$)/g, (match) => {
+                mathBlocks.push(match);
+                return `MATHBLOCKPLACEHOLDER${mathBlocks.length - 1}MATHBLOCK`;
+            });
+            let html = originalMarkedParse.call(marked, processedText, options);
+            mathBlocks.forEach((block, index) => {
+                // Restore the exact original block
+                // Use regex with global flag just in case, though there should be only one
+                const placeholderRegex = new RegExp(`MATHBLOCKPLACEHOLDER${index}MATHBLOCK`, 'g');
+                html = html.replace(placeholderRegex, () => block);
+            });
+            return html;
+        };
 
         const MAX_TOKEN_LIMIT = 1048576;
         const TOKEN_COUNT_INTERVAL_MS = 600000;
