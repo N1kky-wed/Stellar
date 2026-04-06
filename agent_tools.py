@@ -632,18 +632,22 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
     except Exception as e:
         return f"Error in forge_control: {str(e)}"
 
-def repo_control(action: str, app_id: str = None, project_name: str = None) -> str:
+def repo_control(action: str, app_id: str = None, project_name: str = None, files: list = None) -> str:
     """Control and manage repository-based deployments.
     Args:
-        action: "list_history", "rename", or "stop"
-        app_id: the Deployment ID, Project Title, or Subdomain (required for 'rename' and 'stop')
+        action: "list_history", "rename", "stop", "restart", or "snapshot"
+        app_id: the Deployment ID, Project Title, or Subdomain
         project_name: New name for the project (required for 'rename')
+        files: List of file paths to save into the database (required for 'snapshot')
     Returns:
         status message or history list
     """
-    from app import get_db, generate_unique_subdomain
-    from flask import session
+    from app import get_db, generate_unique_subdomain, stop_and_cleanup_app_by_process_id, _redis_forge_key, redis_client, active_apps, active_apps_lock
+    from flask import session, current_app
     import json
+    import docker
+    import time
+    import threading
 
     try:
         db = get_db()
@@ -677,8 +681,6 @@ def repo_control(action: str, app_id: str = None, project_name: str = None) -> s
 
         if action == "stop":
             if not app_id: return "Error: app_id is required to stop a deployment."
-            from app import stop_and_cleanup_app_by_process_id
-            # Resolve ID first
             cursor = db.execute('SELECT process_id FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             if not row: return f"Error: Deployment '{app_id}' not found."
@@ -699,18 +701,23 @@ def repo_control(action: str, app_id: str = None, project_name: str = None) -> s
             snapshot = json.loads(row['files_snapshot'])
             repo_url = snapshot.get('repo')
             
-            # Default to 3000, can be refined if we store the port
-            port = 3000 
+            # Check if it's a Forge project
+            is_forge = 'app.py' in snapshot and 'index.html' in snapshot and not repo_url
             
-            import docker
-            import time
-            from app import _redis_forge_key, redis_client, active_apps, active_apps_lock, stop_and_cleanup_app_by_process_id
-            
-            # Clean up any existing stale container with same process_id
+            if is_forge:
+                from app import _deploy_and_stream_output
+                stop_and_cleanup_app_by_process_id(process_id, app_type='forge')
+                app_obj = current_app._get_current_object()
+                thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, snapshot, process_id, None, 'forge', subdomain), daemon=True)
+                thread.start()
+                return f"Forge project '{project_title}' restarted with latest edits! Live URL: https://{subdomain}.stellarai.live/"
+
+            # Generic Repo/Custom restart
             stop_and_cleanup_app_by_process_id(process_id, app_type='forge')
             
             client = docker.from_env()
             r_key = _redis_forge_key(process_id)
+            port = 3000
 
             container = client.containers.run(
                 image='stellar-repo-host:latest',
@@ -745,13 +752,52 @@ def repo_control(action: str, app_id: str = None, project_name: str = None) -> s
 
             if repo_url:
                 container.exec_run(f"git clone {repo_url} .", workdir="/app")
+            
+            # Restore manual edits from snapshot
+            import base64
+            for fname, content in snapshot.items():
+                if fname == 'repo' or not isinstance(content, str): continue
+                b64_content = base64.b64encode(content.encode()).decode()
+                container.exec_run(f"python3 -c \"import base64; import os; os.makedirs(os.path.dirname('{fname}'), exist_ok=True); open('{fname}', 'wb').write(base64.b64decode('{b64_content}'))\"", workdir="/app")
 
             public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
-            return f"Deployment '{project_title}' restarted! ID: `{process_id}`. Live URL: {public_url}\nYou can now use repo_execute to re-run your build/start commands."
+            return f"Deployment '{project_title}' restarted with latest snapshotted edits! ID: `{process_id}`. Live URL: {public_url}\nYou can now use repo_execute to re-run your build/start commands."
+
+        if action == "snapshot":
+            if not app_id or not files:
+                return "Error: app_id and a list of 'files' paths are required to snapshot manual edits."
+            
+            cursor = db.execute('SELECT process_id, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            row = cursor.fetchone()
+            if not row: return f"Error: Deployment '{app_id}' not found."
+            
+            p_id = row['process_id']
+            current_snapshot = json.loads(row['files_snapshot'])
+            
+            client = docker.from_env()
+            container_name = f"stellar-repo-{p_id}"
+            try:
+                container = client.containers.get(container_name)
+            except:
+                return "Error: Container not found. Cannot snapshot files from a stopped or missing container."
+                
+            count = 0
+            for file_path in files:
+                # Remove leading /app/ if present
+                clean_path = file_path.replace('/app/', '').lstrip('/')
+                res = container.exec_run(f"cat {clean_path}", workdir="/app")
+                if res.exit_code == 0:
+                    current_snapshot[clean_path] = res.output.decode('utf-8', 'replace')
+                    count += 1
+            
+            db.execute("UPDATE forge_history SET files_snapshot = ? WHERE process_id = ?", (json.dumps(current_snapshot), p_id))
+            db.commit()
+            return f"Successfully snapshotted {count} files to the database for project '{app_id}'. These edits will now persist across restarts."
 
         return f"Error: Unknown action '{action}'."
     except Exception as e:
         return f"Error in repo_control: {str(e)}"
+
 
 def lab_execute(command: str, timeout: int = 60) -> str:
     """Executes a bash command in a persistent, isolated Docker sandbox.
