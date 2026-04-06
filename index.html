@@ -8938,7 +8938,7 @@
                 URL.revokeObjectURL(link.href);
             }
         });
-        if (sendBtn) sendBtn.addEventListener("click", handleSend);
+        if (sendBtn) sendBtn.addEventListener("click", () => handleSend());
         if (chatInput) { chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }); chatInput.addEventListener("input", adjustTextareaHeight); }
         if (modeSelector) modeSelector.addEventListener("change", handleModeChange);
         if (spectrumSearchBtn) { spectrumSearchBtn.addEventListener("click", () => { if (currentMode === 'spectrum' && !spectrumSearchBtn.disabled) { updateSpectrumSearchButtonState(!useSpectrumSearch); } }); }
