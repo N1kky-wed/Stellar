@@ -1164,6 +1164,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             yield {'status': 'Using Lab...'}
                         elif func_name == "host_repo":
                             yield {'status': 'Deploying repository...'}
+                        elif func_name == "repo_execute":
+                            yield {'status': 'Executing command in project...'}
                         else:
                             yield {'status': f'Using tool: {func_name}...'}
                             
