@@ -441,14 +441,23 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
             if 'user_id' not in session:
                 return "Error: Authentication required."
             db = get_db()
-            cursor = db.execute('SELECT project_name, process_id, status, created_at FROM forge_history WHERE user_id = ? ORDER BY created_at DESC', (session['user_id'],))
+            cursor = db.execute('SELECT project_name, process_id, status, deployment_url, subdomain, created_at FROM forge_history WHERE user_id = ? ORDER BY created_at DESC', (session['user_id'],))
             history = cursor.fetchall()
             if not history:
                 return "You have no past Forge deployments."
             
             res = "### Your Forge Deployment History:\n"
             for row in history:
-                url_str = f" - [Visit App](https://stellarai.live/apps/{row['process_id']}/)" if row['status'] == 'running' else ""
+                if row['status'] == 'running':
+                    if row['deployment_url']:
+                        url = row['deployment_url']
+                    elif row['subdomain']:
+                        url = f"https://{row['subdomain']}.stellarai.live/"
+                    else:
+                        url = f"https://{row['process_id']}.stellarai.live/"
+                    url_str = f" - [Visit App]({url})"
+                else:
+                    url_str = ""
                 res += f"- **{row['project_name']}** (ID: `{row['process_id']}`) - Status: {row['status']} - Created: {row['created_at']}{url_str}\n"
             return res
 
@@ -480,12 +489,14 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
             current_files = json.loads(clean_json_string)
             actual_app_id = str(uuid.uuid4())
             project_title = project_name if project_name else generate_forge_title(prompt)
+            from app import generate_unique_subdomain
+            subdomain = generate_unique_subdomain(project_title)
             
-            session['forge_project'] = {'files': current_files, 'container_id': None, 'process_id': actual_app_id, 'project_name': project_title}
+            session['forge_project'] = {'files': current_files, 'container_id': None, 'process_id': actual_app_id, 'project_name': project_title, 'subdomain': subdomain}
             session.modified = True
             
-            db.execute('INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot) VALUES (?, ?, ?, ?, ?)',
-                       (session['user_id'], project_title, actual_app_id, 'starting', json.dumps(current_files)))
+            db.execute('INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain) VALUES (?, ?, ?, ?, ?, ?)',
+                       (session['user_id'], project_title, actual_app_id, 'starting', json.dumps(current_files), subdomain))
             db.commit()
 
         elif action == "modify":
@@ -554,7 +565,7 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
         # Shared Wait Loop
         start_wait = time.time()
         final_status = "starting"
-        public_url = f"https://stellarai.live/apps/{actual_app_id}/"
+        public_url = f"https://{subdomain}.stellarai.live/" if 'subdomain' in locals() and subdomain else f"https://{actual_app_id}.stellarai.live/"
         
         while time.time() - start_wait < 35:
             time.sleep(2)
@@ -708,7 +719,7 @@ def host_repo(repo_url: str, port: int = 3000) -> str:
     import json
     import time
     from flask import session
-    from app import get_db, _redis_forge_key, redis_client, active_apps, active_apps_lock
+    from app import get_db, _redis_forge_key, redis_client, active_apps, active_apps_lock, generate_unique_subdomain
 
     try:
         if 'user_id' not in session:
@@ -716,11 +727,12 @@ def host_repo(repo_url: str, port: int = 3000) -> str:
 
         process_id = str(uuid.uuid4())
         project_title = f"Repo: {repo_url.split('/')[-1].replace('.git', '')}"
+        subdomain = generate_unique_subdomain(project_title)
 
         # Record in DB
         db = get_db()
-        db.execute('INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot) VALUES (?, ?, ?, ?, ?)',
-                   (session['user_id'], project_title, process_id, 'created', json.dumps({"repo": repo_url})))
+        db.execute('INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain) VALUES (?, ?, ?, ?, ?, ?)',
+                   (session['user_id'], project_title, process_id, 'created', json.dumps({"repo": repo_url}), subdomain))
         db.commit()
 
         try:
@@ -769,7 +781,7 @@ def host_repo(repo_url: str, port: int = 3000) -> str:
             with active_apps_lock:
                 active_apps[process_id] = {"container_id": container.id, "port": host_port, "status": "running"}
 
-            db.execute("UPDATE forge_history SET status = 'running', deployment_url = ? WHERE process_id = ?", (f"/apps/{process_id}/", process_id))
+            db.execute("UPDATE forge_history SET status = 'running', deployment_url = ? WHERE process_id = ?", (f"https://{subdomain}.stellarai.live/", process_id))
             db.commit()
             
             # Clone repo
@@ -777,8 +789,8 @@ def host_repo(repo_url: str, port: int = 3000) -> str:
             if clone_res.exit_code != 0:
                 return f"Git clone failed: {clone_res.output.decode()}"
 
-            public_url = f"https://stellarai.live/apps/{process_id}/"
-            return f"Container provisioned for '{project_title}'! ID: `{process_id}`.Live URL: {public_url} You can now use repo_execute to install dependencies, build, and start the app."
+            public_url = f"https://{subdomain}.stellarai.live/"
+            return f"Container provisioned for '{project_title}'! ID: `{process_id}`. Live URL: {public_url} You can now use repo_execute to install dependencies, build, and start the app."
 
         except Exception as e:
             db.execute("UPDATE forge_history SET status = 'failed' WHERE process_id = ?", (process_id,))

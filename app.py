@@ -311,6 +311,16 @@ def initialize_database():
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
             ''')
+            
+        cursor.execute("PRAGMA table_info(forge_history)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'subdomain' not in columns:
+            try:
+                cursor.execute("ALTER TABLE forge_history ADD COLUMN subdomain TEXT")
+                cursor.execute("CREATE UNIQUE INDEX idx_subdomain ON forge_history(subdomain)")
+                print("Added 'subdomain' column to 'forge_history' table.")
+            except Exception as e:
+                print(f"Error adding 'subdomain' column: {e}")
 
         cursor.execute('''CREATE TABLE IF NOT EXISTS tool_calls (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -554,6 +564,23 @@ def generate_forge_title(user_prompt):
     except Exception as e:
         logger.error(f"Error generating forge title: {e}")
         return "Forge Project"
+
+
+def generate_unique_subdomain(project_name):
+    # Convert "My Cool App!" to "my-cool-app"
+    base_slug = re.sub(r'[^a-z0-9]+', '-', project_name.lower()).strip('-')
+    if not base_slug:
+        base_slug = "app"
+    
+    db = get_db()
+    slug = base_slug
+    counter = 1
+    while True:
+        cursor = db.execute("SELECT 1 FROM forge_history WHERE subdomain = ?", (slug,))
+        if not cursor.fetchone():
+            return slug
+        slug = f"{base_slug}-{counter}"
+        counter += 1
 
 
 def count_chat_tokens(chat_id=None):
@@ -1443,12 +1470,14 @@ def forge_start():
         process_id = old_process_id if old_process_id else str(uuid.uuid4())
         
         project_title = generate_forge_title(user_prompt)
+        subdomain = generate_unique_subdomain(project_title)
 
         session['forge_project'] = {
             'files': project_files,
             'container_id': None,
             'process_id': process_id,
-            'project_name': project_title
+            'project_name': project_title,
+            'subdomain': subdomain
         }
         session.modified = True
 
@@ -1467,9 +1496,9 @@ def forge_start():
         try:
             db = get_db()
             db.execute('''
-                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(project_files)))
+                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(project_files), subdomain))
             db.commit()
         except Exception as e:
             logger.error(f"Failed to record forge history start: {e}")
@@ -1483,7 +1512,7 @@ def forge_start():
             logger.exception("Failed to persist initial forge state for %s", process_id)
 
         app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, project_files, process_id, None, 'forge'))
+        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, project_files, process_id, None, 'forge', subdomain))
         thread.daemon = True
         thread.start()
 
@@ -1562,10 +1591,16 @@ def forge_iterate():
         process_id = old_process_id if old_process_id else str(uuid.uuid4())
         
         project_title = generate_forge_title(user_prompt)
+        
+        # Get existing subdomain or generate a new one if it somehow got lost
+        subdomain = session['forge_project'].get('subdomain')
+        if not subdomain:
+            subdomain = generate_unique_subdomain(project_title)
 
         session['forge_project']['files'] = current_files
         session['forge_project']['process_id'] = process_id
         session['forge_project']['project_name'] = project_title
+        session['forge_project']['subdomain'] = subdomain
         session.modified = True
 
         # Notify via Telegram
@@ -1583,9 +1618,9 @@ def forge_iterate():
         try:
             db = get_db()
             db.execute('''
-                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(current_files)))
+                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(current_files), subdomain))
             db.commit()
         except Exception as e:
             logger.error(f"Failed to record forge history iteration: {e}")
@@ -1599,7 +1634,7 @@ def forge_iterate():
             logger.exception("Failed to persist iteration forge state for %s", process_id)
 
         app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, process_id, old_container_id, 'forge'))
+        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, process_id, old_container_id, 'forge', subdomain))
         thread.daemon = True
         thread.start()
 
@@ -1610,7 +1645,7 @@ def forge_iterate():
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 
 
-def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='forge'):
+def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='forge', subdomain=None):
     logs_buffer = []
 
     def _put_event(data):
@@ -1870,7 +1905,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 except Exception:
                     logger.exception("Failed to persist host_port for %s", process_id)
 
-                public_url = f"https://stellarai.live/apps/{process_id}/"
+                public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
                 _put_event({'type': 'phase', 'phase': 'ready'})
                 _put_event({'type': 'log', 'content': f'✨ Server is ready! Available at {public_url}'})
                 _put_event({'type': 'port_info', 'url': public_url})
@@ -3918,61 +3953,77 @@ if not app.config.get('TESTING'):
     atexit.register(orphan_monitor.stop)
 active_apps = {}
 active_apps_lock = threading.Lock()
-@app.route("/apps/<app_id>/", defaults={"path": ""}, methods=["GET", "POST", "PUT", "DELETE"])
-@app.route("/apps/<app_id>/<path:path>", methods=["GET", "POST", "PUT", "DELETE"])
-def dynamic_proxy(app_id, path):
-    app_info = None
-    with active_apps_lock:
-        app_info = active_apps.get(app_id)
+@app.before_request
+def intercept_subdomains():
+    host = request.headers.get('Host', '')
+    domain_parts = host.split(':')[0].split('.')
 
-    if not app_info:
-        try:
-            redis_key = _redis_forge_key(app_id)
-            redis_data = redis_client.hgetall(redis_key)
-            if not redis_data:
-                redis_key = _redis_runcode_key(app_id)
+    # Catch any request to *.stellarai.live (excluding www and the main root domain)
+    if len(domain_parts) >= 3 and domain_parts[-2] == 'stellarai' and domain_parts[-1] == 'live' and domain_parts[0] != 'www':
+        subdomain = domain_parts[0]
+
+        db = get_db()
+        cursor = db.execute("SELECT process_id FROM forge_history WHERE subdomain = ?", (subdomain,))
+        row = cursor.fetchone()
+
+        # Fallback to process_id (uuid) if it's a temporary run_code container
+        process_id = row['process_id'] if row else subdomain
+
+        app_info = None
+        with active_apps_lock:
+            app_info = active_apps.get(process_id)
+
+        if not app_info:
+            try:
+                redis_key = _redis_forge_key(process_id)
                 redis_data = redis_client.hgetall(redis_key)
+                if not redis_data:
+                    redis_key = _redis_runcode_key(process_id)
+                    redis_data = redis_client.hgetall(redis_key)
 
-            if redis_data and redis_data.get("host_port") and redis_data.get("status") in ["running", "created", "exited"]:
-                app_info = {
-                    "port": int(redis_data["host_port"]),
-                    "container_id": redis_data.get("container_id"),
-                    "status": redis_data.get("status")
-                }
-                with active_apps_lock:
-                    active_apps[app_id] = app_info
-        except Exception as e:
-            logger.error(f"Redis lookup failed for app {app_id}: {e}")
-            return "Error looking up application state.", 500
+                if redis_data and redis_data.get("host_port") and redis_data.get("status") in["running", "created", "exited"]:
+                    app_info = {
+                        "port": int(redis_data["host_port"]),
+                        "container_id": redis_data.get("container_id"),
+                        "status": redis_data.get("status")
+                    }
+                    with active_apps_lock:
+                        active_apps[process_id] = app_info
+            except Exception as e:
+                logger.error(f"Redis lookup failed for app {process_id}: {e}")
+                return "Error looking up application state.", 500
 
-    if not app_info or not app_info.get("port"):
-        return "Application not found or has been stopped.", 404
-    
-    target_port = app_info["port"]
-    target_url = f"http://127.0.0.1:{target_port}/{path}"
+        if not app_info or not app_info.get("port"):
+            return f"Application '{subdomain}' is stopped or unavailable. Start it in Stellar Forge.", 503
 
-    try:
-        resp = requests.request(
-            method=request.method,
-            url=target_url,
-            headers={key: value for (key, value) in request.headers if key.lower() != 'host'},
-            data=request.get_data(),
-            cookies=request.cookies,
-            allow_redirects=False,
-            stream=True, 
-            timeout=600
-        )
+        target_port = app_info["port"]
+        path = request.full_path # Preserves exact routing paths and query parameters!
+        target_url = f"http://127.0.0.1:{target_port}{path}"
 
-        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        headers = [(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
+        try:
+            resp = requests.request(
+                method=request.method,
+                url=target_url,
+                headers={key: value for (key, value) in request.headers if key.lower() != 'host'},
+                data=request.get_data(),
+                cookies=request.cookies,
+                allow_redirects=False,
+                stream=True, 
+                timeout=600
+            )
 
-        return Response(resp.content, resp.status_code, headers)
+            excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+            headers =[(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Dynamic proxy error for app {app_id}: {e}")
-        if app_info.get("status") == "exited":
-             return "Application not found or has been stopped.", 404
-        return f"Error proxying request to application.", 502
+            return Response(resp.content, resp.status_code, headers)
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Dynamic proxy error for app {process_id}: {e}")
+            if app_info.get("status") == "exited":
+                 return "Application not found or has been stopped.", 404
+            return f"Error proxying request to application.", 502
+
+
 @app.route('/codelab/forge/files', methods=['GET'])
 def forge_get_files():
     if 'user_id' not in session or 'forge_project' not in session:
