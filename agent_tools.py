@@ -632,7 +632,7 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
     except Exception as e:
         return f"Error in forge_control: {str(e)}"
 
-def repo_control(action: str, app_id: str = None, project_name: str = None, files: list = None) -> str:
+def repo_control(action: str, app_id: str = None, project_name: str = None, files: list[str] = None) -> str:
     """Control and manage repository-based deployments.
     Args:
         action: "list_history", "rename", "stop", "restart", or "snapshot"
