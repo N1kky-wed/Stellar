@@ -487,6 +487,24 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
             
             return output
 
+        if action == "rename":
+            if not app_id or not project_name:
+                return "Error: Both 'app_id' (current project) and 'project_name' (new name) are required for rename."
+            
+            cursor = db.execute('SELECT process_id, project_name, subdomain FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            row = cursor.fetchone()
+            if not row: return f"Error: Project '{app_id}' not found."
+            
+            actual_app_id = row['process_id']
+            from app import generate_unique_subdomain
+            new_subdomain = generate_unique_subdomain(project_name)
+            new_url = f"https://{new_subdomain}.stellarai.live/"
+            
+            db.execute("UPDATE forge_history SET project_name = ?, subdomain = ?, deployment_url = ? WHERE process_id = ?", (project_name, new_subdomain, new_url, actual_app_id))
+            db.commit()
+            
+            return f"Project renamed to '{project_name}'! New URL: {new_url}"
+
         if action == "create":
             if not prompt:
                 return "Error: A prompt is required to create a new Forge project."
@@ -542,6 +560,7 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
             
             actual_app_id = row['process_id']
             project_title = row['project_name']
+            subdomain = row['subdomain']
             current_files = json.loads(row['files_snapshot'])
             
             if prompt:
@@ -556,7 +575,7 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
             
             if changes: current_files.update(changes)
                 
-            session['forge_project'] = {'files': current_files, 'container_id': None, 'process_id': actual_app_id, 'project_name': project_title}
+            session['forge_project'] = {'files': current_files, 'container_id': None, 'process_id': actual_app_id, 'project_name': project_title, 'subdomain': subdomain}
             session.modified = True
             db.execute('UPDATE forge_history SET files_snapshot = ?, status = ? WHERE process_id = ?', (json.dumps(current_files), 'starting', actual_app_id))
             db.commit()
@@ -725,13 +744,14 @@ def repo_execute(process_id: str, command: str, timeout: int = 60) -> str:
     except Exception as e:
         return f"Error executing command in repo container: {str(e)}"
 
-def host_repo(repo_url: str = None, port: int = 3000) -> str:
+def host_repo(repo_url: str = None, port: int = 3000, project_name: str = None) -> str:
     """Clones a GitHub repository (optional) and provisions a dedicated deployment container.
     Use this tool to deploy external repositories or provision a custom environment for non-Python/HTML stacks.
     After provisioning, use repo_execute to build and start the app.
     Args:
         repo_url: Optional full URL to a git repository. If omitted, an empty container is provisioned.
         port: The internal port the application will listen on (default 3000).
+        project_name: Optional name for the project (used for unique subdomain).
     Returns:
         The deployment status, process_id, and the live public URL.
     """
@@ -747,7 +767,9 @@ def host_repo(repo_url: str = None, port: int = 3000) -> str:
             return "Error: Authentication required to host repos."
 
         process_id = str(uuid.uuid4())
-        if repo_url:
+        if project_name:
+            project_title = project_name
+        elif repo_url:
             project_title = f"Repo: {repo_url.split('/')[-1].replace('.git', '')}"
         else:
             project_title = "Custom Stack Project"
