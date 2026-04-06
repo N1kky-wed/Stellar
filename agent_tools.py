@@ -686,6 +686,69 @@ def repo_control(action: str, app_id: str = None, project_name: str = None) -> s
             stop_and_cleanup_app_by_process_id(row['process_id'], app_type='forge')
             return f"Deployment '{app_id}' has been stopped."
 
+        if action == "restart":
+            if not app_id: return "Error: app_id is required to restart a deployment."
+            
+            cursor = db.execute('SELECT process_id, project_name, files_snapshot, subdomain FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            row = cursor.fetchone()
+            if not row: return f"Error: Deployment '{app_id}' not found."
+            
+            process_id = row['process_id']
+            project_title = row['project_name']
+            subdomain = row['subdomain']
+            snapshot = json.loads(row['files_snapshot'])
+            repo_url = snapshot.get('repo')
+            
+            # Default to 3000, can be refined if we store the port
+            port = 3000 
+            
+            import docker
+            import time
+            from app import _redis_forge_key, redis_client, active_apps, active_apps_lock, stop_and_cleanup_app_by_process_id
+            
+            # Clean up any existing stale container with same process_id
+            stop_and_cleanup_app_by_process_id(process_id, app_type='forge')
+            
+            client = docker.from_env()
+            r_key = _redis_forge_key(process_id)
+
+            container = client.containers.run(
+                image='stellar-repo-host:latest',
+                command='sleep infinity',
+                ports={f"{port}/tcp": ('0.0.0.0', 0)},
+                name=f"stellar-repo-{process_id}",
+                detach=True,
+                working_dir='/app',
+                labels={
+                    "stellar_type": "forge",
+                    "stellar_process_id": process_id,
+                    "created_at_ts": str(time.time()),
+                    "forge_app_id": process_id
+                }
+            )
+
+            time.sleep(2)
+            container.reload()
+            ports = container.attrs['NetworkSettings']['Ports']
+            host_port = ports[f"{port}/tcp"][0]['HostPort']
+
+            redis_client.hset(r_key, mapping={
+                "container_id": container.id, 
+                "status": "running", 
+                "process_id": process_id,
+                "host_port": str(host_port),
+                "files": json.dumps(snapshot)
+            })
+            
+            with active_apps_lock:
+                active_apps[process_id] = {"container_id": container.id, "port": host_port, "status": "running"}
+
+            if repo_url:
+                container.exec_run(f"git clone {repo_url} .", workdir="/app")
+
+            public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
+            return f"Deployment '{project_title}' restarted! ID: `{process_id}`. Live URL: {public_url}\nYou can now use repo_execute to re-run your build/start commands."
+
         return f"Error: Unknown action '{action}'."
     except Exception as e:
         return f"Error in repo_control: {str(e)}"
