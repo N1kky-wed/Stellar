@@ -1192,7 +1192,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             for tool in called_tools_results:
                 # Do not force-attach raw data from search tools, project history, Lab execution logs, or SVGs
                 # render_svg uses structured output, so the model is fully responsible for placing it.
-                if tool['name'] in ['extensive_search', 'native_search', 'render_svg', 'lab_execute', 'host_repo']:
+                if tool['name'] in['extensive_search', 'native_search', 'render_svg', 'lab_execute', 'host_repo', 'repo_execute']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and "Your Forge Deployment History" in tool['result']:
                     continue
