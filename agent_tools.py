@@ -667,7 +667,7 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
             
             subdomain = generate_unique_subdomain(project_title)
             db.execute('INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain) VALUES (?, ?, ?, ?, ?, ?)',
-                       (session['user_id'], project_title, process_id, 'created', json.dumps({"repo": repo_url} if repo_url else {}), subdomain))
+                       (session['user_id'], project_title, process_id, 'created', json.dumps({"repo": repo_url, "port": port} if repo_url else {"port": port}), subdomain))
             db.commit()
 
             try:
@@ -695,7 +695,7 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
                 time.sleep(2)
                 container.reload()
                 host_port = container.attrs['NetworkSettings']['Ports'][f"{port}/tcp"][0]['HostPort']
-                redis_client.hset(r_key, mapping={"container_id": container.id, "status": "running", "process_id": process_id, "host_port": str(host_port), "files": json.dumps({"repo": repo_url} if repo_url else {})})
+                redis_client.hset(r_key, mapping={"container_id": container.id, "status": "running", "process_id": process_id, "host_port": str(host_port), "files": json.dumps({"repo": repo_url, "port": port} if repo_url else {"port": port})})
                 with active_apps_lock: active_apps[process_id] = {"container_id": container.id, "port": host_port, "status": "running"}
                 db.execute("UPDATE forge_history SET status = 'running', deployment_url = ? WHERE process_id = ?", (f"https://{subdomain}.stellarai.live/", process_id))
                 db.commit()
@@ -704,7 +704,7 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
                     if clone_res.exit_code != 0: return f"Git clone failed: {clone_res.output.decode()}"
                 
                 public_url = f"https://{subdomain}.stellarai.live/"
-                return f"Container provisioned for '{project_title}'! ID: `{process_id}`. Live URL: {public_url} Use action='execute' to build and start the app."
+                return f"Container provisioned for '{project_title}'! ID: `{process_id}`. Live URL: {public_url} Use action='execute' to build and start the app. CRITICAL: Ensure your app listens on 0.0.0.0 and port {port}."
             except Exception as e:
                 db.execute("UPDATE forge_history SET status = 'failed' WHERE process_id = ?", (process_id,))
                 db.commit()
@@ -712,16 +712,42 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
 
         if action == "execute":
             if not app_id or not command: return "Error: 'app_id' and 'command' are required for execute."
-            cursor = db.execute('SELECT process_id FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT process_id, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             if not row: return f"Error: Deployment '{app_id}' not found."
             p_id = row['process_id']
+            snapshot = json.loads(row['files_snapshot'])
+            port = snapshot.get('port', 3000)
+            
             try:
                 client = docker.from_env()
                 container = client.containers.get(f"stellar-repo-{p_id}")
                 wrapped_cmd = f"bash -c {subprocess.list2cmdline([command])}"
                 exec_result = container.exec_run(wrapped_cmd, demux=False, workdir="/app")
                 output = exec_result.output.decode('utf-8', 'replace')
+                
+                # Enhanced health check if a start-like command is detected
+                if any(kw in command.lower() for kw in ["npm start", "python", "node", "serve", "go run", "npm run dev"]):
+                    time.sleep(5)
+                    container.reload()
+                    if container.status != 'running':
+                        return f"Command executed, but container stopped. Output:\n{output}"
+                    
+                    # Verify port accessibility
+                    is_ready = False
+                    for _ in range(5):
+                        time.sleep(2)
+                        res = container.exec_run(f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{port}/")
+                        if res.exit_code == 0:
+                            code = int(res.output.decode().strip())
+                            if 0 < code < 500:
+                                is_ready = True
+                                break
+                    if is_ready:
+                        output += f"\n\n✨ Server is READY and listening on 0.0.0.0:{port}!"
+                    else:
+                        output += f"\n\n⚠️ Command run, but server is NOT responding on port {port}. Ensure it listens on 0.0.0.0."
+
                 if exec_result.exit_code != 0: return f"Command failed (exit {exec_result.exit_code}).\nOutput:\n{output}"
                 return output if output else "Command executed successfully with no output."
             except Exception as e: return f"Error executing in repo: {str(e)}"
@@ -775,6 +801,7 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
             subdomain = row['subdomain']
             snapshot = json.loads(row['files_snapshot'])
             repo_url = snapshot.get('repo')
+            port = snapshot.get('port', 3000)
             
             # Check if it's a Forge project
             is_forge = 'app.py' in snapshot and 'index.html' in snapshot and not repo_url
@@ -792,7 +819,6 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
             
             client = docker.from_env()
             r_key = _redis_forge_key(process_id)
-            port = 3000
 
             container = client.containers.run(
                 image='stellar-repo-host:latest',
@@ -806,37 +832,44 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
                     "stellar_type": "forge",
                     "stellar_process_id": process_id,
                     "created_at_ts": str(time.time()),
-                    "forge_app_id": process_id
+                    "forge_app_id": process_id,
+                    "subdomain": subdomain
                 }
             )
 
             time.sleep(2)
             container.reload()
-            ports = container.attrs['NetworkSettings']['Ports']
-            host_port = ports[f"{port}/tcp"][0]['HostPort']
+            host_port = container.attrs['NetworkSettings']['Ports'][f"{port}/tcp"][0]['HostPort']
 
-            redis_client.hset(r_key, mapping={
-                "container_id": container.id, 
-                "status": "running", 
-                "process_id": process_id,
-                "host_port": str(host_port),
-                "files": json.dumps(snapshot)
-            })
-            
-            with active_apps_lock:
-                active_apps[process_id] = {"container_id": container.id, "port": host_port, "status": "running"}
+            redis_client.hset(r_key, mapping={"container_id": container.id, "status": "running", "process_id": process_id, "host_port": str(host_port), "files": json.dumps(snapshot)})
+            with active_apps_lock: active_apps[process_id] = {"container_id": container.id, "port": host_port, "status": "running"}
 
             if repo_url:
                 container.exec_run(f"git clone {repo_url} .", workdir="/app")
             
             # Restore manual edits from snapshot
             for fname, content in snapshot.items():
-                if fname == 'repo' or not isinstance(content, str): continue
+                if fname in ['repo', 'port'] or not isinstance(content, str): continue
                 b64_content = base64.b64encode(content.encode()).decode()
                 container.exec_run(f"python3 -c \"import base64; import os; os.makedirs(os.path.dirname('{fname}'), exist_ok=True); open('{fname}', 'wb').write(base64.b64decode('{b64_content}'))\"", workdir="/app")
 
             public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
-            return f"Deployment '{project_title}' restarted with latest snapshotted edits! ID: `{process_id}`. Live URL: {public_url}\nYou can now use repo_control action='execute' to re-run your build/start commands."
+            
+            # Re-run health check loop
+            is_ready = False
+            for _ in range(30):
+                time.sleep(1)
+                try:
+                    res = container.exec_run(f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{port}/")
+                    if res.exit_code == 0:
+                        code = int(res.output.decode().strip())
+                        if 0 < code < 500:
+                            is_ready = True
+                            break
+                except: pass
+            
+            ready_msg = "and server is READY!" if is_ready else "but server is not responding yet. Use action='execute' to start your app."
+            return f"Deployment '{project_title}' restarted with latest snapshotted edits {ready_msg} ID: `{process_id}`. Live URL: {public_url}"
 
         if action == "snapshot":
             if not app_id or not files:
