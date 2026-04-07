@@ -4284,6 +4284,57 @@
             transform: none;
         }
 
+        /* Custom Toggle Switch Styles */
+        .toggle-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: var(--nebula-bg-secondary, #1e1e2e);
+            border: 1px solid var(--nebula-border, #3a3a4a);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .toggle-item:hover {
+            background: var(--nebula-bg-tertiary, #2a2a3a);
+        }
+        .toggle-item span:first-child {
+            font-size: 0.95em;
+            color: var(--nebula-text-primary, #e2e8f0);
+            font-weight: 500;
+        }
+        .toggle-checkbox {
+            display: none;
+        }
+        .toggle-slider {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background-color: var(--nebula-border, #4a4a5a);
+            border-radius: 24px;
+            transition: 0.3s;
+        }
+        .toggle-slider::before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            border-radius: 50%;
+            transition: 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .toggle-checkbox:checked + .toggle-slider {
+            background-color: #7b61ff;
+        }
+        .toggle-checkbox:checked + .toggle-slider::before {
+            transform: translateX(20px);
+        }
+
         @keyframes tool-spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
@@ -4292,6 +4343,8 @@
             animation: tool-spin 1.2s linear infinite;
         }
     </style>
+    <link rel="stylesheet" href="/custom_select.css">
+    <script src="/custom_select.js"></script>
 </head>
 
 <body class="bg-off">
@@ -4496,7 +4549,77 @@
                     <div id="passwordChangeMessage" class="auth-message"></div>
                 </form>
             </div>
+
+            <div class="agent-settings-section" style="text-align: center; margin-top: 15px;">
+                <button id="openAgentSettingsBtn" type="button" style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(123, 97, 255, 0.1); color: #7b61ff; border: 1px solid rgba(123, 97, 255, 0.2); font-weight: 500; cursor: pointer; transition: all 0.2s;">Agent Tool Settings</button>
+            </div>
+
             <button id="logoutButtonProfile">Logout</button>
+        </div>
+    </div>
+
+    <!-- Agent Settings Modal -->
+    <div id="agentSettingsModal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2001; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+        <div class="profile-modal-content" style="max-width: 450px;">
+            <h2>Agent Tool Settings</h2>
+            <button class="profile-close-btn" id="agentSettingsCloseBtn">
+                <svg width="20" height="20">
+                    <use xlink:href="#icon-close"></use>
+                </svg>
+            </button>
+            <p style="color: #8892b0; font-size: 0.9em; margin-bottom: 20px;">Toggle specific capabilities on or off for the AI agent.</p>
+            <div class="settings-list toggle-switches" id="agentToolsSettingsList">
+                <label class="toggle-item">
+                    <span>Render SVG</span>
+                    <input type="checkbox" id="toolToggle-render_svg" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item">
+                    <span>Generate Images</span>
+                    <input type="checkbox" id="toolToggle-generate_image" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item">
+                    <span>Make Presentations</span>
+                    <input type="checkbox" id="toolToggle-make_presentation" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item">
+                    <span>Extensive Web Search</span>
+                    <input type="checkbox" id="toolToggle-extensive_search" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item">
+                    <span>Fast Web Search</span>
+                    <input type="checkbox" id="toolToggle-native_search" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item">
+                    <span>Code Sandbox</span>
+                    <input type="checkbox" id="toolToggle-lab_execute" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item">
+                    <span>Forge Control</span>
+                    <input type="checkbox" id="toolToggle-forge_control" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item">
+                    <span>Repo Control</span>
+                    <input type="checkbox" id="toolToggle-repo_control" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item">
+                    <span>Repo Execute</span>
+                    <input type="checkbox" id="toolToggle-repo_execute" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item">
+                    <span>Host Repo</span>
+                    <input type="checkbox" id="toolToggle-host_repo" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
         </div>
     </div>
 
@@ -4759,6 +4882,44 @@
 
 
     <script>
+        const defaultAgentSettings = {
+            'render_svg': true,
+            'generate_image': true,
+            'make_presentation': true,
+            'extensive_search': true,
+            'native_search': true,
+            'lab_execute': true,
+            'forge_control': true,
+            'repo_control': true,
+            'repo_execute': true,
+            'host_repo': true
+        };
+        let agentSettings = JSON.parse(localStorage.getItem('agentSettings')) || defaultAgentSettings;
+        
+        function applySettingsUI() {
+            for (const [tool, enabled] of Object.entries(agentSettings)) {
+                const checkbox = document.getElementById('toolToggle-' + tool);
+                if (checkbox) {
+                    checkbox.checked = enabled;
+                }
+            }
+        }
+        
+        // Setup event listener for agent tools changes
+        document.addEventListener('DOMContentLoaded', () => {
+            applySettingsUI();
+            const toolsList = document.getElementById('agentToolsSettingsList');
+            if (toolsList) {
+                toolsList.addEventListener('change', function(e) {
+                    if (e.target.type === 'checkbox') {
+                        const toolName = e.target.id.replace('toolToggle-', '');
+                        agentSettings[toolName] = e.target.checked;
+                        localStorage.setItem('agentSettings', JSON.stringify(agentSettings));
+                    }
+                });
+            }
+        });
+
         const stopBtn = document.getElementById("stopBtn");
         const chatSearchInput = document.getElementById("chatSearchInput");
         const messagesDiv = document.getElementById("messages");
@@ -4795,6 +4956,9 @@
         const chatTitle = document.getElementById("chatTitle");
         const profileIcon = document.getElementById("profileIcon");
         const profileModal = document.getElementById("profileModal");
+        const agentSettingsModal = document.getElementById("agentSettingsModal");
+        const openAgentSettingsBtn = document.getElementById("openAgentSettingsBtn");
+        const agentSettingsCloseBtn = document.getElementById("agentSettingsCloseBtn");
         const profileCloseBtn = document.getElementById("profileCloseBtn");
         const profileUsernameDisplay = document.getElementById("profileUsernameDisplay");
         const changePasswordForm = document.getElementById("changePasswordForm");
@@ -5489,7 +5653,7 @@
                 const response = await fetch('/codelab/forge/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: prompt, pending_files: pendingFiles })
+                    body: JSON.stringify({ prompt: prompt, pending_files: pendingFiles, disabled_tools: Object.keys(agentSettings).filter(tool => !agentSettings[tool]) })
                 });
 
                 const data = await response.json();
@@ -5530,7 +5694,7 @@
                 const response = await fetch('/codelab/forge/iterate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: prompt, pending_files: pendingFiles })
+                    body: JSON.stringify({ prompt: prompt, pending_files: pendingFiles, disabled_tools: Object.keys(agentSettings).filter(tool => !agentSettings[tool]) })
                 });
 
                 const data = await response.json();
@@ -6436,7 +6600,7 @@
                 const lowerText = text.toLowerCase();
                 if (lowerText.includes("thinking") || lowerText.includes("generating") || lowerText.includes("drawing") || 
                     lowerText.includes("controlling") || lowerText.includes("processing") || lowerText.includes("using lab") || 
-                    lowerText.includes("deploying") || lowerText.includes("executing")) {
+                    lowerText.includes("deploying") || lowerText.includes("executing") || lowerText.includes("managing")) {
                     displayMsg = text + " (I'll notify you when it's done)";
                 }
             }
@@ -6515,6 +6679,7 @@
             const forgeUI = document.getElementById('forge-container');
 
             const modeSelectorElem = document.getElementById('modeSelector');
+            const modeSelectorWrapper = document.getElementById('modeSelector-wrapper') || modeSelectorElem;
             const headerContainer = document.getElementById('modeSelectorHeaderContainer');
             const inputBarContainer = document.getElementById('modeSelectorInputContainer');
 
@@ -6526,7 +6691,7 @@
                 chatContainer.style.display = 'none';
                 inputContainer.style.display = 'none';
                 codeLabContainer.style.display = 'flex';
-                headerContainer.appendChild(modeSelectorElem);
+                headerContainer.appendChild(modeSelectorWrapper);
                 // Hide scroll-to-bottom button in CodeLab mode
                 document.getElementById('chatScrollToBottomBtn').style.display = 'none';
                 // Forge container is now displayed by default
@@ -6544,7 +6709,7 @@
                 chatContainer.style.display = 'flex';
                 inputContainer.style.display = 'flex';
                 codeLabContainer.style.display = 'none';
-                inputBarContainer.appendChild(modeSelectorElem);
+                inputBarContainer.appendChild(modeSelectorWrapper);
                 updateModelSelectTheme();
                 // Show scroll-to-bottom button when leaving CodeLab mode
                 document.getElementById('chatScrollToBottomBtn').style.display = '';
@@ -7065,7 +7230,7 @@
                 if (messagesDiv) messagesDiv.appendChild(placeholderMsg);
                 scrollToBottom();
 
-                const registerPayload = { query: originalQuery || " ", model_id: selectedModel, mode: modeForBackend, pending_files: serverFileIds, chat_id: currentChatId, hidden: silent };
+                const registerPayload = { query: originalQuery || " ", model_id: selectedModel, mode: modeForBackend, pending_files: serverFileIds, chat_id: currentChatId, hidden: silent, disabled_tools: Object.keys(agentSettings).filter(t => !agentSettings[t]) };
                 const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(registerPayload) });
                 if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error || `Register fail HTTP ${response.status}`); }
                 const data = await response.json(); if (!data.query_id) { throw new Error("No query_id received from registration."); }
@@ -7131,12 +7296,12 @@
                 if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
                     if (lowerText.includes("thinking") || lowerText.includes("generating") || lowerText.includes("drawing") || 
                         lowerText.includes("controlling") || lowerText.includes("processing") || lowerText.includes("using lab") || 
-                        lowerText.includes("deploying") || lowerText.includes("executing")) {
+                        lowerText.includes("deploying") || lowerText.includes("executing") || lowerText.includes("managing")) {
                         displayMsg = newText + " (I'll notify you when it's done)";
                     }
                 }
 
-                const isToolAction = ['Searching', 'Performing', 'Generating', 'Drawing', 'Creating', 'Controlling', 'Using', 'Deploying', 'Executing'].some(w => newText.startsWith(w));
+                const isToolAction = ['Searching', 'Performing', 'Generating', 'Drawing', 'Creating', 'Controlling', 'Using', 'Deploying', 'Executing', 'Managing'].some(w => newText.startsWith(w));
                 if (isToolAction && !isError) {
                     const iconSpan = document.createElement('span');
                     iconSpan.innerHTML = `<svg class="tool-spinner" viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;vertical-align:middle;margin-right:6px;"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
@@ -7553,7 +7718,8 @@
                         mode: modeForBackend,
                         pending_files: pendingFiles,
                         chat_id: chatId,
-                        hidden: silent
+                        hidden: silent,
+                        disabled_tools: Object.keys(agentSettings).filter(t => !agentSettings[t])
                     };
 
                     const registerResponse = await fetch('/register_query', {
@@ -8872,11 +9038,20 @@
             currentPasswordInput.value = '';
             newPasswordInput.value = '';
             confirmNewPasswordInput.value = '';
-            displayAuthMessage(passwordChangeMessage, '', false);
+            displayModalMessage(passwordChangeMessage, '', false);
         }
 
         function hideProfileModal() {
             profileModal.style.display = 'none';
+            hideAgentSettingsModal();
+        }
+
+        function showAgentSettingsModal() {
+            agentSettingsModal.style.display = 'flex';
+        }
+
+        function hideAgentSettingsModal() {
+            agentSettingsModal.style.display = 'none';
         }
 
 
@@ -9015,6 +9190,18 @@
         newChatBtn.addEventListener('click', createNewChat);
         profileIcon.addEventListener('click', showProfileModal);
         profileCloseBtn.addEventListener('click', hideProfileModal);
+        openAgentSettingsBtn.addEventListener('click', showAgentSettingsModal);
+        agentSettingsCloseBtn.addEventListener('click', hideAgentSettingsModal);
+
+        window.addEventListener('click', function(event) {
+            if (event.target === profileModal) {
+                hideProfileModal();
+            }
+            if (event.target === agentSettingsModal) {
+                hideAgentSettingsModal();
+            }
+        });
+
         changePasswordForm.addEventListener('submit', handleChangePassword);
         logoutButtonProfile.addEventListener('click', handleLogout);
         document.getElementById('logoutButton').addEventListener('click', handleLogout);
