@@ -2351,7 +2351,7 @@ def refine_stream():
                     time.sleep(1)
                 yield f"data: {json.dumps({'status': f'Thinking with {display_name}...', 'phase': 'refining'})}\n\n"
                 username = session.get('username')
-                prompt = get_refinement_prompt(user_query_for_llm, conv_hist_list, username=username)
+                prompt = get_refinement_prompt(user_query_for_llm, conv_hist_list, username=username, disabled_tools=disabled_tools)
                 generator_output = gemini_generate(
                     prompt=prompt,
                     model_id=current_model,

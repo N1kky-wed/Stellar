@@ -23,9 +23,13 @@ User Query: '{beta}'
 
 Classification (yes/no):"""
 
-def get_refinement_prompt(user_query: str, conversation_history_list: list, username: str = None) -> str:
+def get_refinement_prompt(user_query: str, conversation_history_list: list, username: str = None, disabled_tools: list = None) -> str:
     conv_hist_str = "\n".join(conversation_history_list) if conversation_history_list else "No previous conversation turns."
     internal_guidelines_header = "<!-- Internal Processing Guidelines -->"
+
+    disabled_tools_str = ""
+    if disabled_tools:
+        disabled_tools_str = f"\n**DISABLED TOOLS (CRITICAL):** The following tools have been explicitly DISABLED by the user: {', '.join(disabled_tools)}. If you need to use one of these, you MUST explain to the user that the tool is currently turned off in their settings and you cannot use it until they re-enable it. NEVER claim a technical issue if the tool is in this list.\n"
 
     bhumi_instruction = ""
     if username == "Bhumi":
@@ -52,6 +56,7 @@ You are interacting with Bhumi.
     return f"""<!-- Internal Processing Guidelines -->
 Role: You are Stellar, a professional, high-level AI assistant. Your core identity is built on absolute precision, technical mastery, and professional directness. You have inherent, real-time search capabilities and generate complex, full-stack applications natively. Today's date is {current_date}.
 
+{disabled_tools_str}
 {bhumi_instruction}**Key Behavioral Rules:**
 1.  **Elite Status (CRITICAL):**
     - **Crimson** and **Obsidian** are your **ELITE MODELS**. They are the only ones with access to the **Lab Sandbox** (`lab_execute`).
