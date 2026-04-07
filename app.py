@@ -163,9 +163,9 @@ logger = logging.getLogger(__name__)
 
 MODEL_NAMES = {
     "gemini-2.5-flash-lite": "Emerald",
-    "gemini-2.5-flash": "Lunarity",
+    "gemini-3.1-flash-lite-preview": "Lunarity",
     "gemini-3-flash-preview": "Crimson",
-    "gemini-3.1-pro-preview": "Obsidian",
+    "gemini-3.1-pro-preview": "Obsidian"
 }
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
@@ -1069,9 +1069,11 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 
             tools_config = available_tools.copy()
             
-            # Restrict lab_execute and repo_control to Elite models (Crimson and Obsidian)
+            # Restrict lab_execute and repo_control to Elite models
             elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-            if model_id not in elite_models:
+            if model_id == "gemini-3.1-flash-lite-preview": # Lunarity gets Lab access
+                 tools_config = [t for t in tools_config if getattr(t, '__name__', '') != 'repo_control']
+            elif model_id not in elite_models:
                 tools_config = [t for t in tools_config if getattr(t, '__name__', '') not in ['lab_execute', 'repo_control']]
 
             if disabled_tools:

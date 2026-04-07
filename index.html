@@ -2789,31 +2789,84 @@
 
         @media (max-width: 480px) {
             .input-buttons {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 8px;
+                flex-direction: row;
+                align-items: center;
+                gap: 5px;
             }
 
             .left-buttons,
             .right-buttons {
-                justify-content: space-between;
-                width: 100%;
+                justify-content: flex-start;
+                width: auto;
+                gap: 5px;
             }
 
             .right-buttons {
-                margin-top: 5px;
+                margin-top: 0;
             }
 
-            #modelSelect {
-                flex-grow: 1;
+            #modelSelect, 
+            #modeSelector, 
+            #spectrumSearchBtn {
+                padding: 6px 8px;
+                font-size: 0.8rem;
+                height: 32px;
+                min-width: 0;
+                flex-shrink: 1;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 85px;
             }
 
-            #modeSelector {
-                flex-grow: 1;
+            .custom-select-trigger {
+                padding: 6px 8px !important;
+                font-size: 0.8rem !important;
+                height: 32px !important;
+                min-width: 0 !important;
+                max-width: 85px !important;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            #modeSelector-wrapper .custom-select-trigger,
+            #modelSelect-wrapper .custom-select-trigger {
+                min-width: 0 !important;
+                max-width: 85px !important;
+            }
+
+            .custom-select-options {
+                width: auto !important;
+                min-width: 100% !important;
+                max-width: 200px !important;
+                left: auto !important;
+                right: 0 !important;
+            }
+
+            .custom-select-option {
+                font-size: 0.8rem !important;
+                padding: 8px 12px !important;
+                white-space: nowrap !important;
+                text-align: left !important;
+            }
+
+            .file-upload-label-button {
+                width: 32px;
+                height: 32px;
+                margin-right: 0;
+                flex-shrink: 0;
             }
 
             #sendBtn {
-                padding: 10px;
+                padding: 6px 10px;
+                height: 32px;
+                min-width: 32px;
+                flex-shrink: 0;
+            }
+
+            #inputContainer {
+                padding: 6px 8px;
             }
 
             .research-output,
@@ -3746,41 +3799,52 @@
 
         .user-msg {
             position: relative;
+            padding-bottom: 45px !important; /* Ensure space for buttons */
         }
 
         .edit-prompt-wrapper {
             position: absolute;
-            left: -70px;
-            top: 50%;
-            transform: translateY(-50%);
+            bottom: 10px;
+            right: 10px;
             display: flex;
             flex-direction: row;
-            gap: 5px;
-            align-items: center;
-            justify-content: center;
+            gap: 8px;
             opacity: 0;
-            transition: opacity 0.2s ease-in-out;
+            visibility: hidden;
+            transition: opacity var(--tooltip-transition-duration) ease, visibility var(--tooltip-transition-duration) ease;
+            z-index: 2;
         }
 
         .user-msg:hover .edit-prompt-wrapper {
             opacity: 1;
+            visibility: visible;
         }
 
         .edit-prompt-icon {
-            cursor: pointer;
+            background: var(--output-copy-btn-bg);
+            color: var(--output-copy-btn-color);
+            border: none;
+            border-radius: 6px;
             padding: 5px;
-            border-radius: 50%;
-            background-color: rgba(0, 0, 0, 0.1);
+            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 24px;
+            height: 24px;
+            position: relative;
+            transition: background var(--tooltip-transition-duration) ease, color var(--tooltip-transition-duration) ease;
+        }
+
+        .edit-prompt-icon:hover {
+            background: var(--output-copy-btn-hover-bg);
+            color: var(--output-copy-btn-hover-color);
         }
 
         .edit-prompt-icon svg {
-            width: 18px;
-            height: 18px;
-            color: var(--secondary-text-color);
-            transition: color 0.2s ease;
+            width: 14px;
+            height: 14px;
+            fill: currentColor;
         }
 
         .edit-prompt-icon:hover svg {
@@ -4809,7 +4873,7 @@
                 <select id="modelSelect">
                     <option value="gemini-2.5-flash-lite" title="Fastest model, good for quick answers.">Emerald
                     </option>
-                    <option value="gemini-2.5-flash" selected title="Balanced speed and capability. Default.">Lunarity
+                    <option value="gemini-3.1-flash-lite-preview" selected title="Balanced speed and capability. Default.">Lunarity
                     </option>
                     <option value="gemini-3-flash-preview"
                         title="Smarter, better for complex tasks. Cosmos compatible.">Crimson</option>
@@ -5881,22 +5945,34 @@
         turndownService.keep(['table', 'thead', 'tbody', 'tr', 'th', 'td']);
 
         function scrollToBottom() {
+            // Check both containers as scrolling might be at window level or element level
+            const scrollTargets = [
+                { el: messagesDiv, isWindow: false },
+                { el: window, isWindow: true }
+            ];
 
-            if (!messagesDiv) {
-                console.error("Error: The 'messagesDiv' element was not found.");
-                return;
-            }
+            scrollTargets.forEach(target => {
+                if (!target.el && !target.isWindow) return;
+                
+                const element = target.isWindow ? document.documentElement : target.el;
+                const scrollHeight = element.scrollHeight;
 
-            const lastMessage = messagesDiv.lastElementChild;
-
-
-            if (lastMessage) {
-
-                lastMessage.scrollIntoView({ behavior: "smooth", block: "end" });
-            } else {
-
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            }
+                // Use setTimeout to ensure all DOM updates (like images/SVGs) have finished layout
+                setTimeout(() => {
+                    target.el.scrollTo({
+                        top: scrollHeight,
+                        behavior: "smooth"
+                    });
+                    
+                    // Fallback for immediate jump
+                    setTimeout(() => {
+                        if (target.el.scrollTop + element.clientHeight < scrollHeight - 100) {
+                            if (target.isWindow) window.scrollTo(0, scrollHeight);
+                            else target.el.scrollTop = scrollHeight;
+                        }
+                    }, 500);
+                }, 50);
+            });
         }
         function escapeHtml(unsafe) {
             if (typeof unsafe !== 'string') return '';
@@ -6329,7 +6405,6 @@
             const deleteIcon = document.createElement('span');
             deleteIcon.className = 'edit-prompt-icon delete-msg-icon';
             deleteIcon.title = 'Delete Message';
-            deleteIcon.style.marginLeft = '8px';
             deleteIcon.innerHTML = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg>`;
 
             editWrapper.appendChild(editIcon);
@@ -9112,7 +9187,14 @@
         if (chatInput) { chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }); chatInput.addEventListener("input", adjustTextareaHeight); }
         if (modeSelector) modeSelector.addEventListener("change", handleModeChange);
         if (spectrumSearchBtn) { spectrumSearchBtn.addEventListener("click", () => { if (currentMode === 'spectrum' && !spectrumSearchBtn.disabled) { updateSpectrumSearchButtonState(!useSpectrumSearch); } }); }
-        if (modelSelect) { modelSelect.addEventListener("change", () => { updateModelSelectWidth(); updateModelSelectTheme(); enableDisableModelOptions(); }); }
+        if (modelSelect) { 
+            modelSelect.addEventListener("change", () => { 
+                updateModelSelectWidth(); 
+                updateModelSelectTheme(); 
+                enableDisableModelOptions(); 
+                localStorage.setItem('preferredModel', modelSelect.value);
+            }); 
+        }
         if (cancelEditBtn) cancelEditBtn.addEventListener("click", hideEditModal);
         if (saveEditBtn) { saveEditBtn.addEventListener("click", () => { if (currentEditingMsg && currentEditingMsgId) { const md = editMarkdownInput.value; let html = ""; try { html = marked.parse(md || ""); html = wrapTables(html); } catch (e) { html = "<p>Error parsing.</p>"; } const contentDiv = currentEditingMsg.querySelector('.message-content'); if (contentDiv) { contentDiv.innerHTML = html; processCodeBlocks(contentDiv); setTimeout(() => renderMath(contentDiv), 150); createAndAppendResearchButtons(currentEditingMsg, currentEditingMsgId, contentDiv.innerHTML); addOutputCopyButton(currentEditingMsg); } } hideEditModal(); }); }
         // REPLACE the old clearHistoryBtn block with this one
@@ -9200,7 +9282,23 @@
         }
 
         window.addEventListener("load", () => {
-            if (modelSelect) { updateModelSelectTheme(); updateModelSelectWidth(); }
+            // Short delay to ensure custom_select.js DOMContentLoaded logic has run
+            setTimeout(() => {
+                if (modelSelect) { 
+                    const savedModel = localStorage.getItem('preferredModel');
+                    if (savedModel) {
+                        const optionExists = Array.from(modelSelect.options).some(opt => opt.value === savedModel);
+                        if (optionExists) {
+                            modelSelect.value = savedModel;
+                            // Trigger change to update custom select UI and theme
+                            modelSelect.dispatchEvent(new Event('change'));
+                        }
+                    }
+                    updateModelSelectTheme(); 
+                    updateModelSelectWidth(); 
+                }
+            }, 100);
+
             handleModeChange();
             checkAuthStatus();
             initializeCodeEditor();

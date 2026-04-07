@@ -14,7 +14,7 @@ Stellar's intelligence and tool access scale based on the selected model level:
 | :--- | :--- | :--- | :--- |
 | **Obsidian** | Gemini 3.1 Pro Preview | Ultra-High Depth | Lab Sandbox, Full Forge, Repo Hosting, Absolute Control |
 | **Crimson** | Gemini 3.0 Flash Preview | High Speed / Logic | Lab Sandbox, Recursive Recon, Rapid Forge, Repo Hosting |
-| **Lunarity** | Gemini 2.5 Flash | Standard | Web Search, SVG Visualization, Slides |
+| **Lunarity** | Gemini 3.1 Flash Lite | Standard / Logic | Lab Sandbox, Web Search, SVG Visualization, Slides |
 | **Emerald** | Gemini 2.5 Flash Lite | Utility | Fast Chat, Basic Web Search |
 
 ---
