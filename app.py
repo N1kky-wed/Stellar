@@ -1932,7 +1932,8 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 public_url_found = True
                 update_history(status='running', url=public_url)
             else:
-                 _put_event({'type': 'error', 'content': 'Server verification failed. The app inside the container did not start correctly.'})
+                 error_prefix = f"Server responded with ERROR {status_code}" if status_code >= 500 else "Server verification failed"
+                 _put_event({'type': 'error', 'content': f'{error_prefix}. The app inside the container did not start correctly.'})
                  
                  # Retrieve app.log to show why it failed
                  try:
