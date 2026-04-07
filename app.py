@@ -1025,7 +1025,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
         return False
 
 
-def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None, chat_id=None):
+def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None, chat_id=None, disabled_tools=None):
     display_name = model_display_name or MODEL_NAMES.get(model_id)
 
     def record_tool_call(t_name, t_input, t_result):
@@ -1073,9 +1073,11 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
             if model_id not in elite_models:
                 tools_config = [t for t in tools_config if getattr(t, '__name__', '') != 'lab_execute']
-            
-            # Extract system instruction if present in the prompt
-            system_instruction = None
+
+            if disabled_tools:
+                tools_config = [t for t in tools_config if getattr(t, '__name__', '') not in disabled_tools]
+
+            # Extract system instruction if present in the prompt            system_instruction = None
             if "<!-- Internal Processing Guidelines -->" in current_effective_prompt:
                 parts = current_effective_prompt.split("<!-- End Internal Guidelines -->")
                 if len(parts) > 1:
@@ -1162,10 +1164,15 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             yield {'status': 'Controlling project environment...'}
                         elif func_name == "lab_execute":
                             yield {'status': 'Using Lab...'}
-                        elif func_name == "host_repo":
-                            yield {'status': 'Deploying repository...'}
-                        elif func_name == "repo_execute":
-                            yield {'status': 'Executing command in project...'}
+                        elif func_name == "repo_control":
+                            action = dict(fc.args).get('action') if fc.args else ''
+                            if action == 'deploy': yield {'status': 'Deploying repository environment...'}
+                            elif action == 'execute': yield {'status': 'Executing command in project...'}
+                            elif action == 'rename': yield {'status': 'Renaming deployment...'}
+                            elif action == 'restart': yield {'status': 'Restarting deployment...'}
+                            elif action == 'stop': yield {'status': 'Stopping deployment...'}
+                            elif action == 'snapshot': yield {'status': 'Snapshotting files...'}
+                            else: yield {'status': 'Managing repository...'}
                         else:
                             yield {'status': f'Using tool: {func_name}...'}
                             
@@ -1422,6 +1429,7 @@ def forge_start():
     data = request.get_json(silent=True) or {}
     user_prompt = data.get('prompt')
     pending_files = data.get('pending_files', [])
+    disabled_tools = data.get('disabled_tools', [])
     if not user_prompt:
         return jsonify({'error': 'Initial prompt is required.'}), 400
 
@@ -1448,7 +1456,7 @@ def forge_start():
             raise ValueError("Primary API key for Forge is not configured.")
 
         chat_id = session.get('current_chat_id')
-        generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id)
+        generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id, disabled_tools=disabled_tools)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
         raw_response = ""
@@ -1479,7 +1487,8 @@ def forge_start():
             'container_id': None,
             'process_id': process_id,
             'project_name': project_title,
-            'subdomain': subdomain
+            'subdomain': subdomain,
+            'disabled_tools': disabled_tools
         }
         session.modified = True
 
@@ -1535,6 +1544,14 @@ def forge_iterate():
     data = request.get_json(silent=True) or {}
     user_prompt = data.get('prompt')
     pending_files = data.get('pending_files', [])
+    
+    disabled_tools = data.get('disabled_tools')
+    if disabled_tools is None:
+        disabled_tools = session['forge_project'].get('disabled_tools', [])
+    else:
+        session['forge_project']['disabled_tools'] = disabled_tools
+        session.modified = True
+
     if not user_prompt:
         return jsonify({'error': 'Follow-up prompt is required.'}), 400
 
@@ -1570,7 +1587,7 @@ def forge_iterate():
             raise ValueError("Primary API key for Forge is not configured.")
 
         chat_id = session.get('current_chat_id')
-        generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id)
+        generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id, disabled_tools=disabled_tools)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
         raw_response = ""
@@ -1775,6 +1792,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 name=f"stellar-{app_type}-{run_id}",
                 remove=False,
                 detach=True,
+                init=True,
                 stdout=True,
                 stderr=True,
                 labels={
@@ -2196,6 +2214,7 @@ def register_query():
         pending_files = data.get('pending_files', [])
         chat_id = data.get('chat_id')
         hidden = data.get('hidden', False)
+        disabled_tools = data.get('disabled_tools', [])
 
         if not query or not model_id or not mode or not chat_id:
             return jsonify({'error': 'Missing required data: query, model_id, mode, chat_id'}), 400
@@ -2215,7 +2234,8 @@ def register_query():
             'pending_files': pending_files,
             'timestamp': time.time(),
             'chat_id': chat_id,
-            'hidden': hidden
+            'hidden': hidden,
+            'disabled_tools': disabled_tools
         }
         session.modified = True
 
@@ -2261,6 +2281,7 @@ def refine_stream():
     pending_files = query_data.get('pending_files', [])
     chat_id = query_data.get('chat_id')
     hidden = query_data.get('hidden', False)
+    disabled_tools = query_data.get('disabled_tools', [])
 
     if not user_query_from_frontend or not model_id or not chat_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
@@ -2338,7 +2359,8 @@ def refine_stream():
                     attempts=len(BACKUP_API_KEYS),
                     model_display_name=f"{display_name}",
                     username=username,
-                    chat_id=chat_id
+                    chat_id=chat_id,
+                    disabled_tools=disabled_tools
                 )
                 refined_query_result = ""
                 for item in generator_output:
@@ -2435,6 +2457,7 @@ def search_stream():
     mode = query_data.get('mode')
     pending_files = query_data.get('pending_files', [])
     chat_id = query_data.get('chat_id')
+    disabled_tools = query_data.get('disabled_tools', [])
 
     if not user_query or not model_id or not chat_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
@@ -2602,7 +2625,8 @@ def search_stream():
                     prompt=final_prompt, model_id=current_model, key=current_api_key,
                     attempts=len(BACKUP_API_KEYS),
                     model_display_name=f"{display_name} (Expansion)",
-                    chat_id=chat_id
+                    chat_id=chat_id,
+                    disabled_tools=disabled_tools
                 )
                 final_result = ""
                 for item in generator_output_expansion:
@@ -2727,6 +2751,7 @@ def cosmos_stream():
     mode = query_data.get('mode')
     pending_files = query_data.get('pending_files', [])
     chat_id = query_data.get('chat_id')
+    disabled_tools = query_data.get('disabled_tools', [])
 
     if not user_query or not model_id or not chat_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
@@ -2775,7 +2800,7 @@ def cosmos_stream():
                         generated_query = None
                         if instruction and not instruction.startswith(ERROR_CODE):
                             query_gen_prompt = instruction + f"\nBased on the instruction derived from the file analysis, create a specific Tavily search query (or up to 5 separate queries, comma-separated if multiple distinct areas are identified) for:\nOriginal User Query: {user_query}\nReturn *only ONE SMALL* the search query string(s)."
-                            query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id)
+                            query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id, disabled_tools=disabled_tools)
                             generated_query = ""
                             for item in query_gen:
                                 if 'result' in item:
@@ -3126,6 +3151,14 @@ def view_file(filename):
 @app.route('/default.min.css')
 def serve_highlight_css():
     return send_from_directory('.', 'default.min.css')
+
+@app.route('/custom_select.css')
+def serve_custom_select_css():
+    return send_from_directory('.', 'custom_select.css')
+
+@app.route('/custom_select.js')
+def serve_custom_select_js():
+    return send_from_directory('.', 'custom_select.js')
 
 @app.route('/highlight.min.js')
 def serve_highlight_js():
@@ -3606,6 +3639,7 @@ def run_code():
                 working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
                 ports=ports_to_publish, mem_limit='1024m',
                 name=f"stellar-sandbox-{run_id}", remove=False, detach=True,
+                init=True,
                 stdout=True, stderr=True,
                 labels={
                     "stellar_type": "run_code",
@@ -4259,12 +4293,3 @@ cleanup_stale_containers()
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5013))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
-
-
-
-
-
-
-
-
-
