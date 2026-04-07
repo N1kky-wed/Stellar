@@ -733,18 +733,20 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
                     if container.status != 'running':
                         return f"Command executed, but container stopped. Output:\n{output}"
                     
-                    # Verify port accessibility
-                    is_ready = False
+                    # Verify port accessibility and status
+                    status_code = 0
                     for _ in range(5):
                         time.sleep(2)
                         res = container.exec_run(f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{port}/")
                         if res.exit_code == 0:
-                            code = int(res.output.decode().strip())
-                            if 0 < code < 500:
-                                is_ready = True
+                            status_code = int(res.output.decode().strip())
+                            if 0 < status_code < 500:
                                 break
-                    if is_ready:
-                        output += f"\n\n✨ Server is READY and listening on 0.0.0.0:{port}!"
+                    
+                    if 0 < status_code < 500:
+                        output += f"\n\n✨ Server is READY (Status {status_code}) and listening on 0.0.0.0:{port}!"
+                    elif status_code >= 500:
+                        output += f"\n\n❌ Server responded with ERROR {status_code} on port {port}. Check your logs!"
                     else:
                         output += f"\n\n⚠️ Command run, but server is NOT responding on port {port}. Ensure it listens on 0.0.0.0."
 
@@ -856,19 +858,26 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
             public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
             
             # Re-run health check loop
-            is_ready = False
+            status_code = 0
             for _ in range(30):
                 time.sleep(1)
                 try:
                     res = container.exec_run(f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{port}/")
                     if res.exit_code == 0:
-                        code = int(res.output.decode().strip())
-                        if 0 < code < 500:
-                            is_ready = True
+                        status_code = int(res.output.decode().strip())
+                        if 0 < status_code < 500:
                             break
+                        elif status_code >= 500:
+                            break # Fail fast on server error
                 except: pass
             
-            ready_msg = "and server is READY!" if is_ready else "but server is not responding yet. Use action='execute' to start your app."
+            if 0 < status_code < 500:
+                ready_msg = f"and server is READY (Status {status_code})!"
+            elif status_code >= 500:
+                ready_msg = f"but server returned ERROR {status_code}. Check your logs!"
+            else:
+                ready_msg = "but server is not responding yet. Use repo_control action='execute' to start your app."
+                
             return f"Deployment '{project_title}' restarted with latest snapshotted edits {ready_msg} ID: `{process_id}`. Live URL: {public_url}"
 
         if action == "snapshot":
