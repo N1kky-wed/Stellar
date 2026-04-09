@@ -490,20 +490,30 @@ def get_conversation_history(chat_id):
         return []
 
 def get_tool_history(chat_id):
-    """Retrieve all tool calls for context injection without any limits."""
+    """Retrieve tool calls with smart truncation for large outputs."""
     if not chat_id: return ""
     try:
         db = get_db()
-        cursor = db.execute('SELECT tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? ORDER BY timestamp ASC', (chat_id,))
+        cursor = db.execute('SELECT id, tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? ORDER BY timestamp ASC', (chat_id,))
         rows = cursor.fetchall()
         if not rows: return ""
         
-        # Format into a clean context string
-        context = "\n**Internal Tool Execution History (Full Metadata):**\n"
+        context = "\n**Internal Tool Execution History:**\n"
         for r in rows:
-            # Strip base64 image data from the tool memory so it doesn't blow up context
-            clean_res = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', str(r['result']))
-            context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` | Input: `{r['input_params']}` | Result: `{clean_res}`\n"
+            res_str = str(r['result'])
+            lines = res_str.split('\n')
+            num_lines = len(lines)
+            num_chars = len(res_str)
+
+            # Smart Truncation Logic
+            if 'data:image' in res_str:
+                clean_res = "[Image Generated]"
+            elif num_chars > 600 or num_lines > 20:
+                clean_res = f"[Output truncated. ID: {r['id']}, Lines: {num_lines}, Length: {num_chars} chars. Use read_tool_output(output_id={r['id']}) to view.]"
+            else:
+                clean_res = res_str
+
+            context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` (ID: {r['id']}) | Input: `{r['input_params']}` | Result: `{clean_res}`\n"
         return context + "---\n"
     except Exception as e:
         logger.error(f"Error fetching tool history: {e}")
@@ -1195,6 +1205,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             yield {'status': 'Controlling project environment...'}
                         elif func_name == "lab_execute":
                             yield {'status': 'Using Lab...'}
+                        elif func_name == "read_tool_output":
+                            yield {'status': 'Reading tool history...'}
                         elif func_name == "repo_control":
                             action = dict(fc.args).get('action') if fc.args else ''
                             if action == 'deploy': yield {'status': 'Deploying repository environment...'}
@@ -1243,7 +1255,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         # Truncate base64 image data to prevent blowing up the LLM's input token limit
                         # during the immediate next function_response turn!
                         llm_safe_res = res
-                        if isinstance(llm_safe_res, str) and 'data:image' in llm_safe_res:
+                        if isinstance(llm_safe_res, str) and 'data:image' in llm_safe_res and func_name != 'render_svg':
                             llm_safe_res = "Image successfully generated and rendered to the user's UI. Do not attempt to output the image markdown yourself."
 
                         function_responses.append(
@@ -1263,9 +1275,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             accumulated_full_output = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', accumulated_full_output, flags=re.IGNORECASE)
 
             for tool in called_tools_results:
-                # Do not force-attach raw data from search tools, project history, Lab execution logs, or SVGs
-                # render_svg uses structured output, so the model is fully responsible for placing it.
-                if tool['name'] in['extensive_search', 'native_search', 'render_svg', 'lab_execute', 'host_repo', 'repo_execute']:
+                # Do not force-attach raw data from search tools, project history, or Lab execution logs
+                if tool['name'] in['extensive_search', 'native_search', 'lab_execute', 'host_repo', 'repo_execute']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and "Your Forge Deployment History" in tool['result']:
                     continue
@@ -3712,7 +3723,7 @@ def run_code():
                             with active_apps_lock:
                                 active_apps[process_id] = {"port": int(host_port), "container_id": container.id}
                             redis_client.hset(redis_key, mapping={"host_port": str(host_port), "status": "running"})
-                            public_url = f"https://stellarai.live/apps/{process_id}/"
+                            public_url = f"https://{process_id}.stellarai.live/"
                             yield f"data: {json.dumps({'type': 'port_info', 'url': public_url})}\n\n"
                             public_url_found = True
                             break

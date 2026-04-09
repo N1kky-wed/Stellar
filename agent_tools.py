@@ -1031,6 +1031,45 @@ def lab_execute(command: str, timeout: int = 60) -> str:
     except Exception as e:
         return f"Error executing command in Lab: {str(e)}"
 
+def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100) -> str:
+    """Reads a specific slice of a past tool's output from the database.
+    Use this when a tool's history says [Output truncated] to retrieve the full text without polluting your context window.
+    Args:
+        output_id: The ID of the tool execution to read.
+        start_line: The line number to start reading from (0-indexed). Default is 0.
+        max_lines: The maximum number of lines to return. Default is 100.
+    """
+    import sqlite3
+    try:
+        from app import DATABASE_NAME
+        conn = sqlite3.connect(DATABASE_NAME)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute('SELECT result FROM tool_calls WHERE id = ?', (output_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return f"Error: No tool output found with ID {output_id}."
+
+        res_str = str(row['result'])
+        lines = res_str.split('\n')
+        total_lines = len(lines)
+
+        if start_line >= total_lines:
+            return f"Error: start_line {start_line} is beyond the total lines ({total_lines})."
+
+        end_line = min(start_line + max_lines, total_lines)
+        sliced_lines = lines[start_line:end_line]
+
+        output = f"--- Tool Output ID: {output_id} (Lines {start_line} to {end_line-1} of {total_lines}) ---\n"
+        output += '\n'.join(sliced_lines)
+        if end_line < total_lines:
+            output += f"\n--- (Output truncated. {total_lines - end_line} lines remaining. Read from line {end_line} to see more) ---"
+        
+        return output
+    except Exception as e:
+        return f"Error reading tool output: {str(e)}"
+
 # Define the tools list for Gemini
 
 available_tools = [
@@ -1042,5 +1081,6 @@ available_tools = [
     regenerate_presentation_slide,
     forge_control,
     repo_control,
-    lab_execute
+    lab_execute,
+    read_tool_output
 ]
