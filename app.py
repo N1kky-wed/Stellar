@@ -121,10 +121,7 @@ def scheduled_user_report():
 
 
 naw = datetime.datetime.now()
-script_dir = Path(__file__).resolve().parent
-keys_env_path = script_dir / 'keys.env'
-if keys_env_path.is_file():
-    load_dotenv(dotenv_path=keys_env_path, override=True)
+# (Old load_dotenv block removed - handled below with logging)
 
 app = Flask(__name__)
 SANDBOX_DIR = 'sandbox_runs'
@@ -161,6 +158,23 @@ Session(app)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- AGGRESSIVE ENV LOADING ---
+script_dir = Path(__file__).resolve().parent
+keys_env_path = script_dir / 'keys.env'
+if keys_env_path.is_file():
+    logger.info(f"Found keys.env at {keys_env_path}. Loading with override=True.")
+    load_dotenv(dotenv_path=keys_env_path, override=True)
+else:
+    logger.error(f"CRITICAL: keys.env NOT FOUND at {keys_env_path}. Falling back to server env.")
+
+PRIMARY_API_KEY = os.getenv("PRIMARY_API_KEY")
+if PRIMARY_API_KEY:
+    masked = PRIMARY_API_KEY[:4] + "..." + PRIMARY_API_KEY[-4:]
+    logger.info(f"PRIMARY_API_KEY initialized: {masked}")
+else:
+    logger.error("CRITICAL: PRIMARY_API_KEY is EMPTY after loading attempt.")
+# ------------------------------
+
 MODEL_NAMES = {
     "gemini-2.5-flash-lite": "Emerald",
     "gemini-3.1-flash-lite-preview": "Lunarity",
@@ -175,8 +189,8 @@ adminpass=os.getenv("Admin")
 REFINE_API_KEY = os.getenv("RTP_API_KEY")
 SEARCH_API_KEY = os.getenv("SEARCH_API_KEY")
 RTP_API_KEY = os.getenv("RTP_API_KEY")
-COSMOS_API_KEY = os.getenv("PRIMARY_API_KEY")
-PRIMARY_API_KEY= os.getenv("PRIMARY_API_KEY")
+COSMOS_API_KEY = PRIMARY_API_KEY
+# (PRIMARY_API_KEY already assigned in aggressive loading block)
 
 BACKUP_API_KEYS = [
     os.getenv("BACKUP_API_KEY_1"),
@@ -453,6 +467,13 @@ def get_conversation_history(chat_id):
         history = []
         for row in rows:
             msg = dict(row)
+            
+            # CRITICAL: Prevent frontend crashes by truncating massive Base64 images if any remain in DB
+            if msg.get('message_content'):
+                # If content is huge and contains base64, replace the base64 part
+                if len(msg['message_content']) > 500000 and 'base64,' in msg['message_content']:
+                    msg['message_content'] = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED BY SERVER TO PREVENT CRASH]', msg['message_content'])
+
             # Add HTML URL for research outputs
             if msg.get('is_research_output') and msg.get('html_file'):
                  safe_filename = os.path.basename(msg['html_file'])
@@ -480,7 +501,9 @@ def get_tool_history(chat_id):
         # Format into a clean context string
         context = "\n**Internal Tool Execution History (Full Metadata):**\n"
         for r in rows:
-            context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` | Input: `{r['input_params']}` | Result: `{r['result']}`\n"
+            # Strip base64 image data from the tool memory so it doesn't blow up context
+            clean_res = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', str(r['result']))
+            context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` | Input: `{r['input_params']}` | Result: `{clean_res}`\n"
         return context + "---\n"
     except Exception as e:
         logger.error(f"Error fetching tool history: {e}")
@@ -593,7 +616,9 @@ def count_chat_tokens(chat_id=None):
         history_for_tokens = []
         for row in _fetch_as_dict(cursor):
             role = "user" if row['message_type'] == "user" else "model"
-            history_for_tokens.append(types.Content(role=role, parts=[types.Part(text=row['message_content'])]))
+            # Strip massive base64 images from token counter
+            clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', row['message_content'])
+            history_for_tokens.append(types.Content(role=role, parts=[types.Part(text=clean_content)]))
 
         if not history_for_tokens:
             return 0
@@ -1045,7 +1070,11 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     current_effective_prompt = prompt
     accumulated_full_output = ""
 
-    keys_to_try =[key] +  [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+    # Ensure PRIMARY_API_KEY is the absolute first priority, then check passed 'key', then backups.
+    # We use a list with dict.fromkeys() to maintain order and remove duplicates.
+    raw_keys = [PRIMARY_API_KEY, key] + [bk for bk in BACKUP_API_KEYS if bk]
+    keys_to_try = [k for k in dict.fromkeys(raw_keys) if k] 
+    
     current_key_index = 0
 
     for attempt in range(1, attempts + 1):
@@ -1209,16 +1238,22 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             # This prevents the "double output" issue where the system yielded it and then the model repeated it.
                         except Exception as e:
                             res = f"Error: {str(e)}"
-                            
+
                         # Create response part
+                        # Truncate base64 image data to prevent blowing up the LLM's input token limit
+                        # during the immediate next function_response turn!
+                        llm_safe_res = res
+                        if isinstance(llm_safe_res, str) and 'data:image' in llm_safe_res:
+                            llm_safe_res = "Image successfully generated and rendered to the user's UI. Do not attempt to output the image markdown yourself."
+
                         function_responses.append(
                             types.Part(function_response=types.FunctionResponse(
                                 name=fc.name,
                                 id=fc.id,
-                                response={'result': res}
+                                response={'result': llm_safe_res}
                             ))
                         )
-                    message_to_send = function_responses
+                        message_to_send = function_responses
 
             # Forcibly add tool results if the model forgot to include them or mangled them
             import re
@@ -1272,6 +1307,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 if is_output_cut_off(output_this_attempt.strip(), PRIMARY_API_KEY):
                     yield {'status': 'Output is cut off. Attempting to continue...', 'phase': 'continuation_attempt'}
                     
+                    # Prevent base64 blowup during continuation
+                    safe_accumulated = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', accumulated_full_output)
                     current_effective_prompt = (
                         f"{original_prompt_for_continuation}\n\n"
                         f"---CONTINUATION INSTRUCTION---\n"
@@ -1279,7 +1316,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         f"without re-stating any previous information or context. "
                         f"Provide a seamless continuation from the last generated word or phrase. "
                         f"Do not include the 'CONTINUATION INSTRUCTION' section in your response. "
-                        f"Here is what you had generated so far:\n---\n{accumulated_full_output}\n---"
+                        f"Here is what you had generated so far:\n---\n{safe_accumulated}\n---"
                     )
                     if attempt == attempts:
                         yield {'result': accumulated_full_output + f"\n\n{ERROR_CODE}: Output truncated due to MAX_TOKENS and could not be fully continued after retries."}
@@ -2328,7 +2365,9 @@ def refine_stream():
                         continue
                     role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
                     content = msg.get('message_content', '')
-                    conv_hist_list.append(f"{role}: {content}")
+                    # Strip base64 before passing to LLM context
+                    clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
+                    conv_hist_list.append(f"{role}: {clean_content}")
                     if msg.get('file_analysis_context'):
                         conv_hist_list.append(f"Stellar: {msg.get('file_analysis_context')} ")
             
@@ -2372,6 +2411,9 @@ def refine_stream():
                     elif 'result' in item:
                         temp_result = item['result']
                         if isinstance(temp_result, str) and temp_result.startswith(ERROR_CODE):
+                            # Extract and send the EXACT Python error to the UI
+                            exact_error = temp_result.replace(ERROR_CODE, "").strip(": ")
+                            yield f"data: {json.dumps({'status': f'Prompt Error: {exact_error}', 'error': True})}\n\n"
                             refined_query_result = None
                             break
                         else:
@@ -2498,7 +2540,9 @@ def search_stream():
                     if str(msg.get('id')) == str(user_message_id): continue
                     role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
                     content = msg.get('message_content', '')
-                    conv_hist_list.append(f"{role}: {content}")
+                    # Strip base64 before passing to LLM context
+                    clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
+                    conv_hist_list.append(f"{role}: {clean_content}")
             conv_hist_str = "\n".join(conv_hist_list) if conv_hist_list else "No previous conversation."
             history_context = f"**Conversation History:**\n{conv_hist_str}\n\n---\n"
 

@@ -956,15 +956,24 @@
             color: var(--secondary-text-color);
         }
 
-        .formatted-analysis-context ul {
-            list-style: disc;
-            margin-left: 20px;
+        .formatted-analysis-context ul,
+        .formatted-analysis-context ol {
+            margin-left: 30px; /* Increased slightly to safely fit double-digit numbers */
             margin-top: 5px;
             margin-bottom: 10px;
         }
 
+        .formatted-analysis-context ul {
+            list-style: disc;
+        }
+
+        .formatted-analysis-context ol {
+            list-style: decimal;
+        }
+
         .formatted-analysis-context li {
             margin-bottom: 8px;
+            padding-left: 5px;
         }
 
         .formatted-analysis-context pre {
@@ -5821,7 +5830,7 @@
                     }
 
                     if (data.error || (data.type === 'error' && data.content)) {
-                        const errorMessage = data.error || data.content;
+                        const errorMessage = (typeof data.error === 'string' ? data.error : (data.content || data.status || "Unknown error"));
                         addLogToForge(`ERROR: ${errorMessage}`, 'error');
                         sse.close();
                         alert(`An error occurred: ${errorMessage}`);
@@ -7853,7 +7862,7 @@
                             }
 
                             if (data.error) {
-                                const errMsg = data.error || data.status || "Unknown error";
+                                const errMsg = (typeof data.error === 'string' ? data.error : data.status) || "Unknown error";
                                 cleanupStream(true, errMsg + (data.details ? ` Details: ${data.details}` : ''), placeholderId);
                                 streamEndedCleanly = true;
                                 return;

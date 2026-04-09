@@ -56,25 +56,68 @@ def generate_image(model: str, prompt: str, quality: str = "standard", aspect_ra
     Args:
         model: 'gemini-3.1-flash-image-preview' or 'gemini-3-pro-image-preview'
         prompt: detailed descriptive prompt for the image
-        quality: 'standard' or 'hd'
-        aspect_ratio: '1:1', '16:9', '4:3', etc.
+        quality: Supported tiers are "512", "1K", "2K", "4K". (Default: "1K")
+        aspect_ratio: Supported ratios: '1:1', '3:4', '4:3', '9:16', '16:9'.
     """
     from app import PRIMARY_API_KEY
     client = genai.Client(api_key=PRIMARY_API_KEY)
+    
+    # Ensure aspect_ratio is one of the strictly supported API values
+    valid_ratios = ["1:1", "3:4", "4:3", "9:16", "16:9"]
+    if aspect_ratio not in valid_ratios:
+        aspect_ratio = "1:1"
+        
+    # Map the requested quality to the deterministic image_size
+    # Supported tiers: "512", "1K", "2K", "4K"
+    quality_lower = quality.lower()
+    if "4k" in quality_lower or "high" in quality_lower or "hd" in quality_lower:
+        img_size = "4K"
+    elif "2k" in quality_lower:
+        img_size = "2K"
+    elif "1k" in quality_lower or "standard" in quality_lower:
+        img_size = "1K"
+    elif "512" in quality_lower:
+        img_size = "512"
+    else:
+        img_size = None # Defaults to API standard
+    
+    image_config_args = {"aspect_ratio": aspect_ratio}
+    if img_size:
+        image_config_args["image_size"] = img_size
+
     try:
         response = client.models.generate_content(
             model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
-                # Specific config for Imagen if needed, else standard
+                image_config=types.ImageConfig(**image_config_args),
+                response_modalities=["IMAGE", "TEXT"]
             )
         )
         # Look for the image in the response parts
         for part in response.candidates[0].content.parts:
             if hasattr(part, 'inline_data') and part.inline_data:
                 img_data = part.inline_data.data
-                img_b64 = base64.b64encode(img_data).decode('utf-8')
-                return f"![Generated Image](data:image/png;base64,{img_b64})"
+                
+                # Save to disk instead of returning massive Base64
+                output_dir = "outputs"
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+                
+                # Determine extension based on mime_type
+                mime_type = getattr(part.inline_data, 'mime_type', 'image/png')
+                ext = "png"
+                if "jpeg" in mime_type: ext = "jpg"
+                elif "webp" in mime_type: ext = "webp"
+                
+                filename = f"gen_{uuid.uuid4().hex}.{ext}"
+                file_path = os.path.join(output_dir, filename)
+                
+                with open(file_path, "wb") as f:
+                    f.write(img_data)
+                
+                # Return a Markdown link to the /view/ endpoint
+                return f"![Generated Image](/view/{filename})"
         
         return "No image data found in response."
     except Exception as e:
