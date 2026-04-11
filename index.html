@@ -5183,9 +5183,7 @@
         const profileCloseBtn = document.getElementById("profileCloseBtn");
         const profileUsernameDisplay = document.getElementById("profileUsernameDisplay");
         const changePasswordForm = document.getElementById("changePasswordForm");
-        const currentPasswordInput = document.getElementById("currentPassword");
-        const newPasswordInput = document.getElementById("newPassword");
-        const confirmNewPasswordInput = document.getElementById("confirmNewPassword");
+        const newDisplayNameInput = document.getElementById("newDisplayName");
         const passwordChangeMessage = document.getElementById("passwordChangeMessage");
         const logoutButtonProfile = document.getElementById("logoutButtonProfile");
         const sidebarUsername = document.getElementById("sidebarUsername");
@@ -8939,7 +8937,7 @@
 
         async function handleChangePassword(event) {
             event.preventDefault();
-            const newDisplayName = document.getElementById('newDisplayName').value.trim();
+            const newDisplayName = newDisplayNameInput.value.trim();
             displayModalMessage(passwordChangeMessage, '', false);
 
             if (!newDisplayName) {
@@ -8956,7 +8954,7 @@
                 const data = await response.json();
                 if (data.success) {
                     displayModalMessage(passwordChangeMessage, 'Display name changed successfully!', false);
-                    document.getElementById('newDisplayName').value = '';
+                    newDisplayNameInput.value = '';
                     checkAuthStatus(); // Refresh UI to show new name
                 } else {
                     displayModalMessage(passwordChangeMessage, data.message || 'Failed to change name.', true);
@@ -9055,9 +9053,7 @@
 
         function showProfileModal() {
             profileModal.style.display = 'flex';
-            currentPasswordInput.value = '';
-            newPasswordInput.value = '';
-            confirmNewPasswordInput.value = '';
+            if (newDisplayNameInput) newDisplayNameInput.value = '';
             displayModalMessage(passwordChangeMessage, '', false);
         }
 
