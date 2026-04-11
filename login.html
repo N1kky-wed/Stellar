@@ -370,7 +370,12 @@
         }
         animate3D();
 
-        document.getElementById('googleAuthBtn').onclick = async () => {
+        document.getElementById('googleAuthBtn').onclick = async function() {
+            const btn = this;
+            const originalContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<div class="loader-ring" style="width: 20px; height: 20px; margin-bottom: 0; margin-right: 10px; border-width: 2px; border-color: rgba(255,255,255,0.2); border-top-color: #fff;"></div> Authenticating...';
+
             const overlay = document.getElementById('loadingOverlay');
             const loaderText = document.getElementById('loaderText');
             const msg = document.getElementById('auth-message');
@@ -414,12 +419,16 @@
                         }
                     }, 600);
                 } else {
+                    btn.disabled = false;
+                    btn.innerHTML = originalContent;
                     overlay.classList.remove('active');
                     msg.className = 'error-text';
                     msg.innerText = data.message || "AUTHENTICATION_FAILED";
                 }
             } catch (error) {
                 console.error(error);
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
                 overlay.classList.remove('active');
                 msg.className = 'error-text';
                 msg.innerText = error.message || "GATEWAY_ERROR";
