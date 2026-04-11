@@ -1388,7 +1388,7 @@
         .chat-item:hover {
             background: rgba(255, 255, 255, 0.08);
             border-color: rgba(255, 255, 255, 0.15);
-            transform: translateX(2px);
+            transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
 
         .chat-item.active {
@@ -4272,6 +4272,86 @@
         .tool-spinner {
             animation: tool-spin 1.2s linear infinite;
         }
+    
+        #sidebarToggleBtn, #adminWaitlistBtn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: var(--secondary-text-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 8px;
+            height: 38px;
+            width: 38px;
+        }
+
+        #sidebarToggleBtn:hover, #adminWaitlistBtn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--model-color-start);
+            color: var(--primary-text-color);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .delete-chat-btn {
+            background: rgba(255, 42, 77, 0.05) !important;
+            border: 1px solid transparent !important;
+            border-radius: 6px;
+            padding: 6px !important;
+            opacity: 0.6;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .delete-chat-btn:hover {
+            color: #ff2a4d !important;
+            background: rgba(255, 42, 77, 0.15) !important;
+            border-color: rgba(255, 42, 77, 0.3) !important;
+            opacity: 1;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(255, 42, 77, 0.2) !important;
+        }
+
+        #logoutButton {
+            width: calc(100% - 30px);
+            margin: 15px auto;
+            padding: 12px;
+            background: rgba(255, 42, 77, 0.1);
+            color: #ff2a4d;
+            border: 1px solid rgba(255, 42, 77, 0.2);
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        #logoutButton:hover {
+            background: rgba(255, 42, 77, 0.2);
+            border-color: #ff2a4d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 42, 77, 0.3);
+        }
+        
+        #chatList {
+            overflow-x: hidden;
+            padding: 10px;
+        }
+        
+        .chat-item {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
     </style>
     <link rel="stylesheet" href="/custom_select.css">
     <script src="/custom_select.js"></script>
@@ -4566,7 +4646,87 @@
                         .modal-content::-webkit-scrollbar-thumb:hover {
                             background: rgba(255, 255, 255, 0.3);
                         }
-                    </style>
+                    
+        #sidebarToggleBtn, #adminWaitlistBtn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: var(--secondary-text-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 8px;
+            height: 38px;
+            width: 38px;
+        }
+
+        #sidebarToggleBtn:hover, #adminWaitlistBtn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--model-color-start);
+            color: var(--primary-text-color);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .delete-chat-btn {
+            background: rgba(255, 42, 77, 0.05) !important;
+            border: 1px solid transparent !important;
+            border-radius: 6px;
+            padding: 6px !important;
+            opacity: 0.6;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .delete-chat-btn:hover {
+            color: #ff2a4d !important;
+            background: rgba(255, 42, 77, 0.15) !important;
+            border-color: rgba(255, 42, 77, 0.3) !important;
+            opacity: 1;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(255, 42, 77, 0.2) !important;
+        }
+
+        #logoutButton {
+            width: calc(100% - 30px);
+            margin: 15px auto;
+            padding: 12px;
+            background: rgba(255, 42, 77, 0.1);
+            color: #ff2a4d;
+            border: 1px solid rgba(255, 42, 77, 0.2);
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        #logoutButton:hover {
+            background: rgba(255, 42, 77, 0.2);
+            border-color: #ff2a4d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 42, 77, 0.3);
+        }
+        
+        #chatList {
+            overflow-x: hidden;
+            padding: 10px;
+        }
+        
+        .chat-item {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+    </style>
                     <p style="font-size: 0.95em; color: var(--primary-text-color); margin-bottom: 8px; flex-shrink: 0;">
                         Describe the app you want to build or modify.
                     </p>
@@ -6727,7 +6887,87 @@
 
 
 
-        function downloadHtml(contentToDownload, currentWidth = 900) { if (!contentToDownload) { setStatus("No content.", true); setTimeout(() => setStatus(currentStatusText), 2000); return; } setStatus("Preparing download..."); const styles = ` body { font-family: 'Poppins', sans-serif; line-height: 1.7; color: #333; background-color: #f0f2f5; margin: 0; padding: 20px; } .main-content-wrapper { background-color: #fdfdff; border: 1px solid #eee; padding: 30px; margin: 0 auto; max-width: ${currentWidth}px; } h1, h2, h3, h4, h5, h6 { color: #302b63; margin-top: 1.5em; margin-bottom: 0.5em; } h1 { font-size: 2em; border-bottom: 1px solid #ddd; padding-bottom: 0.3em;} h2 { font-size: 1.6em; } h3 { font-size: 1.3em; } p { margin: 1em 0; } a { color: #7b61ff; text-decoration: none; } a:hover { text-decoration: underline; } pre { background-color: #f0f0f0; padding: 15px; border-radius: 4px; overflow-x: auto; border: 1px solid #ddd; color: #333; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; line-height: 1.6; } code { font-family: monospace; background-color: #eee; padding: 0.2em 0.4em; border-radius: 3px; } pre > code { background-color: transparent; padding: 0; border: none; } .table-wrapper { overflow-x: auto; max-width: 100%; margin: 1em 0; border: 1px solid #ccc; border-radius: 4px; } table { border-collapse: collapse; width: 100%; margin: 0; border: none; } th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; word-break: break-word; border-width: 0 0 1px 0; } tr td:first-child, tr th:first-child { border-left: none; } tr td:last-child, tr th:last-child { border-right: none; } tr:last-child td { border-bottom: none; } th { background-color: #f2f2f2; font-weight: 600; } ul, ol { margin-left: 2em; margin-bottom: 1em; } blockquote { border-left: 4px solid #ccc; padding-left: 1em; margin-left: 0; color: #666; } .katex { font-size: 1.1em; } .katex-display { display: block; text-align: center; margin: 1em 0; } .katex-display > .katex { display: inline-block; text-align: initial; } .dl-header, .dl-footer { padding: 10px 30px; max-width: ${currentWidth}px; margin: 20px auto; font-size: 0.9em; color: #555; text-align: center; } .dl-header { border-bottom: 1px dashed #ccc; } .dl-footer { border-top: 1px dashed #ccc; margin-top: 30px; } `; const filenameBase = (lastRefinedQuery || "stellar_research").substring(0, 50).replace(/[^a-z0-9_\-\.]/gi, '_').toLowerCase(); const html = `<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <title>Stellar Research: ${filenameBase}</title> <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" crossorigin="anonymous"> <style>${styles}</style> </head> <body> <div class="dl-header"> <h1>Stellar Research Paper</h1> <p>Generated: ${new Date().toLocaleString()}</p> ${lastRefinedQuery ? `<p>Query: "${escapeHtml(lastRefinedQuery)}"</p>` : ''} </div> <div class="main-content-wrapper"> ${contentToDownload} </div> <div class="dl-footer"> <p>Stellar AI.</p> </div> </body> </html>`; try { const blob = new Blob([html], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${filenameBase}.html`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setStatus(currentStatusText); } catch (e) { setStatus("Download failed.", true); appendStellarMessage("DL err.", Date.now() + '_dl_err'); setTimeout(() => setStatus(currentStatusText), 3000); } }
+        function downloadHtml(contentToDownload, currentWidth = 900) { if (!contentToDownload) { setStatus("No content.", true); setTimeout(() => setStatus(currentStatusText), 2000); return; } setStatus("Preparing download..."); const styles = ` body { font-family: 'Poppins', sans-serif; line-height: 1.7; color: #333; background-color: #f0f2f5; margin: 0; padding: 20px; } .main-content-wrapper { background-color: #fdfdff; border: 1px solid #eee; padding: 30px; margin: 0 auto; max-width: ${currentWidth}px; } h1, h2, h3, h4, h5, h6 { color: #302b63; margin-top: 1.5em; margin-bottom: 0.5em; } h1 { font-size: 2em; border-bottom: 1px solid #ddd; padding-bottom: 0.3em;} h2 { font-size: 1.6em; } h3 { font-size: 1.3em; } p { margin: 1em 0; } a { color: #7b61ff; text-decoration: none; } a:hover { text-decoration: underline; } pre { background-color: #f0f0f0; padding: 15px; border-radius: 4px; overflow-x: auto; border: 1px solid #ddd; color: #333; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; line-height: 1.6; } code { font-family: monospace; background-color: #eee; padding: 0.2em 0.4em; border-radius: 3px; } pre > code { background-color: transparent; padding: 0; border: none; } .table-wrapper { overflow-x: auto; max-width: 100%; margin: 1em 0; border: 1px solid #ccc; border-radius: 4px; } table { border-collapse: collapse; width: 100%; margin: 0; border: none; } th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; word-break: break-word; border-width: 0 0 1px 0; } tr td:first-child, tr th:first-child { border-left: none; } tr td:last-child, tr th:last-child { border-right: none; } tr:last-child td { border-bottom: none; } th { background-color: #f2f2f2; font-weight: 600; } ul, ol { margin-left: 2em; margin-bottom: 1em; } blockquote { border-left: 4px solid #ccc; padding-left: 1em; margin-left: 0; color: #666; } .katex { font-size: 1.1em; } .katex-display { display: block; text-align: center; margin: 1em 0; } .katex-display > .katex { display: inline-block; text-align: initial; } .dl-header, .dl-footer { padding: 10px 30px; max-width: ${currentWidth}px; margin: 20px auto; font-size: 0.9em; color: #555; text-align: center; } .dl-header { border-bottom: 1px dashed #ccc; } .dl-footer { border-top: 1px dashed #ccc; margin-top: 30px; } `; const filenameBase = (lastRefinedQuery || "stellar_research").substring(0, 50).replace(/[^a-z0-9_\-\.]/gi, '_').toLowerCase(); const html = `<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <title>Stellar Research: ${filenameBase}</title> <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" crossorigin="anonymous"> <style>${styles}
+        #sidebarToggleBtn, #adminWaitlistBtn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: var(--secondary-text-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 8px;
+            height: 38px;
+            width: 38px;
+        }
+
+        #sidebarToggleBtn:hover, #adminWaitlistBtn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--model-color-start);
+            color: var(--primary-text-color);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .delete-chat-btn {
+            background: rgba(255, 42, 77, 0.05) !important;
+            border: 1px solid transparent !important;
+            border-radius: 6px;
+            padding: 6px !important;
+            opacity: 0.6;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .delete-chat-btn:hover {
+            color: #ff2a4d !important;
+            background: rgba(255, 42, 77, 0.15) !important;
+            border-color: rgba(255, 42, 77, 0.3) !important;
+            opacity: 1;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(255, 42, 77, 0.2) !important;
+        }
+
+        #logoutButton {
+            width: calc(100% - 30px);
+            margin: 15px auto;
+            padding: 12px;
+            background: rgba(255, 42, 77, 0.1);
+            color: #ff2a4d;
+            border: 1px solid rgba(255, 42, 77, 0.2);
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        #logoutButton:hover {
+            background: rgba(255, 42, 77, 0.2);
+            border-color: #ff2a4d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 42, 77, 0.3);
+        }
+        
+        #chatList {
+            overflow-x: hidden;
+            padding: 10px;
+        }
+        
+        .chat-item {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+    </style> </head> <body> <div class="dl-header"> <h1>Stellar Research Paper</h1> <p>Generated: ${new Date().toLocaleString()}</p> ${lastRefinedQuery ? `<p>Query: "${escapeHtml(lastRefinedQuery)}"</p>` : ''} </div> <div class="main-content-wrapper"> ${contentToDownload} </div> <div class="dl-footer"> <p>Stellar AI.</p> </div> </body> </html>`; try { const blob = new Blob([html], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${filenameBase}.html`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setStatus(currentStatusText); } catch (e) { setStatus("Download failed.", true); appendStellarMessage("DL err.", Date.now() + '_dl_err'); setTimeout(() => setStatus(currentStatusText), 3000); } }
 
 
         function handleFileUpload(filesOrEvent) {
@@ -9492,7 +9732,87 @@
             if (language === 'html') {
                 workspacePanel.classList.add('html-mode-active');
                 if (codeLabEditor.getOption("mode") !== "htmlmixed") {
-                    codeLabEditor.setValue('<!DOCTYPE html>\n<html>\n<head>\n    <title>My Page</title>\n    <style>\n        body { font-family: sans-serif; color: #333; }\n    </style>\n</head>\n<body>\n    <h1>Hello, Stellar!</h1>\n    <p>Start coding to see your changes live.</p>\n</body>\n</html>');
+                    codeLabEditor.setValue('<!DOCTYPE html>\n<html>\n<head>\n    <title>My Page</title>\n    <style>\n        body { font-family: sans-serif; color: #333; }\n    
+        #sidebarToggleBtn, #adminWaitlistBtn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: var(--secondary-text-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 8px;
+            height: 38px;
+            width: 38px;
+        }
+
+        #sidebarToggleBtn:hover, #adminWaitlistBtn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--model-color-start);
+            color: var(--primary-text-color);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .delete-chat-btn {
+            background: rgba(255, 42, 77, 0.05) !important;
+            border: 1px solid transparent !important;
+            border-radius: 6px;
+            padding: 6px !important;
+            opacity: 0.6;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .delete-chat-btn:hover {
+            color: #ff2a4d !important;
+            background: rgba(255, 42, 77, 0.15) !important;
+            border-color: rgba(255, 42, 77, 0.3) !important;
+            opacity: 1;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(255, 42, 77, 0.2) !important;
+        }
+
+        #logoutButton {
+            width: calc(100% - 30px);
+            margin: 15px auto;
+            padding: 12px;
+            background: rgba(255, 42, 77, 0.1);
+            color: #ff2a4d;
+            border: 1px solid rgba(255, 42, 77, 0.2);
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        #logoutButton:hover {
+            background: rgba(255, 42, 77, 0.2);
+            border-color: #ff2a4d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 42, 77, 0.3);
+        }
+        
+        #chatList {
+            overflow-x: hidden;
+            padding: 10px;
+        }
+        
+        .chat-item {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+    </style>\n</head>\n<body>\n    <h1>Hello, Stellar!</h1>\n    <p>Start coding to see your changes live.</p>\n</body>\n</html>');
                     codeLabEditor.setOption("mode", "htmlmixed");
                 }
                 renderLivePreview();
