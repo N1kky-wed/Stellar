@@ -4402,7 +4402,7 @@
                 <button id="closeAdminWaitlistBtn" style="background: none; border: none; color: #666; font-size: 2rem; cursor: pointer; transition: color 0.2s;">&times;</button>
             </div>
             <div id="waitlistContent" style="flex-grow: 1; overflow-y: auto; padding-right: 10px;">
-                <table style="width: 100%; border-collapse: collapse; color: #ccc; font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;">
+                <table style="width: 100%; border-collapse: collapse; color: #ccc; font-family: 'Poppins', sans-serif; font-size: 0.9rem;">
                     <thead>
                         <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05);">
                             <th style="padding: 12px; color: #4285F4;">ID</th>
@@ -8559,9 +8559,9 @@
                         
                         let actionsHtml = '<div style="display: flex; justify-content: flex-end; gap: 8px;">';
                         if (!user.is_approved) {
-                             actionsHtml += `<button onclick="approveUser(${user.id}, '${user.username}')" style="background: rgba(0, 240, 144, 0.1); border: 1px solid rgba(0, 240, 144, 0.3); color: #00F090; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-family: 'JetBrains Mono'; font-size: 0.7rem; margin-right: 0;">Approve User</button>`;
+                             actionsHtml += `<button onclick="approveUser(${user.id}, '${user.username}')" style="background: rgba(0, 240, 144, 0.1); border: 1px solid rgba(0, 240, 144, 0.2); color: #00F090; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: 'Poppins', sans-serif; font-size: 0.75rem; font-weight: 600; transition: all 0.2s; margin-right: 0;">Approve User</button>`;
                         }
-                        actionsHtml += `<button onclick="impersonateUser(${user.id})" style="background: rgba(66, 133, 244, 0.1); border: 1px solid rgba(66, 133, 244, 0.3); color: #4285F4; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-family: 'JetBrains Mono'; font-size: 0.7rem;">Impersonate</button>`;
+                        actionsHtml += `<button onclick="impersonateUser(${user.id})" style="background: rgba(66, 133, 244, 0.1); border: 1px solid rgba(66, 133, 244, 0.2); color: #4285F4; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: 'Poppins', sans-serif; font-size: 0.75rem; font-weight: 600; transition: all 0.2s;">Impersonate</button>`;
                         actionsHtml += '</div>';
 
                         row.innerHTML = `
