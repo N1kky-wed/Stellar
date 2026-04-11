@@ -1514,112 +1514,132 @@
             display: none;
         }
 
-        .profile-modal-content {
-            background: linear-gradient(135deg, rgba(48, 43, 99, 0.8), rgba(36, 36, 62, 0.9));
-            border: 1px solid var(--model-color-border);
-            border-radius: 16px;
-            backdrop-filter: blur(20px);
-            padding: 30px;
-            width: 90%;
-            max-width: 500px;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
-            animation: modalIn 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+                .profile-modal-content {
+            background: rgba(10, 10, 15, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(25px);
+            padding: 25px;
+            width: 95%;
+            max-width: 400px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6);
+            animation: modalIn 0.3s ease-out;
             overflow-y: auto;
             max-height: 90vh;
             position: relative;
         }
 
         .profile-modal-content h2 {
-            font-size: 1.8rem;
-            margin-bottom: 25px;
-            text-align: center;
-            background: linear-gradient(45deg, var(--model-color-start), var(--model-color-end));
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            text-align: left;
+            background: linear-gradient(135deg, #fff, #4285F4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            letter-spacing: 1px;
         }
 
         .profile-close-btn {
             position: absolute;
-            top: 15px;
-            right: 15px;
+            top: 20px;
+            right: 20px;
             background: none;
             border: none;
-            color: var(--secondary-text-color);
-            font-size: 1.5rem;
+            color: #666;
             cursor: pointer;
-            transition: color 0.2s ease;
+            transition: all 0.2s ease;
         }
 
         .profile-close-btn:hover {
-            color: var(--primary-text-color);
+            color: #fff;
+            transform: rotate(90deg);
         }
 
         .profile-close-btn svg {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
         }
 
         .profile-info {
-            font-size: 1.1rem;
-            color: var(--primary-text-color);
-            text-align: center;
-            margin-bottom: 25px;
-            padding: 10px;
-            background: rgba(0, 0, 0, 0.15);
-            border-radius: 8px;
+            font-size: 0.95rem;
+            color: #888;
+            text-align: left;
+            margin-bottom: 20px;
+            padding: 0;
+            background: none;
         }
 
         .profile-info strong {
-            color: var(--model-color-end);
+            color: #fff;
+            margin-left: 5px;
         }
 
         .password-change-section {
-            margin-top: 25px;
-            padding-top: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 0;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .password-change-section h3 {
-            font-size: 1.4rem;
-            margin-bottom: 20px;
-            text-align: center;
-            color: var(--link-color);
+            font-size: 0.8rem;
+            margin-bottom: 12px;
+            text-align: left;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
         .password-change-form {
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 10px;
         }
 
         .password-change-form input {
-            padding: 12px 15px;
-            border: 1px solid var(--auth-input-border);
-            border-radius: 6px;
-            background: var(--auth-input-bg);
-            color: var(--primary-text-color);
-            font-size: 1rem;
+            padding: 10px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            color: #fff;
+            font-size: 0.9rem;
             outline: none;
-            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            transition: all 0.2s;
         }
 
         .password-change-form input:focus {
-            border-color: var(--model-color-start);
-            box-shadow: 0 0 8px rgba(123, 97, 255, 0.3);
+            border-color: #4285F4;
+            background: rgba(255, 255, 255, 0.05);
         }
 
-        .password-change-form button {
-            width: 100%;
-            padding: 12px;
-            background: linear-gradient(45deg, var(--nebula-confirm-start), var(--nebula-confirm-end));
+        #changePasswordBtn {
+            padding: 10px;
+            border-radius: 10px;
+            background: #4285F4;
             color: #fff;
             border: none;
-            border-radius: 8px;
-            font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0, 194, 146, 0.3);
-            transition: all 0.3s ease;
+            transition: all 0.2s;
+            margin-top: 5px;
+        }
+
+        #changePasswordBtn:hover {
+            background: #3367d6;
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(66, 133, 244, 0.3);
+        }
+
+        #logoutButtonProfile {
+            width: 100%;
+            padding: 10px;
+            margin-top: 15px;
+            border-radius: 10px;
+            background: rgba(255, 42, 77, 0.1);
+            color: #ff2a4d;
+            border: 1px solid rgba(255, 42, 77, 0.2);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
         }
 
         .password-change-form button:hover {
@@ -1633,26 +1653,7 @@
             text-align: center;
         }
 
-        #logoutButtonProfile {
-            width: 100%;
-            padding: 12px;
-            background: linear-gradient(45deg, #ff8e8e, #ff6b6b);
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(255, 107, 107, 0.3);
-            transition: all 0.3s ease;
-            margin-top: 25px;
-        }
-
-        #logoutButtonProfile:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 15px rgba(255, 107, 107, 0.4);
-            filter: brightness(1.1);
-        }
+        
 
         #tokenCountBar {
             position: fixed;
@@ -4450,12 +4451,12 @@
 
     <div id="profileModal" style="display:none;">
         <div class="profile-modal-content">
-            <h2>Your Profile</h2>
             <button class="profile-close-btn" id="profileCloseBtn">
-                <svg width="20" height="20">
+                <svg width="18" height="18">
                     <use xlink:href="#icon-close"></use>
                 </svg>
             </button>
+            <h2>Your Profile</h2>
             <div class="profile-info">
                 Logged in as: <strong id="profileUsernameDisplay"></strong>
             </div>
@@ -4469,8 +4470,8 @@
                 </form>
             </div>
 
-            <div class="agent-settings-section" style="text-align: center; margin-top: 15px;">
-                <button id="openAgentSettingsBtn" type="button" style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(123, 97, 255, 0.1); color: #7b61ff; border: 1px solid rgba(123, 97, 255, 0.2); font-weight: 500; cursor: pointer; transition: all 0.2s;">Agent Tool Settings</button>
+            <div class="agent-settings-section" style="margin-top: 10px;">
+                <button id="openAgentSettingsBtn" type="button" style="width: 100%; padding: 10px; border-radius: 10px; background: rgba(123, 97, 255, 0.1); color: #7b61ff; border: 1px solid rgba(123, 97, 255, 0.2); font-weight: 600; cursor: pointer; transition: all 0.2s;">Agent Tool Settings</button>
             </div>
 
             <button id="logoutButtonProfile">Logout</button>
