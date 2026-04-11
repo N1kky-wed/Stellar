@@ -1176,7 +1176,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             if disabled_tools:
                 tools_config = [t for t in tools_config if getattr(t, '__name__', '') not in disabled_tools]
 
-            # Extract system instruction if present in the prompt            system_instruction = None
+            # Extract system instruction if present in the prompt
+            system_instruction = None
             if "<!-- Internal Processing Guidelines -->" in current_effective_prompt:
                 parts = current_effective_prompt.split("<!-- End Internal Guidelines -->")
                 if len(parts) > 1:
