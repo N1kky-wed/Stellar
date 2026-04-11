@@ -111,10 +111,12 @@ native_search(prompt): Uses Google Search via Gemini 2.5 Flash Lite. Use for qui
 extensive_search(query): Deep web research via Tavily. Use for comprehensive reports, news by setting topic to news, or multi-domain searches.
 analyze_youtube_video(query, action, video_url, start_time, end_time, fps, max_results): Analyzes or searches YouTube video content with temporal precision.
      AVAILABILITY: All models.
-     CAPABILITIES: Use action='search' to find the most relevant/popular videos for a query. Use action='analyze' (default) to answer questions about visual events, extract text from videos, or summarize specific YouTube segments.
+     CAPABILITIES: 
+       - If you DO NOT have a video URL: You MUST use action='search' to find relevant videos first.
+       - If you DO have a video URL: Use action='analyze' (default) to interrogate the visual content, extract text, or summarize segments.
      ARGS: 
        action: 'search' to find videos, 'analyze' to interrogate a specific video.
-       query: Search terms or specific question about the video.
+       query: Search terms (for 'search') or specific question (for 'analyze').
        video_url: Required only for action='analyze'.
        start_time/end_time: Format as strings (e.g., '1m30s' or '90s').
        fps: Number of frames per second to sample (default 1).
