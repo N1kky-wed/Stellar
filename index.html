@@ -8585,11 +8585,16 @@
             const headerRight = document.querySelector('.header-right');
             const waitlistBtn = document.createElement('button');
             waitlistBtn.id = 'adminWaitlistBtn';
-            waitlistBtn.className = 'bg-toggle-btn';
-            waitlistBtn.title = 'Manage Waitlist';
-            waitlistBtn.innerHTML = '👥';
+            waitlistBtn.className = 'header-icon-btn';
+            waitlistBtn.title = 'Admin Dashboard';
+            waitlistBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>';
             waitlistBtn.onclick = openAdminWaitlist;
-            headerRight.insertBefore(waitlistBtn, headerRight.firstChild);
+            const clearBtn = document.getElementById('clearHistoryBtn');
+            if (clearBtn) {
+                headerRight.insertBefore(waitlistBtn, clearBtn);
+            } else {
+                headerRight.insertBefore(waitlistBtn, headerRight.firstChild);
+            }
         }
 
         const adminWaitlistModal = document.getElementById('adminWaitlistModal');
