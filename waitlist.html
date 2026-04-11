@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stellar | Node Provisioning</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap');
+
+        :root {
+            --bg-base: #010103;
+            --surface: rgba(10, 10, 15, 0.75);
+            --border: rgba(255, 255, 255, 0.08);
+            --accent-lunarity: #4285F4;
+            --accent-emerald: #00F090;
+            --text-muted: #666670;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-base);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .waitlist-card {
+            background: var(--surface);
+            backdrop-filter: blur(40px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 60px 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 1);
+            position: relative;
+        }
+
+        .logo-mark {
+            font-size: 2.5rem;
+            font-weight: 900;
+            letter-spacing: 8px;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, #FFFFFF 20%, #a5c0f3 60%, #4285F4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 100px;
+            background: rgba(66, 133, 244, 0.1);
+            border: 1px solid rgba(66, 133, 244, 0.3);
+            color: var(--accent-lunarity);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            letter-spacing: 1px;
+            margin-bottom: 32px;
+            text-transform: uppercase;
+        }
+
+        .headline {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+
+        .description {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 40px;
+        }
+
+        .provisioning-steps {
+            text-align: left;
+            margin-bottom: 40px;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .step-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--border);
+        }
+
+        .step.active { color: white; }
+        .step.active .step-dot { 
+            background: var(--accent-emerald);
+            box-shadow: 0 0 8px var(--accent-emerald);
+        }
+
+        .logout-link {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            cursor: pointer;
+            text-decoration: underline;
+            transition: color 0.2s;
+        }
+
+        .logout-link:hover { color: white; }
+
+        .bg-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(66, 133, 244, 0.15) 0%, transparent 70%);
+            z-index: -1;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-glow"></div>
+    <div class="waitlist-card">
+        <div class="logo-mark">STELLAR</div>
+        <div class="status-badge">Access Pending</div>
+        
+        <div class="headline">You're on the waitlist for Stellar.</div>
+        
+        <div class="description">
+            Stellar is currently in closed beta. We are provisioning accounts sequentially to ensure stability.
+        </div>
+
+        <div class="provisioning-steps">
+            <div class="step active">
+                <div class="step-dot"></div>
+                Account Initialized
+            </div>
+            <div class="step active">
+                <div class="step-dot"></div>
+                Waitlist Position Secured
+            </div>
+            <div class="step">
+                <div class="step-dot"></div>
+                Account Approval
+            </div>
+            <div class="step">
+                <div class="step-dot"></div>
+                Access Granted
+            </div>
+        </div>
+
+        <div class="description" style="font-size: 0.8rem;">
+            We will email you once your account has been approved.
+        </div>
+
+        <div class="logout-link" onclick="logout()">Sign Out</div>
+    </div>
+
+    <script>
+        async function logout() {
+            await fetch('/logout', { method: 'POST' });
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

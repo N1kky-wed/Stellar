@@ -545,52 +545,6 @@
             transform: translateY(0);
         }
 
-        /* ===== Chat Background Image ===== */
-        #chatBgImage {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: -1;
-            pointer-events: none;
-            transition: opacity 0.5s ease;
-        }
-
-        #chatBgImage::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: rgba(15, 12, 41, 0.35);
-            pointer-events: none;
-        }
-
-        body.bg-off #chatBgImage {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .bg-toggle-btn {
-            font-size: 1.2rem;
-            background: none;
-            border: none;
-            color: var(--secondary-text-color);
-            cursor: pointer;
-            padding: 4px;
-            transition: color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-            position: relative;
-        }
-
-        .bg-toggle-btn:hover {
-            color: var(--primary-text-color);
-            transform: translateY(-2px) scale(1.1);
-            filter: brightness(1.2);
-        }
-
-        body.bg-off .bg-toggle-btn {
-            opacity: 0.5;
-        }
-
         body.bg-off #forgeSymbolsOverlay {
             display: none;
         }
@@ -3211,91 +3165,6 @@
             --secondary-text-color: #c0b8d8;
         }
 
-        #metaball-canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-        }
-
-        #authContainer {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            width: 100%;
-            height: 100%;
-            position: fixed;
-            top: 0;
-            left: 0;
-            padding: 20px;
-            z-index: 101;
-            perspective: 2000px;
-            transition: opacity 0.5s ease-in-out;
-            opacity: 0;
-        }
-
-        #authContainer.fade-out {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        #authContainer.fade-in {
-            opacity: 1;
-            pointer-events: all;
-        }
-
-        .auth-card {
-            width: 100%;
-            max-width: 380px;
-            background: var(--card-bg);
-            backdrop-filter: blur(25px) saturate(120%);
-            border: 1px solid var(--card-border);
-            border-radius: 16px;
-            padding: 40px 35px;
-            box-shadow: 0 15px 60px rgba(0, 0, 0, 0.6);
-            animation: fadeIn 0.8s 0.2s ease-out forwards;
-            opacity: 0;
-            position: relative;
-            overflow: hidden;
-            transform-style: preserve-3d;
-            transition: transform 0.1s linear;
-        }
-
-        .auth-card::before {
-            content: '';
-            position: absolute;
-            top: var(--y, 0);
-            left: var(--x, 0);
-            width: 200px;
-            height: 200px;
-            background: radial-gradient(circle closest-side, var(--color-1), transparent);
-            transform: translate(-50%, -50%);
-            opacity: 0.15;
-            transition: top 0.2s linear, left 0.2s linear;
-            pointer-events: none;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px) scale(0.95);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
-        }
-
-        .auth-card-header {
-            text-align: center;
-            margin-bottom: 35px;
-            transform: translateZ(20px);
-        }
-
         .welcome-text {
             font-size: 1rem;
             font-weight: 300;
@@ -4420,7 +4289,7 @@
     <script src="/custom_select.js"></script>
 </head>
 
-<body class="bg-off">
+<body>
     <svg width="0" height="0" style="position:absolute">
         <symbol id="icon-mic" viewBox="0 0 24 24" fill="currentColor">
             <path
@@ -4470,7 +4339,7 @@
     </svg>
 
 
-    <canvas id="metaball-canvas" style="display: none;"></canvas>
+    
 
     <canvas id="voiceWaveCanvas"></canvas>
 
@@ -4510,47 +4379,27 @@
         </div>
     </div>
 
-    <div id="authContainer" style="display: none;">
-        <div class="auth-card">
-            <div class="auth-card-header">
-                <h2 id="authTitle" class="animated-title">Stellar</h2>
-                <p id="authSubtitle" class="auth-subtitle">Sign in to your account</p>
-                <div class="auth-message-container"></div>
+        <!-- Admin Waitlist Modal -->
+    <div id="adminWaitlistModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 3000; align-items: center; justify-content: center;">
+        <div class="modal-content" style="max-width: 800px; width: 90%; height: 80vh; background: #0a0a0f; border: 1px solid rgba(66, 133, 244, 0.3); border-radius: 20px; padding: 30px; display: flex; flex-direction: column; box-shadow: 0 0 40px rgba(0,0,0,0.5);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
+                <h2 style="background: linear-gradient(135deg, #fff, #4285F4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.8rem; letter-spacing: 1px;">Admin Dashboard</h2>
+                <button id="closeAdminWaitlistBtn" style="background: none; border: none; color: #666; font-size: 2rem; cursor: pointer; transition: color 0.2s;">&times;</button>
             </div>
-            <div class="auth-card-body">
-                <form id="loginForm">
-                    <div class="form-group">
-                        <label for="loginUsername">Username</label>
-                        <input type="text" id="loginUsername" required autocomplete="username">
-                    </div>
-                    <div class="form-group">
-                        <label for="loginPassword">Password</label>
-                        <input type="password" id="loginPassword" required autocomplete="current-password">
-                    </div>
-                    <button type="submit" class="auth-button">Sign in</button>
-                </form>
-
-                <form id="registerForm" style="display: none;">
-                    <div class="form-group">
-                        <label for="registerUsername">Choose Username</label>
-                        <input type="text" id="registerUsername" required autocomplete="username">
-                    </div>
-                    <div class="form-group">
-                        <label for="registerPassword">Password</label>
-                        <input type="password" id="registerPassword" required autocomplete="new-password">
-                    </div>
-                    <div class="form-group">
-                        <label for="registerConfirmPassword">Confirm Password</label>
-                        <input type="password" id="registerConfirmPassword" required autocomplete="new-password">
-                    </div>
-                    <button type="submit" class="auth-button">Create Account</button>
-                </form>
-            </div>
-            <div class="auth-card-footer">
-                <p id="authFooterText">Don't have an account? <span style="opacity: 0.5; cursor: not-allowed;">Sign
-                        up</span></p>
-                <p style="margin-top: 0.5rem; font-size: 0.9rem; color: #666;">Under closed testing. Contact <a
-                        href="mailto:nikhil080905@gmail.com">admin</a> for beta access.</p>
+            <div id="waitlistContent" style="flex-grow: 1; overflow-y: auto; padding-right: 10px;">
+                <table style="width: 100%; border-collapse: collapse; color: #ccc; font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;">
+                    <thead>
+                        <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <th style="padding: 12px; color: #4285F4;">ID</th>
+                            <th style="padding: 12px; color: #4285F4;">Name & Email</th>
+                            <th style="padding: 12px; color: #4285F4;">Created At</th>
+                            <th style="padding: 12px; color: #4285F4; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="waitlistTableBody">
+                        <!-- Rows populated by JS -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -4570,7 +4419,6 @@
         <div class="header-right">
             <div id="modeSelectorHeaderContainer" style="margin-right: 10px;"></div>
 
-            <button class="bg-toggle-btn" id="bgToggleBtn" title="Toggle background image">🖼️</button>
             <button class="clear-icon" id="clearHistoryBtn" title="Clear current chat history">🗑️</button>
             <div id="profileIcon" title="View Profile"></div>
         </div>
@@ -4613,12 +4461,10 @@
             </div>
 
             <div class="password-change-section">
-                <h3>Change Password</h3>
+                <h3>Change Display Name</h3>
                 <form id="changePasswordForm" class="password-change-form">
-                    <input type="password" id="currentPassword" placeholder="Current Password" required>
-                    <input type="password" id="newPassword" placeholder="New Password" required>
-                    <input type="password" id="confirmNewPassword" placeholder="Confirm New Password" required>
-                    <button type="submit" id="changePasswordBtn">Change Password</button>
+                    <input type="text" id="newDisplayName" placeholder="New Display Name" required>
+                    <button type="submit" id="changePasswordBtn">Update Name</button>
                     <div id="passwordChangeMessage" class="auth-message"></div>
                 </form>
             </div>
@@ -4693,8 +4539,7 @@
 
     <div id="tokenCountBar"></div>
 
-    <div id="chatBgImage"></div>
-    <div id="chatContainer" style="display:none;">
+        <div id="chatContainer" style="display:none;">
         <div id="messages"></div>
         <div id="analysis-progress-area"></div>
 
@@ -7645,9 +7490,26 @@
             
             // 1. Fix SVGs trapped in <pre><code> blocks (markdown) or just as text
             container.querySelectorAll('pre code, .message-content').forEach(el => {
+                const className = el.className || "";
                 let content = el.innerHTML;
+                
                 // If it's a code block, use textContent to avoid double-escaping issues
-                if (el.tagName === 'CODE') content = el.textContent;
+                if (el.tagName === 'CODE') {
+                    content = el.textContent.trim();
+                    
+                    // CRITICAL FIX: Only unwrap if the block IS the SVG or explicitly marked.
+                    // If it's a Python/JS file containing an SVG string, leave it as code!
+                    const isAppCode = /language-(html|python|javascript|typescript|css|php|rust|go)/i.test(className);
+                    const isExplicitVisual = /language-(svg|xml)/i.test(className);
+                    const isNakedSvg = content.startsWith('<svg') && content.endsWith('</svg>');
+
+                    // LOGIC: If it's a known app language and NOT explicitly marked as an SVG,
+                    // do NOT unwrap it. Show the code instead.
+                    if (isAppCode && !isExplicitVisual) return;
+
+                    // Proceed only if it's a naked SVG or explicitly requested as a visual
+                    if (!isNakedSvg && !isExplicitVisual) return;
+                }
 
                 const svgMatch = content.match(/<svg[\s\S]*?<\/svg>/i);
                 if (svgMatch) {
@@ -8609,7 +8471,7 @@
                 const response = await fetch('/check_auth');
                 const data = await response.json();
                 if (data.logged_in) {
-                    currentUsername = data.username;
+                    currentUsername = data.display_name || data.username;
                     profileIcon.textContent = currentUsername.charAt(0).toUpperCase();
                     sidebarUsername.textContent = currentUsername;
                     profileUsernameDisplay.textContent = currentUsername;
@@ -8623,128 +8485,164 @@
                     tokenCountBar.style.display = 'block';
                     chatScrollToBottomBtn.style.display = 'flex';
 
-                    authContainer.classList.remove('fade-in');
-                    authContainer.classList.add('fade-out');
-                    setTimeout(() => {
-                        authContainer.style.display = 'none';
-                        if (!historyLoaded) {
-                            loadChatList();
-                        }
-                    }, 500);
-                } else {
-                    document.querySelector('header').style.display = 'flex';
-                    document.querySelector('.header-left').style.display = 'none';
-                    document.querySelector('.header-right').style.display = 'none';
-                    chatContainer.style.display = 'none';
-                    inputContainer.style.display = 'none';
-                    sidebar.style.display = 'none';
-                    tokenCountBar.style.display = 'none';
+                    if (data.role === 'admin') {
+                        addAdminControls();
+                    }
 
-                    authContainer.style.display = 'flex';
-                    authContainer.classList.remove('fade-out');
-                    authContainer.classList.add('fade-in');
-                    fetchUnsplashImage();
+                    if (!historyLoaded) {
+                        loadChatList();
+                    }
+                } else {
+                    window.location.href = '/';
                 }
             } catch (error) {
-                document.querySelector('header').style.display = 'flex';
-                document.querySelector('.header-left').style.display = 'none';
-                document.querySelector('.header-right').style.display = 'none';
-                chatContainer.style.display = 'none';
-                inputContainer.style.display = 'none';
-                sidebar.style.display = 'none';
-                tokenCountBar.style.display = 'none';
-
-                authContainer.style.display = 'flex';
-                authContainer.classList.remove('fade-out');
-                authContainer.classList.add('fade-in');
-                fetchUnsplashImage();
-                setStatus("Failed to check auth status. Please refresh.", true);
-                setTimeout(() => setStatus("Idle", false), 3000);
+                console.error("Auth check failed:", error);
+                window.location.href = '/';
             }
         }
 
+        function addAdminControls() {
+            if (document.getElementById('adminWaitlistBtn')) return;
+            const headerRight = document.querySelector('.header-right');
+            const waitlistBtn = document.createElement('button');
+            waitlistBtn.id = 'adminWaitlistBtn';
+            waitlistBtn.className = 'bg-toggle-btn';
+            waitlistBtn.title = 'Manage Waitlist';
+            waitlistBtn.innerHTML = '👥';
+            waitlistBtn.onclick = openAdminWaitlist;
+            headerRight.insertBefore(waitlistBtn, headerRight.firstChild);
+        }
 
+        const adminWaitlistModal = document.getElementById('adminWaitlistModal');
+        const waitlistTableBody = document.getElementById('waitlistTableBody');
+        const closeAdminWaitlistBtn = document.getElementById('closeAdminWaitlistBtn');
+
+        if (closeAdminWaitlistBtn) {
+            closeAdminWaitlistBtn.onclick = () => adminWaitlistModal.style.display = 'none';
+        }
+
+        async function openAdminWaitlist() {
+            adminWaitlistModal.style.display = 'flex';
+            loadWaitlist();
+        }
+
+        async function loadWaitlist() {
+            waitlistTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Fetching users...</td></tr>';
+            try {
+                const response = await fetch('/api/admin/waitlist');
+                const data = await response.json();
+                waitlistTableBody.innerHTML = '';
+                if (data.length === 0) {
+                    waitlistTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">No users found</td></tr>';
+                } else {
+                    data.forEach(user => {
+                        const row = document.createElement('tr');
+                        row.style.borderBottom = '1px solid rgba(255,255,255,0.02)';
+                        const displayName = (user.display_name && user.display_name !== user.username) ? user.display_name + ' (' + user.username + ')' : user.username;
+                        
+                        let actionsHtml = '';
+                        if (!user.is_approved) {
+                             actionsHtml += `<button onclick="approveUser(${user.id}, '${user.username}')" style="background: rgba(0, 240, 144, 0.1); border: 1px solid rgba(0, 240, 144, 0.3); color: #00F090; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-family: 'JetBrains Mono'; font-size: 0.7rem; margin-right: 5px;">Approve User</button>`;
+                        }
+                        actionsHtml += `<button onclick="impersonateUser(${user.id})" style="background: rgba(66, 133, 244, 0.1); border: 1px solid rgba(66, 133, 244, 0.3); color: #4285F4; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-family: 'JetBrains Mono'; font-size: 0.7rem;">Impersonate</button>`;
+
+                        row.innerHTML = `
+                            <td style="padding: 12px;">${user.id}</td>
+                            <td style="padding: 12px;">${displayName}</td>
+                            <td style="padding: 12px;">${user.created_at}</td>
+                            <td style="padding: 12px; text-align: right;">${actionsHtml}</td>
+                        `;
+                        waitlistTableBody.appendChild(row);
+                    });
+                }
+            } catch (err) {
+                waitlistTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #FF2A4D;">Failed to fetch users</td></tr>';
+            }
+        }
+
+        window.impersonateUser = async function(userId) {
+            try {
+                const response = await fetch('/api/admin/impersonate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert('Impersonation failed: ' + data.error);
+                }
+            } catch (err) {
+                alert('Connection error');
+            }
+        };
+
+        window.approveUser = async function(userId, username) {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.innerText = 'PROVISIONING...';
+            try {
+                const response = await fetch('/api/admin/approve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, email: username })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    loadWaitlist();
+                } else {
+                    alert('Approval failed: ' + data.error);
+                    btn.disabled = false;
+                    btn.innerText = 'Approve User';
+                }
+            } catch (err) {
+                alert('Connection error');
+                btn.disabled = false;
+                btn.innerText = 'Approve User';
+            }
+        };
 
         async function handleLogout() {
             try {
-                resetAuthUI();
                 const response = await fetch('/logout', { method: 'POST' });
                 const data = await response.json();
                 if (data.success) {
-                    messagesDiv.innerHTML = '';
-                    historyLoaded = false;
-                    stagedFiles = [];
-                    updateStagedFilesUI();
-                    analysisProgressArea.innerHTML = '';
-                    analysisProgressArea.style.display = 'none';
-                    if (sseEventSource) {
-                        sseEventSource.close();
-                        sseEventSource = null;
-                    }
-                    clearInterval(tokenCounterInterval);
-                    tokenCounterInterval = null;
-                    currentChatId = null;
-                    currentUsername = null;
-                    chatTitle.textContent = "Stellar";
-                    sidebar.classList.remove('open');
-                    profileModal.style.display = 'none';
-                    chatScrollToBottomBtn.style.display = 'none';
-                    setStatus("Logged out. Goodbye!", false);
-                    setTimeout(checkAuthStatus, 500);
-                    setTimeout(() => setStatus("Idle", false), 3000);
+                    window.location.href = '/';
                 } else {
                     setStatus(data.message || 'Logout failed.', true);
-                    setTimeout(() => setStatus(currentStatusText, false), 3000);
                 }
             } catch (error) {
                 setStatus('An error occurred during logout.', true);
-                setTimeout(() => setStatus(currentStatusText, false), 3000);
             }
-        }
-        function resetAuthUI() {
-            window.webglInitialized = false;
-            window.tiltInitialized = false;
-            window.formsInitialized = false;
-            window.logoutInProgress = true;
         }
 
         async function handleChangePassword(event) {
             event.preventDefault();
-            const currentPassword = currentPasswordInput.value;
-            const newPassword = newPasswordInput.value;
-            const confirmNewPassword = confirmNewPasswordInput.value;
+            const newDisplayName = document.getElementById('newDisplayName').value.trim();
             displayModalMessage(passwordChangeMessage, '', false);
 
-            if (!currentPassword || !newPassword || !confirmNewPassword) {
-                displayModalMessage(passwordChangeMessage, 'All fields are required.', true);
-                return;
-            }
-            if (newPassword !== confirmNewPassword) {
-                displayModalMessage(passwordChangeMessage, 'New passwords do not match.', true);
-                return;
-            }
-            if (newPassword.length < 6) {
-                displayModalMessage(passwordChangeMessage, 'New password must be at least 6 characters long.', true);
+            if (!newDisplayName) {
+                displayModalMessage(passwordChangeMessage, 'New display name is required.', true);
                 return;
             }
 
             try {
-                const response = await fetch('/api/user/change_password', {
+                const response = await fetch('/api/user/change_display_name', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+                    body: JSON.stringify({ new_display_name: newDisplayName })
                 });
                 const data = await response.json();
                 if (data.success) {
-                    displayModalMessage(passwordChangeMessage, 'Password changed successfully!', false);
-                    currentPasswordInput.value = '';
-                    newPasswordInput.value = '';
-                    confirmNewPasswordInput.value = '';
+                    displayModalMessage(passwordChangeMessage, 'Display name changed successfully!', false);
+                    document.getElementById('newDisplayName').value = '';
+                    checkAuthStatus(); // Refresh UI to show new name
                 } else {
-                    displayModalMessage(passwordChangeMessage, data.message || 'Failed to change password.', true);
+                    displayModalMessage(passwordChangeMessage, data.message || 'Failed to change name.', true);
                 }
             } catch (error) {
-                displayModalMessage(passwordChangeMessage, 'An error occurred while changing password.', true);
+                displayModalMessage(passwordChangeMessage, 'An error occurred.', true);
             }
         }
 
@@ -8802,22 +8700,6 @@
         }
 
 
-        const metaballCanvas = document.getElementById("metaball-canvas");
-        let threeJsScript = null;
-
-
-        function loadThreeJs() {
-            if (document.getElementById('threejs-lib')) return;
-            threeJsScript = document.createElement('script');
-            threeJsScript.id = 'threejs-lib';
-            threeJsScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-            threeJsScript.onload = () => {
-                initNewAuthUI();
-            };
-            document.body.appendChild(threeJsScript);
-        }
-
-
         function displayLoginMessage(message, isError) {
             const cardHeader = document.querySelector('.auth-card-header');
             if (!cardHeader) return;
@@ -8846,268 +8728,6 @@
                 element.style.display = 'none';
             }
         }
-
-        async function checkAuthStatus() {
-            try {
-                const response = await fetch('/check_auth');
-                const data = await response.json();
-                if (data.logged_in) {
-                    currentUsername = data.username;
-
-                    profileIcon.textContent = currentUsername.charAt(0).toUpperCase();
-                    sidebarUsername.textContent = currentUsername;
-                    profileUsernameDisplay.textContent = currentUsername;
-
-                    document.querySelector('header').style.display = 'flex';
-                    document.querySelector('.header-left').style.display = 'flex';
-                    document.querySelector('.header-right').style.display = 'flex';
-                    chatContainer.style.display = 'flex';
-                    inputContainer.style.display = 'flex';
-                    sidebar.style.display = 'flex';
-                    tokenCountBar.style.display = 'block';
-                    chatScrollToBottomBtn.style.display = 'flex';
-
-
-                    authContainer.classList.remove('fade-in');
-                    authContainer.classList.add('fade-out');
-                    metaballCanvas.style.display = 'none';
-
-                    setTimeout(() => {
-                        authContainer.style.display = 'none';
-                        if (!historyLoaded) {
-                            loadChatList();
-                        }
-                    }, 500);
-                } else {
-
-                    document.querySelector('header').style.display = 'flex';
-                    document.querySelector('.header-left').style.display = 'none';
-                    document.querySelector('.header-right').style.display = 'none';
-                    chatContainer.style.display = 'none';
-                    inputContainer.style.display = 'none';
-                    sidebar.style.display = 'none';
-                    tokenCountBar.style.display = 'none';
-
-
-                    authContainer.style.display = 'flex';
-                    authContainer.classList.remove('fade-out');
-                    authContainer.classList.add('fade-in');
-                    metaballCanvas.style.display = 'block';
-
-                    loadThreeJs();
-                }
-            } catch (error) {
-
-                document.querySelector('header').style.display = 'flex';
-                document.querySelector('.header-left').style.display = 'none';
-                document.querySelector('.header-right').style.display = 'none';
-                chatContainer.style.display = 'none';
-                inputContainer.style.display = 'none';
-                sidebar.style.display = 'none';
-                tokenCountBar.style.display = 'none';
-
-                authContainer.style.display = 'flex';
-                authContainer.classList.remove('fade-out');
-                authContainer.classList.add('fade-in');
-                metaballCanvas.style.display = 'block';
-                loadThreeJs();
-
-                setStatus("Failed to check auth status. Please refresh.", true);
-                setTimeout(() => setStatus("Idle", false), 3000);
-            }
-        }
-
-        async function handleLogin(event) {
-            event.preventDefault();
-            const username = document.getElementById('loginUsername').value.trim();
-            const password = document.getElementById('loginPassword').value.trim();
-            displayLoginMessage('', false);
-
-            if (!username || !password) {
-                displayLoginMessage('Username and password are required.', true);
-                return;
-            }
-
-            try {
-                const response = await fetch('/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-                const data = await response.json();
-                if (data.success) {
-                    displayLoginMessage('Login successful!', false);
-                    setTimeout(checkAuthStatus, 500);
-                } else {
-                    displayLoginMessage(data.message || 'Login failed.', true);
-                }
-            } catch (error) {
-                displayLoginMessage('An error occurred during login.', true);
-            }
-        }
-
-        async function handleRegister(event) {
-            event.preventDefault();
-            const username = document.getElementById('registerUsername').value.trim();
-            const password = document.getElementById('registerPassword').value.trim();
-            const confirmPassword = document.getElementById('registerConfirmPassword').value.trim();
-            displayLoginMessage('', false);
-
-            if (!username || !password || !confirmPassword) {
-                displayLoginMessage('All fields are required.', true);
-                return;
-            }
-            if (password !== confirmPassword) {
-                displayLoginMessage('Passwords do not match.', true);
-                return;
-            }
-
-            try {
-                const registerResponse = await fetch('/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-                const registerData = await registerResponse.json();
-
-                if (registerData.success) {
-                    displayLoginMessage('Account created! Logging you in...', false);
-                    const loginResponse = await fetch('/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username, password })
-                    });
-                    const loginData = await loginResponse.json();
-                    if (loginData.success) {
-                        setTimeout(checkAuthStatus, 500);
-                    } else {
-                        document.getElementById('authLink').click();
-                        setTimeout(() => {
-                            displayLoginMessage('Account created, but auto-login failed. Please sign in.', true);
-                        }, 500);
-                    }
-                } else {
-                    displayLoginMessage(registerData.message || 'Registration failed.', true);
-                }
-            } catch (error) {
-                displayLoginMessage('An error occurred during registration.', true);
-            }
-        }
-
-
-        function initNewAuthUI() {
-
-            (function initWebGL() {
-                if (window.webglInitialized) return;
-                window.webglInitialized = true;
-                let scene, camera, renderer, material, balls = [], NUM_BALLS = 7, BALL_SIZE = 60;
-                const vertexShader = `void main() { gl_Position = vec4(position, 1.0); }`;
-                const fragmentShader = `uniform vec3[${NUM_BALLS}] u_balls; uniform float u_ball_size; uniform vec3 u_color_1, u_color_2, u_color_3; void main() { vec2 coord = gl_FragCoord.xy; float sum = 0.0; vec3 color_sum = vec3(0.0); for (int i = 0; i < ${NUM_BALLS}; i++) { vec3 ball = u_balls[i]; float influence = (ball.z * u_ball_size) / distance(coord, ball.xy); sum += influence; if (i == 0 || i == 3 || i == 6) color_sum += influence * u_color_1; else if (i == 1 || i == 4) color_sum += influence * u_color_2; else color_sum += influence * u_color_3; } if (sum >= 1.0) { gl_FragColor = vec4(normalize(color_sum), 1.0); } else { discard; } }`;
-                try {
-                    scene = new THREE.Scene();
-                    camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
-                    renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('metaball-canvas'), alpha: true });
-                    const geometry = new THREE.PlaneBufferGeometry(2, 2);
-                    material = new THREE.ShaderMaterial({ vertexShader, fragmentShader, uniforms: { u_balls: { value: [] }, u_ball_size: { value: BALL_SIZE }, u_color_1: { value: new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--color-1')) }, u_color_2: { value: new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--color-2')) }, u_color_3: { value: new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--color-3')) } }, transparent: true });
-                    scene.add(new THREE.Mesh(geometry, material));
-                    for (let i = 0; i < NUM_BALLS; i++) { balls.push({ x: Math.random(), y: Math.random(), z: 0.6 + Math.random() * 0.4, vx: (Math.random() - 0.5) * 0.0008, vy: (Math.random() - 0.5) * 0.0008 }); }
-                    const animate = () => { if (metaballCanvas.style.display === 'none' && !window.logoutInProgress) { setTimeout(animate, 100); return; } window.logoutInProgress = false; requestAnimationFrame(animate); let ball_data = []; balls.forEach(ball => { ball.x += ball.vx; ball.y += ball.vy; if (ball.x < 0 || ball.x > 1) ball.vx *= -1; if (ball.y < 0 || ball.y > 1) ball.vy *= -1; ball_data.push(new THREE.Vector3(ball.x * window.innerWidth, ball.y * window.innerHeight, ball.z)); }); material.uniforms.u_balls.value = ball_data; renderer.render(scene, camera); };
-                    const resize = () => renderer.setSize(window.innerWidth, window.innerHeight);
-                    window.addEventListener('resize', resize); resize(); animate();
-                } catch (e) { console.error("Three.js initialization failed:", e); }
-            })();
-
-            (function initTilt() {
-                if (window.tiltInitialized) return;
-                window.tiltInitialized = true;
-                const authCard = document.querySelector('.auth-card'), authContainer = document.getElementById('authContainer');
-                window.addEventListener('mousemove', (e) => { if (authContainer.style.display === 'none') return; const { clientX, clientY } = e, { offsetWidth, offsetHeight } = authContainer, xRotation = 8 * ((clientY - offsetHeight / 2) / offsetHeight), yRotation = -8 * ((clientX - offsetWidth / 2) / offsetWidth); authCard.style.transform = `rotateX(${xRotation}deg) rotateY(${yRotation}deg)`; const rect = authCard.getBoundingClientRect(); authCard.style.setProperty('--x', `${clientX - rect.left}px`); authCard.style.setProperty('--y', `${clientY - rect.top}px`); });
-                authContainer.addEventListener('mouseleave', () => { authCard.style.transform = `rotateX(0deg) rotateY(0deg)`; });
-            })();
-
-
-            (function initForms() {
-                if (window.formsInitialized) { return; }
-                window.formsInitialized = true;
-
-                const loginForm = document.getElementById('loginForm');
-                const registerForm = document.getElementById('registerForm');
-                const authLink = document.getElementById('authLink');
-                const footerText = document.getElementById('authFooterText');
-                const subtitle = document.getElementById('authSubtitle');
-                const authTitle = document.getElementById('authTitle');
-                let typingTimeoutId;
-
-                loginForm.addEventListener('submit', handleLogin);
-                registerForm.addEventListener('submit', handleRegister);
-
-                function typeEffect() {
-                    const titleTextSpan = document.getElementById('titleText');
-                    const cursorSpan = document.querySelector('.text-cursor');
-                    if (!titleTextSpan || !cursorSpan) return;
-
-                    clearTimeout(typingTimeoutId);
-                    const words = ["Stellar"];
-                    let charIndex = 0, isDeleting = false;
-
-                    function type() {
-                        const currentWord = words[0];
-                        const typeSpeed = isDeleting ? 75 : 150;
-
-                        if (isDeleting) {
-                            titleTextSpan.textContent = currentWord.substring(0, charIndex - 1);
-                            charIndex--;
-                        } else {
-                            titleTextSpan.textContent = currentWord.substring(0, charIndex + 1);
-                            charIndex++;
-                        }
-
-                        if (!isDeleting && charIndex === currentWord.length) {
-                            isDeleting = true;
-                            typingTimeoutId = setTimeout(type, 2000);
-                        } else if (isDeleting && charIndex === 0) {
-                            isDeleting = false;
-                            typingTimeoutId = setTimeout(type, 500);
-                        } else {
-                            typingTimeoutId = setTimeout(type, typeSpeed);
-                        }
-                    }
-                    type();
-                }
-
-                function toggleForms(e) {
-                    e.preventDefault();
-                    displayLoginMessage('', false);
-                    clearTimeout(typingTimeoutId);
-                    const isLoginVisible = loginForm.style.display !== 'none';
-
-                    if (isLoginVisible) {
-                        loginForm.style.display = 'none';
-                        registerForm.style.display = 'block';
-                        authTitle.innerHTML = '<h2>Stellar</h2>';
-                        subtitle.textContent = 'Create your account';
-                        footerText.innerHTML = 'Already have an account? <a id="authLink">Sign in</a>';
-                    } else {
-                        loginForm.style.display = 'block';
-                        registerForm.style.display = 'none';
-                        authTitle.innerHTML = `<span id="titleText"></span><span class="text-cursor"> </span>`;
-                        subtitle.textContent = 'Sign in to your account';
-                        footerText.innerHTML = 'Don\'t have an account? <a id="authLink">Sign up</a>';
-                        typeEffect();
-                    }
-
-                    document.getElementById('authLink').addEventListener('click', toggleForms);
-                }
-                if (authLink) {
-                    authLink.addEventListener('click', toggleForms);
-                }
-
-
-                authTitle.innerHTML = `<span id="titleText"></span><span class="text-cursor"> </span>`;
-                typeEffect();
-            })();
-        }
-
 
         function toggleSidebar() {
             sidebar.classList.toggle('open');
@@ -9900,25 +9520,6 @@
                 }
             }
         }
-
-        // ===== Background Image + Symbols Toggle =====
-        (function () {
-            const bgToggleBtn = document.getElementById('bgToggleBtn');
-            const savedPref = localStorage.getItem('stellar_bg_off');
-            // Default to OFF — only enable if user explicitly turned it on
-            if (savedPref === 'false') {
-                document.body.classList.remove('bg-off');
-            } else {
-                document.body.classList.add('bg-off');
-            }
-            if (bgToggleBtn) {
-                bgToggleBtn.addEventListener('click', () => {
-                    document.body.classList.toggle('bg-off');
-                    const isOff = document.body.classList.contains('bg-off');
-                    localStorage.setItem('stellar_bg_off', isOff ? 'true' : 'false');
-                });
-            }
-        })();
 
         // ===== Forge Glitch Symbols Generator =====
         (function () {

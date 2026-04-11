@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Stellar | Singularity Gateway</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap');
+
+        :root {
+            --bg-base: #010103;
+            --surface: rgba(10, 10, 15, 0.75);
+            --border: rgba(255, 255, 255, 0.08);
+            --accent-lunarity: #4285F4;
+            --accent-emerald: #00F090;
+            --text-muted: #666670;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-base);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            perspective: 1500px;
+        }
+
+        /* --- Mask Wrapper (Holds the Seamless Flashlight) --- */
+        .code-mask-wrapper {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            
+            --mouse-x: 50vw;
+            --mouse-y: 50vh;
+            
+            -webkit-mask-image: radial-gradient(
+                280px circle at var(--mouse-x) var(--mouse-y), 
+                rgba(0,0,0,1) 0%, 
+                rgba(0,0,0,0.8) 15%,
+                rgba(0,0,0,0.5) 35%,
+                rgba(0,0,0,0.3) 50%,
+                rgba(0,0,0,0.2) 65%,
+                rgba(0,0,0,0.15) 80%,
+                rgba(0,0,0,0.12) 90%,
+                rgba(0,0,0,0.1) 100%
+            );
+            mask-image: radial-gradient(
+                280px circle at var(--mouse-x) var(--mouse-y), 
+                rgba(0,0,0,1) 0%, 
+                rgba(0,0,0,0.8) 15%,
+                rgba(0,0,0,0.5) 35%,
+                rgba(0,0,0,0.3) 50%,
+                rgba(0,0,0,0.2) 65%,
+                rgba(0,0,0,0.15) 80%,
+                rgba(0,0,0,0.12) 90%,
+                rgba(0,0,0,0.1) 100%
+            );
+        }
+
+        /* Balanced darkness void behind the card */
+        .code-mask-wrapper::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(
+                ellipse 450px 700px at center, 
+                var(--bg-base) 15%, 
+                rgba(1, 1, 3, 0.9) 40%, 
+                transparent 75%
+            );
+            pointer-events: none;
+        }
+
+        /* --- Scrolling Code Canvas --- */
+        .code-canvas {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px; 
+            line-height: 1.3; 
+            color: rgba(66, 133, 244, 0.55); 
+            white-space: pre;
+            width: 110vw;
+            margin-left: -5vw;
+            will-change: transform;
+            animation: scrollMemoryDump 100s linear infinite;
+        }
+
+        @keyframes scrollMemoryDump {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-50%); }
+        }
+
+        /* --- Main UI Wrapper --- */
+        .gateway-wrapper {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 420px;
+            padding: 20px;
+            box-sizing: border-box;
+            transform-style: preserve-3d;
+            will-change: transform;
+        }
+
+        .auth-card {
+            background: var(--surface);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 60px 40px;
+            
+            box-shadow: 
+                0 0 50px 2px rgba(0, 0, 0, 0.8),      
+                0 40px 80px -20px rgba(0, 0, 0, 1),     
+                inset 0 1px 0 rgba(255, 255, 255, 0.1); 
+                
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transform: translateZ(0);
+        }
+
+        .auth-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent-lunarity), transparent);
+        }
+
+        /* Title */
+        .logo-mark {
+            font-size: 3rem;
+            font-weight: 900;
+            letter-spacing: 8px;
+            margin-bottom: 14px;
+            text-align: center;
+            background: linear-gradient(135deg, #FFFFFF 20%, #a5c0f3 60%, #4285F4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 4px 15px rgba(66, 133, 244, 0.3));
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-bottom: 52px;
+            line-height: 1.6;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
+        /* Auth Button */
+        .auth-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
+            color: #FFF;
+            border-radius: 12px;
+            padding: 18px 20px;
+            font-size: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .auth-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(66, 133, 244, 0.5); 
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.6);
+        }
+
+        .auth-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-icon { width: 22px; height: 22px; }
+
+        /* Persona Nodes */
+        .persona-status {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin-top: 52px;
+            padding-top: 28px;
+            border-top: 1px solid var(--border);
+        }
+
+        .persona {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+        }
+
+        .dot { width: 5px; height: 5px; border-radius: 50%; }
+        .dot.obs { background: #888890; box-shadow: 0 0 8px #888890; }
+        .dot.cri { background: #FF2A4D; box-shadow: 0 0 8px #FF2A4D; }
+        .dot.lun { background: #4285F4; box-shadow: 0 0 8px #4285F4; }
+        .dot.eme { background: #00F090; box-shadow: 0 0 8px #00F090; }
+
+        /* Loading System */
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(1, 1, 3, 0.98);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+            z-index: 20;
+        }
+
+        .loading-overlay.active { opacity: 1; pointer-events: all; }
+
+        .loader-ring {
+            width: 36px; height: 36px;
+            border: 2px solid rgba(66, 133, 244, 0.1);
+            border-top-color: var(--accent-lunarity);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 24px;
+        }
+
+        .loader-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--accent-emerald);
+            letter-spacing: 1.5px;
+            text-align: center;
+            padding: 0 20px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #auth-message {
+            margin-top: 15px;
+            font-size: 0.85rem;
+            text-align: center;
+            min-height: 1.2em;
+        }
+
+        .error-text { color: #FF2A4D; }
+    </style>
+</head>
+<body>
+
+    <div class="code-mask-wrapper" id="maskWrapper">
+        <div class="code-canvas" id="codeCanvas"></div>
+    </div>
+
+    <div class="gateway-wrapper" id="gatewayWrapper">
+        <div class="auth-card">
+            
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="loader-ring"></div>
+                <div class="loader-text" id="loaderText">ESTABLISHING HANDSHAKE...</div>
+            </div>
+
+            <div class="logo-mark">STELLAR</div>
+            <div class="subtitle">Autonomous Environment Agency.<br>Provisioning clusters & memory ledger.</div>
+            
+            <button class="auth-btn" id="googleAuthBtn">
+                <svg class="btn-icon" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Continue with Google
+            </button>
+
+            <div id="auth-message"></div>
+
+            <div class="persona-status">
+                <div class="persona"><div class="dot obs"></div> OBSIDIAN</div>
+                <div class="persona"><div class="dot cri"></div> CRIMSON</div>
+                <div class="persona"><div class="dot lun"></div> LUNARITY</div>
+                <div class="persona"><div class="dot eme"></div> EMERALD</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <!-- Firebase Auth -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBudjAFQDp8vIQ_9V6fp9lg2295qdS1vGU",
+            authDomain: "stellarai-live.firebaseapp.com",
+            projectId: "stellarai-live",
+            storageBucket: "stellarai-live.firebasestorage.app",
+            messagingSenderId: "971792935736",
+            appId: "1:971792935736:web:047d6d3adebdd33cc52fcd",
+            measurementId: "G-KRF7BQDPN8"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const provider = new firebase.auth.GoogleAuthProvider();
+
+        const maskWrapper = document.getElementById('maskWrapper');
+        const codeCanvas = document.getElementById('codeCanvas');
+        const snippets = [
+            "def provision_docker_cluster(node_id):",
+            "ledger = db.query('SELECT * FROM ground_truth')",
+            "raise StateDriftException('Ledger mismatch')",
+            "container = client.containers.run(network='bridge')",
+            "async function mountPagedMemory(stream) {",
+            "return chunks.map(chunk => compressMetadata(chunk));",
+            "def proxy_wildcard(path):",
+            "container_ip = redis.get(f'route:{host}')",
+            "[OBSIDIAN] Adversarial security audit...",
+            "INSERT INTO interactions (agent_id) VALUES ('obsidian');",
+            "0x0000000000000000", "0xFFFFFFFFFFFFFFFF", "sys.stdout.write"
+        ];
+
+        let baseDump = "";
+        for (let i = 0; i < 150; i++) { 
+            let line = "";
+            while (line.length < 350) { line += snippets[Math.floor(Math.random() * snippets.length)] + "  "; }
+            baseDump += line + "\n";
+        }
+        codeCanvas.textContent = baseDump + baseDump;
+
+        const wrapper = document.getElementById('gatewayWrapper');
+        let mouseX = 0, mouseY = 0, targetX = 0, targetY = 0;
+
+        document.addEventListener('mousemove', (e) => {
+            maskWrapper.style.setProperty('--mouse-x', `${e.clientX}px`);
+            maskWrapper.style.setProperty('--mouse-y', `${e.clientY}px`);
+            
+            mouseX = (e.clientX - window.innerWidth/2) / 75;
+            mouseY = (e.clientY - window.innerHeight/2) / 75;
+        });
+
+        function animate3D() {
+            if (Math.abs(mouseX - targetX) > 0.001) targetX += (mouseX - targetX) * 0.04;
+            if (Math.abs(mouseY - targetY) > 0.001) targetY += (mouseY - targetY) * 0.04;
+            
+            wrapper.style.transform = `rotateY(${targetX}deg) rotateX(${-targetY}deg)`;
+            requestAnimationFrame(animate3D);
+        }
+        animate3D();
+
+        document.getElementById('googleAuthBtn').onclick = async () => {
+            const overlay = document.getElementById('loadingOverlay');
+            const loaderText = document.getElementById('loaderText');
+            const msg = document.getElementById('auth-message');
+            msg.innerText = '';
+            
+            try {
+                const result = await auth.signInWithPopup(provider);
+                const idToken = await result.user.getIdToken();
+                
+                overlay.classList.add('active');
+                loaderText.innerText = "VERIFYING IDENTITY...";
+
+                const response = await fetch('/login/google', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        id_token: idToken,
+                        display_name: result.user.displayName 
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    const sequence = [
+                        "IDENTITY_VERIFIED",
+                        "MOUNTING GROUND-TRUTH LEDGER...",
+                        "PROVISIONING DOCKER INSTANCE...",
+                        "ESTABLISHING SECURE TUNNEL..."
+                    ];
+
+                    let step = 0;
+                    const interval = setInterval(() => {
+                        if (step < sequence.length) {
+                            loaderText.innerText = sequence[step];
+                            step++;
+                        } else {
+                            clearInterval(interval);
+                            loaderText.style.color = "#00F090";
+                            loaderText.innerText = "ACCESS GRANTED. INITIALIZING...";
+                            setTimeout(() => window.location.href = '/', 1000);
+                        }
+                    }, 600);
+                } else {
+                    overlay.classList.remove('active');
+                    msg.className = 'error-text';
+                    msg.innerText = data.message || "AUTHENTICATION_FAILED";
+                }
+            } catch (error) {
+                console.error(error);
+                overlay.classList.remove('active');
+                msg.className = 'error-text';
+                msg.innerText = error.message || "GATEWAY_ERROR";
+            }
+        };
+    </script>
+</body>
+</html>

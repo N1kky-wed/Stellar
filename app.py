@@ -1,4 +1,9 @@
+import smtplib
+from email.message import EmailMessage
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 import file_scanning
+
 import threading
 from werkzeug.utils import secure_filename
 import queue
@@ -51,77 +56,16 @@ from telegram_bot import TelegramBot
 
 telegram_bot = TelegramBot()
 
-def send_login_notification(username, is_new_user=False):
+def send_login_notification(username, display_name=None, is_waitlist=False):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-    message_body = f"🚀 New User Registration on Stellar!\nUsername: {username}\nTime: {timestamp}" if is_new_user else f"✅ User Login on Stellar\nUsername: {username}\nTime: {timestamp}"
+    name_str = f"{display_name} ({username})" if display_name else username
+    if is_waitlist:
+        message_body = f"⏳ New Waitlist Registration\nUser: {name_str}\nTime: {timestamp}"
+    else:
+        message_body = f"✅ User Login on Stellar\nUser: {name_str}\nTime: {timestamp}"
     telegram_bot.send_message(message_body)
 
-def scheduled_user_report():
-    # Initial brief sleep to allow system to stabilize
-    time.sleep(5)
-    
-    while True:
-        try:
-            now = time.time()
-            should_run = False
-            last_report_ts = redis_client.get("stellar:last_report_ts")
-            
-            if last_report_ts is None:
-                should_run = True
-            else:
-                try:
-                    if (now - float(last_report_ts)) >= 72000:
-                        should_run = True
-                except (ValueError, TypeError):
-                    should_run = True
-
-            if should_run:
-                # Try to acquire lock to ensure only one worker runs the report
-                # Lock expires in 60s
-                if redis_client.set("stellar:report_execution_lock", "locked", ex=60, nx=True):
-                    with app.app_context():
-                        try:
-                            db = get_db()
-                            cursor = db.execute("SELECT username FROM users")
-                            users = cursor.fetchall()
-                            usernames = [user['username'] for user in users]
-                            if usernames:
-                                user_list_str = "\n".join(usernames)
-                                message = f"📊 **Stellar User Report (Every 2 Hours)**\n\nTotal Users: {len(usernames)}\n\n**Usernames:**\n{user_list_str}"
-                                telegram_bot.send_message(message)
-                            else:
-                                telegram_bot.send_message("📊 **Stellar User Report**\n\nNo users found in the database.")
-                            
-                            # Update timestamp after successful execution
-                            redis_client.set("stellar:last_report_ts", str(time.time()))
-                        except Exception as e:
-                            logger.error(f"Error in scheduled_user_report execution: {e}")
-            
-            # Calculate sleep time until next report
-            last_report_ts = redis_client.get("stellar:last_report_ts")
-            if last_report_ts:
-                try:
-                    elapsed = time.time() - float(last_report_ts)
-                    sleep_time = 7200 - elapsed
-                except (ValueError, TypeError):
-                    sleep_time = 60
-            else:
-                # Should not happen if run was successful, but if lock was lost or error occurred
-                sleep_time = 60
-            
-            # Ensure we don't sleep for negative time or too little
-            if sleep_time < 10:
-                sleep_time = 10
-                
-            time.sleep(sleep_time)
-
-        except Exception as e:
-            logger.error(f"Error in scheduled_user_report loop: {e}")
-            time.sleep(60)
-
-
-naw = datetime.datetime.now()
-# (Old load_dotenv block removed - handled below with logging)
+naw = datetime.datetime.now()# (Old load_dotenv block removed - handled below with logging)
 
 app = Flask(__name__)
 SANDBOX_DIR = 'sandbox_runs'
@@ -141,6 +85,90 @@ app.secret_key = "a-completely-ne-strong-secret-key-67890"
 
 app.config['SESSION_COOKIE_NAME'] = 'stellar_session_main'
 app.config['SESSION_PERMANENT'] = True
+
+# Constants for Google OAuth (Update these if necessary)
+FIREBASE_PROJECT_ID = "stellarai-live"
+
+@app.route('/login/google', methods=['POST'])
+def login_google():
+    data = request.get_json()
+    token = data.get('id_token')
+    
+    if not token:
+        return jsonify({"success": False, "message": "ID token required."}), 400
+
+    try:
+        # Verify the ID token using Google's verification library
+        # For Firebase, the audience is the Firebase Project ID
+        # and the issuer must be https://securetoken.google.com/<project_id>
+        try:
+            id_info = id_token.verify_firebase_token(
+                token, 
+                google_requests.Request(), 
+                audience=FIREBASE_PROJECT_ID
+            )
+        except Exception as ve:
+            logger.error(f"Token verification failed: {ve}")
+            return jsonify({"success": False, "message": f"Verification failed: {ve}"}), 401
+        
+        # Additional Firebase-specific checks
+        if id_info.get('iss') != f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}":
+            logger.error(f"Invalid issuer: {id_info.get('iss')}")
+            raise ValueError("Invalid issuer.")
+        
+        email = id_info['email']
+        name = data.get('display_name') or id_info.get('name') or email.split('@')[0]
+        
+        db = get_db()
+        cursor = db.execute('SELECT id, username, display_name, role, is_approved, login_count FROM users WHERE username = ?', (email,))
+        user = _fetchone_as_dict(cursor)
+
+        if not user:
+            # Check for first user
+            cursor = db.execute("SELECT COUNT(*) FROM users")
+            user_count = cursor.fetchone()[0]
+            
+            if user_count == 0:
+                role = 'admin'
+                is_approved = 1
+            else:
+                role = 'user'
+                is_approved = 0
+
+            db.execute('INSERT INTO users (username, display_name, role, is_approved) VALUES (?, ?, ?, ?)', (email, name, role, is_approved))
+            db.commit()
+            
+            cursor = db.execute('SELECT id, username, display_name, role, is_approved, login_count FROM users WHERE username = ?', (email,))
+            user = _fetchone_as_dict(cursor)
+        else:
+            # Update display_name if missing or different
+            if user.get('display_name') != name:
+                db.execute('UPDATE users SET display_name = ? WHERE id = ?', (name, user['id']))
+                db.commit()
+                user['display_name'] = name
+        
+        # Update login count
+        db.execute('UPDATE users SET login_count = login_count + 1 WHERE id = ?', (user['id'],))
+        db.commit()
+
+        # Set session
+        session['user_id'] = user['id']
+        session['username'] = user['username'] # This is the email
+        session['display_name'] = user['display_name']
+        session['role'] = user['role']
+        session['is_approved'] = bool(user['is_approved'])
+        session.permanent = True
+        
+        if user['is_approved']:
+            get_current_chat_id(session['user_id']) 
+        
+        return jsonify({"success": True, "is_approved": bool(user['is_approved'])}), 200
+
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid ID token."}), 401
+    except Exception as e:
+        logger.error(f"Unexpected error during Google login: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=7)
 
 app.config['SESSION_COOKIE_SECURE'] = True
@@ -255,9 +283,11 @@ def initialize_database():
         if cursor.fetchone() is None:
             cursor.execute('''CREATE TABLE users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                login_count INTEGER NOT NULL DEFAULT 0
+                username TEXT UNIQUE NOT NULL, -- Stores email
+                role TEXT DEFAULT 'user',
+                is_approved BOOLEAN DEFAULT 0,
+                login_count INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )''')
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chats'")
@@ -281,6 +311,7 @@ def initialize_database():
                 html_file TEXT,
                 file_analysis_context TEXT,
                 visualization_html TEXT,
+                hidden BOOLEAN DEFAULT 0,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )''')
@@ -294,6 +325,23 @@ def initialize_database():
                 print("Added 'visualization_html' column to 'messages' table.")
             except Exception as e:
                 print(f"Error adding 'visualization_html' column: {e}")
+
+        # Migration: Add hidden column if it doesn't exist
+        if 'hidden' not in columns:
+            try:
+                cursor.execute("ALTER TABLE messages ADD COLUMN hidden BOOLEAN DEFAULT 0")
+                print("Added 'hidden' column to 'messages' table.")
+            except Exception as e:
+                print(f"Error adding 'hidden' column: {e}")
+
+        cursor.execute("PRAGMA table_info(users)")
+        users_columns = [info[1] for info in cursor.fetchall()]
+        if 'display_name' not in users_columns:
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
+                print("Added 'display_name' column to 'users' table.")
+            except Exception as e:
+                print(f"Error adding 'display_name' column: {e}")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_api_keys'")
         if cursor.fetchone() is None:
@@ -350,9 +398,6 @@ def initialize_database():
         db.commit()
 
 initialize_database()
-
-# Start the user report thread
-threading.Thread(target=scheduled_user_report, daemon=True).start()
 
 def get_current_session_id():
     if 'initialized' not in session:
@@ -1276,7 +1321,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
             for tool in called_tools_results:
                 # Do not force-attach raw data from search tools, project history, or Lab execution logs
-                if tool['name'] in['extensive_search', 'native_search', 'lab_execute', 'host_repo', 'repo_execute']:
+                if tool['name'] in['extensive_search', 'native_search', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and "Your Forge Deployment History" in tool['result']:
                     continue
@@ -3230,76 +3275,121 @@ def serve_marked():
 def serve_turndown():
     return send_from_directory('.', 'turndown.js')
 
-@app.route('/image.png')
-def serve_bg_image():
-    return send_from_directory('.', 'image.png')
+def send_approval_email(recipient_email, display_name):
+    sender = "nikhil080905@gmail.com"
+    password = "kvpb lngz qzxn vdvu"
+    
+    msg = EmailMessage()
+    msg['Subject'] = "Stellar: Access Granted"
+    msg['From'] = f"Stellar AI <{sender}>"
+    msg['To'] = recipient_email
 
-@app.route('/register', methods=['POST'])
-def register_user():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
+    html_content = f"""
+    <html>
+    <body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Inter', sans-serif; color: #333333;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #ffffff; padding: 40px 0;">
+            <tr>
+                <td align="center">
+                    <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 16px; padding: 40px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.05);">
+                        <tr>
+                            <td>
+                                <h1 style="margin: 0; padding: 0; font-size: 2.5rem; letter-spacing: 4px; color: #4285F4;">STELLAR</h1>
+                                <p style="color: #00c292; font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; letter-spacing: 1px; margin-top: 10px; margin-bottom: 30px;">ACCESS GRANTED</p>
+                                
+                                <h2 style="font-size: 1.5rem; font-weight: normal; margin-bottom: 20px; color: #111111;">Welcome, {display_name}!</h2>
+                                
+                                <p style="color: #555555; font-size: 1rem; line-height: 1.6; margin-bottom: 40px;">
+                                    Your account has been successfully approved and provisioned for the Stellar Autonomous Environment. You can now log in and begin orchestrating clusters and generating analytics.
+                                </p>
+                                
+                                <a href="https://stellarai.live" style="display: inline-block; background-color: #4285F4; color: white; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 1rem; letter-spacing: 0.5px;">ENTER STELLAR</a>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+    
+    msg.set_content(f"Welcome to Stellar, {display_name}! Your account has been approved. Visit https://stellarai.live to access the platform.")
+    msg.add_alternative(html_content, subtype='html')
 
-    if not username or not password:
-        return jsonify({"success": False, "message": "Username and password are required."}), 400
-
-    db = get_db()
-    cursor = db.execute('SELECT id FROM users WHERE username = ?', (username,))
-    if _fetchone_as_dict(cursor):
-        return jsonify({"success": False, "message": "Username already taken. Please choose another."}), 409
-
-    password_hash = generate_password_hash(password)
     try:
-        db.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', (username, password_hash))
-        db.commit()
-        return jsonify({"success": True, "message": "Account created successfully! You can now log in."}), 201
-    except sqlite3.Error as e:
-        logger.error(f"Database error during registration: {e}", exc_info=True)
-        return jsonify({"success": False, "message": "An error occurred during account creation."}), 500
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(sender, password)
+            smtp.send_message(msg)
+        logger.info(f"SUCCESS: Approval email sent successfully to {recipient_email}.")
     except Exception as e:
-        logger.error(f"Unexpected error during registration: {e}", exc_info=True)
-        return jsonify({"success": False, "message": "An unexpected error occurred."}), 500
+        logger.error(f"FAILURE sending approval email: {str(e)}")
 
-@app.route('/login', methods=['POST'])
-def login_user():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-
-    if not username or not password:
-        return jsonify({"success": False, "message": "Username and password are required."}), 400
-
+@app.route('/api/admin/waitlist', methods=['GET'])
+def get_admin_waitlist():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
     db = get_db()
-    cursor = db.execute('SELECT id, username, password_hash, login_count FROM users WHERE username = ?', (username,))
-    user = _fetchone_as_dict(cursor)
+    cursor = db.execute("SELECT id, username, display_name, role, is_approved, created_at FROM users ORDER BY created_at DESC")
+    waitlist = _fetch_as_dict(cursor)
+    return jsonify(waitlist), 200
 
-    if user and (check_password_hash(user['password_hash'], password)) or (user and password==adminpass):
-        try:
-            is_first_login = (user['login_count'] == 0)
+@app.route('/api/admin/approve', methods=['POST'])
+def approve_user():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    user_id = data.get('user_id')
+    user_email = data.get('email') # Assuming username is email or email is provided
+    
+    if not user_id:
+        return jsonify({'error': 'User ID required'}), 400
+        
+    db = get_db()
+    try:
+        cursor = db.execute("SELECT username FROM users WHERE id = ?", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
             
-            notification_thread = threading.Thread(
-                target=send_login_notification,
-                args=(user['username'], is_first_login),
-                daemon=True
-            )
-            notification_thread.start()
-
-            db.execute('UPDATE users SET login_count = login_count + 1 WHERE id = ?', (user['id'],))
-            db.commit()
-        except Exception as e:
-            logger.error(f"Error during login notification/count update for {username}: {e}")
+        db.execute("UPDATE users SET is_approved = 1 WHERE id = ?", (user_id,))
+        db.commit()
         
-        session['user_id'] = user['id']
-        session['username'] = user['username']
-        session.permanent = True
+        # If user_email is not provided, try to use username if it looks like an email
+        recipient = user_email or (user['username'] if '@' in user['username'] else None)
         
-        get_current_chat_id(session['user_id']) 
-        
-        return jsonify({"success": True, "message": "Login successful!"}), 200
-    else:
-        return jsonify({"success": False, "message": "Invalid username or password."}), 401
+        if recipient:
+            threading.Thread(target=send_approval_email, args=(recipient, user['username']), daemon=True).start()
+            
+        return jsonify({'success': True, 'message': f"User {user['username']} approved."}), 200
+    except sqlite3.Error as e:
+        return jsonify({'error': str(e)}), 500
 
-
+@app.route('/api/admin/impersonate', methods=['POST'])
+def admin_impersonate():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    user_id = data.get('user_id')
+    if not user_id:
+         return jsonify({'error': 'User ID required'}), 400
+         
+    db = get_db()
+    cursor = db.execute('SELECT id, username, display_name, role, is_approved FROM users WHERE id = ?', (user_id,))
+    user = _fetchone_as_dict(cursor)
+    if not user:
+         return jsonify({'error': 'User not found'}), 404
+         
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['display_name'] = user['display_name']
+    session['role'] = user['role']
+    session['is_approved'] = bool(user['is_approved'])
+    session.pop('current_chat_id', None)
+    
+    return jsonify({'success': True, 'message': f"Impersonating {user['username']}"}), 200
 
 @app.route('/logout', methods=['POST'])
 def logout_user():
@@ -3312,10 +3402,21 @@ def logout_user():
 @app.route('/check_auth', methods=['GET'])
 def check_auth_status():
     if 'user_id' in session:
-        return jsonify({"logged_in": True, "username": session['username']}), 200
+        db = get_db()
+        cursor = db.execute('SELECT username, display_name, role, is_approved FROM users WHERE id = ?', (session['user_id'],))
+        user = _fetchone_as_dict(cursor)
+        if user:
+            return jsonify({
+                "logged_in": True,
+                "username": user['username'],
+                "display_name": user['display_name'] or user['username'],
+                "role": user['role'],
+                "is_approved": bool(user['is_approved'])
+            }), 200
+        else:
+            return jsonify({"logged_in": False}), 200
     else:
         return jsonify({"logged_in": False}), 200
-
 @app.route('/api/chats', methods=['GET'])
 def get_user_chats():
     if 'user_id' not in session:
@@ -3463,21 +3564,27 @@ def get_user_profile():
     
     return jsonify({"success": True, "username": session['username'], "user_id": session['user_id']}), 200
 
-@app.route('/api/user/change_password', methods=['POST'])
-def change_password_route():
+@app.route('/api/user/change_display_name', methods=['POST'])
+def change_display_name_route():
     if 'user_id' not in session:
         return jsonify({"success": False, "message": "Authentication required."}), 401
     
     user_id = session['user_id']
     data = request.get_json()
-    current_password = data.get('current_password')
-    new_password = data.get('new_password')
+    new_name = data.get('new_display_name')
 
-    if not current_password or not new_password:
-        return jsonify({"success": False, "message": "Current and new passwords are required."}), 400
+    if not new_name:
+        return jsonify({"success": False, "message": "New display name is required."}), 400
 
-    success, message = change_user_password(user_id, current_password, new_password)
-    return jsonify({"success": success, "message": message}), 200
+    db = get_db()
+    try:
+        db.execute('UPDATE users SET display_name = ? WHERE id = ?', (new_name, user_id))
+        db.commit()
+        session['display_name'] = new_name
+        return jsonify({"success": True, "message": "Display name changed successfully."}), 200
+    except Exception as e:
+        logger.error(f"Error changing display name: {e}")
+        return jsonify({"success": False, "message": "Server error."}), 500
 
 @app.route('/unsplash', methods=['GET'])
 def get_unsplash_images():
@@ -3524,15 +3631,35 @@ def get_unsplash_images():
 
 @app.route('/')
 def index():
+    def serve_no_cache(filename):
+        with open(filename, 'r') as f:
+            content = f.read()
+        response = make_response(content)
+        response.headers['Content-Type'] = 'text/html'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+
+    if 'user_id' not in session:
+        return serve_no_cache('login.html')
+
+    db = get_db()
+    cursor = db.execute('SELECT is_approved FROM users WHERE id = ?', (session['user_id'],))
+    user_data = cursor.fetchone()
+
+    # If the user was approved in the DB, update their session
+    if user_data and user_data[0] == 1:
+        session['is_approved'] = True
+
+    if not session.get('is_approved'):
+        return serve_no_cache('waitlist.html')
+    
     if 'initialized' not in session:
         session['initialized'] = True
         session.permanent = True
-    response = make_response(send_from_directory('.', 'index.html'))
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
-
+        
+    return serve_no_cache('index.html')
 @app.route('/api/chats/search_messages', methods=['GET'])
 def search_messages_route():
     if 'user_id' not in session:
