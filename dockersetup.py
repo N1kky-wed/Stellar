@@ -26,7 +26,7 @@ FROM gcc:latest
 WORKDIR /app
 """,
     "Dockerfile.node": """# Node.js sandbox
-FROM node:20-alpine
+FROM node:22-alpine
 RUN npm install -g typescript
 WORKDIR /app
 """,
@@ -50,6 +50,21 @@ WORKDIR /app
 FROM ruby:3.2-alpine
 WORKDIR /app
 """,
+    "Dockerfile.repo": """# Stellar Repo Host Runtime
+FROM python:3.12-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y \\
+    curl \\
+    git \\
+    wget \\
+    build-essential \\
+    procps \\
+    iputils-ping \\
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
+    && apt-get install -y nodejs \\
+    && rm -rf /var/lib/apt/lists/*
+CMD ["tail", "-f", "/dev/null"]
+""",
     "Dockerfile.lab": """# Stellar Lab Core Sandbox
 FROM python:3.12-slim
 WORKDIR /lab
@@ -61,7 +76,7 @@ RUN apt-get update && apt-get install -y \\
     build-essential \\
     procps \\
     iputils-ping \\
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \\
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
     && apt-get install -y nodejs \\
     && rm -rf /var/lib/apt/lists/*
 
@@ -81,6 +96,7 @@ IMAGES_TO_BUILD = {
     "Dockerfile.rust": "stellar-rust-sandbox:latest",
     "Dockerfile.php": "stellar-php-sandbox:latest",
     "Dockerfile.ruby": "stellar-ruby-sandbox:latest",
+    "Dockerfile.repo": "stellar-repo-host:latest",
     "Dockerfile.lab": "stellar-lab-core:latest",
 }
 

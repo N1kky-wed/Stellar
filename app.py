@@ -1260,6 +1260,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             yield {'status': 'Drawing...'}
                         elif func_name == "make_presentation":
                             yield {'status': 'Creating presentation slides...'}
+                        elif func_name == "analyze_youtube_video":
+                            yield {'status': 'Analyzing YouTube video content...'}
                         elif func_name == "forge_control":
                             yield {'status': 'Controlling project environment...'}
                         elif func_name == "lab_execute":
@@ -1290,8 +1292,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 func_to_call = getattr(agent_tools, func_name)
                                 args_dict = dict(fc.args) if fc.args else {}
                                 
-                                # Dynamically pass the current model_id to render_svg
-                                if func_name == "render_svg":
+                                # Dynamically pass the current model_id to specific tools
+                                if func_name in ["render_svg", "analyze_youtube_video"]:
                                     if 'model_id' not in args_dict:
                                         args_dict['model_id'] = model_id
 

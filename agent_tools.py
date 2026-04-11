@@ -1070,6 +1070,50 @@ def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100) 
     except Exception as e:
         return f"Error reading tool output: {str(e)}"
 
+def analyze_youtube_video(video_url: str, query: str, start_time: str = None, end_time: str = None, fps: int = 1, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
+    \"\"\"Analyzes a YouTube video (including live streams or long videos) using the Gemini API.
+    Args:
+        video_url: The full YouTube URL (e.g., 'https://www.youtube.com/watch?v=...').
+        query: What you want to find out or analyze in the video. State your question clearly.
+        start_time: Optional start offset (e.g., '1m10s', '60s').
+        end_time: Optional end offset (e.g., '2m30s', '120s').
+        fps: Frames per second to sample from the video (default 1).
+        model_id: (Internal) The model to use for analysis.
+    \"\"\"
+    from app import PRIMARY_API_KEY
+    client = genai.Client(api_key=PRIMARY_API_KEY, http_options={'api_version': 'v1beta'})
+    
+    part = types.Part(
+        file_data=types.FileData(
+            file_uri=video_url,
+            mime_type="video/*",
+        )
+    )
+    
+    video_metadata = {}
+    if start_time: video_metadata['start_offset'] = start_time
+    if end_time: video_metadata['end_offset'] = end_time
+    if fps: video_metadata['fps'] = int(fps)
+    
+    if video_metadata:
+        part.video_metadata = types.VideoMetadata(**video_metadata)
+        
+    contents = [
+        types.Content(
+            role="user",
+            parts=[part, types.Part.from_text(text=query)]
+        )
+    ]
+    
+    try:
+        response = client.models.generate_content(
+            model=model_id,
+            contents=contents
+        )
+        return response.text if response.text else "The model returned an empty response for the video analysis."
+    except Exception as e:
+        return f"Error analyzing YouTube video: {str(e)}"
+
 # Define the tools list for Gemini
 
 available_tools = [
@@ -1079,6 +1123,7 @@ available_tools = [
     render_svg,
     make_presentation,
     regenerate_presentation_slide,
+    analyze_youtube_video,
     forge_control,
     repo_control,
     lab_execute,
