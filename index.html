@@ -545,74 +545,7 @@
             transform: translateY(0);
         }
 
-        body.bg-off #forgeSymbolsOverlay {
-            display: none;
-        }
-
-        /* ===== Forge Glitch Symbols ===== */
-        #forgeSymbolsOverlay {
-            position: absolute;
-            inset: 0;
-            overflow: hidden;
-            pointer-events: none;
-            z-index: 0;
-        }
-
-        #forge-loading-overlay>div:not(#forgeSymbolsOverlay),
-        #forge-loading-overlay>p {
-            position: relative;
-            z-index: 1;
-        }
-
-        .symbol-column {
-            position: absolute;
-            top: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            font-family: 'Fira Code', 'Courier New', monospace;
-            font-size: 1.3rem;
-            font-weight: 700;
-            letter-spacing: 0.1em;
-            line-height: 1.8;
-            white-space: nowrap;
-            animation: scrollSymbols linear infinite;
-            opacity: 0.4;
-            text-shadow: 0 0 8px currentColor, 0 0 2px currentColor;
-        }
-
-        @keyframes scrollSymbols {
-            0% {
-                transform: translateY(0);
-            }
-
-            100% {
-                transform: translateY(-50%);
-            }
-        }
-
-        @keyframes glitchFlicker {
-
-            0%,
-            100% {
-                opacity: 0.4;
-            }
-
-            5% {
-                opacity: 0.6;
-                transform: skewX(2deg);
-            }
-
-            10% {
-                opacity: 0.3;
-                transform: skewX(-1deg);
-            }
-
-            15% {
-                opacity: 0.5;
-                transform: skewX(0);
-            }
-        }
+        
 
         :root {
             --model-color-start: #7b61ff;
@@ -4632,7 +4565,7 @@
             <!-- Stellar Forge UI -->
             <div id="forge-container" style="display: flex; width: 100%; height: 100%; flex-direction: row;">
                 <div id="forge-left-panel"
-                    style="width: 434px; min-width: 200px; max-width: 50%; max-height: 100%; background: var(--stellar-msg-bg); padding: 20px; display: flex; flex-direction: column; border-right: 1px solid var(--input-border); overflow: hidden; position: relative;">
+                    style="width: 487px; min-width: 200px; max-width: 50%; max-height: 100%; background: var(--stellar-msg-bg); padding: 20px; display: flex; flex-direction: column; border-right: 1px solid var(--input-border); overflow: hidden; position: relative;">
                     <style>
                         /* Custom Scrollbar for Forge */
                         #forge-status-log::-webkit-scrollbar,
@@ -4754,7 +4687,7 @@
                     style="flex-grow: 1; background: var(--stellar-msg-bg); position: relative; display: flex; flex-direction: column;">
                     <div id="forge-loading-overlay"
                         style="position: absolute; inset: 0; background: var(--stellar-msg-bg); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--secondary-text-color); font-size: 1rem; z-index: 2; gap: 12px;">
-                        <div id="forgeSymbolsOverlay"></div>
+                        
                         <div
                             style="width: 48px; height: 48px; background: rgba(255,255,255,0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -9606,46 +9539,7 @@
             }
         }
 
-        // ===== Forge Glitch Symbols Generator =====
-        (function () {
-            const overlay = document.getElementById('forgeSymbolsOverlay');
-            if (!overlay) return;
-
-            const symbols = '!@#$%^&*()';
-            const colors = [
-                '#00f5ff', '#ff00e5', '#39ff14', '#ffd700', '#ff6b6b',
-                '#c084fc', '#f472b6', '#22d3ee', '#fb923c', '#a3e635',
-                '#e879f9', '#2dd4bf', '#f87171', '#60a5fa', '#facc15'
-            ];
-            const columnCount = 14;
-            const charsPerColumn = 40;
-
-            for (let i = 0; i < columnCount; i++) {
-                const col = document.createElement('div');
-                col.className = 'symbol-column';
-
-                const leftPercent = (i / columnCount) * 100 + (Math.random() * (100 / columnCount / 2));
-                const duration = 8 + Math.random() * 14;
-                const delay = Math.random() * -20;
-
-                col.style.left = leftPercent + '%';
-                col.style.animationDuration = duration + 's';
-                col.style.animationDelay = delay + 's';
-                col.style.animation = `scrollSymbols ${duration}s linear ${delay}s infinite, glitchFlicker ${3 + Math.random() * 4}s ease-in-out ${Math.random() * 2}s infinite`;
-
-                // Build two copies of symbol set for seamless loop
-                let html = '';
-                for (let copy = 0; copy < 2; copy++) {
-                    for (let j = 0; j < charsPerColumn; j++) {
-                        const char = symbols[Math.floor(Math.random() * symbols.length)];
-                        const color = colors[Math.floor(Math.random() * colors.length)];
-                        html += '<span style="color:' + color + ';display:block;">' + char + '</span>';
-                    }
-                }
-                col.innerHTML = html;
-                overlay.appendChild(col);
-            }
-        })();
+        
 
     </script>
 
