@@ -4299,6 +4299,150 @@
             color: #ff6b6b;
             background: rgba(255, 107, 107, 0.1);
         }
+
+        /* --- Overhauled Agent Settings Modal --- */
+        #agentSettingsModal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 10, 0.85);
+            backdrop-filter: blur(35px);
+            -webkit-backdrop-filter: blur(35px);
+            z-index: 3000;
+            padding: 40px 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--model-color-start) transparent;
+        }
+
+        #agentSettingsModal::-webkit-scrollbar {
+            width: 6px;
+        }
+        #agentSettingsModal::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #agentSettingsModal::-webkit-scrollbar-thumb {
+            background: var(--model-color-start);
+            border-radius: 10px;
+        }
+
+        .settings-container-full {
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+            animation: modalIn 0.4s ease-out;
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 40px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 20px;
+        }
+
+        .settings-header h2 {
+            font-size: 2.2rem;
+            letter-spacing: 2px;
+            background: linear-gradient(135deg, #fff, var(--model-color-start));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
+        }
+
+        .settings-header p {
+            color: #888;
+            margin-top: 8px;
+            font-size: 1rem;
+        }
+
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 20px;
+            margin-bottom: 60px;
+        }
+
+        .tool-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tool-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+        }
+
+        .tool-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .tool-card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--model-color-start);
+        }
+
+        .tool-card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .tool-card-desc {
+            font-size: 0.9rem;
+            color: #888;
+            line-height: 1.5;
+            flex-grow: 1;
+        }
+
+        .tool-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .status-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-on { color: #00F090; }
+        .status-off { color: #FF2A4D; }
+
+        @media (max-width: 768px) {
+            .tool-grid {
+                grid-template-columns: 1fr;
+            }
+            .settings-header h2 {
+                font-size: 1.8rem;
+            }
+        }
     </style>
     <link rel="stylesheet" href="/custom_select.css">
     <script src="/custom_select.js"></script>
@@ -4490,72 +4634,184 @@
         </div>
     </div>
 
-    <!-- Agent Settings Modal -->
-    <div id="agentSettingsModal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2001; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
-        <div class="profile-modal-content" style="max-width: 450px;">
-            <h2>Agent Tool Settings</h2>
-            <button class="profile-close-btn" id="agentSettingsCloseBtn">
-                <svg width="20" height="20">
-                    <use xlink:href="#icon-close"></use>
-                </svg>
-            </button>
-            <p style="color: #8892b0; font-size: 0.9em; margin-bottom: 20px;">Toggle specific capabilities on or off for the AI agent.</p>
-            <div class="settings-list toggle-switches" id="agentToolsSettingsList">
-                <label class="toggle-item">
-                    <span>Render SVG</span>
-                    <input type="checkbox" id="toolToggle-render_svg" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item">
-                    <span>Generate Images</span>
-                    <input type="checkbox" id="toolToggle-generate_image" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item">
-                    <span>Make Presentations</span>
-                    <input type="checkbox" id="toolToggle-make_presentation" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item">
-                    <span>Extensive Web Search</span>
-                    <input type="checkbox" id="toolToggle-extensive_search" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item">
-                    <span>Fast Web Search</span>
-                    <input type="checkbox" id="toolToggle-native_search" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item">
-                    <span>Code Sandbox</span>
-                    <input type="checkbox" id="toolToggle-lab_execute" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item">
-                    <span>Forge Control</span>
-                    <input type="checkbox" id="toolToggle-forge_control" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item">
-                    <span>Repo Control</span>
-                    <input type="checkbox" id="toolToggle-repo_control" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item">
-                    <span>Read Tool History</span>
-                    <input type="checkbox" id="toolToggle-read_tool_output" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item">
-                    <span>YouTube Video Intelligence</span>
-                    <input type="checkbox" id="toolToggle-analyze_youtube_video" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
-                <label class="toggle-item" style="border-top: 1px solid rgba(255,255,255,0.05); margin-top: 10px; padding-top: 15px;">
-                    <span style="color: #4285F4; font-weight: 600;">Browser Notifications</span>
-                    <input type="checkbox" id="toolToggle-notifications_enabled" checked class="toggle-checkbox">
-                    <span class="toggle-slider"></span>
-                </label>
+    
+    <!-- Overhauled Agent Settings Modal (Full Screen Grid) -->
+    <div id="agentSettingsModal">
+        <div class="settings-container-full">
+            <div class="settings-header">
+                <div>
+                    <h2>Agent Capabilities</h2>
+                    <p>Orchestrate active nodes and intelligence modules.</p>
+                </div>
+                <button class="profile-close-btn" id="agentSettingsCloseBtn" style="position: static; font-size: 2.5rem;">&times;</button>
+            </div>
+
+            <div class="tool-grid" id="agentToolsSettingsList">
+                <!-- Cards generated here -->
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">📊</div>
+                        <div class="tool-card-title">Render SVG</div>
+                    </div>
+                    <div class="tool-card-desc">Generates interactive, animated technical diagrams and flowcharts for complex systems.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-render_svg" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">🖼️</div>
+                        <div class="tool-card-title">Generate Images</div>
+                    </div>
+                    <div class="tool-card-desc">Creates high-fidelity AI generated visuals and creative assets using Pro and Flash models.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-generate_image" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">📉</div>
+                        <div class="tool-card-title">Make Presentations</div>
+                    </div>
+                    <div class="tool-card-desc">Constructs comprehensive PowerPoint presentations with AI-designed infographic slides.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-make_presentation" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">🌐</div>
+                        <div class="tool-card-title">Extensive Web Search</div>
+                    </div>
+                    <div class="tool-card-desc">Deep multi-domain research, real-time news monitoring, and cross-source factual verification.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-extensive_search" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">⚡</div>
+                        <div class="tool-card-title">Fast Web Search</div>
+                    </div>
+                    <div class="tool-card-desc">High-speed factual lookups and real-time grounding for immediate query resolution.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-native_search" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">💻</div>
+                        <div class="tool-card-title">Code Sandbox</div>
+                    </div>
+                    <div class="tool-card-desc">Executes code in isolated elite runtimes for security research and technical validation.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-lab_execute" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">🏗️</div>
+                        <div class="tool-card-title">Forge Control</div>
+                    </div>
+                    <div class="tool-card-desc">Rapidly prototypes, deploys, and manages full-stack web applications at scale.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-forge_control" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">📦</div>
+                        <div class="tool-card-title">Repo Control</div>
+                    </div>
+                    <div class="tool-card-desc">Clones, modifies, and hosts existing GitHub repositories within the Stellar infrastructure.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-repo_control" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">📜</div>
+                        <div class="tool-card-title">Read Tool History</div>
+                    </div>
+                    <div class="tool-card-desc">Analyzes and retrieves logs from past technical executions and extended tool outputs.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-read_tool_output" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">🎥</div>
+                        <div class="tool-card-title">YouTube Intelligence</div>
+                    </div>
+                    <div class="tool-card-desc">Analyzes and summarizes video content with frame-by-frame temporal precision.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Node Activation</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-analyze_youtube_video" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card" style="border-color: var(--model-color-start); background: rgba(var(--model-color-start-rgb), 0.05);">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">🔔</div>
+                        <div class="tool-card-title">Browser Notifications</div>
+                    </div>
+                    <div class="tool-card-desc">Enable system-level desktop alerts for completion of long-running orchestration tasks.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label" style="color: var(--model-color-start)">System Sync</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-notifications_enabled" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -4601,7 +4857,151 @@
                         .modal-content::-webkit-scrollbar-thumb:hover {
                             background: rgba(255, 255, 255, 0.3);
                         }
-                    </style>
+                
+        /* --- Overhauled Agent Settings Modal --- */
+        #agentSettingsModal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 10, 0.85);
+            backdrop-filter: blur(35px);
+            -webkit-backdrop-filter: blur(35px);
+            z-index: 3000;
+            padding: 40px 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--model-color-start) transparent;
+        }
+
+        #agentSettingsModal::-webkit-scrollbar {
+            width: 6px;
+        }
+        #agentSettingsModal::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #agentSettingsModal::-webkit-scrollbar-thumb {
+            background: var(--model-color-start);
+            border-radius: 10px;
+        }
+
+        .settings-container-full {
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+            animation: modalIn 0.4s ease-out;
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 40px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 20px;
+        }
+
+        .settings-header h2 {
+            font-size: 2.2rem;
+            letter-spacing: 2px;
+            background: linear-gradient(135deg, #fff, var(--model-color-start));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
+        }
+
+        .settings-header p {
+            color: #888;
+            margin-top: 8px;
+            font-size: 1rem;
+        }
+
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 20px;
+            margin-bottom: 60px;
+        }
+
+        .tool-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tool-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+        }
+
+        .tool-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .tool-card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--model-color-start);
+        }
+
+        .tool-card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .tool-card-desc {
+            font-size: 0.9rem;
+            color: #888;
+            line-height: 1.5;
+            flex-grow: 1;
+        }
+
+        .tool-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .status-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-on { color: #00F090; }
+        .status-off { color: #FF2A4D; }
+
+        @media (max-width: 768px) {
+            .tool-grid {
+                grid-template-columns: 1fr;
+            }
+            .settings-header h2 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
                     <p style="font-size: 0.95em; color: var(--primary-text-color); margin-bottom: 8px; flex-shrink: 0;">
                         Describe the app you want to build or modify.
                     </p>
@@ -5817,12 +6217,12 @@
         ];
 
         const modelThemes = {
-            sapphire: { start: '#4facfe', end: '#00f2fe', border: 'rgba(79, 172, 254, 0.5)', shadow: 'rgba(79, 172, 254, 0.3)', inset: 'rgba(79, 172, 254, 0.2)', h_start: '#00f2fe', h_end: '#4facfe', h_border: 'rgba(79, 172, 254, 0.7)', h_shadow: 'rgba(79, 172, 254, 0.5)', h_inset: 'rgba(79, 172, 254, 0.3)', h_strong: 'rgba(79, 172, 254, 0.4)', statusBarBg: 'rgba(79, 172, 254, 0.2)', statusBarColor: '#e0f8ff', statusBarShadow: 'rgba(79, 172, 254, 0.4)', titleShadow: 'rgba(0, 100, 150, 0.4)', bodyBg1: '#0a192f', bodyBg2: '#112240', bodyBg3: '#1a3b5f', bodyBg4: '#112240', primaryText: '#e0f8ff', secondaryText: '#b3e5fc', headerBg: 'rgba(10, 25, 47, 0.4)', headerBorder: 'rgba(79, 172, 254, 0.2)', inputBg: 'rgba(10, 25, 47, 0.5)', inputBorder: 'rgba(79, 172, 254, 0.15)', inputFocusBg: 'rgba(17, 34, 64, 0.6)', userMsgBg: 'rgba(79, 172, 254, 0.1)', userMsgBorder: 'rgba(79, 172, 254, 0.3)', userMsgHoverBg: 'rgba(79, 172, 254, 0.15)', stellarMsgBg: 'rgba(5, 20, 35, 0.3)', stellarMsgBorder: 'rgba(79, 172, 254, 0.2)', stellarMsgHoverBg: 'rgba(10, 30, 45, 0.4)', nebulaMsgBg: 'rgba(10, 30, 45, 0.35)', nebulaMsgBorder: 'rgba(79, 172, 254, 0.3)', nebulaMsgHoverBg: 'rgba(15, 40, 55, 0.45)', tableBorder: 'rgba(79, 172, 254, 0.4)', codeBg: 'rgba(5, 20, 35, 0.9)', codeBorder: 'rgba(79, 172, 254, 0.5)', codeText: '#e0f8ff', inlineCodeText: '#80d8ff', copyBtnBg: 'rgba(79, 172, 254, 0.15)', copyBtnHoverBg: 'rgba(79, 172, 254, 0.25)', copyBtnColor: '#b3e5fc', copyBtnHoverColor: '#e0f8ff', copyBtnCopiedBg: '#4facfe', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(17, 34, 64, 0.7)', previewBtnBg: 'rgba(79, 172, 254, 0.15)', previewBtnHoverBg: 'rgba(79, 172, 254, 0.25)', previewBtnColor: '#b3e5fc', previewBtnHoverColor: '#e0f8ff', tokenLow: '#4facfe', tokenMedium: '#00f2fe', tokenHigh: '#ff8e8e' },
-            emerald: { start: '#00c292', end: '#00a77d', border: 'rgba(0, 194, 146, 0.6)', shadow: 'rgba(0, 194, 146, 0.3)', inset: 'rgba(0, 194, 146, 0.2)', h_start: '#00a77d', h_end: '#00c292', h_border: 'rgba(0, 194, 146, 0.8)', h_shadow: 'rgba(0, 194, 146, 0.5)', h_inset: 'rgba(0, 194, 146, 0.3)', h_strong: 'rgba(0, 194, 146, 0.4)', statusBarBg: 'rgba(0, 194, 146, 0.25)', statusBarColor: '#a7f5e3', statusBarShadow: 'rgba(0, 194, 146, 0.4)', titleShadow: 'rgba(0, 100, 80, 0.4)', bodyBg1: '#0a2e26', bodyBg2: '#0f4d3f', bodyBg3: '#146d59', bodyBg4: '#0f4d3f', primaryText: '#e0fdf6', secondaryText: '#94d9c9', headerBg: 'rgba(10, 46, 38, 0.4)', headerBorder: 'rgba(0, 194, 146, 0.2)', inputBg: 'rgba(10, 46, 38, 0.5)', inputBorder: 'rgba(0, 194, 146, 0.15)', inputFocusBg: 'rgba(15, 77, 63, 0.6)', userMsgBg: 'rgba(0, 194, 146, 0.1)', userMsgBorder: 'rgba(0, 194, 146, 0.3)', userMsgHoverBg: 'rgba(0, 194, 146, 0.15)', stellarMsgBg: 'rgba(0, 50, 40, 0.3)', stellarMsgBorder: 'rgba(0, 194, 146, 0.2)', stellarMsgHoverBg: 'rgba(0, 60, 50, 0.4)', nebulaMsgBg: 'rgba(0, 60, 50, 0.35)', nebulaMsgBorder: 'rgba(0, 194, 146, 0.3)', nebulaMsgHoverBg: 'rgba(0, 70, 60, 0.45)', tableBorder: 'rgba(0, 194, 146, 0.4)', codeBg: 'rgba(5, 30, 25, 0.9)', codeBorder: 'rgba(0, 194, 146, 0.5)', codeText: '#e8fff8', inlineCodeText: '#50e3c2', copyBtnBg: 'rgba(0, 194, 146, 0.15)', copyBtnHoverBg: 'rgba(0, 194, 146, 0.25)', copyBtnColor: '#a7f5e3', copyBtnHoverColor: '#e8fff8', copyBtnCopiedBg: '#00a77d', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(15, 77, 63, 0.7)', previewBtnBg: 'rgba(0, 194, 146, 0.15)', previewBtnHoverBg: 'rgba(0, 194, 146, 0.25)', previewBtnColor: '#a7f5e3', previewBtnHoverColor: '#e8fff8', tokenLow: '#00c292', tokenMedium: '#00a77d', tokenHigh: '#d31027' },
-            lunarity: { start: '#7b61ff', end: '#b554ff', border: 'rgba(181, 84, 255, 0.5)', shadow: 'rgba(123, 97, 255, 0.3)', inset: 'rgba(123, 97, 255, 0.2)', h_start: '#b554ff', h_end: '#7b61ff', h_border: 'rgba(123, 97, 255, 0.7)', h_shadow: 'rgba(123, 97, 255, 0.5)', h_inset: 'rgba(123, 97, 255, 0.3)', h_strong: 'rgba(123, 97, 255, 0.4)', statusBarBg: 'rgba(123, 97, 255, 0.2)', statusBarColor: '#e0d9ff', statusBarShadow: 'rgba(123, 97, 255, 0.4)', titleShadow: 'rgba(123, 97, 255, 0.3)', bodyBg1: '#0f0c29', bodyBg2: '#302b63', bodyBg3: '#24243e', bodyBg4: '#302b63', primaryText: '#f0f0f0', secondaryText: '#a9a3c7', headerBg: 'rgba(20, 16, 50, 0.3)', headerBorder: 'rgba(181, 84, 255, 0.15)', inputBg: 'rgba(20, 16, 50, 0.4)', inputBorder: 'rgba(181, 84, 255, 0.1)', inputFocusBg: 'rgba(30, 26, 60, 0.5)', userMsgBg: 'rgba(123, 97, 255, 0.15)', userMsgBorder: 'rgba(123, 97, 255, 0.3)', userMsgHoverBg: 'rgba(123, 97, 255, 0.2)', stellarMsgBg: 'rgba(0, 0, 0, 0.25)', stellarMsgBorder: 'rgba(123, 97, 255, 0.2)', stellarMsgHoverBg: 'rgba(0, 0, 0, 0.35)', nebulaMsgBg: 'rgba(10, 10, 25, 0.3)', nebulaMsgBorder: 'rgba(123, 97, 255, 0.3)', nebulaMsgHoverBg: 'rgba(15, 15, 35, 0.4)', tableBorder: 'rgba(123, 97, 255, 0.3)', codeBg: 'rgba(10, 10, 25, 0.85)', codeBorder: 'rgba(123, 97, 255, 0.4)', codeText: '#f5f5f5', inlineCodeText: '#cea9ff', copyBtnBg: 'rgba(255, 255, 255, 0.1)', copyBtnHoverBg: 'rgba(255, 255, 255, 0.2)', copyBtnColor: '#c5bfff', copyBtnHoverColor: '#f5f5f5', copyBtnCopiedBg: '#7b61ff', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(36, 36, 62, 0.8)', previewBtnBg: 'rgba(255, 255, 255, 0.1)', previewBtnHoverBg: 'rgba(255, 255, 255, 0.2)', previewBtnColor: '#c5bfff', previewBtnHoverColor: '#f5f5f5', tokenLow: '#7b61ff', tokenMedium: '#b554ff', tokenHigh: '#ff6b6b' },
-            crimson: { start: '#D31027', end: '#9A0007', border: 'rgba(211, 16, 39, 0.6)', shadow: 'rgba(211, 16, 39, 0.3)', inset: 'rgba(211, 16, 39, 0.2)', h_start: '#9A0007', h_end: '#D31027', h_border: 'rgba(211, 16, 39, 0.8)', h_shadow: 'rgba(211, 16, 39, 0.5)', h_inset: 'rgba(211, 16, 39, 0.3)', h_strong: 'rgba(211, 16, 39, 0.4)', statusBarBg: 'rgba(211, 16, 39, 0.2)', statusBarColor: '#ffcdd2', statusBarShadow: 'rgba(211, 16, 39, 0.4)', titleShadow: 'rgba(100, 0, 0, 0.4)', bodyBg1: '#2b0404', bodyBg2: '#4d0a0a', bodyBg3: '#6f1010', bodyBg4: '#4d0a0a', primaryText: '#ffebee', secondaryText: '#f7c4c4', headerBg: 'rgba(43, 4, 4, 0.4)', headerBorder: 'rgba(211, 16, 39, 0.2)', inputBg: 'rgba(43, 4, 4, 0.5)', inputBorder: 'rgba(211, 16, 39, 0.15)', inputFocusBg: 'rgba(77, 10, 10, 0.6)', userMsgBg: 'rgba(211, 16, 39, 0.1)', userMsgBorder: 'rgba(211, 16, 39, 0.3)', userMsgHoverBg: 'rgba(211, 16, 39, 0.15)', stellarMsgBg: 'rgba(50, 0, 0, 0.3)', stellarMsgBorder: 'rgba(211, 16, 39, 0.2)', stellarMsgHoverBg: 'rgba(60, 0, 0, 0.4)', nebulaMsgBg: 'rgba(60, 5, 5, 0.35)', nebulaMsgBorder: 'rgba(211, 16, 39, 0.3)', nebulaMsgHoverBg: 'rgba(70, 10, 10, 0.45)', tableBorder: 'rgba(211, 16, 39, 0.4)', codeBg: 'rgba(40, 5, 5, 0.9)', codeBorder: 'rgba(211, 16, 39, 0.5)', codeText: '#ffebee', inlineCodeText: '#ff8a80', copyBtnBg: 'rgba(211, 16, 39, 0.15)', copyBtnHoverBg: 'rgba(211, 16, 39, 0.25)', copyBtnColor: '#ffcdd2', copyBtnHoverColor: '#ffebee', copyBtnCopiedBg: '#9A0007', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(77, 10, 10, 0.7)', previewBtnBg: 'rgba(211, 16, 39, 0.15)', previewBtnHoverBg: 'rgba(211, 16, 39, 0.25)', previewBtnColor: '#ffcdd2', previewBtnHoverColor: '#ffebee', tokenLow: '#D31027', tokenMedium: '#ff512f', tokenHigh: '#fffb00' },
-            obsidian: { start: '#485563', end: '#29323c', border: 'rgba(72, 85, 99, 0.6)', shadow: 'rgba(72, 85, 99, 0.4)', inset: 'rgba(72, 85, 99, 0.2)', h_start: '#29323c', h_end: '#485563', h_border: 'rgba(72, 85, 99, 0.8)', h_shadow: 'rgba(72, 85, 99, 0.6)', h_inset: 'rgba(72, 85, 99, 0.3)', h_strong: 'rgba(72, 85, 99, 0.5)', statusBarBg: 'rgba(72, 85, 99, 0.3)', statusBarColor: '#cfd8dc', statusBarShadow: 'rgba(72, 85, 99, 0.4)', titleShadow: 'rgba(0, 0, 0, 0.4)', bodyBg1: '#0a0c0f', bodyBg2: '#11181f', bodyBg3: '#1a242f', bodyBg4: '#11181f', primaryText: '#eceff1', secondaryText: '#b0bec5', headerBg: 'rgba(26, 32, 39, 0.4)', headerBorder: 'rgba(72, 85, 99, 0.2)', inputBg: 'rgba(26, 32, 39, 0.5)', inputBorder: 'rgba(72, 85, 99, 0.15)', inputFocusBg: 'rgba(44, 62, 80, 0.6)', userMsgBg: 'rgba(72, 85, 99, 0.1)', userMsgBorder: 'rgba(72, 85, 99, 0.3)', userMsgHoverBg: 'rgba(72, 85, 99, 0.15)', stellarMsgBg: 'rgba(20, 30, 40, 0.3)', stellarMsgBorder: 'rgba(72, 85, 99, 0.2)', stellarMsgHoverBg: 'rgba(30, 40, 50, 0.4)', nebulaMsgBg: 'rgba(30, 40, 50, 0.35)', nebulaMsgBorder: 'rgba(72, 85, 99, 0.3)', nebulaMsgHoverBg: 'rgba(40, 50, 60, 0.45)', tableBorder: 'rgba(72, 85, 99, 0.4)', codeBg: 'rgba(15, 22, 30, 1)', codeBorder: 'rgba(72, 85, 99, 0.6)', codeText: '#eceff1', inlineCodeText: '#cfd8dc', copyBtnBg: 'rgba(72, 85, 99, 0.2)', copyBtnHoverBg: 'rgba(72, 85, 99, 0.3)', copyBtnColor: '#b0bec5', copyBtnHoverColor: '#eceff1', copyBtnCopiedBg: '#29323c', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(44, 62, 80, 0.7)', previewBtnBg: 'rgba(72, 85, 99, 0.2)', previewBtnHoverBg: 'rgba(72, 85, 99, 0.3)', previewBtnColor: '#b0bec5', previewBtnHoverColor: '#eceff1', tokenLow: '#485563', tokenMedium: '#6e7a85', tokenHigh: '#f3c700' },
-            'gemini pro': { start: '#7b61ff', end: '#b554ff', border: 'rgba(181, 84, 255, 0.5)', shadow: 'rgba(123, 97, 255, 0.3)', inset: 'rgba(123, 97, 255, 0.2)', h_start: '#b554ff', h_end: '#7b61ff', h_border: 'rgba(123, 97, 255, 0.7)', h_shadow: 'rgba(123, 97, 255, 0.5)', h_inset: 'rgba(123, 97, 255, 0.3)', h_strong: 'rgba(123, 97, 255, 0.4)', statusBarBg: 'rgba(123, 97, 255, 0.2)', statusBarColor: '#e0d9ff', statusBarShadow: 'rgba(123, 97, 255, 0.4)', titleShadow: 'rgba(123, 97, 255, 0.3)', bodyBg1: '#0f0c29', bodyBg2: '#302b63', bodyBg3: '#24243e', bodyBg4: '#302b63', primaryText: '#f0f0f0', secondaryText: '#a9a3c7', headerBg: 'rgba(20, 16, 50, 0.3)', headerBorder: 'rgba(181, 84, 255, 0.15)', inputBg: 'rgba(20, 16, 50, 0.4)', inputBorder: 'rgba(181, 84, 255, 0.1)', inputFocusBg: 'rgba(30, 26, 60, 0.5)', userMsgBg: 'rgba(123, 97, 255, 0.15)', userMsgBorder: 'rgba(123, 97, 255, 0.3)', userMsgHoverBg: 'rgba(123, 97, 255, 0.2)', stellarMsgBg: 'rgba(0, 0, 0, 0.25)', stellarMsgBorder: 'rgba(123, 97, 255, 0.2)', stellarMsgHoverBg: 'rgba(0, 0, 0, 0.35)', nebulaMsgBg: 'rgba(10, 10, 25, 0.3)', nebulaMsgBorder: 'rgba(123, 97, 255, 0.3)', nebulaMsgHoverBg: 'rgba(15, 15, 35, 0.4)', tableBorder: 'rgba(123, 97, 255, 0.3)', codeBg: 'rgba(10, 10, 25, 0.85)', codeBorder: 'rgba(123, 97, 255, 0.4)', codeText: '#f5f5f5', inlineCodeText: '#cea9ff', copyBtnBg: 'rgba(255, 255, 255, 0.1)', copyBtnHoverBg: 'rgba(255, 255, 255, 0.2)', copyBtnColor: '#c5bfff', copyBtnHoverColor: '#f5f5f5', copyBtnCopiedBg: '#7b61ff', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(36, 36, 62, 0.8)', previewBtnBg: 'rgba(255, 255, 255, 0.1)', previewBtnHoverBg: 'rgba(255, 255, 255, 0.2)', previewBtnColor: '#c5bfff', previewBtnHoverColor: '#f5f5f5', tokenLow: '#7b61ff', tokenMedium: '#b554ff', tokenHigh: '#ff6b6b' }
+            sapphire: { start_rgb: '79, 172, 254', start: '#4facfe', end: '#00f2fe', border: 'rgba(79, 172, 254, 0.5)', shadow: 'rgba(79, 172, 254, 0.3)', inset: 'rgba(79, 172, 254, 0.2)', h_start: '#00f2fe', h_end: '#4facfe', h_border: 'rgba(79, 172, 254, 0.7)', h_shadow: 'rgba(79, 172, 254, 0.5)', h_inset: 'rgba(79, 172, 254, 0.3)', h_strong: 'rgba(79, 172, 254, 0.4)', statusBarBg: 'rgba(79, 172, 254, 0.2)', statusBarColor: '#e0f8ff', statusBarShadow: 'rgba(79, 172, 254, 0.4)', titleShadow: 'rgba(0, 100, 150, 0.4)', bodyBg1: '#0a192f', bodyBg2: '#112240', bodyBg3: '#1a3b5f', bodyBg4: '#112240', primaryText: '#e0f8ff', secondaryText: '#b3e5fc', headerBg: 'rgba(10, 25, 47, 0.4)', headerBorder: 'rgba(79, 172, 254, 0.2)', inputBg: 'rgba(10, 25, 47, 0.5)', inputBorder: 'rgba(79, 172, 254, 0.15)', inputFocusBg: 'rgba(17, 34, 64, 0.6)', userMsgBg: 'rgba(79, 172, 254, 0.1)', userMsgBorder: 'rgba(79, 172, 254, 0.3)', userMsgHoverBg: 'rgba(79, 172, 254, 0.15)', stellarMsgBg: 'rgba(5, 20, 35, 0.3)', stellarMsgBorder: 'rgba(79, 172, 254, 0.2)', stellarMsgHoverBg: 'rgba(10, 30, 45, 0.4)', nebulaMsgBg: 'rgba(10, 30, 45, 0.35)', nebulaMsgBorder: 'rgba(79, 172, 254, 0.3)', nebulaMsgHoverBg: 'rgba(15, 40, 55, 0.45)', tableBorder: 'rgba(79, 172, 254, 0.4)', codeBg: 'rgba(5, 20, 35, 0.9)', codeBorder: 'rgba(79, 172, 254, 0.5)', codeText: '#e0f8ff', inlineCodeText: '#80d8ff', copyBtnBg: 'rgba(79, 172, 254, 0.15)', copyBtnHoverBg: 'rgba(79, 172, 254, 0.25)', copyBtnColor: '#b3e5fc', copyBtnHoverColor: '#e0f8ff', copyBtnCopiedBg: '#4facfe', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(17, 34, 64, 0.7)', previewBtnBg: 'rgba(79, 172, 254, 0.15)', previewBtnHoverBg: 'rgba(79, 172, 254, 0.25)', previewBtnColor: '#b3e5fc', previewBtnHoverColor: '#e0f8ff', tokenLow: '#4facfe', tokenMedium: '#00f2fe', tokenHigh: '#ff8e8e' },
+            emerald: { start_rgb: '0, 194, 146', start: '#00c292', end: '#00a77d', border: 'rgba(0, 194, 146, 0.6)', shadow: 'rgba(0, 194, 146, 0.3)', inset: 'rgba(0, 194, 146, 0.2)', h_start: '#00a77d', h_end: '#00c292', h_border: 'rgba(0, 194, 146, 0.8)', h_shadow: 'rgba(0, 194, 146, 0.5)', h_inset: 'rgba(0, 194, 146, 0.3)', h_strong: 'rgba(0, 194, 146, 0.4)', statusBarBg: 'rgba(0, 194, 146, 0.25)', statusBarColor: '#a7f5e3', statusBarShadow: 'rgba(0, 194, 146, 0.4)', titleShadow: 'rgba(0, 100, 80, 0.4)', bodyBg1: '#0a2e26', bodyBg2: '#0f4d3f', bodyBg3: '#146d59', bodyBg4: '#0f4d3f', primaryText: '#e0fdf6', secondaryText: '#94d9c9', headerBg: 'rgba(10, 46, 38, 0.4)', headerBorder: 'rgba(0, 194, 146, 0.2)', inputBg: 'rgba(10, 46, 38, 0.5)', inputBorder: 'rgba(0, 194, 146, 0.15)', inputFocusBg: 'rgba(15, 77, 63, 0.6)', userMsgBg: 'rgba(0, 194, 146, 0.1)', userMsgBorder: 'rgba(0, 194, 146, 0.3)', userMsgHoverBg: 'rgba(0, 194, 146, 0.15)', stellarMsgBg: 'rgba(0, 50, 40, 0.3)', stellarMsgBorder: 'rgba(0, 194, 146, 0.2)', stellarMsgHoverBg: 'rgba(0, 60, 50, 0.4)', nebulaMsgBg: 'rgba(0, 60, 50, 0.35)', nebulaMsgBorder: 'rgba(0, 194, 146, 0.3)', nebulaMsgHoverBg: 'rgba(0, 70, 60, 0.45)', tableBorder: 'rgba(0, 194, 146, 0.4)', codeBg: 'rgba(5, 30, 25, 0.9)', codeBorder: 'rgba(0, 194, 146, 0.5)', codeText: '#e8fff8', inlineCodeText: '#50e3c2', copyBtnBg: 'rgba(0, 194, 146, 0.15)', copyBtnHoverBg: 'rgba(0, 194, 146, 0.25)', copyBtnColor: '#a7f5e3', copyBtnHoverColor: '#e8fff8', copyBtnCopiedBg: '#00a77d', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(15, 77, 63, 0.7)', previewBtnBg: 'rgba(0, 194, 146, 0.15)', previewBtnHoverBg: 'rgba(0, 194, 146, 0.25)', previewBtnColor: '#a7f5e3', previewBtnHoverColor: '#e8fff8', tokenLow: '#00c292', tokenMedium: '#00a77d', tokenHigh: '#d31027' },
+            lunarity: { start_rgb: '123, 97, 255', start: '#7b61ff', end: '#b554ff', border: 'rgba(181, 84, 255, 0.5)', shadow: 'rgba(123, 97, 255, 0.3)', inset: 'rgba(123, 97, 255, 0.2)', h_start: '#b554ff', h_end: '#7b61ff', h_border: 'rgba(123, 97, 255, 0.7)', h_shadow: 'rgba(123, 97, 255, 0.5)', h_inset: 'rgba(123, 97, 255, 0.3)', h_strong: 'rgba(123, 97, 255, 0.4)', statusBarBg: 'rgba(123, 97, 255, 0.2)', statusBarColor: '#e0d9ff', statusBarShadow: 'rgba(123, 97, 255, 0.4)', titleShadow: 'rgba(123, 97, 255, 0.3)', bodyBg1: '#0f0c29', bodyBg2: '#302b63', bodyBg3: '#24243e', bodyBg4: '#302b63', primaryText: '#f0f0f0', secondaryText: '#a9a3c7', headerBg: 'rgba(20, 16, 50, 0.3)', headerBorder: 'rgba(181, 84, 255, 0.15)', inputBg: 'rgba(20, 16, 50, 0.4)', inputBorder: 'rgba(181, 84, 255, 0.1)', inputFocusBg: 'rgba(30, 26, 60, 0.5)', userMsgBg: 'rgba(123, 97, 255, 0.15)', userMsgBorder: 'rgba(123, 97, 255, 0.3)', userMsgHoverBg: 'rgba(123, 97, 255, 0.2)', stellarMsgBg: 'rgba(0, 0, 0, 0.25)', stellarMsgBorder: 'rgba(123, 97, 255, 0.2)', stellarMsgHoverBg: 'rgba(0, 0, 0, 0.35)', nebulaMsgBg: 'rgba(10, 10, 25, 0.3)', nebulaMsgBorder: 'rgba(123, 97, 255, 0.3)', nebulaMsgHoverBg: 'rgba(15, 15, 35, 0.4)', tableBorder: 'rgba(123, 97, 255, 0.3)', codeBg: 'rgba(10, 10, 25, 0.85)', codeBorder: 'rgba(123, 97, 255, 0.4)', codeText: '#f5f5f5', inlineCodeText: '#cea9ff', copyBtnBg: 'rgba(255, 255, 255, 0.1)', copyBtnHoverBg: 'rgba(255, 255, 255, 0.2)', copyBtnColor: '#c5bfff', copyBtnHoverColor: '#f5f5f5', copyBtnCopiedBg: '#7b61ff', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(36, 36, 62, 0.8)', previewBtnBg: 'rgba(255, 255, 255, 0.1)', previewBtnHoverBg: 'rgba(255, 255, 255, 0.2)', previewBtnColor: '#c5bfff', previewBtnHoverColor: '#f5f5f5', tokenLow: '#7b61ff', tokenMedium: '#b554ff', tokenHigh: '#ff6b6b' },
+            crimson: { start_rgb: '211, 16, 39', start: '#D31027', end: '#9A0007', border: 'rgba(211, 16, 39, 0.6)', shadow: 'rgba(211, 16, 39, 0.3)', inset: 'rgba(211, 16, 39, 0.2)', h_start: '#9A0007', h_end: '#D31027', h_border: 'rgba(211, 16, 39, 0.8)', h_shadow: 'rgba(211, 16, 39, 0.5)', h_inset: 'rgba(211, 16, 39, 0.3)', h_strong: 'rgba(211, 16, 39, 0.4)', statusBarBg: 'rgba(211, 16, 39, 0.2)', statusBarColor: '#ffcdd2', statusBarShadow: 'rgba(211, 16, 39, 0.4)', titleShadow: 'rgba(100, 0, 0, 0.4)', bodyBg1: '#2b0404', bodyBg2: '#4d0a0a', bodyBg3: '#6f1010', bodyBg4: '#4d0a0a', primaryText: '#ffebee', secondaryText: '#f7c4c4', headerBg: 'rgba(43, 4, 4, 0.4)', headerBorder: 'rgba(211, 16, 39, 0.2)', inputBg: 'rgba(43, 4, 4, 0.5)', inputBorder: 'rgba(211, 16, 39, 0.15)', inputFocusBg: 'rgba(77, 10, 10, 0.6)', userMsgBg: 'rgba(211, 16, 39, 0.1)', userMsgBorder: 'rgba(211, 16, 39, 0.3)', userMsgHoverBg: 'rgba(211, 16, 39, 0.15)', stellarMsgBg: 'rgba(50, 0, 0, 0.3)', stellarMsgBorder: 'rgba(211, 16, 39, 0.2)', stellarMsgHoverBg: 'rgba(60, 0, 0, 0.4)', nebulaMsgBg: 'rgba(60, 5, 5, 0.35)', nebulaMsgBorder: 'rgba(211, 16, 39, 0.3)', nebulaMsgHoverBg: 'rgba(70, 10, 10, 0.45)', tableBorder: 'rgba(211, 16, 39, 0.4)', codeBg: 'rgba(40, 5, 5, 0.9)', codeBorder: 'rgba(211, 16, 39, 0.5)', codeText: '#ffebee', inlineCodeText: '#ff8a80', copyBtnBg: 'rgba(211, 16, 39, 0.15)', copyBtnHoverBg: 'rgba(211, 16, 39, 0.25)', copyBtnColor: '#ffcdd2', copyBtnHoverColor: '#ffebee', copyBtnCopiedBg: '#9A0007', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(77, 10, 10, 0.7)', previewBtnBg: 'rgba(211, 16, 39, 0.15)', previewBtnHoverBg: 'rgba(211, 16, 39, 0.25)', previewBtnColor: '#ffcdd2', previewBtnHoverColor: '#ffebee', tokenLow: '#D31027', tokenMedium: '#ff512f', tokenHigh: '#fffb00' },
+            obsidian: { start_rgb: '72, 85, 99', start: '#485563', end: '#29323c', border: 'rgba(72, 85, 99, 0.6)', shadow: 'rgba(72, 85, 99, 0.4)', inset: 'rgba(72, 85, 99, 0.2)', h_start: '#29323c', h_end: '#485563', h_border: 'rgba(72, 85, 99, 0.8)', h_shadow: 'rgba(72, 85, 99, 0.6)', h_inset: 'rgba(72, 85, 99, 0.3)', h_strong: 'rgba(72, 85, 99, 0.5)', statusBarBg: 'rgba(72, 85, 99, 0.3)', statusBarColor: '#cfd8dc', statusBarShadow: 'rgba(72, 85, 99, 0.4)', titleShadow: 'rgba(0, 0, 0, 0.4)', bodyBg1: '#0a0c0f', bodyBg2: '#11181f', bodyBg3: '#1a242f', bodyBg4: '#11181f', primaryText: '#eceff1', secondaryText: '#b0bec5', headerBg: 'rgba(26, 32, 39, 0.4)', headerBorder: 'rgba(72, 85, 99, 0.2)', inputBg: 'rgba(26, 32, 39, 0.5)', inputBorder: 'rgba(72, 85, 99, 0.15)', inputFocusBg: 'rgba(44, 62, 80, 0.6)', userMsgBg: 'rgba(72, 85, 99, 0.1)', userMsgBorder: 'rgba(72, 85, 99, 0.3)', userMsgHoverBg: 'rgba(72, 85, 99, 0.15)', stellarMsgBg: 'rgba(20, 30, 40, 0.3)', stellarMsgBorder: 'rgba(72, 85, 99, 0.2)', stellarMsgHoverBg: 'rgba(30, 40, 50, 0.4)', nebulaMsgBg: 'rgba(30, 40, 50, 0.35)', nebulaMsgBorder: 'rgba(72, 85, 99, 0.3)', nebulaMsgHoverBg: 'rgba(40, 50, 60, 0.45)', tableBorder: 'rgba(72, 85, 99, 0.4)', codeBg: 'rgba(15, 22, 30, 1)', codeBorder: 'rgba(72, 85, 99, 0.6)', codeText: '#eceff1', inlineCodeText: '#cfd8dc', copyBtnBg: 'rgba(72, 85, 99, 0.2)', copyBtnHoverBg: 'rgba(72, 85, 99, 0.3)', copyBtnColor: '#b0bec5', copyBtnHoverColor: '#eceff1', copyBtnCopiedBg: '#29323c', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(44, 62, 80, 0.7)', previewBtnBg: 'rgba(72, 85, 99, 0.2)', previewBtnHoverBg: 'rgba(72, 85, 99, 0.3)', previewBtnColor: '#b0bec5', previewBtnHoverColor: '#eceff1', tokenLow: '#485563', tokenMedium: '#6e7a85', tokenHigh: '#f3c700' },
+            'gemini pro': { start_rgb: '123, 97, 255', start: '#7b61ff', end: '#b554ff', border: 'rgba(181, 84, 255, 0.5)', shadow: 'rgba(123, 97, 255, 0.3)', inset: 'rgba(123, 97, 255, 0.2)', h_start: '#b554ff', h_end: '#7b61ff', h_border: 'rgba(123, 97, 255, 0.7)', h_shadow: 'rgba(123, 97, 255, 0.5)', h_inset: 'rgba(123, 97, 255, 0.3)', h_strong: 'rgba(123, 97, 255, 0.4)', statusBarBg: 'rgba(123, 97, 255, 0.2)', statusBarColor: '#e0d9ff', statusBarShadow: 'rgba(123, 97, 255, 0.4)', titleShadow: 'rgba(123, 97, 255, 0.3)', bodyBg1: '#0f0c29', bodyBg2: '#302b63', bodyBg3: '#24243e', bodyBg4: '#302b63', primaryText: '#f0f0f0', secondaryText: '#a9a3c7', headerBg: 'rgba(20, 16, 50, 0.3)', headerBorder: 'rgba(181, 84, 255, 0.15)', inputBg: 'rgba(20, 16, 50, 0.4)', inputBorder: 'rgba(181, 84, 255, 0.1)', inputFocusBg: 'rgba(30, 26, 60, 0.5)', userMsgBg: 'rgba(123, 97, 255, 0.15)', userMsgBorder: 'rgba(123, 97, 255, 0.3)', userMsgHoverBg: 'rgba(123, 97, 255, 0.2)', stellarMsgBg: 'rgba(0, 0, 0, 0.25)', stellarMsgBorder: 'rgba(123, 97, 255, 0.2)', stellarMsgHoverBg: 'rgba(0, 0, 0, 0.35)', nebulaMsgBg: 'rgba(10, 10, 25, 0.3)', nebulaMsgBorder: 'rgba(123, 97, 255, 0.3)', nebulaMsgHoverBg: 'rgba(15, 15, 35, 0.4)', tableBorder: 'rgba(123, 97, 255, 0.3)', codeBg: 'rgba(10, 10, 25, 0.85)', codeBorder: 'rgba(123, 97, 255, 0.4)', codeText: '#f5f5f5', inlineCodeText: '#cea9ff', copyBtnBg: 'rgba(255, 255, 255, 0.1)', copyBtnHoverBg: 'rgba(255, 255, 255, 0.2)', copyBtnColor: '#c5bfff', copyBtnHoverColor: '#f5f5f5', copyBtnCopiedBg: '#7b61ff', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(36, 36, 62, 0.8)', previewBtnBg: 'rgba(255, 255, 255, 0.1)', previewBtnHoverBg: 'rgba(255, 255, 255, 0.2)', previewBtnColor: '#c5bfff', previewBtnHoverColor: '#f5f5f5', tokenLow: '#7b61ff', tokenMedium: '#b554ff', tokenHigh: '#ff6b6b' }
         };
 
         if (typeof hljs !== 'undefined') { hljs.configure({ ignoreUnescapedHTML: true }); }
@@ -6718,7 +7118,7 @@
                     if (key.startsWith('h_')) { if (key === 'h_strong') cssVarName = '--model-hover-shadow-strong'; else if (key === 'h_inset') cssVarName = '--model-hover-color-shadow-inset'; else if (key === 'h_shadow') cssVarName = '--model-hover-color-shadow'; else if (key === 'h_border') cssVarName = '--model-hover-color-border'; else cssVarName = `--model-hover-color-${key.substring(2).replace('_', '-')}`; }
                     else if (['start', 'end', 'border', 'shadow', 'inset'].includes(key)) { cssVarName = `--model-color-${key.replace('_', '-')}`; }
                     else { switch (key) { case 'bodyBg1': cssVarName = '--body-bg-color1'; break; case 'bodyBg2': cssVarName = '--body-bg-color2'; break; case 'bodyBg3': cssVarName = '--body-bg-color3'; break; case 'bodyBg4': cssVarName = '--body-bg-color4'; break; case 'titleShadow': cssVarName = '--title-shadow-color'; break; case 'statusBarBg': cssVarName = '--status-bar-bg'; break; case 'statusBarColor': cssVarName = '--status-bar-color'; break; case 'statusBarShadow': cssVarName = '--status-bar-shadow'; break; case 'primaryText': cssVarName = '--primary-text-color'; break; case 'secondaryText': cssVarName = '--secondary-text-color'; break; case 'headerBg': cssVarName = '--header-bg'; break; case 'headerBorder': cssVarName = '--header-border'; break; case 'inputBg': cssVarName = '--input-bg'; break; case 'inputBorder': cssVarName = '--input-border'; break; case 'inputFocusBg': cssVarName = '--input-focus-bg'; break; case 'userMsgBg': cssVarName = '--user-msg-bg'; break; case 'userMsgBorder': cssVarName = '--user-msg-border'; break; case 'userMsgHoverBg': cssVarName = '--user-msg-hover-bg'; break; case 'stellarMsgBg': cssVarName = '--stellar-msg-bg'; break; case 'stellarMsgBorder': cssVarName = '--stellar-msg-border'; break; case 'stellarMsgHoverBg': cssVarName = '--stellar-msg-hover-bg'; break; case 'nebulaMsgBg': cssVarName = '--nebula-msg-bg'; break; case 'nebulaMsgBorder': cssVarName = '--nebula-msg-border'; break; case 'nebulaMsgHoverBg': cssVarName = '--nebula-msg-hover-bg'; break; case 'tableBorder': cssVarName = '--table-border-color'; break; case 'codeBg': cssVarName = '--code-bg'; break; case 'codeBorder': cssVarName = '--code-border'; break; case 'codeText': cssVarName = '--code-text-color'; break; case 'inlineCodeText': cssVarName = '--inline-code-text-color'; break; case 'copyBtnBg': cssVarName = '--code-btn-bg'; break; case 'copyBtnHoverBg': cssVarName = '--code-btn-hover-bg'; break; case 'copyBtnColor': cssVarName = '--code-btn-color'; break; case 'copyBtnHoverColor': cssVarName = '--code-btn-hover-color'; break; case 'copyBtnCopiedBg': cssVarName = '--copy-btn-copied-bg'; break; case 'copyBtnCopiedColor': cssVarName = '--copy-btn-copied-color'; break; case 'scrollbarTrack': cssVarName = '--scrollbar-track-bg'; break; case 'previewBtnBg': cssVarName = '--preview-btn-bg'; break; case 'previewBtnHoverBg': cssVarName = '--preview-btn-hover-bg'; break; case 'previewBtnColor': cssVarName = '--preview-btn-color'; break; case 'previewBtnHoverColor': cssVarName = '--preview-btn-hover-color'; break; case 'tokenLow': cssVarName = '--token-bar-fill-low'; break; case 'tokenMedium': cssVarName = '--token-bar-fill-medium'; break; case 'tokenHigh': cssVarName = '--token-bar-fill-high'; break; default: cssVarName = null; } }
-                    if (cssVarName) { root.style.setProperty(cssVarName, theme[key]); }
+                    if (cssVarName) { root.style.setProperty(cssVarName, theme[key]); } if (key === 'start_rgb') { root.style.setProperty('--model-color-start-rgb', theme[key]); }
                 });
                 root.style.setProperty('--link-color', theme.start); root.style.setProperty('--link-hover-color', theme.h_start); root.style.setProperty('--input-focus-border', theme.border); root.style.setProperty('--inline-code-bg', theme.stellarMsgBg || 'rgba(0,0,0, 0.3)'); root.style.setProperty('--status-bar-idle-color', theme.secondaryText); root.style.setProperty('--status-bar-idle-bg', 'rgba(0, 0, 0, 0.2)'); root.style.setProperty('--scrollbar-thumb-start', theme.start); root.style.setProperty('--scrollbar-thumb-end', theme.end); root.style.setProperty('--scrollbar-thumb-border', theme.border); root.style.setProperty('--scrollbar-thumb-hover-start', theme.h_start); root.style.setProperty('--scrollbar-thumb-hover-end', theme.h_end); root.style.setProperty('--scrollbar-thumb-hover-border', theme.h_border);
                 root.style.setProperty('--output-copy-btn-bg', theme.copyBtnBg || 'rgba(50, 50, 50, 0.7)');
@@ -9544,7 +9944,151 @@
             if (language === 'html') {
                 workspacePanel.classList.add('html-mode-active');
                 if (codeLabEditor.getOption("mode") !== "htmlmixed") {
-                    codeLabEditor.setValue('<!DOCTYPE html>\n<html>\n<head>\n    <title>My Page</title>\n    <style>\n        body { font-family: sans-serif; color: #333; }\n    </style>\n</head>\n<body>\n    <h1>Hello, Stellar!</h1>\n    <p>Start coding to see your changes live.</p>\n</body>\n</html>');
+                    codeLabEditor.setValue('<!DOCTYPE html>\n<html>\n<head>\n    <title>My Page</title>\n    <style>\n        body { font-family: sans-serif; color: #333; }\n
+        /* --- Overhauled Agent Settings Modal --- */
+        #agentSettingsModal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 10, 0.85);
+            backdrop-filter: blur(35px);
+            -webkit-backdrop-filter: blur(35px);
+            z-index: 3000;
+            padding: 40px 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--model-color-start) transparent;
+        }
+
+        #agentSettingsModal::-webkit-scrollbar {
+            width: 6px;
+        }
+        #agentSettingsModal::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #agentSettingsModal::-webkit-scrollbar-thumb {
+            background: var(--model-color-start);
+            border-radius: 10px;
+        }
+
+        .settings-container-full {
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+            animation: modalIn 0.4s ease-out;
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 40px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 20px;
+        }
+
+        .settings-header h2 {
+            font-size: 2.2rem;
+            letter-spacing: 2px;
+            background: linear-gradient(135deg, #fff, var(--model-color-start));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
+        }
+
+        .settings-header p {
+            color: #888;
+            margin-top: 8px;
+            font-size: 1rem;
+        }
+
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 20px;
+            margin-bottom: 60px;
+        }
+
+        .tool-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tool-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+        }
+
+        .tool-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .tool-card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--model-color-start);
+        }
+
+        .tool-card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .tool-card-desc {
+            font-size: 0.9rem;
+            color: #888;
+            line-height: 1.5;
+            flex-grow: 1;
+        }
+
+        .tool-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .status-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-on { color: #00F090; }
+        .status-off { color: #FF2A4D; }
+
+        @media (max-width: 768px) {
+            .tool-grid {
+                grid-template-columns: 1fr;
+            }
+            .settings-header h2 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>\n</head>\n<body>\n    <h1>Hello, Stellar!</h1>\n    <p>Start coding to see your changes live.</p>\n</body>\n</html>');
                     codeLabEditor.setOption("mode", "htmlmixed");
                 }
                 renderLivePreview();
