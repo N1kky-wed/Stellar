@@ -1071,7 +1071,7 @@ def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100) 
         return f"Error reading tool output: {str(e)}"
 
 def analyze_youtube_video(video_url: str, query: str, start_time: str = None, end_time: str = None, fps: int = 1, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
-    \"\"\"Analyzes a YouTube video (including live streams or long videos) using the Gemini API.
+    """Analyzes a YouTube video (including live streams or long videos) using the Gemini API.
     Args:
         video_url: The full YouTube URL (e.g., 'https://www.youtube.com/watch?v=...').
         query: What you want to find out or analyze in the video. State your question clearly.
@@ -1079,7 +1079,7 @@ def analyze_youtube_video(video_url: str, query: str, start_time: str = None, en
         end_time: Optional end offset (e.g., '2m30s', '120s').
         fps: Frames per second to sample from the video (default 1).
         model_id: (Internal) The model to use for analysis.
-    \"\"\"
+    """
     from app import PRIMARY_API_KEY
     client = genai.Client(api_key=PRIMARY_API_KEY, http_options={'api_version': 'v1beta'})
     
