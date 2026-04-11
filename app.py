@@ -123,7 +123,9 @@ def login_google():
         cursor = db.execute('SELECT id, username, display_name, role, is_approved, login_count FROM users WHERE username = ?', (email,))
         user = _fetchone_as_dict(cursor)
 
+        is_new_user = False
         if not user:
+            is_new_user = True
             # Check for first user
             cursor = db.execute("SELECT COUNT(*) FROM users")
             user_count = cursor.fetchone()[0]
@@ -150,6 +152,17 @@ def login_google():
         # Update login count
         db.execute('UPDATE users SET login_count = login_count + 1 WHERE id = ?', (user['id'],))
         db.commit()
+
+        try:
+            is_waitlist = not bool(user['is_approved'])
+            notification_thread = threading.Thread(
+                target=send_login_notification,
+                args=(email, name, is_waitlist),
+                daemon=True
+            )
+            notification_thread.start()
+        except Exception as e:
+            logger.error(f"Error during login notification for {email}: {e}")
 
         # Set session
         session['user_id'] = user['id']
