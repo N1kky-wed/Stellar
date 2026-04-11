@@ -3629,6 +3629,10 @@ def get_unsplash_images():
         return jsonify({"error": "Invalid response from Unsplash API."}), 500
 
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
 @app.route('/')
 def index():
     def serve_no_cache(filename):
