@@ -1070,7 +1070,7 @@ def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100) 
     except Exception as e:
         return f"Error reading tool output: {str(e)}"
 
-def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
+def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
     """Analyzes a specific YouTube video or searches for the best video based on a query.
     Args:
         query: What you want to find/analyze. Mandatory for both actions.
@@ -1079,6 +1079,7 @@ def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = 
         start_time: Optional start offset for 'analyze' (e.g., '1m10s', '60s').
         end_time: Optional end offset for 'analyze' (e.g., '2m30s', '120s').
         fps: Frames per second to sample from the video for 'analyze' (default 1).
+        max_results: Number of search results to return (default 5, max 50).
         model_id: (Internal) The model to use for analysis.
     """
     from app import PRIMARY_API_KEY, YOUTUBE_API_KEY
@@ -1087,12 +1088,15 @@ def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = 
         if not YOUTUBE_API_KEY:
             return "Error: YouTube API key is not configured in the backend."
         try:
+            # Enforce max 50 limit
+            limit = min(int(max_results), 50)
+            
             # Step 1: Search for Video IDs
             search_url = "https://www.googleapis.com/youtube/v3/search"
             search_params = {
                 "part": "snippet",
                 "q": query,
-                "maxResults": 5,
+                "maxResults": limit,
                 "type": "video",
                 "key": YOUTUBE_API_KEY
             }
