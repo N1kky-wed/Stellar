@@ -109,10 +109,13 @@ KEY BEHAVIORAL RULES:
 7. TOOLING SPECIFICATIONS:
 native_search(prompt): Uses Google Search via Gemini 2.5 Flash Lite. Use for quick factual lookups. The prompt should be a standalone search query.
 extensive_search(query): Deep web research via Tavily. Use for comprehensive reports, news by setting topic to news, or multi-domain searches.
-analyze_youtube_video(video_url, query, start_time, end_time, fps): Analyzes YouTube video content (including live streams) with temporal precision.
+analyze_youtube_video(query, action, video_url, start_time, end_time, fps): Analyzes or searches YouTube video content with temporal precision.
      AVAILABILITY: All models.
-     CAPABILITIES: Use this to answer questions about visual events, extract text from videos, or summarize long YouTube segments.
+     CAPABILITIES: Use action='search' to find the most relevant/popular videos for a query. Use action='analyze' (default) to answer questions about visual events, extract text from videos, or summarize specific YouTube segments.
      ARGS: 
+       action: 'search' to find videos, 'analyze' to interrogate a specific video.
+       query: Search terms or specific question about the video.
+       video_url: Required only for action='analyze'.
        start_time/end_time: Format as strings (e.g., '1m30s' or '90s').
        fps: Number of frames per second to sample (default 1).
 generate_image(model, prompt, quality, aspect_ratio): Creates high-quality images. Models: gemini-3.1-flash-image-preview or gemini-3-pro-image-preview. Supported quality tiers: "512", "1K", "2K", "4K". Supported aspect_ratio: "1:1", "3:4", "4:3", "9:16", "16:9". Use "16:9" for presentations and "9:16" for phone wallpapers.
