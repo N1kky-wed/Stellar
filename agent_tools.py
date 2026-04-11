@@ -1070,17 +1070,74 @@ def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100) 
     except Exception as e:
         return f"Error reading tool output: {str(e)}"
 
-def analyze_youtube_video(video_url: str, query: str, start_time: str = None, end_time: str = None, fps: int = 1, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
-    """Analyzes a YouTube video (including live streams or long videos) using the Gemini API.
+def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
+    """Analyzes a specific YouTube video or searches for the best video based on a query.
     Args:
-        video_url: The full YouTube URL (e.g., 'https://www.youtube.com/watch?v=...').
-        query: What you want to find out or analyze in the video. State your question clearly.
-        start_time: Optional start offset (e.g., '1m10s', '60s').
-        end_time: Optional end offset (e.g., '2m30s', '120s').
-        fps: Frames per second to sample from the video (default 1).
+        query: What you want to find/analyze. Mandatory for both actions.
+        action: 'analyze' (default) to interrogate a video's content, or 'search' to find videos matching the query.
+        video_url: The full YouTube URL (required for 'analyze').
+        start_time: Optional start offset for 'analyze' (e.g., '1m10s', '60s').
+        end_time: Optional end offset for 'analyze' (e.g., '2m30s', '120s').
+        fps: Frames per second to sample from the video for 'analyze' (default 1).
         model_id: (Internal) The model to use for analysis.
     """
-    from app import PRIMARY_API_KEY
+    from app import PRIMARY_API_KEY, YOUTUBE_API_KEY
+    
+    if action == "search":
+        if not YOUTUBE_API_KEY:
+            return "Error: YouTube API key is not configured in the backend."
+        try:
+            # Step 1: Search for Video IDs
+            search_url = "https://www.googleapis.com/youtube/v3/search"
+            search_params = {
+                "part": "snippet",
+                "q": query,
+                "maxResults": 5,
+                "type": "video",
+                "key": YOUTUBE_API_KEY
+            }
+            search_response = requests.get(search_url, params=search_params).json()
+            if "error" in search_response:
+                return f"YouTube Search API Error: {json.dumps(search_response['error'])}"
+            
+            items = search_response.get("items", [])
+            video_ids = [item["id"]["videoId"] for item in items]
+            if not video_ids:
+                return "No YouTube videos found for the given query."
+
+            # Step 2: Get detailed stats (Views, Likes, Duration)
+            stats_url = "https://www.googleapis.com/youtube/v3/videos"
+            stats_params = {
+                "part": "statistics,contentDetails",
+                "id": ",".join(video_ids),
+                "key": YOUTUBE_API_KEY
+            }
+            stats_response = requests.get(stats_url, params=stats_params).json()
+            
+            enriched_results = []
+            for item in items:
+                v_id = item["id"]["videoId"]
+                stat_item = next((s for s in stats_response.get("items", []) if s["id"] == v_id), {})
+                
+                enriched_results.append({
+                    "title": item["snippet"]["title"],
+                    "video_id": v_id,
+                    "viewCount": int(stat_item.get("statistics", {}).get("viewCount", 0)),
+                    "likeCount": int(stat_item.get("statistics", {}).get("likeCount", 0)),
+                    "duration": stat_item.get("contentDetails", {}).get("duration", "N/A"),
+                    "url": f"https://www.youtube.com/watch?v={v_id}"
+                })
+            
+            # Sort by viewCount descending
+            enriched_results.sort(key=lambda x: x["viewCount"], reverse=True)
+            return json.dumps(enriched_results, indent=2)
+        except Exception as e:
+            return f"Error during YouTube search: {str(e)}"
+
+    # Default 'analyze' logic
+    if not video_url:
+        return "Error: 'video_url' is required for the 'analyze' action."
+
     client = genai.Client(api_key=PRIMARY_API_KEY, http_options={'api_version': 'v1beta'})
     
     part = types.Part(
