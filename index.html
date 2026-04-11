@@ -4546,6 +4546,16 @@
                     <input type="checkbox" id="toolToggle-read_tool_output" checked class="toggle-checkbox">
                     <span class="toggle-slider"></span>
                 </label>
+                <label class="toggle-item">
+                    <span>YouTube Video Intelligence</span>
+                    <input type="checkbox" id="toolToggle-analyze_youtube_video" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+                <label class="toggle-item" style="border-top: 1px solid rgba(255,255,255,0.05); margin-top: 10px; padding-top: 15px;">
+                    <span style="color: #4285F4; font-weight: 600;">Browser Notifications</span>
+                    <input type="checkbox" id="toolToggle-notifications_enabled" checked class="toggle-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
             </div>
         </div>
     </div>
@@ -4818,10 +4828,12 @@
             'repo_control': true,
             'repo_execute': true,
             'host_repo': true,
-            'read_tool_output': true
+            'read_tool_output': true,
+            'analyze_youtube_video': true,
+            'notifications_enabled': true
         };
         let agentSettings = JSON.parse(localStorage.getItem('agentSettings')) || defaultAgentSettings;
-        
+
         function applySettingsUI() {
             for (const [tool, enabled] of Object.entries(agentSettings)) {
                 const checkbox = document.getElementById('toolToggle-' + tool);
@@ -4830,7 +4842,7 @@
                 }
             }
         }
-        
+
         // Setup event listener for agent tools changes
         document.addEventListener('DOMContentLoaded', () => {
             applySettingsUI();
@@ -4841,11 +4853,14 @@
                         const toolName = e.target.id.replace('toolToggle-', '');
                         agentSettings[toolName] = e.target.checked;
                         localStorage.setItem('agentSettings', JSON.stringify(agentSettings));
+
+                        if (toolName === 'notifications_enabled' && e.target.checked) {
+                            requestNotificationPermission();
+                        }
                     }
                 });
             }
         });
-
         const stopBtn = document.getElementById("stopBtn");
         const chatSearchInput = document.getElementById("chatSearchInput");
         const messagesDiv = document.getElementById("messages");
@@ -4970,6 +4985,7 @@
         }
 
         function notifyUser(title, body) {
+            if (!agentSettings.notifications_enabled) return;
             if (!("Notification" in window) || Notification.permission !== "granted") return;
             try {
                 new Notification(title, {
@@ -6537,8 +6553,14 @@
                 const lowerText = text.toLowerCase();
                 if (lowerText.includes("thinking") || lowerText.includes("generating") || lowerText.includes("drawing") || 
                     lowerText.includes("controlling") || lowerText.includes("processing") || lowerText.includes("using lab") || 
-                    lowerText.includes("deploying") || lowerText.includes("executing") || lowerText.includes("managing")) {
-                    displayMsg = text + " (I'll notify you when it's done)";
+                    lowerText.includes("deploying") || lowerText.includes("executing") || lowerText.includes("managing") ||
+                    lowerText.includes("analyzing youtube")) {
+                    
+                    if (agentSettings.notifications_enabled && Notification.permission === "granted") {
+                        displayMsg = text + " (I'll notify you when it's done)";
+                    } else {
+                        displayMsg = text + "...";
+                    }
                 }
             }
 
