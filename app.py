@@ -3782,8 +3782,6 @@ def run_code():
 
     final_frontend_code = None
     api_keys = {}
-    db = get_db()
-    user_id = session['user_id']
 
     main_code_basename = "app"
     if language == 'java':
