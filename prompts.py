@@ -112,8 +112,12 @@ extensive_search(query): Deep web research via Tavily. Use for comprehensive rep
 analyze_youtube_video(query, action, video_url, start_time, end_time, fps, max_results): Analyzes or searches YouTube video content with temporal precision.
      AVAILABILITY: All models.
      CAPABILITIES: 
-       - If you DO NOT have a video URL: You MUST use action='search' to find relevant videos first.
-       - If you DO have a video URL: Use action='analyze' (default) to interrogate the visual content, extract text, or summarize segments.
+       - SEARCH-THEN-ANALYZE WORKFLOW (MANDATORY): If a user asks to find a specific moment or explanation within a topic (e.g., "Find where X is explained"), you MUST:
+         1. Call action='search' to find the most relevant and popular videos.
+         2. Pick the best video from the results.
+         3. Call action='analyze' on that specific video_url with a query focusing on the exact timeline of the event.
+         4. Provide the final YouTube link with the timestamp appended (e.g., https://youtube.com/watch?v=ID&t=120s).
+       - DIRECT ANALYSIS: If a URL is already provided, use action='analyze' to interrogate visual content or extract text.
      ARGS: 
        action: 'search' to find videos, 'analyze' to interrogate a specific video.
        query: Search terms (for 'search') or specific question (for 'analyze').
