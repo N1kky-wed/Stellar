@@ -7799,8 +7799,35 @@
 
         function unwrapVisuals(container) {
             if (!container) return;
-            
-            // 1. Fix SVGs trapped in <pre><code> blocks (markdown) or just as text
+
+            // 1. YouTube Video Rendering
+            container.querySelectorAll('a').forEach(link => {
+                const url = link.href;
+                if (!url) return;
+
+                // Regex to find YouTube video ID
+                const ytMatch = url.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+                if (ytMatch && ytMatch[1]) {
+                    const videoId = ytMatch[1];
+                    const playerDiv = document.createElement('div');
+                    playerDiv.className = 'yt-player-container';
+                    playerDiv.style.width = '100%';
+                    playerDiv.style.maxWidth = '600px';
+                    playerDiv.style.aspectRatio = '16 / 9';
+                    playerDiv.style.margin = '15px 0';
+                    playerDiv.style.borderRadius = '12px';
+                    playerDiv.style.overflow = 'hidden';
+                    playerDiv.style.border = '1px solid rgba(255,255,255,0.1)';
+                    playerDiv.style.boxShadow = '0 10px 30px rgba(0,0,0,0.3)';
+
+                    playerDiv.innerHTML = `<iframe width="100%" height="100%" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+
+                    // Place the player after the link
+                    link.parentNode.insertBefore(playerDiv, link.nextSibling);
+                }
+            });
+
+            // 2. Fix SVGs trapped in <pre><code> blocks (markdown) or just as text
             container.querySelectorAll('pre code, .message-content').forEach(el => {
                 const className = el.className || "";
                 let content = el.innerHTML;
