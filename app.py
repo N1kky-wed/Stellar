@@ -2288,7 +2288,6 @@ def refine_stream():
                     chat_id,
                     "stellar",
                     refined_query_result,
-                    file_analysis_context=file_analysis_context,
                     hidden=hidden
                 )
                 if stellar_message_id:
@@ -2298,9 +2297,7 @@ def refine_stream():
                          'session_id': session_id,
                          'message_id': str(final_stellar_message_id),
                          'user_message_id': str(user_message_id) if user_message_id else None,
-                         'refined_query': refined_query_result,
-                         'analysis_context_used': file_analysis_context,
-                         'analysis_results': analysis_results_dict
+                         'refined_query': refined_query_result
                      }
                      yield f"data: {json.dumps(final_data)}\n\n"
                 else:
@@ -2458,7 +2455,7 @@ def search_stream():
                  yield f"data: {json.dumps({'status': 'Proceeding without Spectral Search (disabled)...', 'phase': 'context_gathering'})}\n\n"
                  web_search_context = "**Spectral Search Attempted:** Skipped by user/mode.\n\n---\n"
 
-            full_context = file_analysis_context + web_search_context
+            full_context = web_search_context
 
             yield f"data: {json.dumps({'status': 'Starting research analysis...', 'phase': 'analysis_llm'})}\n\n"
             if check_and_log_stop(query_id, "research LLM call"): return
@@ -2595,7 +2592,7 @@ def search_stream():
                 message_content=final_result,
                 is_research_output=True,
                 html_file=html_filepath_rel,
-                file_analysis_context=file_analysis_context + web_search_context
+                attached_files=gemini_files_data
             )
 
             if not research_message_id:
@@ -2698,9 +2695,11 @@ def cosmos_stream():
                 yield f"data: {json.dumps({'status': 'Performing Web Search...', 'phase': 'context_gathering'})}\n\n"
                 if check_and_log_stop(query_id, "cosmos search query generation"): return
                 try:
-                    if file_analysis_context:
-                        instruction_prompt = file_analysis_context + """\nAnalyze the file analysis results provided. Identify key themes, entities, unresolved questions, or areas that would benefit from current external information. Generate concise instructions for another AI on how to formulate up to 5 effective Tavily search queries to gather relevant external context based on this analysis."""
-                        instruction_gen = gemini_generate(prompt=instruction_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id)
+                    if gemini_files_data:
+                        instruction_prompt = """\nAnalyze the uploaded files provided in context. Identify key themes, entities, unresolved questions, or areas that would benefit from current external information. Generate concise instructions for another AI on how to formulate up to 5 effective Tavily search queries to gather relevant external context based on this analysis."""
+                        inst_prompt_parts = multimodal_prompt.copy()
+                        inst_prompt_parts.append(types.Part.from_text(text=instruction_prompt))
+                        instruction_gen = gemini_generate(prompt=inst_prompt_parts, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id)
                         instruction = ""
                         for item in instruction_gen:
                              if 'result' in item:
@@ -2776,7 +2775,7 @@ def cosmos_stream():
                             web_search_context = "**Web Search Attempted:** Failed after retries.\n\n---\n"
                             break
 
-            full_context = file_analysis_context + web_search_context
+            full_context = web_search_context
 
             yield f"data: {json.dumps({'status': 'Generating Cosmos report and infographics...', 'phase': 'generation_llm'})}\n\n"
             if check_and_log_stop(query_id, "cosmos report generation"): return
