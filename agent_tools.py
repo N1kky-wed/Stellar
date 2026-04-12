@@ -975,8 +975,21 @@ def lab_execute(command: str, timeout: int = 60, status: str = "") -> str:
     import docker
     from app import SANDBOX_DIR
     import os
+    import re
+    from flask import session
     
-    container_name = "stellar-lab-sandbox"
+    # Attempt to grab current session context dynamically
+    try:
+        session_id = session.sid
+        # Sanitize session_id for Docker container naming
+        sanitized_sid = re.sub(r'[^a-zA-Z0-9-_]', '', session_id)
+        container_name = f"stellar-lab-{sanitized_sid}"
+        workspace_name = f"lab_workspace_{sanitized_sid}"
+    except:
+        # Fallback if no session (though highly unlikely in this app)
+        container_name = "stellar-lab-sandbox"
+        workspace_name = "lab_workspace"
+
     image_name = "stellar-lab-core:latest"
     
     try:
@@ -992,8 +1005,8 @@ def lab_execute(command: str, timeout: int = 60, status: str = "") -> str:
             container.start()
     except docker.errors.NotFound:
         try:
-            # Create a shared workspace for the lab
-            lab_workspace = os.path.abspath(os.path.join(SANDBOX_DIR, "lab_workspace"))
+            # Create a private workspace for the lab
+            lab_workspace = os.path.abspath(os.path.join(SANDBOX_DIR, workspace_name))
             os.makedirs(lab_workspace, exist_ok=True)
             
             container = client.containers.run(
@@ -1199,7 +1212,12 @@ def manage_files(action: str, file_name: str = None, target_env: str = "lab", st
 
     # Attempt to grab current session context dynamically
     try:
+        from flask import session
         session_id = session.sid
+        import re
+        # Sanitize session_id for Docker container naming
+        sanitized_sid = re.sub(r'[^a-zA-Z0-9-_]', '', session_id)
+        dynamic_lab_container = f"stellar-lab-{sanitized_sid}"
     except:
         return "Error: Could not retrieve active session context."
 
@@ -1221,7 +1239,7 @@ def manage_files(action: str, file_name: str = None, target_env: str = "lab", st
         if not os.path.exists(file_path):
             return f"Error: File '{file_name}' not found in the chat context."
         
-        container_name = "stellar-lab-sandbox" if target_env == "lab" else f"stellar-repo-{target_env}"
+        container_name = dynamic_lab_container if target_env == "lab" else f"stellar-repo-{target_env}"
         try:
             container = client.containers.get(container_name)
             
@@ -1246,7 +1264,7 @@ def manage_files(action: str, file_name: str = None, target_env: str = "lab", st
         if not file_name:
             return "Error: 'file_name' is required for the 'project' action."
             
-        container_name = "stellar-lab-sandbox" if target_env == "lab" else f"stellar-repo-{target_env}"
+        container_name = dynamic_lab_container if target_env == "lab" else f"stellar-repo-{target_env}"
         try:
             container = client.containers.get(container_name)
             dest_dir = "/lab" if target_env == "lab" else "/app"
