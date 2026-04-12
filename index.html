@@ -4300,6 +4300,12 @@
             background: rgba(255, 107, 107, 0.1);
         }
 
+        /* Specific hover effect for new chat (positive action) */
+        #headerNewChatBtn:hover {
+            color: #00F090;
+            background: rgba(0, 240, 144, 0.1);
+        }
+
         /* --- Overhauled Agent Settings Modal --- */
         #agentSettingsModal {
             display: none;
@@ -4587,6 +4593,10 @@
         <div class="header-left">
             <button id="sidebarToggleBtn" class="header-icon-btn" title="Toggle Sidebar">
                 <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            </button>
+
+            <button id="headerNewChatBtn" class="header-icon-btn" title="New Chat" onclick="createNewChat()">
+                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
 
             <span id="chatTitle" class="title-gradient">Stellar</span>
