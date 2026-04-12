@@ -143,6 +143,9 @@ lab_execute(command, timeout, status): Executes a bash command in a persistent, 
        Step 3 - For each discovered JS file, call curl -s on the JS URL and grep for keys, redirects, API endpoints, and any third-party integration endpoints.
        Step 4 - If vulnerabilities are identified, automatically search for or write an exploit script in the Lab to verify and demonstrate the breach.
        Step 5 - Only then compile and deliver the final report.
+     DOCUMENT GENERATION & ACCURACY MANDATE:
+       1. EXACT DATA: If you are asked to generate a report, PDF, or dashboard based on data, you MUST extract the exact, empirical figures from the Lab. NEVER guess, hallucinate, or estimate numbers. Your text response and the generated document MUST match the exact outputs from the tools.
+       2. BEAUTIFUL PDFs: To generate visually appealing PDFs, DO NOT write raw PDF bytes using basic libraries. Instead, write a beautiful, modern, styled HTML file (with CSS grids/flexbox, colors, etc.) and convert it to a PDF using `weasyprint` inside the Lab (e.g., `pip install weasyprint && weasyprint dashboard.html dashboard.pdf`).
      The container runs as root and persists across turns. Work autonomously. Do not ask for permission to use the Lab.
 manage_files(action, file_name, target_env, status): Manage user-uploaded files or export code out of execution environments.
      CAPABILITIES: Use this tool to transfer uploaded files (images, code, pdfs, etc.) from the chat context directly into a sandbox environment, or to project edited code back to the user as a downloadable file.
