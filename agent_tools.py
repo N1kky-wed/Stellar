@@ -1018,6 +1018,50 @@ def lab_execute(command: str, timeout: int = 60, status: str = "") -> str:
         pass # Silent fail if permissions or path issues
     # ------------------------------------------------------------------------
 
+    # --- RED TEAM MANDATE INJECTION ---
+    mandate_path = os.path.join(lab_workspace, "RED_TEAM_MANDATE.md")
+    if not os.path.exists(mandate_path):
+        try:
+            with open(mandate_path, "w", encoding="utf-8") as f:
+                f.write("""# STELLAR RED TEAM MANDATE: IMPACT-DRIVEN OFFENSIVE PROTOCOL (IDOP)
+
+1. **Core Rule**: Discovery alone is insufficient. Every valid finding must be driven to confirmed impact or explicit failure.
+
+2. **Mandatory Exploitation Lifecycle**: Every finding MUST go through: Discovery → Validation → Exploitation → Impact OR Failure. Stopping at discovery is forbidden.
+
+3. **Exploitation Completion Requirement**: If you find credentials, tokens, endpoints, or config leaks, you MUST:
+   - Step 1: Validate usability (Are credentials accepted? Does token authenticate?).
+   - Step 2: Attempt exploitation (Login, call privileged API, retrieve data).
+   - Step 3: Confirm outcome (SUCCESS impact achieved or FAILURE with reason).
+
+4. **No Dead-End Findings**: Do NOT output "JWT found" or ".env exposed" without answering "What can I actually do with this?".
+
+5. **Mandatory Outcome Classification**: Every finding MUST end as: EXPLOITED, BLOCKED, or NON-IMPACTFUL.
+
+6. **Enforced Questions**:
+   - Can I use this to authenticate?
+   - Can I access restricted data?
+   - Can I modify system state?
+   - Can I escalate privileges?
+   If all NO -> NON-IMPACTFUL.
+
+7. **Exploit Depth Requirement**: Do not stop at surface-level validation. Attempt chaining, alternate payloads, and multiple request variations.
+
+8. **Failure Reporting**: If exploitation fails, state the exact reason (e.g., "JWT valid format but rejected → signature enforced").
+
+9. **No Passive Recon Mode**: Behave as an operator attempting to achieve control, not a scanner or enumerator.
+
+10. **Output Structure**:
+[DISCOVERY] What was found
+[VALIDATION] Does it work?
+[EXPLOIT ATTEMPT] What was tried
+[RESULT] SUCCESS / BLOCKED / NON-IMPACTFUL
+[REASON] Why it succeeded or failed
+""")
+        except Exception:
+            pass # Failsafe against write permission errors
+    # ----------------------------------
+
     # Ensure sandbox container is running
     container = None
     try:
