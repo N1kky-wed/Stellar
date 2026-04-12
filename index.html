@@ -6828,17 +6828,10 @@
             
             let displayMsg = text;
             if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
-                const lowerText = text.toLowerCase();
-                if (lowerText.includes("thinking") || lowerText.includes("generating") || lowerText.includes("drawing") || 
-                    lowerText.includes("controlling") || lowerText.includes("processing") || lowerText.includes("using lab") || 
-                    lowerText.includes("deploying") || lowerText.includes("executing") || lowerText.includes("managing") ||
-                    lowerText.includes("analyzing youtube")) {
-                    
-                    if (agentSettings.notifications_enabled && Notification.permission === "granted") {
-                        displayMsg = text + " (I'll notify you when it's done)";
-                    } else {
-                        displayMsg = text + "...";
-                    }
+                if (agentSettings.notifications_enabled && Notification.permission === "granted") {
+                    displayMsg = text + " (I'll notify you when it's done)";
+                } else {
+                    displayMsg = text + "...";
                 }
             }
 

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 SVG_START_RE = re.compile(r'^```(?:svg|xml)?\s*', re.IGNORECASE)
 SVG_END_RE = re.compile(r'\s*```$')
 
-def extensive_search(query: str, topic: str = "general", days: int = 3, max_results: int = 10) -> str:
+def extensive_search(query: str, topic: str = "general", days: int = 3, max_results: int = 10, status: str = "") -> str:
     """Performs a deep web search using Tavily API.
     Args:
         query: The search query
@@ -51,7 +51,7 @@ def extensive_search(query: str, topic: str = "general", days: int = 3, max_resu
     except Exception as e:
         return f"Error during search: {str(e)}"
 
-def generate_image(model: str, prompt: str, quality: str = "standard", aspect_ratio: str = "1:1") -> str:
+def generate_image(model: str, prompt: str, quality: str = "standard", aspect_ratio: str = "1:1", status: str = "") -> str:
     """Generates an image using Gemini's Imagen model.
     Args:
         model: 'gemini-3.1-flash-image-preview' or 'gemini-3-pro-image-preview'
@@ -123,7 +123,7 @@ def generate_image(model: str, prompt: str, quality: str = "standard", aspect_ra
     except Exception as e:
         return f"Error generating image: {str(e)}"
 
-def native_search(prompt: str) -> str:
+def native_search(prompt: str, status: str = "") -> str:
     """Uses gemini-2.5-flash-lite with Google Search tool enabled to search the web and return the result.
     Args:
         prompt: A fully self-contained search query to send to Google. Never use pronouns like 'it' or 'that', specify exactly what you are looking for.
@@ -145,7 +145,7 @@ def native_search(prompt: str) -> str:
     except Exception as e:
         return f"Error in native search: {str(e)}"
 
-def render_svg(instructions: str, model_id: str = 'gemini-3.1-pro-preview') -> str:
+def render_svg(instructions: str, model_id: str = 'gemini-3.1-pro-preview', status: str = "") -> str:
     """Generate and render an SVG visual experience directly inside the chat bubble.
     The function returns a complete, self-contained SVG string which will be rendered inline inside the chat bubble.
     Args:
@@ -193,7 +193,7 @@ def render_svg(instructions: str, model_id: str = 'gemini-3.1-pro-preview') -> s
     except Exception as e:
         return f"<svg width='200' height='50'><text x='10' y='30' fill='red'>Error: {str(e)}</text></svg>"
 
-def make_presentation(topic: str, num_slides: int = 10, style: str = "corporate", additional_context: str = "") -> str:
+def make_presentation(topic: str, num_slides: int = 10, style: str = "corporate", additional_context: str = "", status: str = "") -> str:
     """Generate a fully designed PowerPoint presentation where each slide is a full-bleed AI generated image containing text.
     Args:
         topic: The topic of the presentation
@@ -327,7 +327,7 @@ def make_presentation(topic: str, num_slides: int = 10, style: str = "corporate"
     
     return f"PRESENTATION_DATA:{json.dumps(result_data)}"
 
-def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic: str, style: str, additional_context: str = "", feedback: str = "") -> str:
+def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic: str, style: str, additional_context: str = "", feedback: str = "", status: str = "") -> str:
     """Regenerate a specific slide of an existing presentation based on feedback.
     Args:
         presentation_id: the ID of the presentation
@@ -460,7 +460,7 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
     return f"REGENERATED_SLIDE:{json.dumps({'presentation_id': presentation_id, 'slide_index': slide_index, 'url': f'/view/pres_{presentation_id}/{slide_img_filename}'})}"
 
 
-def forge_control(action: str, app_id: str = None, changes: dict = None, prompt: str = None, project_name: str = None) -> str:
+def forge_control(action: str, app_id: str = None, changes: dict = None, prompt: str = None, project_name: str = None, status: str = "") -> str:
     """Control the user's Forge deployments.
     Args:
         action: "list_history", "read_files", "create", or "modify"
@@ -675,7 +675,7 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
     except Exception as e:
         return f"Error in forge_control: {str(e)}"
 
-def repo_control(action: str, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 3000, command: str = None) -> str:
+def repo_control(action: str, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 3000, command: str = None, status: str = "") -> str:
     """Control and manage repository-based or custom-stack deployments.
     Args:
         action: "deploy", "execute", "list_history", "rename", "stop", "restart", or "snapshot"
@@ -962,7 +962,7 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
 
 
 
-def lab_execute(command: str, timeout: int = 60) -> str:
+def lab_execute(command: str, timeout: int = 60, status: str = "") -> str:
     """Executes a bash command in a persistent, isolated Docker sandbox.
     Use this tool to experiment, test Python code, install libraries (apt-get/pip), run shell scripts, clone git repos, or inspect external APIs.
     The sandbox persists across turns, so you can install a tool in one turn and use it in the next.
@@ -1031,7 +1031,7 @@ def lab_execute(command: str, timeout: int = 60) -> str:
     except Exception as e:
         return f"Error executing command in Lab: {str(e)}"
 
-def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100) -> str:
+def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100, status: str = "") -> str:
     """Reads a specific slice of a past tool's output from the database.
     Use this when a tool's history says [Output truncated] to retrieve the full text without polluting your context window.
     Args:
@@ -1070,7 +1070,7 @@ def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100) 
     except Exception as e:
         return f"Error reading tool output: {str(e)}"
 
-def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
+def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite-preview", status: str = "") -> str:
     """Analyzes a specific YouTube video or searches for the best video based on a query.
     Args:
         query: What you want to find/analyze. Mandatory for both actions.

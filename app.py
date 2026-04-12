@@ -1251,7 +1251,13 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     function_responses = []
                     for fc in function_calls:
                         func_name = fc.name
-                        if func_name == "native_search":
+                        args_dict = dict(fc.args) if fc.args else {}
+                        
+                        # Priority 1: Use model-provided 'status' if present
+                        if args_dict.get('status'):
+                            yield {'status': args_dict.get('status')}
+                        # Priority 2: Fallback to hardcoded status messages
+                        elif func_name == "native_search":
                             yield {'status': 'Searching the web...'}
                         elif func_name == "extensive_search":
                             yield {'status': 'Performing extensive web research...'}
@@ -1270,7 +1276,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         elif func_name == "read_tool_output":
                             yield {'status': 'Reading tool history...'}
                         elif func_name == "repo_control":
-                            action = dict(fc.args).get('action') if fc.args else ''
+                            action = args_dict.get('action', '')
                             if action == 'deploy': yield {'status': 'Deploying repository environment...'}
                             elif action == 'execute': yield {'status': 'Executing command in project...'}
                             elif action == 'rename': yield {'status': 'Renaming deployment...'}
@@ -1291,7 +1297,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 logger.warning(f"[SECURITY] Model {model_id} tried to call unauthorized tool: {func_name}")
                             else:
                                 func_to_call = getattr(agent_tools, func_name)
-                                args_dict = dict(fc.args) if fc.args else {}
                                 
                                 # Dynamically pass the current model_id to specific tools
                                 if func_name in ["render_svg", "analyze_youtube_video"]:
