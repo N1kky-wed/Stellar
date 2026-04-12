@@ -4595,14 +4595,14 @@
                 <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
             </button>
 
-            <button id="headerNewChatBtn" class="header-icon-btn" title="New Chat" onclick="createNewChat()">
-                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </button>
-
             <span id="chatTitle" class="title-gradient">Stellar</span>
         </div>
         <div class="header-right">
             <div id="modeSelectorHeaderContainer" style="margin-right: 10px;"></div>
+
+            <button id="headerNewChatBtn" class="header-icon-btn" title="New Chat" onclick="createNewChat()">
+                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
 
             <button class="header-icon-btn" id="clearHistoryBtn" title="Clear current chat history">
                 <svg viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>
@@ -8865,11 +8865,11 @@
             waitlistBtn.title = 'Admin Dashboard';
             waitlistBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>';
             waitlistBtn.onclick = openAdminWaitlist;
-            const clearBtn = document.getElementById('clearHistoryBtn');
-            if (clearBtn) {
-                headerRight.insertBefore(waitlistBtn, clearBtn);
+            const targetBtn = document.getElementById('headerNewChatBtn') || document.getElementById('clearHistoryBtn');
+            if (targetBtn) {
+                headerRight.insertBefore(waitlistBtn, targetBtn);
             } else {
-                headerRight.insertBefore(waitlistBtn, headerRight.firstChild);
+                headerRight.appendChild(waitlistBtn);
             }
         }
 
