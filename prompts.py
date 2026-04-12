@@ -172,6 +172,7 @@ repo_control(action, app_id, project_name, files, repo_url, port, command, statu
      AVAILABILITY: Elite-only tool. Only accessible to Crimson and Obsidian.
      PREFERENCE RULE: Prefer forge_control for simple Python or HTML apps.
      CUSTOM STACK RULE: If the user explicitly asks for a tech stack beyond Python or HTML such as Node.js, React, Go, or Ruby, use this tool.
+     FILE UPLOADS TO REPO: If the user uploaded files that need to be placed inside this custom repo container, you MUST use `manage_files(action='move', target_env=app_id)` to securely transfer them. DO NOT write scripts to recreate the files manually.
      action deploy: Provisions a dedicated deployment container. If repo_url is provided, it clones that repository. If repo_url is omitted, it provisions an empty environment.
      action execute: Executes a bash command in the container. When starting a server, you MUST ensure the application listens on host 0.0.0.0 and the correct port, default 3000. You have FULL ROOT BASH ACCESS.
      action list_history: Returns all past deployments and their IDs.
@@ -884,3 +885,5 @@ import os
 
 # Standard Client
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object."""
+planations or any text outside the JSON object."""
+ JSON object containing **only the files that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object."""

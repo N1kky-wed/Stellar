@@ -973,9 +973,10 @@ def lab_execute(command: str, timeout: int = 60, status: str = "") -> str:
     """
     import subprocess
     import docker
-    from app import SANDBOX_DIR
+    from app import SANDBOX_DIR, UPLOAD_FOLDER
     import os
     import re
+    import shutil
     from flask import session
     
     # Attempt to grab current session context dynamically
@@ -1000,6 +1001,23 @@ def lab_execute(command: str, timeout: int = 60, status: str = "") -> str:
     except Exception as e:
         return f"Error: Docker client not available: {str(e)}"
         
+    # Create a private workspace for the lab
+    lab_workspace = os.path.abspath(os.path.join(SANDBOX_DIR, workspace_name))
+    os.makedirs(lab_workspace, exist_ok=True)
+
+    # --- DETERMINISTIC FIX: Auto-sync uploaded files to the lab workspace ---
+    try:
+        local_dir = os.path.join(UPLOAD_FOLDER, str(session.sid))
+        if os.path.exists(local_dir):
+            for f in os.listdir(local_dir):
+                src = os.path.join(local_dir, f)
+                dst = os.path.join(lab_workspace, f)
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
+    except Exception as sync_e:
+        pass # Silent fail if permissions or path issues
+    # ------------------------------------------------------------------------
+
     # Ensure sandbox container is running
     container = None
     try:
@@ -1008,10 +1026,6 @@ def lab_execute(command: str, timeout: int = 60, status: str = "") -> str:
             container.start()
     except docker.errors.NotFound:
         try:
-            # Create a private workspace for the lab
-            lab_workspace = os.path.abspath(os.path.join(SANDBOX_DIR, workspace_name))
-            os.makedirs(lab_workspace, exist_ok=True)
-            
             container = client.containers.run(
                 image_name,
                 name=container_name,
