@@ -1112,7 +1112,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
             for tool in called_tools_results:
                 # Do not force-attach raw data from search tools, project history, Lab execution logs, or YouTube analysis
-                if tool['name'] in['extensive_search', 'native_search', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video']:
+                if tool['name'] in['extensive_search', 'native_search', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and "Your Forge Deployment History" in tool['result']:
                     continue
