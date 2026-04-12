@@ -3298,8 +3298,8 @@ def serve_turndown():
     return send_from_directory('.', 'turndown.js')
 
 def send_approval_email(recipient_email, display_name):
-    sender = "nikhil080905@gmail.com"
-    password = "kvpb lngz qzxn vdvu"
+    sender = "stellarai.live@gmail.com"
+    password = "xhlb etoe kunw poas"
     
     msg = EmailMessage()
     msg['Subject'] = "Stellar: Access Granted"
