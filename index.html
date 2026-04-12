@@ -7522,17 +7522,15 @@
                 statusSpan.innerHTML = '';
                 
                 let displayMsg = newText;
-                const lowerText = newText.toLowerCase();
                 if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
-                    if (lowerText.includes("thinking") || lowerText.includes("generating") || lowerText.includes("drawing") ||
-                        lowerText.includes("controlling") || lowerText.includes("processing") || lowerText.includes("using lab") ||
-                        lowerText.includes("deploying") || lowerText.includes("executing") || lowerText.includes("managing") ||
-                        lowerText.includes("reading")) {
+                    if (agentSettings.notifications_enabled && Notification.permission === "granted") {
                         displayMsg = newText + " (I'll notify you when it's done)";
+                    } else {
+                        displayMsg = newText + "...";
                     }
                 }
 
-                const isToolAction = ['Searching', 'Performing', 'Generating', 'Drawing', 'Creating', 'Controlling', 'Using', 'Deploying', 'Executing', 'Managing', 'Reading'].some(w => newText.startsWith(w));                if (isToolAction && !isError) {
+                if (isProcessing && !isError && newText && newText.toLowerCase() !== "idle") {
                     const iconSpan = document.createElement('span');
                     iconSpan.innerHTML = `<svg class="tool-spinner" viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;vertical-align:middle;margin-right:6px;"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
                     statusSpan.appendChild(iconSpan);
