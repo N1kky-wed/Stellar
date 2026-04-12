@@ -6445,7 +6445,7 @@
             }
         }
 
-        function appendUserMessage(text, id) {
+        function appendUserMessage(text, id, attachedFiles = [], isLocalFiles = false) {
             const lastEditIcon = document.querySelector('.user-msg:last-of-type .edit-prompt-wrapper');
             if (lastEditIcon) {
                 lastEditIcon.remove();
@@ -6455,10 +6455,47 @@
             msg.classList.add("message", "user-msg");
             msg.dataset.id = id;
 
-            const contentDiv = document.createElement("div");
-            contentDiv.classList.add("message-content");
-            contentDiv.textContent = text;
-            msg.appendChild(contentDiv);
+            if (attachedFiles && attachedFiles.length > 0) {
+                const filesContainer = document.createElement("div");
+                filesContainer.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; justify-content: flex-end;';
+
+                attachedFiles.forEach(file => {
+                    const item = document.createElement('div');
+                    item.style.cssText = 'display: flex; flex-direction: column; align-items: center; width: 60px; padding: 5px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;';
+
+                    const preview = document.createElement('div');
+                    preview.style.cssText = 'width: 40px; height: 40px; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); margin-bottom: 4px; font-size: 0.6rem; color: #aaa; word-break: break-all; text-align: center;';
+
+                    const fileType = isLocalFiles ? (file.type || '') : (file.mime_type || '');
+                    const fileName = isLocalFiles ? file.name : (file.display_name || file.name || 'FILE');
+                    const isImage = fileType.startsWith('image/');
+
+                    if (isImage && isLocalFiles) {
+                        const img = document.createElement('img');
+                        img.src = URL.createObjectURL(file);
+                        img.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
+                        preview.appendChild(img);
+                    } else {
+                        preview.textContent = fileName.split('.').pop().toUpperCase().substring(0, 4);
+                    }
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = fileName;
+                    nameSpan.style.cssText = 'font-size: 0.5rem; color: var(--primary-text-color); width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;';
+
+                    item.appendChild(preview);
+                    item.appendChild(nameSpan);
+                    filesContainer.appendChild(item);
+                });
+                msg.appendChild(filesContainer);
+            }
+
+            if (text) {
+                const contentDiv = document.createElement("div");
+                contentDiv.classList.add("message-content");
+                contentDiv.textContent = text;
+                msg.appendChild(contentDiv);
+            }
 
             const editWrapper = document.createElement('div');
             editWrapper.className = 'edit-prompt-wrapper';
@@ -7077,10 +7114,10 @@
             setStatus("Processing...");
 
             const userMsgId = Date.now() + '_user';
-            if (query) {
-            if (!silent) {
-                appendUserMessage(query, userMsgId);
-            }
+            if (query || stagedFiles.length > 0) {
+                if (!silent) {
+                    appendUserMessage(query, userMsgId, [...stagedFiles], true);
+                }
             }
             updateTokenCount();
             const originalQuery = query;
@@ -8102,7 +8139,7 @@
 
                         try {
                             if (messageType === "user") {
-                                appendUserMessage(content, msgId);
+                                appendUserMessage(content, msgId, msg.attached_files || [], false);
                             } else if (messageType === "nebula_output") {
                                 const reportUrl = msg.report_url || null;
                                 const processId = msgId.replace('nebula-output-', '') || Date.now();
