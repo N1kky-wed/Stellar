@@ -981,10 +981,13 @@ def lab_execute(command: str, timeout: int = 60, status: str = "") -> str:
     # Attempt to grab current session context dynamically
     try:
         session_id = session.sid
-        # Sanitize session_id for Docker container naming
-        sanitized_sid = re.sub(r'[^a-zA-Z0-9-_]', '', session_id)
-        container_name = f"stellar-lab-{sanitized_sid}"
-        workspace_name = f"lab_workspace_{sanitized_sid}"
+        chat_id = session.get('current_chat_id', 'default')
+        # Sanitize for Docker container naming
+        sanitized_sid = re.sub(r'[^a-zA-Z0-9]', '', str(session_id))
+        sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
+        
+        container_name = f"stellar-lab-{sanitized_sid}-{sanitized_cid}"
+        workspace_name = f"lab_workspace_{sanitized_sid}_{sanitized_cid}"
     except:
         # Fallback if no session (though highly unlikely in this app)
         container_name = "stellar-lab-sandbox"
@@ -1214,10 +1217,12 @@ def manage_files(action: str, file_name: str = None, target_env: str = "lab", st
     try:
         from flask import session
         session_id = session.sid
+        chat_id = session.get('current_chat_id', 'default')
         import re
-        # Sanitize session_id for Docker container naming
-        sanitized_sid = re.sub(r'[^a-zA-Z0-9-_]', '', session_id)
-        dynamic_lab_container = f"stellar-lab-{sanitized_sid}"
+        # Sanitize for Docker container naming
+        sanitized_sid = re.sub(r'[^a-zA-Z0-9]', '', str(session_id))
+        sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
+        dynamic_lab_container = f"stellar-lab-{sanitized_sid}-{sanitized_cid}"
     except:
         return "Error: Could not retrieve active session context."
 
