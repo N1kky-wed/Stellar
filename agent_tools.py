@@ -1109,22 +1109,24 @@ def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = 
             if not video_ids:
                 return "No YouTube videos found for the given query."
 
-            # Step 2: Get detailed stats (Views, Likes, Duration)
+            # Step 2: Get detailed stats (Views, Likes, Duration, and Full Description)
             stats_url = "https://www.googleapis.com/youtube/v3/videos"
             stats_params = {
-                "part": "statistics,contentDetails",
+                "part": "snippet,statistics,contentDetails",
                 "id": ",".join(video_ids),
                 "key": YOUTUBE_API_KEY
             }
             stats_response = requests.get(stats_url, params=stats_params).json()
             
             enriched_results = []
-            for item in items:
-                v_id = item["id"]["videoId"]
-                stat_item = next((s for s in stats_response.get("items", []) if s["id"] == v_id), {})
+            for stat_item in stats_response.get("items", []):
+                v_id = stat_item["id"]
+                snippet = stat_item.get("snippet", {})
                 
                 enriched_results.append({
-                    "title": item["snippet"]["title"],
+                    "title": snippet.get("title"),
+                    "channelTitle": snippet.get("channelTitle"),
+                    "description": snippet.get("description"),
                     "video_id": v_id,
                     "viewCount": int(stat_item.get("statistics", {}).get("viewCount", 0)),
                     "likeCount": int(stat_item.get("statistics", {}).get("likeCount", 0)),
