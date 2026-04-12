@@ -6490,8 +6490,9 @@
                 msg.appendChild(filesContainer);
             }
 
+            let contentDiv = null;
             if (text) {
-                const contentDiv = document.createElement("div");
+                contentDiv = document.createElement("div");
                 contentDiv.classList.add("message-content");
                 contentDiv.textContent = text;
                 msg.appendChild(contentDiv);
