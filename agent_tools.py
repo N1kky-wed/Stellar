@@ -1225,18 +1225,20 @@ def manage_files(action: str, file_name: str = None, target_env: str = "lab", st
         try:
             container = client.containers.get(container_name)
             
-            # Read file, base64 encode, and echo into container
-            with open(file_path, "rb") as f:
-                b64_content = base64.b64encode(f.read()).decode('utf-8')
-            
+            import tarfile
+            import io
             dest_dir = "/lab" if target_env == "lab" else "/app"
-            command = f"python3 -c \"import base64; open('{dest_dir}/{file_name}', 'wb').write(base64.b64decode('{b64_content}'))\""
             
-            exec_res = container.exec_run(f"bash -c '{command}'")
-            if exec_res.exit_code == 0:
+            tar_stream = io.BytesIO()
+            with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+                tar.add(file_path, arcname=file_name)
+            tar_stream.seek(0)
+            
+            success = container.put_archive(dest_dir, tar_stream)
+            if success:
                 return f"Successfully moved '{file_name}' to {target_env} environment at {dest_dir}/{file_name}."
             else:
-                return f"Failed to move file inside container: {exec_res.output.decode()}"
+                return f"Failed to move file inside container using put_archive."
         except docker.errors.NotFound:
             return f"Error: Target environment container '{container_name}' not found. Ensure it is running."
 
@@ -1266,7 +1268,7 @@ def manage_files(action: str, file_name: str = None, target_env: str = "lab", st
             with open(out_path, "wb") as f:
                 f.write(file_bytes)
                 
-            return f"File projected successfully. Inform the user they can download it here: [Download {file_name}](/download/{unique_filename})"
+            return f"File projected successfully: [Download {file_name}](/download/{unique_filename})"
             
         except docker.errors.NotFound:
             return f"Error: Environment '{container_name}' not found."
