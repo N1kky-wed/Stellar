@@ -2,8 +2,6 @@ import smtplib
 from email.message import EmailMessage
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
-import file_scanning
-
 import threading
 from werkzeug.utils import secure_filename
 import queue
@@ -74,12 +72,6 @@ UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'txt', 'pdf','docx','pptx', 'png', 'jpg', 'jpeg', 'gif', 'csv', 'md', 'py', 'js', 'html', 'css', 'json', 'xml', 'log', 'c', 'cpp', 'java', 'rb', 'php', 'go', 'rs', 'swift', 'kt','mp4','mp3'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-analysis_results_store = {}
-analysis_results_lock = threading.Lock()
-
-analysis_progress_queues = {}
-analysis_progress_lock = threading.Lock()
 
 app.secret_key = "a-completely-ne-strong-secret-key-67890"
 
@@ -348,6 +340,14 @@ def initialize_database():
             except Exception as e:
                 print(f"Error adding 'hidden' column: {e}")
 
+        # Migration: Add attached_files column for Native Gemini File URIs
+        if 'attached_files' not in columns:
+            try:
+                cursor.execute("ALTER TABLE messages ADD COLUMN attached_files TEXT")
+                print("Added 'attached_files' column to 'messages' table.")
+            except Exception as e:
+                print(f"Error adding 'attached_files' column: {e}")
+
         cursor.execute("PRAGMA table_info(users)")
         users_columns = [info[1] for info in cursor.fetchall()]
         if 'display_name' not in users_columns:
@@ -444,22 +444,9 @@ def get_current_chat_id(user_id):
 
 def insert_message(chat_id, message_type, message_content,
                    is_research_output=False, html_file=None,
-                   file_analysis_context=None, user_query_for_name=None,
+                   attached_files=None, user_query_for_name=None,
                    hidden=False):
-    """Insert a new message into the messages table.
-    
-    Args:
-        chat_id: The chat ID to insert the message into
-        message_type: Type of message ('user', 'stellar', etc.)
-        message_content: The message content text
-        is_research_output: Whether this is a research output message
-        html_file: Optional path to associated HTML file
-        file_analysis_context: Optional file analysis context data
-        user_query_for_name: If provided, may trigger chat name generation
-    
-    Returns:
-        The ID of the inserted message, or None on failure
-    """
+    """Insert a new message into the messages table."""
     if not chat_id:
         return None
     
@@ -474,10 +461,12 @@ def insert_message(chat_id, message_type, message_content,
             cursor = db.execute(
                 '''INSERT INTO messages (chat_id, message_type, message_content,
                                        is_research_output, html_file,
-                                       file_analysis_context, hidden)
+                                       attached_files, hidden)
                    VALUES (?, ?, ?, ?, ?, ?, ?)''',
                 (chat_id, message_type, message_content,
-                 is_research_output, html_file, file_analysis_context, hidden_val)
+                 is_research_output, html_file, 
+                 json.dumps(attached_files) if attached_files else None, 
+                 hidden_val)
             )
             db.commit()
             last_id = cursor.lastrowid
@@ -503,21 +492,14 @@ def insert_message(chat_id, message_type, message_content,
 
 
 def get_conversation_history(chat_id):
-    """Retrieve conversation history for a chat.
-    
-    Args:
-        chat_id: The chat ID to retrieve history for
-    
-    Returns:
-        List of message dictionaries with id, message_type, message_content, etc.
-    """
+    """Retrieve conversation history for a chat."""
     if not chat_id:
         return []
     try:
         db = get_db()
         cursor = db.execute(
             '''SELECT id, message_type, message_content, is_research_output, html_file,
-                      file_analysis_context, visualization_html, timestamp
+                      attached_files, visualization_html, timestamp
                FROM messages WHERE chat_id = ? AND hidden = 0 ORDER BY timestamp ASC''',
             (chat_id,)
         )
@@ -526,8 +508,15 @@ def get_conversation_history(chat_id):
         history = []
         for row in rows:
             msg = dict(row)
+            if msg.get('attached_files'):
+                try:
+                    msg['attached_files'] = json.loads(msg['attached_files'])
+                except:
+                    msg['attached_files'] = []
+            else:
+                msg['attached_files'] = []
             
-            # CRITICAL: Prevent frontend crashes by truncating massive Base64 images if any remain in DB
+            # CRITICAL: Prevent frontend crashes by truncating massive Base64 images
             if msg.get('message_content'):
                 # If content is huge and contains base64, replace the base64 part
                 if len(msg['message_content']) > 500000 and 'base64,' in msg['message_content']:
@@ -727,284 +716,62 @@ def change_user_password(user_id, current_password, new_password):
         return False, f"Server error: {str(e)}"
 
 
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-def run_file_analysis(session_id, filepath, filename, user_query):
-    analyzer = None
-    progress_q = None
-    final_analysis_data = None
-
-    try:
-        with analysis_progress_lock:
-            if session_id not in analysis_progress_queues:
-                analysis_progress_queues[session_id] = queue.Queue()
-            progress_q = analysis_progress_queues[session_id]
-
-        analyzer = file_scanning.FileAnalyzer(session_id, temp_base_folder=app.config['UPLOAD_FOLDER'])
-        analysis_message_queue = analyzer.get_message_queue()
-        analyzer.analyze_file(filepath, user_query)
-
-        while True:
-            message = analysis_message_queue.get()
-            if message is None:
-                break
-
-            if progress_q:
-                 try:
-                     progress_q.put(message, block=False)
-                 except queue.Full:
-                     pass
-
-            if message.get("type") == "file_complete":
-                final_analysis_data = message
-                analysis_text = message.get("combined_analysis", "[Analysis Error or No Content Retrieved]")
-                status = message.get("status", "UNKNOWN")
-
-                with analysis_results_lock:
-                    if session_id not in analysis_results_store:
-                        analysis_results_store[session_id] = {}
-                    analysis_results_store[session_id][filename] = analysis_text
-
-    except Exception as e:
-        error_message_payload = {
-            "type": "file_error",
-            "session_id": session_id,
-            "filename": filename,
-            "error": f"Analysis process encountered a critical error: {str(e)}"
-        }
-
-        if progress_q:
-             try:
-                 progress_q.put(error_message_payload, block=False)
-             except queue.Full:
-                  pass
-
-        with analysis_results_lock:
-            if session_id not in analysis_results_store:
-                analysis_results_store[session_id] = {}
-            analysis_results_store[session_id][filename] = f"[Analysis Failed Critically: {str(e)}]"
-
-    finally:
-        if progress_q:
-             final_sse_msg = final_analysis_data if final_analysis_data else {"type": "analysis_thread_end", "filename": filename, "status": "EndedWithErrorOrEarlyExit"}
-             try:
-                 progress_q.put(final_sse_msg, block=False)
-             except queue.Full:
-                 pass
-
-def run_analysis_for_files(session_id, filenames, user_query=""):
-    if not filenames:
-        return "", {}
-    if not isinstance(filenames, list):
-         return "[Internal Error: Invalid file list]", {}
-
+def upload_files_to_gemini(session_id, filenames):
+    """Uploads local files to Gemini File API and waits for them to become ACTIVE."""
+    from google import genai
+    client = genai.Client(api_key=PRIMARY_API_KEY)
     session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session_id)
-    threads = []
-    local_results = {}
-    analysis_start_time = time.time()
-
-    progress_q = None
-    with analysis_progress_lock:
-        if session_id not in analysis_progress_queues:
-            analysis_progress_queues[session_id] = queue.Queue()
-        progress_q = analysis_progress_queues[session_id]
-
-    files_to_analyze = []
+    
+    gemini_files =[]
     for filename in filenames:
-        if not isinstance(filename, str) or not filename:
-             continue
-
-        safe_filename = secure_filename(filename)
-        filepath = os.path.join(session_upload_folder, safe_filename)
-        if os.path.exists(filepath) and os.path.isfile(filepath):
-            with analysis_results_lock:
-                if session_id in analysis_results_store and safe_filename in analysis_results_store[session_id]:
-                    del analysis_results_store[session_id][safe_filename]
-            analysis_thread = threading.Thread(target=run_file_analysis, args=(session_id, filepath, safe_filename, user_query), daemon=True)
-            threads.append({'thread': analysis_thread, 'filename': safe_filename})
-            files_to_analyze.append(safe_filename)
-            analysis_thread.start()
-            start_payload = { "type": "file_start", "session_id": session_id, "filename": safe_filename }
-            if progress_q:
-                try:
-                    progress_q.put(start_payload, block=False)
-                except queue.Full:
-                    pass
-            else:
-                 pass
-        else:
-            local_results[safe_filename] = "[File Not Found During Analysis Trigger]"
-
-    files_to_wait_for = set(files_to_analyze)
-    completed_files = set(local_results.keys())
-    max_wait_time = 300
-    start_wait_time = time.time()
-
-    while files_to_wait_for and (time.time() - start_wait_time) < max_wait_time:
-        files_just_completed = set()
-        with analysis_results_lock:
-            if session_id in analysis_results_store:
-                session_results = analysis_results_store[session_id]
-                for filename in list(files_to_wait_for):
-                    if filename in session_results:
-                        result_text = session_results.get(filename, "[Analysis Result Missing Error]")
-                        local_results[filename] = result_text
-                        files_just_completed.add(filename)
-
-        if files_just_completed:
-             files_to_wait_for -= files_just_completed
-        if not files_to_wait_for:
-            break
-        time.sleep(0.5)
-
-    if files_to_wait_for:
-        timeout_message = f"[Analysis Timed Out after {max_wait_time}s]"
-        for filename in files_to_wait_for:
-            if filename not in local_results:
-                 local_results[filename] = timeout_message
-                 timeout_payload = { "type": "file_error", "session_id": session_id, "filename": filename, "error": "Analysis timed out" }
-                 if progress_q:
-                     try:
-                         progress_q.put(timeout_payload, block=False)
-                     except queue.Full:
-                         pass
-                 else:
-                     pass
-
-    total_time = time.time() - analysis_start_time
-
-    file_context_to_inject = ""
-    if local_results:
-        file_context_to_inject += "**Analysis Results from Uploaded Files:**\n"
-        for filename, analysis_text in local_results.items():
-            file_context_to_inject += (
-                f"\n<details>\n"
-                f"  <summary>📄 Analysis Summary: {filename}</summary>\n\n"
-                f"  **File:** `{filename}`\n\n"
-                f"  **Analysis:**\n"
+        filepath = os.path.join(session_upload_folder, secure_filename(filename))
+        if os.path.exists(filepath):
+            logger.info(f"Uploading {filename} natively to Gemini...")
+            g_file = client.files.upload(file=filepath)
+            
+            # Wait for processing (important for PDFs and Videos)
+            while g_file.state.name == "PROCESSING":
+                time.sleep(2)
+                g_file = client.files.get(name=g_file.name)
                 
-                f"{analysis_text}\n"
-
-            )
-        file_context_to_inject += "\n---\n"
-
-    with analysis_results_lock:
-        if session_id in analysis_results_store:
-            session_store = analysis_results_store[session_id]
-            cleared_count = 0
-            for filename in local_results.keys():
-                 if filename in session_store:
-                     session_store.pop(filename, None)
-                     cleared_count += 1
-            if not session_store:
-                 del analysis_results_store[session_id]
-
-    return file_context_to_inject, local_results
+            if g_file.state.name == "FAILED":
+                logger.error(f"Gemini failed to process file {filename}")
+                continue
+                
+            gemini_files.append({
+                "uri": g_file.uri,
+                "mime_type": g_file.mime_type,
+                "name": g_file.name,
+                "display_name": filename,
+                "local_path": filepath
+            })
+    return gemini_files
 
 @app.route('/upload_files', methods=['POST'])
 def upload_files():
     session_id = get_current_session_id()
     if not session_id:
-        return jsonify({'error': 'Session initialization failed. Please refresh.'}), 500
+        return jsonify({'error': 'Session initialization failed.'}), 500
 
     uploaded_files = request.files.getlist("file")
-
     if not uploaded_files or all(f.filename == '' for f in uploaded_files):
         return jsonify({'error': 'No files selected'}), 400
-
-    successful_uploads = []
-    failed_uploads = []
-    disallowed_file_types = []
 
     session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session_id)
     os.makedirs(session_upload_folder, exist_ok=True)
 
-    with analysis_progress_lock:
-        if session_id not in analysis_progress_queues:
-            analysis_progress_queues[session_id] = queue.Queue()
-
+    successful_uploads =[]
     for file in uploaded_files:
         if file and file.filename != '':
-            if allowed_file(file.filename):
-                filename = secure_filename(file.filename)
-                filepath = os.path.join(session_upload_folder, filename)
-                try:
-                    file.save(filepath)
-                    successful_uploads.append(filename)
-                except Exception as e:
-                    failed_uploads.append(filename)
-                    if os.path.exists(filepath):
-                        try: os.remove(filepath)
-                        except OSError: pass
-            else:
-                disallowed_file_types.append(file.filename)
-        else:
-             pass
-
-    response_message = f"Processed upload request. Saved {len(successful_uploads)} allowed file(s)."
-    if disallowed_file_types:
-        response_message += f" Skipped {len(disallowed_file_types)} disallowed file type(s): {', '.join(disallowed_file_types)}."
-    if failed_uploads:
-        response_message += f" Failed to process {len(failed_uploads)} file(s): {', '.join(failed_uploads)}."
-
-    status_code = 200 if successful_uploads else 400
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(session_upload_folder, filename)
+            file.save(filepath)
+            successful_uploads.append(filename)
 
     return jsonify({
-        'status': response_message,
-        'uploaded_files': successful_uploads,
-        'files_disallowed': disallowed_file_types,
-        'files_failed': failed_uploads
-    }), status_code
-
-@app.route('/analysis_progress')
-def analysis_progress():
-    session_id = get_current_session_id()
-    if not session_id:
-        return Response("data: {\"type\":\"error\", \"error\":\"Session initialization failed. Please refresh.\"}\n\n",
-                        mimetype='text/event-stream', status=500)
-
-    def generate_progress_stream():
-        q = None
-        with analysis_progress_lock:
-            if session_id not in analysis_progress_queues:
-                analysis_progress_queues[session_id] = queue.Queue()
-            q = analysis_progress_queues[session_id]
-
-        yield f"data: {json.dumps({'type': 'sse_connected', 'session_id': session_id})}\n\n"
-        keep_alive_counter = 0
-        max_keep_alive_without_message = 5
-
-        try:
-            while True:
-                try:
-                    message = q.get(timeout=50)
-                    if message is None:
-                        continue
-                    keep_alive_counter = 0
-                    yield f"data: {json.dumps(message)}\n\n"
-                    if message.get("type") == "file_complete" or message.get("type") == "analysis_thread_end":
-                        pass
-                except queue.Empty:
-                    keep_alive_counter += 1
-                    if keep_alive_counter >= max_keep_alive_without_message:
-                         yield ": keepalive\n\n"
-                         keep_alive_counter = 0
-                    else:
-                         pass
-                    continue
-                except Exception as e:
-                     try:
-                         yield f"data: {json.dumps({'type': 'sse_error', 'session_id': session_id, 'error': f'Stream error: {str(e)}'})}\n\n"
-                     except Exception as send_err:
-                         pass
-                     time.sleep(5)
-        except GeneratorExit:
-            pass
-        finally:
-            pass
-
-    return Response(stream_with_context(generate_progress_stream()), mimetype='text/event-stream')
+        'status': f"Saved {len(successful_uploads)} file(s) locally.",
+        'uploaded_files': successful_uploads
+    }), 200
 
 def sanitize_filename(filename: str) -> str:
     filename = filename.replace(' ', '_')
@@ -1193,7 +960,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             )
             chat = client.chats.create(model=model_id, config=chat_config)
             
-            message_to_send = current_effective_prompt
+            message_to_send = prompt if isinstance(prompt, list) else current_effective_prompt
             
             import agent_tools
             
@@ -1269,6 +1036,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             yield {'status': 'Creating presentation slides...'}
                         elif func_name == "analyze_youtube_video":
                             yield {'status': 'Analyzing YouTube video content...'}
+                        elif func_name == "manage_files":
+                            yield {'status': 'Managing files...'}
                         elif func_name == "forge_control":
                             yield {'status': 'Controlling project environment...'}
                         elif func_name == "lab_execute":
@@ -1555,25 +1324,30 @@ def forge_start():
         stop_and_cleanup_app_by_process_id(old_process_id, app_type='forge')
 
     try:
-        # Analyze uploaded files if any
-        file_context = ""
+        # Upload files natively
+        gemini_files_data = []
         if pending_files:
             session_id = get_current_session_id()
-            logger.info(f"Forge: pending_files={pending_files}, session_id={session_id}")
             if session_id:
-                file_context, analysis_dict = run_analysis_for_files(session_id, pending_files, user_query=user_prompt)
-                logger.info(f"Forge: file_context length={len(file_context)}, analysis_keys={list(analysis_dict.keys()) if analysis_dict else 'None'}")
+                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
         
-        enriched_prompt = file_context + user_prompt if file_context else user_prompt
-        logger.info(f"Forge: enriched_prompt length={len(enriched_prompt)}, starts_with_file_context={enriched_prompt.startswith('**Analysis') if file_context else False}")
-        prompt = get_forge_initial_build_prompt(enriched_prompt)
+        # Construct multimodal prompt array
+        multimodal_prompt =[]
+        for gf in gemini_files_data:
+            multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+            
+        text_prompt = get_forge_initial_build_prompt(user_prompt)
+        
+        final_prompt = multimodal_prompt.copy()
+        final_prompt.append(types.Part.from_text(text=text_prompt))
+        
         model_id = "gemini-3.1-pro-preview"
         api_key = PRIMARY_API_KEY
         if not api_key:
             raise ValueError("Primary API key for Forge is not configured.")
 
         chat_id = session.get('current_chat_id')
-        generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id, disabled_tools=disabled_tools)
+        generator = gemini_generate(prompt=final_prompt, model_id=model_id, key=api_key, chat_id=chat_id, disabled_tools=disabled_tools)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
         raw_response = ""
@@ -1688,23 +1462,31 @@ def forge_iterate():
             active_apps.pop(old_process_id, None)
 
     try:
-        # Analyze uploaded files if any
-        file_context = ""
+        # Upload files natively
+        gemini_files_data = []
         if pending_files:
             session_id = get_current_session_id()
             if session_id:
-                file_context, _ = run_analysis_for_files(session_id, pending_files, user_query=user_prompt)
-
-        enriched_prompt = file_context + user_prompt if file_context else user_prompt
+                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+        
+        # Construct multimodal prompt array
+        multimodal_prompt =[]
+        for gf in gemini_files_data:
+            multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+            
         current_files = session['forge_project']['files']
-        prompt = get_forge_iteration_prompt(enriched_prompt, json.dumps(current_files))
+        text_prompt = get_forge_iteration_prompt(user_prompt, json.dumps(current_files))
+        
+        final_prompt = multimodal_prompt.copy()
+        final_prompt.append(types.Part.from_text(text=text_prompt))
+        
         model_id = "gemini-3.1-pro-preview"
         api_key = PRIMARY_API_KEY
         if not api_key:
             raise ValueError("Primary API key for Forge is not configured.")
 
         chat_id = session.get('current_chat_id')
-        generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id, disabled_tools=disabled_tools)
+        generator = gemini_generate(prompt=final_prompt, model_id=model_id, key=api_key, chat_id=chat_id, disabled_tools=disabled_tools)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
         raw_response = ""
@@ -2407,33 +2189,24 @@ def refine_stream():
 
     fallback_model="gemini-2.5-flash-lite"
     max_model_attempts = 2
-    user_message_id = insert_message(chat_id, "user", user_query_from_frontend, user_query_for_name=user_query_from_frontend, hidden=hidden)
+    gemini_files_data =[]
+    if pending_files:
+        gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+
+    user_message_id = insert_message(chat_id, "user", user_query_from_frontend, attached_files=gemini_files_data, user_query_for_name=user_query_from_frontend, hidden=hidden)
     if not user_message_id:
          pass
 
     def generate_refinement_stream_with_analysis():
-        file_analysis_context = ""
-        analysis_results_dict = {}
         final_stellar_message_id = None
         llm_error_occurred = False
 
         try:
-            if pending_files:
-                yield f"data: {json.dumps({'status': f'Analyzing {len(pending_files)} file(s)...', 'phase': 'analysis'})}\n\n"
-                if check_and_log_stop(query_id, "file analysis"): return
-                file_analysis_context, analysis_results_dict = run_analysis_for_files(session_id, pending_files,user_query=user_query_from_frontend)
-                if analysis_results_dict:
-                    yield f"data: {json.dumps({'status': 'File analysis complete.  ', 'phase': 'refining', 'analysis_results': analysis_results_dict })}\n\n"
-                else:
-                    yield f"data: {json.dumps({'status': 'File analysis finished (no results?).  ', 'phase': 'refining'})}\n\n"
-            else:
-                yield f"data: {json.dumps({'status': 'No files to analyze.  ', 'phase': 'refining'})}\n\n"
+            # Construct multimodal prompt array
+            multimodal_prompt =[]
+            for gf in gemini_files_data:
+                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
 
-            user_query_for_llm = user_query_from_frontend
-            if file_analysis_context:
-                user_query_for_llm = file_analysis_context + user_query_from_frontend
-            user_query_for_llm += f"\n\n(Responding using Stellar model: {MODEL_NAMES.get(model_id, model_id)})"
-            
             if check_and_log_stop(query_id, "history retrieval"): return
             conversation_history = get_conversation_history(chat_id)
             conv_hist_list = []
@@ -2446,8 +2219,6 @@ def refine_stream():
                     # Strip base64 before passing to LLM context
                     clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
                     conv_hist_list.append(f"{role}: {clean_content}")
-                    if msg.get('file_analysis_context'):
-                        conv_hist_list.append(f"Stellar: {msg.get('file_analysis_context')} ")
             
             # Dynamically add tool execution history to context
             tool_hist_context = get_tool_history(chat_id)
@@ -2471,9 +2242,16 @@ def refine_stream():
                     time.sleep(1)
                 yield f"data: {json.dumps({'status': f'Thinking with {display_name}...', 'phase': 'refining'})}\n\n"
                 username = session.get('username')
-                prompt = get_refinement_prompt(user_query_for_llm, conv_hist_list, username=username, disabled_tools=disabled_tools)
+                
+                # Append the text prompt
+                text_prompt = get_refinement_prompt(user_query_from_frontend, conv_hist_list, username=username, disabled_tools=disabled_tools)
+                
+                # Create a copy of multimodal_prompt and add the text_prompt
+                final_prompt = multimodal_prompt.copy()
+                final_prompt.append(types.Part.from_text(text=text_prompt))
+
                 generator_output = gemini_generate(
-                    prompt=prompt,
+                    prompt=final_prompt,
                     model_id=current_model,
                     key=current_api_key,
                     attempts=len(BACKUP_API_KEYS),
@@ -2588,15 +2366,20 @@ def search_stream():
 
     fallback_model="gemini-2.5-flash-lite"
     max_model_attempts = 2
-    user_message_id = insert_message(chat_id, "user", user_query, user_query_for_name=user_query)
+
+    gemini_files_data =[]
+    if pending_files:
+        yield f"data: {json.dumps({'status': f'Uploading {len(pending_files)} file(s) to Native Context...', 'phase': 'upload'})}\n\n"
+        gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+        yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
+
+    user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query)
     if not user_message_id:
         pass
 
     def generate_research_stream_with_id():
         full_context = ""
         web_search_context = ""
-        file_analysis_context = ""
-        analysis_results_dict = {}
         research_analysis_result = None
         final_result = None
         html_filepath_rel = None
@@ -2604,11 +2387,10 @@ def search_stream():
         error_occurred = False
 
         try:
-            if pending_files:
-                yield f"data: {json.dumps({'status': f'Analyzing {len(pending_files)} file(s)...', 'phase': 'analysis'})}\n\n"
-                if check_and_log_stop(query_id, "file analysis"): return
-                file_analysis_context, analysis_results_dict = run_analysis_for_files(session_id, pending_files,user_query=user_query)
-                yield f"data: {json.dumps({'status': 'File analysis complete.', 'phase': 'context_gathering', 'analysis_results': analysis_results_dict })}\n\n"
+            # Construct multimodal prompt array
+            multimodal_prompt =[]
+            for gf in gemini_files_data:
+                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
             
             if check_and_log_stop(query_id, "history retrieval"): return
             conversation_history = get_conversation_history(chat_id)
@@ -2884,26 +2666,29 @@ def cosmos_stream():
 
     fallback_model="gemini-2.5-flash-lite"
     max_model_attempts = len(BACKUP_API_KEYS)
-    user_message_id = insert_message(chat_id, "user", user_query, user_query_for_name=user_query)
+
+    gemini_files_data =[]
+    if pending_files:
+        yield f"data: {json.dumps({'status': f'Uploading {len(pending_files)} file(s) to Native Context...', 'phase': 'upload'})}\n\n"
+        gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+        yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
+
+    user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query)
     if not user_message_id:
         pass
 
     def generate_cosmos_report_stream():
-        full_context = ""
         web_search_context = ""
-        file_analysis_context = ""
-        analysis_results_dict = {}
         final_report_html = None
         html_filepath_rel = None
         cosmos_message_id = None
         error_occurred = False
 
         try:
-            if pending_files:
-                yield f"data: {json.dumps({'status': f'Analyzing {len(pending_files)} file(s)...', 'phase': 'analysis'})}\n\n"
-                if check_and_log_stop(query_id, "file analysis"): return
-                file_analysis_context, analysis_results_dict = run_analysis_for_files(session_id, pending_files,user_query=user_query)
-                yield f"data: {json.dumps({'status': 'File analysis complete.', 'phase': 'context_gathering', 'analysis_results': analysis_results_dict })}\n\n"
+            # Construct multimodal prompt array
+            multimodal_prompt =[]
+            for gf in gemini_files_data:
+                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
             
             if pending_files:
                 # Skip web search when files are uploaded to avoid "query too long" errors
@@ -3060,7 +2845,7 @@ def cosmos_stream():
                 message_content=final_report_html,
                 is_research_output=True,
                 html_file=html_filepath_rel,
-                file_analysis_context=file_analysis_context + web_search_context
+                attached_files=gemini_files_data
             )
 
             if not cosmos_message_id:

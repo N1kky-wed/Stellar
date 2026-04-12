@@ -692,117 +692,7 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         }
 
-        #analysis-progress-area {
-            position: fixed;
-            bottom: 130px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: calc(100% - 40px);
-            max-width: 1200px;
-            max-height: 150px;
-            overflow-y: auto;
-            display: none;
-            flex-direction: column-reverse;
-            gap: 8px;
-            z-index: 90;
-            padding: 5px;
-            scrollbar-width: thin;
-            scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track-bg);
-        }
-
-        #analysis-progress-area::-webkit-scrollbar {
-            width: 5px;
-        }
-
-        #analysis-progress-area::-webkit-scrollbar-track {
-            background: var(--scrollbar-track-bg);
-            border-radius: 10px;
-        }
-
-        #analysis-progress-area::-webkit-scrollbar-thumb {
-            background: linear-gradient(var(--scrollbar-thumb-start), var(--scrollbar-thumb-end));
-            border-radius: 10px;
-            border: 1px solid var(--scrollbar-thumb-border);
-        }
-
-        #analysis-progress-area::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(var(--scrollbar-thumb-hover-start), var(--scrollbar-thumb-hover-end));
-            border: 1px solid var(--scrollbar-thumb-hover-border);
-        }
-
-        .file-progress-item {
-            background: rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(5px);
-            border: 1px solid var(--stellar-msg-border);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            color: var(--secondary-text-color);
-            transition: border-color 0.3s ease, background-color 0.3s ease, opacity 0.5s ease;
-            animation: progressIn 0.3s ease forwards;
-            opacity: 0;
-            transform: translateY(10px);
-        }
-
-        @keyframes progressIn {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .file-progress-item .summary {
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .file-progress-item .summary strong {
-            color: var(--primary-text-color);
-            margin-right: 10px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 70%;
-        }
-
-        .file-progress-item .summary .status {
-            font-style: italic;
-            white-space: nowrap;
-        }
-
-        .file-progress-item .details {
-            display: none;
-            padding-top: 5px;
-            margin-top: 5px;
-            border-top: 1px dashed rgba(255, 255, 255, 0.15);
-            font-size: 0.8rem;
-            max-height: 80px;
-            overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track-bg);
-        }
-
-        .file-progress-item.status-success {
-            border-color: var(--nebula-confirm-start);
-            background-color: rgba(0, 194, 146, 0.1);
-        }
-
-        .file-progress-item.status-success .summary .status {
-            color: var(--nebula-confirm-start);
-            font-style: normal;
-        }
-
-        .file-progress-item.status-error {
-            border-color: var(--nebula-regenerate-start);
-            background-color: rgba(211, 16, 39, 0.1);
-        }
-
-        .file-progress-item.status-error .summary .status {
-            color: var(--nebula-regenerate-start);
-            font-style: normal;
-        }
+        
 
         .file-progress-item.status-finished,
         .file-progress-item.status-ended {
@@ -4854,7 +4744,7 @@
 
         <div id="chatContainer" style="display:none;">
         <div id="messages"></div>
-        <div id="analysis-progress-area"></div>
+        
 
     </div>
 
@@ -5118,6 +5008,7 @@
             'repo_control': true,
             'repo_execute': true,
             'host_repo': true,
+            'manage_files': true,
             'read_tool_output': true,
             'analyze_youtube_video': true,
             'notifications_enabled': true
@@ -5176,8 +5067,7 @@
         const saveRegenerateBtn = document.getElementById("saveRegenerateBtn");
         const regenerateWithoutFeedbackBtn = document.getElementById("regenerateWithoutFeedbackBtn");
         const fileUploadInput = document.getElementById("fileUpload");
-        const analysisProgressArea = document.getElementById("analysis-progress-area");
-
+        
         const authContainer = document.getElementById("authContainer");
         const sidebarToggleBtn = document.getElementById("sidebarToggleBtn");
         const sidebar = document.getElementById("sidebar");
@@ -7112,54 +7002,41 @@
                 return;
             }
 
-            container.style.display = 'block';
-            container.innerHTML = '<small>Files to send:</small>';
-            const list = document.createElement('ul');
-            list.style.listStyle = 'none';
-            list.style.paddingLeft = '0';
-            list.style.marginTop = '3px';
+            container.style.display = 'flex';
+            container.style.flexWrap = 'wrap';
+            container.style.gap = '10px';
+            container.innerHTML = '';
 
             stagedFiles.forEach((file, index) => {
-                const listItem = document.createElement('li');
-                listItem.style.display = 'flex';
-                listItem.style.justifyContent = 'space-between';
-                listItem.style.alignItems = 'center';
-                listItem.style.marginBottom = '3px';
-                listItem.style.padding = '2px 5px';
-                listItem.style.backgroundColor = 'rgba(0,0,0,0.1)';
-                listItem.style.borderRadius = '3px';
+                const item = document.createElement('div');
+                item.style.cssText = 'position: relative; display: flex; flex-direction: column; align-items: center; width: 60px; padding: 5px; background: rgba(0,0,0,0.4); border: 1px solid var(--input-border); border-radius: 8px;';
 
-                const fileName = document.createElement('span');
-                fileName.textContent = file.name;
-                fileName.style.whiteSpace = 'nowrap';
-                fileName.style.overflow = 'hidden';
-                fileName.style.textOverflow = 'ellipsis';
-                fileName.style.marginRight = '10px';
-                fileName.title = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+                const preview = document.createElement('div');
+                preview.style.cssText = 'width: 40px; height: 40px; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); margin-bottom: 4px; font-size: 0.7rem; color: #aaa; word-break: break-all; text-align: center;';
+
+                if (file.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(file);
+                    img.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
+                    preview.appendChild(img);
+                } else {
+                    preview.textContent = file.name.split('.').pop().toUpperCase();
+                }
+
+                const name = document.createElement('span');
+                name.textContent = file.name;
+                name.style.cssText = 'font-size: 0.6rem; color: var(--primary-text-color); width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;';
 
                 const removeBtn = document.createElement('button');
-                removeBtn.textContent = '✖';
-                removeBtn.style.background = 'none';
-                removeBtn.style.border = 'none';
-                removeBtn.style.color = 'var(--secondary-text-color)';
-                removeBtn.style.cursor = 'pointer';
-                removeBtn.style.fontSize = '0.9em';
-                removeBtn.style.padding = '0 5px';
-                removeBtn.title = 'Remove file';
-                removeBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    removeStagedFile(index);
-                };
-                removeBtn.onmouseover = () => { removeBtn.style.color = 'var(--nebula-regenerate-start)'; };
-                removeBtn.onmouseout = () => { removeBtn.style.color = 'var(--secondary-text-color)'; };
+                removeBtn.innerHTML = '×';
+                removeBtn.style.cssText = 'position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%; background: #ff4444; color: white; border: none; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center;';
+                removeBtn.onclick = (e) => { e.stopPropagation(); removeStagedFile(index); };
 
-
-                listItem.appendChild(fileName);
-                listItem.appendChild(removeBtn);
-                list.appendChild(listItem);
+                item.appendChild(removeBtn);
+                item.appendChild(preview);
+                item.appendChild(name);
+                container.appendChild(item);
             });
-            container.appendChild(list);
-            container.scrollTop = container.scrollHeight;
             updateStatusBarPosition();
         }
 
@@ -7170,176 +7047,6 @@
             }
         }
 
-        function displayUploadError(filename, errorMsg) {
-            if (!analysisProgressArea) return;
-            analysisProgressArea.style.display = 'flex';
-            let id = 'progress-' + filename.replace(/[^a-zA-Z0-9-_]/g, '');
-            let div = document.getElementById(id);
-            if (!div) {
-                div = document.createElement('div');
-                div.id = id;
-                div.className = 'file-progress-item status-error';
-                div.innerHTML = `<div class="summary">📄 <strong>${filename}</strong>: <span class="status">Upload Failed</span></div><div class="details" style="display: block; padding-left: 15px;"><strong style="color: var(--nebula-regenerate-start);">${new Date().toLocaleTimeString()}: ${errorMsg}</strong><br></div>`;
-                analysisProgressArea.appendChild(div);
-            } else {
-                const s = div.querySelector('.summary .status');
-                const d = div.querySelector('.details');
-                if (s) s.textContent = 'Upload Failed';
-                if (d) {
-                    d.innerHTML += `<strong style="color: var(--nebula-regenerate-start);">${new Date().toLocaleTimeString()}: ${errorMsg}</strong><br>`;
-                    d.style.display = 'block';
-                }
-                div.classList.add('status-error');
-            }
-            updateStatusBarPosition();
-            setTimeout(() => {
-                if (div?.parentNode === analysisProgressArea) {
-                    div.style.transition = 'opacity 0.5s ease';
-                    div.style.opacity = '0';
-                    setTimeout(() => {
-                        if (div.parentNode === analysisProgressArea) {
-                            analysisProgressArea.removeChild(div);
-                            if (analysisProgressArea.childElementCount === 0) {
-                                analysisProgressArea.style.display = 'none';
-                            }
-                        }
-                        updateStatusBarPosition();
-                    }, 500);
-                }
-            }, 7000);
-        }
-        function initializeSSE() {
-            if (sseEventSource && sseEventSource.readyState !== EventSource.CLOSED) {
-                return;
-            }
-            sseEventSource = new EventSource('/analysis_progress');
-            sseEventSource.onopen = () => {
-                const errorDiv = document.getElementById('sse-conn-error-msg');
-                if (errorDiv) errorDiv.remove();
-            };
-            sseEventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-
-                    if (!data.filename && !['sse_connected', 'sse_error'].includes(data.type)) return;
-
-                    let id = data.filename ? 'progress-' + data.filename.replace(/[^a-zA-Z0-9-_]/g, '') : null;
-                    let div = id ? document.getElementById(id) : null;
-
-                    if (!div && id && data.type !== 'analysis_thread_end') {
-                        div = document.createElement('div');
-                        div.id = id;
-                        div.className = 'file-progress-item';
-                        div.innerHTML = `<div class="summary">📄 <strong>${data.filename}</strong>: <span class="status">...</span></div><div class="details"><small>Details:</small><br></div>`;
-                        div.querySelector('.summary').onclick = () => {
-                            const detailsDiv = div.querySelector('.details');
-                            if (detailsDiv) detailsDiv.style.display = detailsDiv.style.display === 'none' ? 'block' : 'none';
-                        };
-                        if (analysisProgressArea) {
-                            analysisProgressArea.appendChild(div);
-                            analysisProgressArea.style.display = 'flex';
-                        }
-                        updateStatusBarPosition();
-                    }
-
-                    if (div) {
-                        const statusSpan = div.querySelector('.summary .status');
-                        const detailsDiv = div.querySelector('.details');
-                        let isDone = false;
-
-                        if (!statusSpan || !detailsDiv) return;
-
-                        switch (data.type) {
-                            case 'file_start':
-                                statusSpan.textContent = 'Starting analysis...';
-                                detailsDiv.innerHTML += `<small>${new Date().toLocaleTimeString()}: Analysis started.</small><br>`;
-                                break;
-                            case 'progress':
-                                const progressMsg = data.message || `Processing chunk ${data.chunk_num}/${data.total_chunks}...`;
-                                statusSpan.textContent = progressMsg;
-                                detailsDiv.innerHTML += `<small>${new Date().toLocaleTimeString()}: ${progressMsg}</small><br>`;
-                                break;
-                            case 'file_chunk_info':
-                                statusSpan.textContent = `Split into ${data.total_chunks} chunks.`;
-                                detailsDiv.innerHTML += `<small>${new Date().toLocaleTimeString()}: Split into ${data.total_chunks} chunks.</small><br>`;
-                                break;
-                            case 'chunk_result':
-                                statusSpan.textContent = `Analyzed chunk ${data.chunk_num}/${data.total_chunks}...`;
-                                detailsDiv.innerHTML += `<small>${new Date().toLocaleTimeString()}: Chunk ${data.chunk_num} result received.</small><br>`;
-                                break;
-                            case 'file_complete':
-                                statusSpan.textContent = `Analysis Complete (${data.status})`;
-                                detailsDiv.innerHTML += `<strong>${new Date().toLocaleTimeString()}: Analysis finished - ${data.status}</strong><br>`;
-                                div.classList.add(data.status.toLowerCase().includes('success') ? 'status-success' : 'status-finished');
-                                isDone = true;
-                                break;
-                            case 'chunk_error':
-                            case 'file_error':
-                                statusSpan.textContent = `Analysis Error`;
-                                detailsDiv.innerHTML += `<strong style="color: var(--nebula-regenerate-start);">${new Date().toLocaleTimeString()}: Error - ${data.error}</strong><br>`;
-                                div.classList.add('status-error');
-                                isDone = true;
-                                break;
-                            case 'analysis_thread_end':
-                                if (!div.classList.contains('status-success') && !div.classList.contains('status-finished') && !div.classList.contains('status-error')) {
-                                    statusSpan.textContent = `Analysis Thread Ended`;
-                                    detailsDiv.innerHTML += `<small>Analysis thread ended.</small><br>`;
-                                    div.classList.add('status-ended');
-                                }
-                                isDone = true;
-                                break;
-                            case 'sse_connected':
-                                break;
-                            case 'sse_error':
-                                break;
-                            default:
-                                break;
-                        }
-
-                        if (detailsDiv.style.display !== 'none') detailsDiv.scrollTop = detailsDiv.scrollHeight;
-
-                        if (isDone && analysisProgressArea) {
-                            const delay = div.classList.contains('status-error') ? 7000 : 5000;
-                            setTimeout(() => {
-                                if (div?.parentNode === analysisProgressArea) {
-                                    div.style.transition = 'opacity 0.5s ease';
-                                    div.style.opacity = '0';
-                                    setTimeout(() => {
-                                        if (div.parentNode === analysisProgressArea) {
-                                            analysisProgressArea.removeChild(div);
-                                            if (analysisProgressArea.childElementCount === 0) {
-                                                analysisProgressArea.style.display = 'none';
-                                            }
-                                        }
-                                        updateStatusBarPosition();
-                                    }, 500);
-                                }
-                            }, delay);
-                        }
-                    }
-                } catch (e) {
-                }
-                updateStatusBarPosition();
-            };
-            sseEventSource.onerror = (err) => {
-                if (analysisProgressArea && !document.getElementById('sse-conn-error-msg')) {
-                    const errorDiv = document.createElement('div');
-                    errorDiv.id = 'sse-conn-error-msg';
-                    errorDiv.innerHTML = '<p style="color:red; font-size:0.8em; text-align:center;">Analysis progress connection lost. Attempting to reconnect...</p>';
-                    analysisProgressArea.appendChild(errorDiv);
-                    analysisProgressArea.style.display = 'flex';
-                    updateStatusBarPosition();
-                }
-                setStatus("Analysis progress connection error", true);
-                if (sseEventSource) sseEventSource.close();
-                sseEventSource = null;
-                setTimeout(() => {
-                    const errorDiv = document.getElementById('sse-conn-error-msg');
-                    if (errorDiv) errorDiv.remove();
-                    initializeSSE();
-                }, 10000);
-            };
-        }
         async function handleSend(silent = false) {
             const lastEditIcon = document.querySelector('.user-msg:last-of-type .edit-prompt-wrapper');
             if (lastEditIcon) {
@@ -7401,13 +7108,7 @@
                     if (uploadData.uploaded_files && uploadData.uploaded_files.length > 0) {
                         serverFileIds = uploadData.uploaded_files;
                     }
-                    if (uploadData.files_failed?.length || uploadData.files_disallowed?.length) {
-                        analysisProgressArea.style.display = 'flex';
-                        uploadData.files_failed?.forEach(f => displayUploadError(f, "Save failed during send."));
-                        uploadData.files_disallowed?.forEach(f => displayUploadError(f, "Type not allowed during send."));
-                        setStatus("Query sent (some files failed upload).", true);
-                        setTimeout(() => setStatus(currentStatusText, false), 3500);
-                    }
+                    
 
                     stagedFiles = [];
                     updateStagedFilesUI();
@@ -7437,9 +7138,7 @@
             let placeholderText = query ? "Processing query..." : "Processing files...";
             if (serverFileIds.length > 0) {
                 placeholderText = query ? `Analyzing ${serverFileIds.length} files + query...` : `Analyzing ${serverFileIds.length} files...`;
-                if (!sseEventSource || sseEventSource.readyState === EventSource.CLOSED) {
-                    initializeSSE();
-                }
+                
             }
 
             let endpoint = '/register_query'; let streamUrl = '/refine_stream'; let modeForBackend = 'refine';
@@ -8338,12 +8037,12 @@
             notifiedForLongTask = false;
 
             const finalStatus = showErrorStatus ? (errorMsg || "Stream Error") : "Idle";
-            const shouldBeIdle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0 && analysisProgressArea?.childElementCount === 0;
+            const shouldBeIdle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0;
             setStatus(showErrorStatus ? finalStatus : (shouldBeIdle ? "Idle" : currentStatusText), showErrorStatus);
             if (showErrorStatus) {
                 updateStellarMessagePlaceholder(placeholderId, `Error: ${errorMsg || 'Failed'}`, true);
                 setTimeout(() => {
-                    const shouldBeIdleAfterError = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0 && analysisProgressArea?.childElementCount === 0;
+                    const shouldBeIdleAfterError = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0;
                     setStatus(shouldBeIdleAfterError ? "Idle" : currentStatusText, false);
                 }, 4000);
             }
@@ -8574,7 +8273,7 @@
                 updateModelSelectTheme();
                 updateModelSelectWidth();
                 adjustTextareaHeight();
-                const idle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0 && analysisProgressArea.childElementCount === 0;
+                const idle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0;
                 if (idle) setStatus("Idle");
                 else setStatus(currentStatusText);
             }
@@ -9216,9 +8915,7 @@
                     stagedFiles = [];
                     updateStagedFilesUI();
                     messagesDiv.innerHTML = "";
-                    analysisProgressArea.innerHTML = "";
-                    analysisProgressArea.style.display = 'none';
-
+                                        
                     // Reset CodeLab UI specifically
                     if (currentMode === 'codelab') {
                         showProblemGenerator();
@@ -9236,7 +8933,7 @@
 
                     setStatus("History cleared");
                     setTimeout(() => {
-                        const shouldBeIdle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0 && analysisProgressArea?.childElementCount === 0;
+                        const shouldBeIdle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0;
                         if (shouldBeIdle) setStatus("Idle");
                     }, 1500);
                 } catch (err) {
@@ -9864,6 +9561,30 @@
                 workspacePanel.classList.add('html-mode-active');
                 if (codeLabEditor.getOption("mode") !== "htmlmixed") {
                     codeLabEditor.setValue('<!DOCTYPE html>\n<html>\n<head>\n    <title>My Page</title>\n    <style>\n        body { font-family: sans-serif; color: #333; }\n    </style>\n</head>\n<body>\n    <h1>Hello, Stellar!</h1>\n    <p>Start coding to see your changes live.</p>\n</body>\n</html>');
+                    codeLabEditor.setOption("mode", "htmlmixed");
+                }
+                renderLivePreview();
+            } else {
+                workspacePanel.classList.remove('html-mode-active');
+                if (codeLabEditor.getOption("mode") !== language) {
+                    codeLabEditor.setOption("mode", language);
+                    if (language === 'python') {
+                        codeLabEditor.setValue("# Welcome to Stellar CodeLab!\nprint('Hello, CodeLab!')");
+                    } else {
+                        codeLabEditor.setValue(`// Start coding in ${language}`);
+                    }
+                }
+            }
+        }
+
+        
+
+    </script>
+
+</body>
+
+</html>
+sans-serif; color: #333; }\n    </style>\n</head>\n<body>\n    <h1>Hello, Stellar!</h1>\n    <p>Start coding to see your changes live.</p>\n</body>\n</html>');
                     codeLabEditor.setOption("mode", "htmlmixed");
                 }
                 renderLivePreview();

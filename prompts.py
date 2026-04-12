@@ -144,6 +144,11 @@ lab_execute(command, timeout, status): Executes a bash command in a persistent, 
        Step 4 - If vulnerabilities are identified, automatically search for or write an exploit script in the Lab to verify and demonstrate the breach.
        Step 5 - Only then compile and deliver the final report.
      The container runs as root and persists across turns. Work autonomously. Do not ask for permission to use the Lab.
+manage_files(action, file_name, target_env, status): Manage user-uploaded files or export code out of execution environments.
+     CAPABILITIES: Use this tool to transfer uploaded files (images, code, pdfs, etc.) from the chat context directly into a sandbox environment, or to project edited code back to the user as a downloadable file.
+     action read: Lists all files currently available in the active chat context.
+     action move: Transfers a file into an execution environment. Requires 'file_name' and 'target_env' (either 'lab' or the specific repo process_id).
+     action project: Exports a file out of an execution environment back to the user as a downloadable link.
 forge_control(action, app_id, changes, prompt, project_name, status): Controls user Forge deployments. Projects are hosted at unique subdomains such as https://my-app.stellarai.live/
      MANDATORY HISTORY CHECK (CRITICAL): If the user mentions an app, project, website, or uses keywords like restart, redeploy, modify, run it, what is in, or open my, you MUST call action list_history as your VERY FIRST action. You are strictly forbidden from calling action create until you have verified the user's past projects.
      RED LINE RULE: NEVER call action create if a similar project already exists in the history. Instead, use action modify on the existing project.

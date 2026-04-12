@@ -1177,6 +1177,104 @@ def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = 
     except Exception as e:
         return f"Error analyzing YouTube video: {str(e)}"
 
+def manage_files(action: str, file_name: str = None, target_env: str = "lab", status: str = "") -> str:
+    """
+    Manage user-uploaded files or export code out of execution environments.
+    Args:
+        action: 'read' (list all files available in the current chat), 'move' (transfer a file from chat to lab/repo), 'project' (export a file from lab/repo to the user as a download link).
+        file_name: The exact name of the file to move or project.
+        target_env: 'lab' for stellar-lab-sandbox, or the process_id for a repo deployment.
+    """
+    from flask import session
+    from app import app, UPLOAD_FOLDER
+    import os
+    import docker
+    import base64
+    import uuid
+
+    try:
+        client = docker.from_env()
+    except Exception as e:
+        return f"Error: Docker client not available: {str(e)}"
+
+    # Attempt to grab current session context dynamically
+    try:
+        session_id = session.sid
+    except:
+        return "Error: Could not retrieve active session context."
+
+    local_dir = os.path.join(UPLOAD_FOLDER, session_id)
+
+    if action == "read":
+        if not os.path.exists(local_dir):
+            return "No files currently uploaded in this session context."
+        files = os.listdir(local_dir)
+        if not files:
+            return "No files currently uploaded in this session context."
+        return f"Files currently available in the chat context:\n" + "\n".join([f"- {f}" for f in files])
+
+    elif action == "move":
+        if not file_name:
+            return "Error: 'file_name' is required for the 'move' action."
+        
+        file_path = os.path.join(local_dir, file_name)
+        if not os.path.exists(file_path):
+            return f"Error: File '{file_name}' not found in the chat context."
+        
+        container_name = "stellar-lab-sandbox" if target_env == "lab" else f"stellar-repo-{target_env}"
+        try:
+            container = client.containers.get(container_name)
+            
+            # Read file, base64 encode, and echo into container
+            with open(file_path, "rb") as f:
+                b64_content = base64.b64encode(f.read()).decode('utf-8')
+            
+            dest_dir = "/lab" if target_env == "lab" else "/app"
+            command = f"python3 -c \"import base64; open('{dest_dir}/{file_name}', 'wb').write(base64.b64decode('{b64_content}'))\""
+            
+            exec_res = container.exec_run(f"bash -c '{command}'")
+            if exec_res.exit_code == 0:
+                return f"Successfully moved '{file_name}' to {target_env} environment at {dest_dir}/{file_name}."
+            else:
+                return f"Failed to move file inside container: {exec_res.output.decode()}"
+        except docker.errors.NotFound:
+            return f"Error: Target environment container '{container_name}' not found. Ensure it is running."
+
+    elif action == "project":
+        if not file_name:
+            return "Error: 'file_name' is required for the 'project' action."
+            
+        container_name = "stellar-lab-sandbox" if target_env == "lab" else f"stellar-repo-{target_env}"
+        try:
+            container = client.containers.get(container_name)
+            dest_dir = "/lab" if target_env == "lab" else "/app"
+            
+            # Read file from container via base64
+            exec_res = container.exec_run(f"base64 {dest_dir}/{file_name}")
+            if exec_res.exit_code != 0:
+                return f"Error: File '{file_name}' not found in {target_env} environment."
+                
+            b64_output = exec_res.output.decode('utf-8').strip()
+            file_bytes = base64.b64decode(b64_output)
+            
+            # Save to outputs directory for download
+            output_dir = "outputs"
+            os.makedirs(output_dir, exist_ok=True)
+            unique_filename = f"exported_{uuid.uuid4().hex[:6]}_{file_name}"
+            out_path = os.path.join(output_dir, unique_filename)
+            
+            with open(out_path, "wb") as f:
+                f.write(file_bytes)
+                
+            return f"File projected successfully. Inform the user they can download it here: [Download {file_name}](/download/{unique_filename})"
+            
+        except docker.errors.NotFound:
+            return f"Error: Environment '{container_name}' not found."
+        except Exception as e:
+            return f"Error projecting file: {str(e)}"
+            
+    return "Error: Invalid action. Use 'read', 'move', or 'project'."
+
 # Define the tools list for Gemini
 
 available_tools = [
@@ -1187,6 +1285,7 @@ available_tools = [
     make_presentation,
     regenerate_presentation_slide,
     analyze_youtube_video,
+    manage_files,
     forge_control,
     repo_control,
     lab_execute,
