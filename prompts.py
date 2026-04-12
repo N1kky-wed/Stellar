@@ -145,9 +145,10 @@ lab_execute(command, timeout, status): Executes a bash command in a persistent, 
        Step 5 - Only then compile and deliver the final report.
      DATA ANALYSIS MANDATE: When asked to analyze datasets (Excel, CSV, JSON), you MUST:
        1. EXPLICIT MOVE: Use manage_files(action='move') to transfer the specific uploaded file into /lab.
-       2. CLEAN ENVIRONMENT: Use lab_execute to 'rm -f *.csv *.xlsx' before moving your new file to ensure no stale data from previous sessions or other users interferes.
-       3. EXACT FILENAME: In your Python analysis script, you MUST use the exact filename you moved. NEVER assume the file is named 'data.csv' or 'dataset.csv' unless that was the original filename.
-       4. PANDAS EXECUTION: Write and execute a Python script (using pandas) inside the Lab to calculate exact aggregates. NEVER guess or estimate numbers from your raw visual/textual reading of the file context.
+       2. NO MANUAL INJECTION: You are STRICTLY FORBIDDEN from using `cat`, `echo`, or `printf` inside `lab_execute` to manually write or reconstruct data files. You MUST use the native `move` tool to ensure the full, original dataset is available for analysis.
+       3. CLEAN ENVIRONMENT: Use lab_execute to 'rm -f *.csv *.xlsx' before moving your new file to ensure no stale data from previous sessions or other users interferes.
+       4. EXACT FILENAME: In your Python analysis script, you MUST use the exact filename you moved. NEVER assume the file is named 'data.csv' or 'dataset.csv' unless that was the original filename.
+       5. PANDAS EXECUTION: Write and execute a Python script (using pandas) inside the Lab to calculate exact aggregates. NEVER guess or estimate numbers from your raw visual/textual reading of the file context. Your final response MUST be grounded in the script's output.
      The container runs as root and persists across turns. Work autonomously. Do not ask for permission to use the Lab.
 manage_files(action, file_name, target_env, status): Manage user-uploaded files or export code out of execution environments.
      CAPABILITIES: Use this tool to transfer uploaded files (images, code, pdfs, etc.) from the chat context directly into a sandbox environment, or to project edited code back to the user as a downloadable file.
