@@ -6766,9 +6766,10 @@
             
             let displayMsg = text;
             if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
-                if (agentSettings.notifications_enabled && Notification.permission === "granted") {
+                const hasPermission = ('Notification' in window) && Notification.permission === "granted";
+                if (agentSettings.notifications_enabled && hasPermission) {
                     displayMsg = text + " (I'll notify you when it's done)";
-                } else {
+                } else if (!text.endsWith("...")) {
                     displayMsg = text + "...";
                 }
             }
@@ -7270,9 +7271,10 @@
                 
                 let displayMsg = newText;
                 if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
-                    if (agentSettings.notifications_enabled && Notification.permission === "granted") {
+                    const hasPermission = ('Notification' in window) && Notification.permission === "granted";
+                    if (agentSettings.notifications_enabled && hasPermission) {
                         displayMsg = newText + " (I'll notify you when it's done)";
-                    } else {
+                    } else if (!newText.endsWith("...")) {
                         displayMsg = newText + "...";
                     }
                 }
