@@ -9639,27 +9639,3 @@
 </body>
 
 </html>
->');
-                    codeLabEditor.setOption("mode", "htmlmixed");
-                }
-                renderLivePreview();
-            } else {
-                workspacePanel.classList.remove('html-mode-active');
-                if (codeLabEditor.getOption("mode") !== language) {
-                    codeLabEditor.setOption("mode", language);
-                    if (language === 'python') {
-                        codeLabEditor.setValue("# Welcome to Stellar CodeLab!\nprint('Hello, CodeLab!')");
-                    } else {
-                        codeLabEditor.setValue(`// Start coding in ${language}`);
-                    }
-                }
-            }
-        }
-
-        
-
-    </script>
-
-</body>
-
-</html>

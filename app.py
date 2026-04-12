@@ -719,32 +719,72 @@ def change_user_password(user_id, current_password, new_password):
 def upload_files_to_gemini(session_id, filenames):
     """Uploads local files to Gemini File API and waits for them to become ACTIVE."""
     from google import genai
+    import mimetypes
     client = genai.Client(api_key=PRIMARY_API_KEY)
     session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session_id)
     
+    # Whitelist of extensions and MIME types supported by Gemini Native File API
+    SUPPORTED_EXTENSIONS = {
+        '.pdf', '.txt', '.csv', '.md', '.html', '.css', '.js', '.ts', '.py', '.json', '.xml',
+        '.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif',
+        '.wav', '.mp3', '.aiff', '.aac', '.ogg', '.flac',
+        '.mp4', '.mpeg', '.mov', '.avi', '.flv', '.mpg', '.webm', '.wmv', '.3gpp'
+    }
+
     gemini_files =[]
     for filename in filenames:
         filepath = os.path.join(session_upload_folder, secure_filename(filename))
         if os.path.exists(filepath):
-            logger.info(f"Uploading {filename} natively to Gemini...")
-            g_file = client.files.upload(file=filepath)
+            ext = os.path.splitext(filename)[1].lower()
+            mime_type, _ = mimetypes.guess_type(filepath)
+            mime_type = mime_type or 'application/octet-stream'
             
-            # Wait for processing (important for PDFs and Videos)
-            while g_file.state.name == "PROCESSING":
-                time.sleep(2)
-                g_file = client.files.get(name=g_file.name)
-                
-            if g_file.state.name == "FAILED":
-                logger.error(f"Gemini failed to process file {filename}")
+            logger.info(f"[GEMINI-UPLOAD] Checking file: {filename}, ext: {ext}, mime: {mime_type}")
+            
+            # Strict check: extension must be in whitelist
+            if ext not in SUPPORTED_EXTENSIONS:
+                logger.warning(f"[GEMINI-UPLOAD] Extension {ext} not in whitelist. Routing {filename} to Lab.")
+                gemini_files.append({
+                    "uri": None,
+                    "mime_type": mime_type,
+                    "name": None,
+                    "display_name": filename,
+                    "local_path": filepath,
+                    "fallback_to_lab": True
+                })
                 continue
+
+            try:
+                logger.info(f"[GEMINI-UPLOAD] Uploading {filename} natively to Gemini...")
+                g_file = client.files.upload(file=filepath)
                 
-            gemini_files.append({
-                "uri": g_file.uri,
-                "mime_type": g_file.mime_type,
-                "name": g_file.name,
-                "display_name": filename,
-                "local_path": filepath
-            })
+                # Wait for processing
+                while g_file.state.name == "PROCESSING":
+                    time.sleep(2)
+                    g_file = client.files.get(name=g_file.name)
+                    
+                if g_file.state.name == "FAILED":
+                    logger.error(f"[GEMINI-UPLOAD] Gemini failed to process file {filename}")
+                    continue
+                    
+                gemini_files.append({
+                    "uri": g_file.uri,
+                    "mime_type": g_file.mime_type,
+                    "name": g_file.name,
+                    "display_name": filename,
+                    "local_path": filepath
+                })
+                logger.info(f"[GEMINI-UPLOAD] Successfully uploaded {filename} to Gemini URI: {g_file.uri}")
+            except Exception as e:
+                logger.error(f"[GEMINI-UPLOAD] Exception during upload of {filename}: {e}")
+                gemini_files.append({
+                    "uri": None,
+                    "mime_type": mime_type,
+                    "name": None,
+                    "display_name": filename,
+                    "local_path": filepath,
+                    "fallback_to_lab": True
+                })
     return gemini_files
 
 @app.route('/upload_files', methods=['POST'])
@@ -1334,7 +1374,11 @@ def forge_start():
         # Construct multimodal prompt array
         multimodal_prompt =[]
         for gf in gemini_files_data:
-            multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+            if gf.get('uri'):
+                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+            elif gf.get('fallback_to_lab'):
+                fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
+                multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
             
         text_prompt = get_forge_initial_build_prompt(user_prompt)
         
@@ -1472,7 +1516,11 @@ def forge_iterate():
         # Construct multimodal prompt array
         multimodal_prompt =[]
         for gf in gemini_files_data:
-            multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+            if gf.get('uri'):
+                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+            elif gf.get('fallback_to_lab'):
+                fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
+                multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
             
         current_files = session['forge_project']['files']
         text_prompt = get_forge_iteration_prompt(user_prompt, json.dumps(current_files))
@@ -2205,7 +2253,11 @@ def refine_stream():
             # Construct multimodal prompt array
             multimodal_prompt =[]
             for gf in gemini_files_data:
-                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+                if gf.get('uri'):
+                    multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+                elif gf.get('fallback_to_lab'):
+                    fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
+                    multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
 
             if check_and_log_stop(query_id, "history retrieval"): return
             conversation_history = get_conversation_history(chat_id)
@@ -2387,7 +2439,11 @@ def search_stream():
             # Construct multimodal prompt array
             multimodal_prompt =[]
             for gf in gemini_files_data:
-                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+                if gf.get('uri'):
+                    multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+                elif gf.get('fallback_to_lab'):
+                    fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
+                    multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
             
             if check_and_log_stop(query_id, "history retrieval"): return
             conversation_history = get_conversation_history(chat_id)
@@ -2685,7 +2741,11 @@ def cosmos_stream():
             # Construct multimodal prompt array
             multimodal_prompt =[]
             for gf in gemini_files_data:
-                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+                if gf.get('uri'):
+                    multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+                elif gf.get('fallback_to_lab'):
+                    fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
+                    multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
             
             if pending_files:
                 # Skip web search when files are uploaded to avoid "query too long" errors

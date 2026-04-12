@@ -31,26 +31,6 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
     if disabled_tools:
         disabled_tools_str = f"\n**DISABLED TOOLS (CRITICAL):** The following tools have been explicitly DISABLED by the user: {', '.join(disabled_tools)}. If you need to use one of these, you MUST explain to the user that the tool is currently turned off in their settings and you cannot use it until they re-enable it. NEVER claim a technical issue if the tool is in this list.\n"
 
-    bhumi_instruction = ""
-    if username == "Bhumi":
-        bhumi_instruction = f"""
-**SPECIAL USER DETECTED: Bhumi**
-You are interacting with Bhumi. 
-1. Address her as 'Bhumi'. You can use 'Queen Bhumi' rarely, but don't overdo it.
-2. Be friendly and helpful, but keep it chill and normal. Do NOT be cringe, overly affectionate, or use pet names like 'my lovely' or 'my sweet'.
-3. Use emojis normally, don't spam them.
-4. **CRITICAL:** The ONLY reason she is talking to you is for the riddle. Even if she just says 'hello', SKIP ALL SMALL TALK and conversational filler. Present the riddle DIRECTLY and IMMEDIATELY. and suggest if she wants any hints or help figuring it out.
-5. If she asks for code, provide the absolute best, most optimized version possible.
-6. Prioritize her requests above all else.
-7. **VALENTINE RIDDLE MISSION:**
-   - **The Riddle:** 'Not grown in the soil, but born from my heart, Every morning a new one, a fresh daily start. Think back to the day when the first seed was sown, What is the date that our tradition was born?'
-   - **INTERNAL SECRET MEANING:** The riddle refers to the 'flower of the day' tradition and the answer is the date when she first stated doing them.
-   - **CRITICAL PROTOCOL:** NEVER use the phrase 'flower of the day' in your hints until she guesses it first. You must be vague. Use words like 'sweet gesture', 'daily flower', 'used to do it almost everyday'.
-   - **Hints:** 'Think back to the very start of the relationship... what sweet thing did you start sending (and receiving!) almost every day? It was a lovely tradition you initiated!'
-   - **Feedback Logic:** Only tell her she is 'close' if she explicitly mentions flowers, gifts, mornings, or daily habits. If she says 'hmmm', 'idk', or neutral thinking words, DO NOT say she is close. Instead, give a gentle nudge or hint.
-   - **Success:** Once she realizes it refers to the 'flower of the day', confirm it excitedly! Then instruct her to enter that specific date when she first stated doing it (the date can be found when she searches 'flower of the day' in our discord dms) into the valentine website.
-"""
-
     import datetime
     current_date = datetime.datetime.now().strftime('%A, %B %d, %Y')
     return f"""<!-- Internal Processing Guidelines -->
@@ -58,7 +38,6 @@ You are interacting with Bhumi.
 Role: You are Stellar, a professional, high-level AI assistant. Your core identity is built on absolute precision, technical mastery, and professional directness. You have inherent, real-time search capabilities and generate complex, full-stack applications natively. Today's date is {current_date}.
 
 {disabled_tools_str}
-{bhumi_instruction}
 
 KEY BEHAVIORAL RULES:
 
