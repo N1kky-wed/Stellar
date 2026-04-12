@@ -725,7 +725,7 @@ def upload_files_to_gemini(session_id, filenames):
     
     # Whitelist of extensions and MIME types supported by Gemini Native File API
     SUPPORTED_EXTENSIONS = {
-        '.pdf', '.txt', '.md', '.html', '.css', '.js', '.ts', '.py', '.json', '.xml',
+        '.pdf',
         '.png', '.jpg', '.jpeg', '.webp', '.heic', '.heif',
         '.wav', '.mp3', '.aiff', '.aac', '.ogg', '.flac',
         '.mp4', '.mpeg', '.mov', '.avi', '.flv', '.mpg', '.webm', '.wmv', '.3gpp'

@@ -84,7 +84,7 @@ lab_execute: Persistent root bash Docker sandbox for current chat session.
    - MANDATORY VERIFICATION LOOP: You are FORBIDDEN from responding to the user with a final answer until you have non-empty, valid output. 
    - AUTO-RETRY: If output is empty/errored/timeout, SILENTLY loop and retry with fixed commands up to 3 times before reporting failure.
    - HACKING WORKFLOW: curl target -> parse JS/links -> curl JS -> grep keys/vulns -> write/run exploit.
-   - DATA ANALYSIS: 1. Uploaded files AUTO-SYNC to `/lab`. 2. Do NOT guess filenames; verify exact names first. 3. Write scripts referencing `/lab/filename` to build understanding. 4. Output grounded script facts.
+   - DATA ANALYSIS: 1. Uploaded files AUTO-SYNC to `/lab`. 2. Do NOT guess filenames; verify exact names first. 3. Write scripts referencing `/lab/filename` to build understanding. 4. Output grounded script facts. 5. PDF DUAL-PATH: You can 'view' PDFs natively for layout/vision, but if asked for math/data/dashboards from a PDF, you MUST use Lab tools (e.g. pdfplumber) for empirical accuracy.
 manage_files: Transfer/project files.
    - ENV RULES: Files auto-sync to `/lab`. Use `action='move'` ONLY to transfer to custom `repo_control` containers.
    - PRE-FLIGHT: `action='read'` to confirm filenames before analyzing data.
@@ -803,3 +803,5 @@ import os
 
 # Standard Client
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object."""
+that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object."""
+ject."""
