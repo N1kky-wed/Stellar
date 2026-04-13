@@ -2146,6 +2146,40 @@ def update_message_route():
         logger.error(f"Error in update_message_route: {e}", exc_info=True)
         return jsonify({'status': 'Failed: Server error during update'}), 500
 
+@app.route('/api/logs_preferences', methods=['GET', 'POST', 'DELETE'])
+def api_logs_preferences():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    pref_file = "stellar_logs_prefs.json"
+    
+    if request.method == 'GET':
+        if not os.path.exists(pref_file):
+            return jsonify({'logs': []})
+        with open(pref_file, "r", encoding="utf-8") as f:
+            return jsonify(json.load(f))
+            
+    elif request.method == 'POST':
+        data = request.get_json()
+        if not data or 'logs' not in data:
+            return jsonify({'error': 'Invalid data'}), 400
+        with open(pref_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        return jsonify({'success': True})
+        
+    elif request.method == 'DELETE':
+        index = request.args.get('index', type=int)
+        if index is None or not os.path.exists(pref_file):
+            return jsonify({'error': 'Invalid request'}), 400
+        with open(pref_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if 0 <= index < len(data.get('logs', [])):
+            data['logs'].pop(index)
+            with open(pref_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+            return jsonify({'success': True})
+        return jsonify({'error': 'Index out of bounds'}), 400
+
 @app.route('/register_query', methods=['POST'])
 def register_query():
     try:

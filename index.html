@@ -4554,6 +4554,24 @@
         </div>
     </div>
 
+    <!-- Logs & Preferences Management Modal -->
+    <div id="logsPrefsModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10001; backdrop-filter:blur(10px); align-items:center; justify-content:center;">
+        <div style="background:var(--card-bg); width:90%; max-width:800px; height:80vh; border-radius:20px; border:1px solid var(--stellar-msg-border); display:flex; flex-direction:column; box-shadow:0 20px 50px rgba(0,0,0,0.5);">
+            <div style="padding:20px; border-bottom:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:space-between;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <span style="font-size:1.5rem;">🧠</span>
+                    <h3 style="margin:0; font-size:1.2rem; color:var(--primary-text-color);">Memory Management</h3>
+                </div>
+                <button id="closeLogsPrefsBtn" style="background:none; border:none; color:var(--secondary-text-color); font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            <div id="logsPrefsList" style="flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:15px;"></div>
+            <div style="padding:20px; border-top:1px solid rgba(255,255,255,0.1); display:flex; justify-content:flex-end; gap:12px;">
+                <button id="refreshLogsBtn" style="padding:10px 20px; border-radius:10px; background:rgba(255,255,255,0.05); color:white; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">Refresh</button>
+                <button id="saveAllLogsBtn" style="padding:10px 20px; border-radius:10px; background:var(--nebula-confirm-start); color:white; border:none; cursor:pointer; font-weight:600;">Save All Changes</button>
+            </div>
+        </div>
+    </div>
+
     
     <!-- Overhauled Agent Settings Modal (Full Screen Grid) -->
     <div id="agentSettingsModal">
@@ -4574,14 +4592,19 @@
                 <!-- Cards generated here -->
                 <div class="tool-card">
                     <div class="tool-card-header">
-                        <div class="tool-card-icon">📊</div>
-                        <div class="tool-card-title">Render SVG</div>
+                        <div class="tool-card-icon">🧠</div>
+                        <div class="tool-card-title">Logs & Preferences</div>
+                        <button class="tool-card-settings-btn" id="manageLogsBtn" title="Manage History" style="margin-left:auto; background:none; border:none; color:var(--secondary-text-color); cursor:pointer; padding:5px; border-radius:5px; transition:all 0.2s;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.35 19.43,11.03L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,5.9C16.04,5.53 15.48,5.22 14.87,5L14.5,2.33C14.46,2.1 14.26,1.92 14,1.92H10C9.74,1.92 9.54,2.1 9.5,2.33L9.13,5C8.52,5.22 7.96,5.53 7.44,5.9L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11.03C4.53,11.35 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.04 4.95,18.95L7.44,18.1C7.96,18.47 8.52,18.78 9.13,19L9.5,21.67C9.54,21.9 9.74,22.08 10,22.08H14C14.26,22.08 14.46,21.9 14.5,21.67L14.87,19C15.48,18.78 16.04,18.47 16.56,18.1L19.05,18.95C19.27,19.04 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z" />
+                            </svg>
+                        </button>
                     </div>
-                    <div class="tool-card-desc">Generates interactive, animated technical diagrams and flowcharts for complex systems.</div>
+                    <div class="tool-card-desc">Persistent memory node for environment-specific fixes, debugging strategies, and cross-session user preferences.</div>
                     <div class="tool-card-footer">
                         <span class="status-label">Tool Status</span>
                         <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
-                            <input type="checkbox" id="toolToggle-render_svg" checked class="toggle-checkbox">
+                            <input type="checkbox" id="toolToggle-logs_and_preferences" checked class="toggle-checkbox">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
@@ -5055,6 +5078,84 @@
                         }
                     }
                 });
+            }
+
+            // Logs & Preferences Management Logic
+            const manageLogsBtn = document.getElementById('manageLogsBtn');
+            const logsPrefsModal = document.getElementById('logsPrefsModal');
+            const closeLogsPrefsBtn = document.getElementById('closeLogsPrefsBtn');
+            const logsPrefsList = document.getElementById('logsPrefsList');
+            const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+            const saveAllLogsBtn = document.getElementById('saveAllLogsBtn');
+
+            function fetchAndRenderLogs() {
+                logsPrefsList.innerHTML = '<div style="color:var(--secondary-text-color); text-align:center; padding:20px;">Synchronizing memory nodes...</div>';
+                fetch('/api/logs_preferences')
+                    .then(res => res.json())
+                    .then(data => {
+                        logsPrefsList.innerHTML = '';
+                        const logs = data.logs || [];
+                        if (logs.length === 0) {
+                            logsPrefsList.innerHTML = '<div style="color:var(--secondary-text-color); text-align:center; padding:20px;">No memory nodes stored.</div>';
+                            return;
+                        }
+                        logs.forEach((log, index) => {
+                            const item = document.createElement('div');
+                            item.style.cssText = 'background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:15px; display:flex; flex-direction:column; gap:10px; position:relative;';
+                            
+                            const textarea = document.createElement('textarea');
+                            textarea.value = log;
+                            textarea.className = 'log-entry-textarea';
+                            textarea.style.cssText = 'background:rgba(0,0,0,0.2); color:var(--primary-text-color); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:10px; min-height:80px; font-family:inherit; font-size:0.9rem; resize:vertical;';
+                            
+                            const actions = document.createElement('div');
+                            actions.style.cssText = 'display:flex; justify-content:flex-end; gap:10px;';
+                            
+                            const deleteBtn = document.createElement('button');
+                            deleteBtn.innerHTML = 'Delete';
+                            deleteBtn.style.cssText = 'background:rgba(255,68,68,0.1); color:#ff4444; border:1px solid rgba(255,68,68,0.2); padding:5px 12px; border-radius:6px; cursor:pointer; font-size:0.8rem;';
+                            deleteBtn.onclick = () => {
+                                if (confirm('Delete this memory node permanently?')) {
+                                    fetch(`/api/logs_preferences?index=${index}`, { method: 'DELETE' })
+                                        .then(res => res.json())
+                                        .then(res => { if(res.success) fetchAndRenderLogs(); });
+                                }
+                            };
+
+                            item.appendChild(textarea);
+                            item.appendChild(actions);
+                            actions.appendChild(deleteBtn);
+                            logsPrefsList.appendChild(item);
+                        });
+                    });
+            }
+
+            if (manageLogsBtn) {
+                manageLogsBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    logsPrefsModal.style.display = 'flex';
+                    fetchAndRenderLogs();
+                };
+            }
+
+            if (closeLogsPrefsBtn) closeLogsPrefsBtn.onclick = () => logsPrefsModal.style.display = 'none';
+            if (refreshLogsBtn) refreshLogsBtn.onclick = fetchAndRenderLogs;
+            
+            if (saveAllLogsBtn) {
+                saveAllLogsBtn.onclick = () => {
+                    const textareas = document.querySelectorAll('.log-entry-textarea');
+                    const updatedLogs = Array.from(textareas).map(t => t.value.trim()).filter(v => v !== '');
+                    fetch('/api/logs_preferences', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ logs: updatedLogs })
+                    }).then(res => res.json()).then(res => {
+                        if (res.success) {
+                            alert('All memory nodes synchronized.');
+                            fetchAndRenderLogs();
+                        }
+                    });
+                };
             }
         });
         const stopBtn = document.getElementById("stopBtn");

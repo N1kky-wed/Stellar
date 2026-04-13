@@ -145,53 +145,57 @@ def native_search(prompt: str, status: str = "") -> str:
     except Exception as e:
         return f"Error in native search: {str(e)}"
 
-def render_svg(instructions: str, model_id: str = 'gemini-3.1-pro-preview', status: str = "") -> str:
-    """Generate and render an SVG visual experience directly inside the chat bubble.
-    The function returns a complete, self-contained SVG string which will be rendered inline inside the chat bubble.
-    Args:
-        instructions: natural language description of the visual to create
-        model_id: The model to use for SVG generation (internal use)
-    """
-    from app import PRIMARY_API_KEY
-    from pydantic import BaseModel, Field
-    import json
+def logs_and_preferences(read: bool = False, write: str = "", status: str = "") -> str:
+    """Stores or retrieves user preferences, previous errors, and resolution strategies across environments.
     
-    class SVGResponse(BaseModel):
-        svg_code: str = Field(description="The raw, valid, self-contained SVG code. Must not include markdown wrappers.")
-
+    Args:
+        read: If True, returns the stored logs and preferences.
+        write: A string detailing a preference, error, or fix to save for the future.
+        status: Status update for the user.
+    """
+    import json
+    import os
+    
+    # Store at the root of the app directory
+    pref_file = "stellar_logs_prefs.json"
+    
+    # Initialize the file if it doesn't exist
+    if not os.path.exists(pref_file):
+        try:
+            with open(pref_file, "w", encoding="utf-8") as f:
+                json.dump({"logs": []}, f)
+        except Exception as e:
+            return f"Error initializing preferences file: {str(e)}"
+            
+    output = ""
     try:
-        # Explicit log to verify tool chaining and dynamic model selection
-        logger.info(f"[TOOL] render_svg invoked with model_id: {model_id}")
-        
-        client = genai.Client(api_key=PRIMARY_API_KEY)
-        sys_instruct = (
-            "You are an expert SVG designer. You must return ONLY valid, self-contained, and interactive/animated SVG code "
-            "based on the user's instructions. "
-            "STRICT RULES:\n"
-            "1. DO NOT include any markdown wrappers (no ```svg, no ```xml, etc.).\n"
-            "2. DO NOT include a solid background rectangle (e.g. <rect width='100%' height='100%' fill='#...'>). The background MUST remain transparent to blend into the UI.\n"
-            "3. Ensure all shapes, text, and animations are clearly visible against both light and dark backgrounds (use high contrast or glow effects).\n"
-            "4. Use <animate>, <animateTransform>, or <animateMotion> for professional animations.\n"
-            "5. The output must be a single, complete <svg> element."
-        )
-        response = client.models.generate_content(
-            model=model_id,
-            contents=instructions,
-            config=types.GenerateContentConfig(
-                system_instruction=sys_instruct,
-                response_mime_type="application/json",
-                response_schema=SVGResponse,
-                temperature=0.2
-            )
-        )
-        data = json.loads(response.text)
-        svg_code = data.get("svg_code", "").strip()
-        # Robustly strip markdown wrappers just in case the model ignored sys_instruct
-        svg_code = SVG_START_RE.sub('', svg_code)
-        svg_code = SVG_END_RE.sub('', svg_code)
-        return svg_code.strip()
+        with open(pref_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        if write:
+            write = write.strip()
+            if write:
+                data.setdefault("logs", []).append(write)
+                # Keep only the last 100 entries to prevent the file/context from getting too bloated
+                data["logs"] = data["logs"][-100:]
+                
+                with open(pref_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=4)
+                output += "Successfully saved to logs/preferences. "
+            
+        if read:
+            logs = data.get("logs", [])
+            if logs:
+                output += "Stored Logs & Preferences:\n" + "\n".join([f"- {log}" for log in logs])
+            else:
+                output += "No logs or preferences stored yet."
+                
+        if not read and not write:
+            output = "Error: You must specify read=True or provide a write string."
+            
+        return output.strip()
     except Exception as e:
-        return f"<svg width='200' height='50'><text x='10' y='30' fill='red'>Error: {str(e)}</text></svg>"
+        return f"Error accessing logs/preferences: {str(e)}"
 
 def make_presentation(topic: str, num_slides: int = 10, style: str = "corporate", additional_context: str = "", status: str = "") -> str:
     """Generate a fully designed PowerPoint presentation where each slide is a full-bleed AI generated image containing text.
@@ -1112,6 +1116,7 @@ def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100, 
         output_id: The ID of the tool execution to read.
         start_line: The line number to start reading from (0-indexed). Default is 0.
         max_lines: The maximum number of lines to return. Default is 100.
+        status: Status update for the user.
     """
     import sqlite3
     try:
