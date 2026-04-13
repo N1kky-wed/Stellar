@@ -820,5 +820,4 @@ import os
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 ```
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object."""
-- Ensure your formatting aligns with academic best practices and citation standards. If any links are broken, mention only their titles without URLs.
-- Proceed with the comprehensive analysis using the recommended structure."""
+
