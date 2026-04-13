@@ -991,24 +991,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 if len(parts) > 1:
                     system_instruction = parts[0].replace("<!-- Internal Processing Guidelines -->", "").strip()
                     current_effective_prompt = parts[1].strip()
-            
-            # Force Memory Injection from stellar_logs_prefs.json
-            try:
-                pref_file = "stellar_logs_prefs.json"
-                if os.path.exists(pref_file):
-                    with open(pref_file, "r", encoding="utf-8") as f:
-                        prefs_data = json.load(f)
-                        logs = prefs_data.get("logs", [])
-                        if logs:
-                            memory_text = "\n\n### PERSISTENT MEMORY & USER PREFERENCES (From logs_and_preferences):\n"
-                            memory_text += "The following are your long-term memories, user preferences, and past error resolution strategies. Always adhere to these preferences and use this context to avoid repeating past mistakes:\n"
-                            memory_text += "\n".join([f"- {log}" for log in logs])
-                            if system_instruction:
-                                system_instruction += memory_text
-                            else:
-                                system_instruction = memory_text
-            except Exception as e:
-                logger.error(f"Error injecting memory into system_instruction: {e}")
 
             chat_config = types.GenerateContentConfig(
                 tools=tools_config,
@@ -1129,6 +1111,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 if func_name in ["analyze_youtube_video"]:
                                     if 'model_id' not in args_dict:
                                         args_dict['model_id'] = model_id
+
+                                if func_name == "logs_and_preferences":
+                                    args_dict['user_id'] = str(session.get('user_id', 'global'))
 
                                 res = func_to_call(**args_dict)
                             
@@ -2166,7 +2151,8 @@ def api_logs_preferences():
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
     
-    pref_file = "stellar_logs_prefs.json"
+    user_id = session['user_id']
+    pref_file = f"stellar_logs_prefs_{user_id}.json"
     
     if request.method == 'GET':
         if not os.path.exists(pref_file):
@@ -2343,10 +2329,10 @@ def refine_stream():
                     time.sleep(1)
                 yield f"data: {json.dumps({'status': f'Thinking with {display_name}...', 'phase': 'refining'})}\n\n"
                 username = session.get('username')
-                
+                user_id = session.get('user_id')
+
                 # Append the text prompt
-                text_prompt = get_refinement_prompt(user_query_from_frontend, conv_hist_list, username=username, disabled_tools=disabled_tools)
-                
+                text_prompt = get_refinement_prompt(user_query_from_frontend, conv_hist_list, username=username, disabled_tools=disabled_tools, user_id=user_id)                
                 # Create a copy of multimodal_prompt and add the text_prompt
                 final_prompt = multimodal_prompt.copy()
                 final_prompt.append(types.Part.from_text(text=text_prompt))

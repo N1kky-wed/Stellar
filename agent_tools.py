@@ -197,7 +197,7 @@ def native_search(prompt: str, status: str = "") -> str:
     except Exception as e:
         return f"Error in native search: {str(e)}"
 
-def logs_and_preferences(write: str = "", status: str = "") -> str:
+def logs_and_preferences(write: str = "", status: str = "", user_id: str = "global") -> str:
     """Stores user preferences, previous errors, and resolution strategies. Memory is automatically provided to your context.
     
     Args:
@@ -207,8 +207,8 @@ def logs_and_preferences(write: str = "", status: str = "") -> str:
     import json
     import os
     
-    # Store at the root of the app directory
-    pref_file = "stellar_logs_prefs.json"
+    # Store with user-specific filename
+    pref_file = f"stellar_logs_prefs_{user_id}.json"
     
     # Initialize the file if it doesn't exist
     if not os.path.exists(pref_file):

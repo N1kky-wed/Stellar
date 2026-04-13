@@ -23,7 +23,7 @@ User Query: '{beta}'
 
 Classification (yes/no):"""
 
-def get_refinement_prompt(user_query: str, conversation_history_list: list, username: str = None, disabled_tools: list = None) -> str:
+def get_refinement_prompt(user_query: str, conversation_history_list: list, username: str = None, disabled_tools: list = None, user_id: int = None) -> str:
     conv_hist_str = "\n".join(conversation_history_list) if conversation_history_list else "No previous conversation turns."
     internal_guidelines_header = "<!-- Internal Processing Guidelines -->"
 
@@ -32,12 +32,32 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
         disabled_tools_str = f"\n**DISABLED TOOLS (CRITICAL):** The following tools have been explicitly DISABLED by the user: {', '.join(disabled_tools)}. If you need to use one of these, you MUST explain to the user that the tool is currently turned off in their settings and you cannot use it until they re-enable it. NEVER claim a technical issue if the tool is in this list.\n"
 
     import datetime
+    import os
+    import json
     current_date = datetime.datetime.now().strftime('%A, %B %d, %Y')
+    
+    # Force Memory Injection from stellar_logs_prefs_{user_id}.json
+    memory_text = ""
+    try:
+        pref_file = f"stellar_logs_prefs_{user_id}.json" if user_id else "stellar_logs_prefs.json"
+        if os.path.exists(pref_file):
+            with open(pref_file, "r", encoding="utf-8") as f:
+                prefs_data = json.load(f)
+                logs = prefs_data.get("logs", [])
+                if logs:
+                    memory_text = "\n\n### PERSISTENT MEMORY & USER PREFERENCES (From logs_and_preferences):\n"
+                    memory_text += "The following are your long-term memories, user preferences, and past error resolution strategies. Always adhere to these preferences and use this context to avoid repeating past mistakes:\n"
+                    memory_text += "\n".join([f"- {log}" for log in logs])
+    except Exception as e:
+        # We don't want to crash the prompt generation if the memory file is corrupted
+        memory_text = f"\n\n(Error loading persistent memory: {str(e)})"
+
     return f"""<!-- Internal Processing Guidelines -->
 
 Role: Stellar, an elite AI Agent. Identity: Absolute precision, technical mastery, professional directness. Capabilities: Real-time search, native full-stack app generation. Date: {current_date}.
 
 {disabled_tools_str}
+{memory_text}
 
 KEY BEHAVIORAL RULES:
 
@@ -79,9 +99,9 @@ KEY BEHAVIORAL RULES:
 
 native_search(prompt, status): Fast factual lookups via Google. Pass standalone query.
 extensive_search(query, status): Deep research via Tavily (reports, news, multi-domain).
-logs_and_preferences(write, status): Stores user preferences, past errors, and resolution strategies across environments.
+logs_and_preferences(write, status): Use this tool ONLY to save new concise reports on what went wrong, how you fixed it, and any user preferences or useful context for future use cases.
     - write (str): Set text to save a new preference, error log, or resolution strategy.
-    - MANDATE: Memory is AUTOMATICALLY provided to your context. Use this tool ONLY to save new concise reports on what went wrong, how you fixed it, and any user preferences or useful context for future use cases.analyze_youtube_video: `action='analyze'` if URL provided. `action='search'` to find videos. Multi-turn: search -> analyze -> link with timestamp (e.g., &t=120s) or build based on the video.
+    - MANDATE: Memory is AUTOMATICALLY provided to your context at the start of every turn. You cannot "read" from this tool. Only use it to "write" new entries.analyze_youtube_video: `action='analyze'` if URL provided. `action='search'` to find videos. Multi-turn: search -> analyze -> link with timestamp (e.g., &t=120s) or build based on the video.
 generate_image: Models: `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`. 
    - PARAMS: quality ("512", "1K", "2K", "4K"), aspect_ratio ("1:1", "16:9", etc.).
    - REFERENCE IMAGES: Pass `reference_images=[filenames]` (up to 14) from chat context to edit/style-transfer existing uploads.

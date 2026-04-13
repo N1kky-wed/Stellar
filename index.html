@@ -5129,13 +5129,10 @@
                             deleteBtn.innerHTML = 'Delete';
                             deleteBtn.style.cssText = 'background:rgba(255,68,68,0.1); color:#ff4444; border:1px solid rgba(255,68,68,0.2); padding:5px 12px; border-radius:6px; cursor:pointer; font-size:0.8rem;';
                             deleteBtn.onclick = () => {
-                                if (confirm('Delete this memory node permanently?')) {
-                                    fetch(`/api/logs_preferences?index=${index}`, { method: 'DELETE' })
-                                        .then(res => res.json())
-                                        .then(res => { if(res.success) fetchAndRenderLogs(); });
-                                }
+                                fetch(`/api/logs_preferences?index=${index}`, { method: 'DELETE' })
+                                    .then(res => res.json())
+                                    .then(res => { if(res.success) fetchAndRenderLogs(); });
                             };
-
                             item.appendChild(textarea);
                             item.appendChild(actions);
                             actions.appendChild(deleteBtn);
@@ -5165,7 +5162,6 @@
                         body: JSON.stringify({ logs: updatedLogs })
                     }).then(res => res.json()).then(res => {
                         if (res.success) {
-                            alert('All memory nodes synchronized.');
                             fetchAndRenderLogs();
                         }
                     });
