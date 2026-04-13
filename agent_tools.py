@@ -51,15 +51,23 @@ def extensive_search(query: str, topic: str = "general", days: int = 3, max_resu
     except Exception as e:
         return f"Error during search: {str(e)}"
 
-def generate_image(model: str, prompt: str, quality: str = "standard", aspect_ratio: str = "1:1", status: str = "") -> str:
+def generate_image(model: str, prompt: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list = None, target_env: str = None, status: str = "") -> str:
     """Generates an image using Gemini's Imagen model.
     Args:
         model: 'gemini-3.1-flash-image-preview' or 'gemini-3-pro-image-preview'
         prompt: detailed descriptive prompt for the image
         quality: Supported tiers are "512", "1K", "2K", "4K". (Default: "1K")
         aspect_ratio: Supported ratios: '1:1', '3:4', '4:3', '9:16', '16:9'.
+        reference_images: List of filenames from the chat context to use as reference/conditioning (up to 14).
+        target_env: Optional: 'lab' or process_id to automatically move the generated image to that environment.
     """
-    from app import PRIMARY_API_KEY
+    from app import PRIMARY_API_KEY, UPLOAD_FOLDER
+    from flask import session
+    import os
+    import mimetypes
+    import uuid
+    import docker
+    
     client = genai.Client(api_key=PRIMARY_API_KEY)
     
     # Ensure aspect_ratio is one of the strictly supported API values
@@ -67,8 +75,6 @@ def generate_image(model: str, prompt: str, quality: str = "standard", aspect_ra
     if aspect_ratio not in valid_ratios:
         aspect_ratio = "1:1"
         
-    # Map the requested quality to the deterministic image_size
-    # Supported tiers: "512", "1K", "2K", "4K"
     quality_lower = quality.lower()
     if "4k" in quality_lower or "high" in quality_lower or "hd" in quality_lower:
         img_size = "4K"
@@ -79,45 +85,86 @@ def generate_image(model: str, prompt: str, quality: str = "standard", aspect_ra
     elif "512" in quality_lower:
         img_size = "512"
     else:
-        img_size = None # Defaults to API standard
+        img_size = "1K"
     
-    image_config_args = {"aspect_ratio": aspect_ratio}
-    if img_size:
-        image_config_args["image_size"] = img_size
+    image_config_args = {"aspect_ratio": aspect_ratio, "image_size": img_size}
+    
+    # Resolve reference images
+    parts = [types.Part.from_text(text=prompt)]
+    if reference_images:
+        try:
+            session_id = session.sid
+            local_dir = os.path.join(UPLOAD_FOLDER, session_id)
+            for img_name in reference_images[:14]:
+                img_path = os.path.join(local_dir, img_name)
+                if os.path.exists(img_path):
+                    mime_type, _ = mimetypes.guess_type(img_path)
+                    with open(img_path, "rb") as f:
+                        parts.append(types.Part.from_bytes(data=f.read(), mime_type=mime_type or "image/png"))
+        except Exception as e:
+            logger.error(f"Error loading reference images: {e}")
 
     try:
         response = client.models.generate_content(
             model=model,
-            contents=prompt,
+            contents=parts,
             config=types.GenerateContentConfig(
                 image_config=types.ImageConfig(**image_config_args),
-                response_modalities=["IMAGE", "TEXT"]
+                response_modalities=["IMAGE"]
             )
         )
-        # Look for the image in the response parts
+        
         for part in response.candidates[0].content.parts:
             if hasattr(part, 'inline_data') and part.inline_data:
                 img_data = part.inline_data.data
                 
-                # Save to disk instead of returning massive Base64
                 output_dir = "outputs"
-                if not os.path.exists(output_dir):
-                    os.makedirs(output_dir)
+                os.makedirs(output_dir, exist_ok=True)
                 
-                # Determine extension based on mime_type
                 mime_type = getattr(part.inline_data, 'mime_type', 'image/png')
                 ext = "png"
                 if "jpeg" in mime_type: ext = "jpg"
                 elif "webp" in mime_type: ext = "webp"
                 
-                filename = f"gen_{uuid.uuid4().hex}.{ext}"
+                filename = f"gen_{uuid.uuid4().hex[:8]}.{ext}"
                 file_path = os.path.join(output_dir, filename)
                 
                 with open(file_path, "wb") as f:
                     f.write(img_data)
                 
-                # Return a Markdown link to the /view/ endpoint
-                return f"![Generated Image](/view/{filename})"
+                result_md = f"![Generated Image](/view/{filename})"
+                
+                # Handle target_env deployment
+                if target_env:
+                    try:
+                        d_client = docker.from_env()
+                        chat_id = session.get('current_chat_id', 'default')
+                        import re
+                        sanitized_sid = re.sub(r'[^a-zA-Z0-9]', '', str(session.sid))
+                        sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
+                        dynamic_lab_container = f"stellar-lab-{sanitized_sid}-{sanitized_cid}"
+                        
+                        container_name = dynamic_lab_container if target_env == "lab" else f"stellar-repo-{target_env}"
+                        container = d_client.containers.get(container_name)
+                        
+                        import tarfile
+                        import io
+                        dest_dir = "/lab" if target_env == "lab" else "/app"
+                        
+                        tar_stream = io.BytesIO()
+                        with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+                            tar.add(file_path, arcname=filename)
+                        tar_stream.seek(0)
+                        
+                        if container.put_archive(dest_dir, tar_stream):
+                            result_md += f"\n\nDeployed to {target_env}: `{dest_dir}/{filename}`"
+                    except Exception as env_e:
+                        result_md += f"\n\n(Failed to deploy to {target_env}: {str(env_e)})"
+                
+                return result_md
+        return "Image model returned no visual data."
+    except Exception as e:
+        return f"Error generating image: {str(e)}"
         
         return "No image data found in response."
     except Exception as e:
@@ -1256,13 +1303,14 @@ def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = 
     except Exception as e:
         return f"Error analyzing YouTube video: {str(e)}"
 
-def manage_files(action: str, file_name: str = None, target_env: str = "lab", status: str = "") -> str:
+def manage_files(action: str, file_name: str = None, target_env: str = "lab", source_env: str = "chat", status: str = "") -> str:
     """
     Manage user-uploaded files or export code out of execution environments.
     Args:
-        action: 'read' (list all files available in the current chat), 'move' (transfer a file from chat to lab/repo), 'project' (export a file from lab/repo to the user as a download link).
-        file_name: The exact name of the file to move or project.
-        target_env: 'lab' for stellar-lab-sandbox, or the process_id for a repo deployment.
+        action: 'read' (list uploads), 'move' (transfer file/folder), 'project' (export to user).
+        file_name: The name of the file or folder to move or project.
+        target_env: 'lab' or process_id for repo.
+        source_env: 'chat' (uploads), 'lab', or process_id for repo.
     """
     from flask import session
     from app import app, UPLOAD_FOLDER
@@ -1270,96 +1318,125 @@ def manage_files(action: str, file_name: str = None, target_env: str = "lab", st
     import docker
     import base64
     import uuid
+    import tarfile
+    import io
+    import re
 
     try:
         client = docker.from_env()
     except Exception as e:
         return f"Error: Docker client not available: {str(e)}"
 
-    # Attempt to grab current session context dynamically
     try:
-        from flask import session
-        session_id = session.sid
-        chat_id = session.get('current_chat_id', 'default')
-        import re
-        # Sanitize for Docker container naming
-        sanitized_sid = re.sub(r'[^a-zA-Z0-9]', '', str(session_id))
-        sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
+        session_id = str(session.sid)
+        chat_id = str(session.get('current_chat_id', 'default'))
+        sanitized_sid = re.sub(r'[^a-zA-Z0-9]', '', session_id)
+        sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', chat_id)
         dynamic_lab_container = f"stellar-lab-{sanitized_sid}-{sanitized_cid}"
     except:
-        return "Error: Could not retrieve active session context."
+        return "Error: Active session context required."
 
-    local_dir = os.path.join(UPLOAD_FOLDER, session_id)
+    def get_container_name(env_id):
+        if env_id == "lab": return dynamic_lab_container
+        return f"stellar-repo-{env_id}"
+
+    local_uploads = os.path.join(UPLOAD_FOLDER, session_id)
 
     if action == "read":
-        if not os.path.exists(local_dir):
-            return "No files currently uploaded in this session context."
-        files = os.listdir(local_dir)
-        if not files:
-            return "No files currently uploaded in this session context."
-        return f"Files currently available in the chat context:\n" + "\n".join([f"- {f}" for f in files])
+        if not os.path.exists(local_uploads): return "No uploads found."
+        files = os.listdir(local_uploads)
+        return "Files in chat context:\n" + "\n".join([f"- {f}" for f in files]) if files else "No uploads found."
 
     elif action == "move":
-        if not file_name:
-            return "Error: 'file_name' is required for the 'move' action."
+        if not file_name: return "Error: 'file_name' required."
         
-        file_path = os.path.join(local_dir, file_name)
-        if not os.path.exists(file_path):
-            return f"Error: File '{file_name}' not found in the chat context."
+        # Determine source and target containers/paths
+        target_name = get_container_name(target_env)
+        target_dir = "/lab" if target_env == "lab" else "/app"
         
-        container_name = dynamic_lab_container if target_env == "lab" else f"stellar-repo-{target_env}"
         try:
-            container = client.containers.get(container_name)
+            target_cont = client.containers.get(target_name)
             
-            import tarfile
-            import io
-            dest_dir = "/lab" if target_env == "lab" else "/app"
+            # --- SOURCE: CHAT (LOCAL UPLOADS) ---
+            if source_env == "chat":
+                src_path = os.path.join(local_uploads, file_name)
+                if not os.path.exists(src_path): return f"File '{file_name}' not found in uploads."
+                
+                # Security: Restrict host moves to only UPLOAD_FOLDER and OUTPUTS
+                allowed_prefixes = [os.path.abspath(UPLOAD_FOLDER), os.path.abspath("outputs")]
+                if not any(os.path.abspath(src_path).startswith(p) for p in allowed_prefixes):
+                    return "Security Error: Host move restricted to specific directories."
+
+                tar_stream = io.BytesIO()
+                with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+                    tar.add(src_path, arcname=os.path.basename(src_path))
+                tar_stream.seek(0)
+                if target_cont.put_archive(target_dir, tar_stream):
+                    return f"Moved '{file_name}' from chat to {target_env}."
             
-            tar_stream = io.BytesIO()
-            with tarfile.open(fileobj=tar_stream, mode='w') as tar:
-                tar.add(file_path, arcname=file_name)
-            tar_stream.seek(0)
-            
-            success = container.put_archive(dest_dir, tar_stream)
-            if success:
-                return f"Successfully moved '{file_name}' to {target_env} environment at {dest_dir}/{file_name}."
+            # --- SOURCE: ANOTHER CONTAINER ---
             else:
-                return f"Failed to move file inside container using put_archive."
-        except docker.errors.NotFound:
-            return f"Error: Target environment container '{container_name}' not found. Ensure it is running."
+                source_name = get_container_name(source_env)
+                source_dir = "/lab" if source_env == "lab" else "/app"
+                src_cont = client.containers.get(source_name)
+                
+                # Fetch as tar stream from source
+                bits, stat = src_cont.get_archive(f"{source_dir}/{file_name}")
+                tar_data = io.BytesIO()
+                for chunk in bits: tar_data.write(chunk)
+                tar_data.seek(0)
+                
+                if target_cont.put_archive(target_dir, tar_data):
+                    return f"Moved '{file_name}' from {source_env} to {target_env}."
+
+        except Exception as e:
+            return f"Move failed: {str(e)}"
 
     elif action == "project":
-        if not file_name:
-            return "Error: 'file_name' is required for the 'project' action."
-            
-        container_name = dynamic_lab_container if target_env == "lab" else f"stellar-repo-{target_env}"
+        if not file_name: return "Error: 'file_name' required."
+        source_name = get_container_name(target_env) # target_env is used as source here
+        source_dir = "/lab" if target_env == "lab" else "/app"
+        
         try:
-            container = client.containers.get(container_name)
-            dest_dir = "/lab" if target_env == "lab" else "/app"
+            container = client.containers.get(source_name)
             
-            # Read file from container via base64
-            exec_res = container.exec_run(f"base64 {dest_dir}/{file_name}")
-            if exec_res.exit_code != 0:
-                return f"Error: File '{file_name}' not found in {target_env} environment."
-                
-            b64_output = exec_res.output.decode('utf-8').strip()
-            file_bytes = base64.b64decode(b64_output)
+            # Check if it is a directory
+            check_dir = container.exec_run(f"test -d {source_dir}/{file_name}")
+            is_dir = (check_dir.exit_code == 0)
             
-            # Save to outputs directory for download
+            final_file_name = file_name
+            if is_dir:
+                # Zip it in the container first
+                zip_name = f"{file_name}_export.tar.gz"
+                container.exec_run(f"tar -czf /tmp/{zip_name} -C {source_dir}/{file_name} .")
+                src_full_path = f"/tmp/{zip_name}"
+                final_file_name = zip_name
+            else:
+                src_full_path = f"{source_dir}/{file_name}"
+
+            # Get archive from container
+            bits, stat = container.get_archive(src_full_path)
+            tar_data = io.BytesIO()
+            for chunk in bits: tar_data.write(chunk)
+            tar_data.seek(0)
+            
+            # Extract from tar to get raw bytes
+            with tarfile.open(fileobj=tar_data) as tar:
+                member = tar.getmembers()[0]
+                file_bytes = tar.extractfile(member).read()
+
             output_dir = "outputs"
             os.makedirs(output_dir, exist_ok=True)
-            unique_filename = f"exported_{uuid.uuid4().hex[:6]}_{file_name}"
-            out_path = os.path.join(output_dir, unique_filename)
-            
-            with open(out_path, "wb") as f:
+            unique_name = f"proj_{uuid.uuid4().hex[:6]}_{final_file_name}"
+            with open(os.path.join(output_dir, unique_name), "wb") as f:
                 f.write(file_bytes)
                 
-            return f"File projected successfully: [Download {file_name}](/download/{unique_filename})"
+            return f"Projected successfully: [Download {final_file_name}](/download/{unique_name})"
             
-        except docker.errors.NotFound:
-            return f"Error: Environment '{container_name}' not found."
         except Exception as e:
-            return f"Error projecting file: {str(e)}"
+            return f"Projection failed: {str(e)}"
+            
+    return "Error: Invalid action."
             
     return "Error: Invalid action. Use 'read', 'move', or 'project'."
 

@@ -84,7 +84,10 @@ logs_and_preferences(read, write, status): Stores/retrieves user preferences, pa
    - write (str): Set text to save a new preference, error log, or resolution strategy.
    - MANDATE: Write concise reports on what went wrong, how you fixed it, and any user preferences or useful context for future use cases.
 analyze_youtube_video: `action='analyze'` if URL provided. `action='search'` to find videos. Multi-turn: search -> analyze -> link with timestamp (e.g., &t=120s) or build based on the video.
-generate_image: Models: `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`. Qualities: "512", "1K", "2K", "4K". Ratios: "1:1", "3:4", "4:3", "9:16", "16:9".
+generate_image: Models: `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`. 
+   - PARAMS: quality ("512", "1K", "2K", "4K"), aspect_ratio ("1:1", "16:9", etc.).
+   - REFERENCE IMAGES: Pass `reference_images=[filenames]` (up to 14) from chat context to edit/style-transfer existing uploads.
+   - AUTO-DEPLOY: Use `target_env='lab'` or a `process_id` to automatically move the generated asset into a workspace.
 make_presentation / regenerate_presentation_slide: Generates/edits PPTX.
 lab_execute: Persistent root bash Docker sandbox for current chat session.   - RED TEAM MANDATE: Execute `cat /lab/RED_TEAM_MANDATE.md` before attacking.
    - MANDATORY VERIFICATION LOOP: You are FORBIDDEN from responding to the user with a final answer until you have non-empty, valid output. 
@@ -814,4 +817,4 @@ from pydantic import BaseModel, Field
 import os
 
 # Standard Client
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object."""
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object.""">\"}}}}`. Do not include explanations or any text outside the JSON object."""
