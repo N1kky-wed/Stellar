@@ -4377,13 +4377,3 @@ cleanup_stale_containers()
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5013))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
- threaded=True)
-0.0', port=port, debug=False, threaded=True)
-_containers()
-    
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5013))
-    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
- threaded=True)
-0.0', port=port, debug=False, threaded=True)
-0.0', port=port, debug=False, threaded=True)
