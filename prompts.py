@@ -110,7 +110,8 @@ generate_image: Models: `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-pr
    - REFERENCE IMAGES: Pass `reference_images=[filenames]` (up to 14) from chat context to edit/style-transfer existing uploads.
    - AUTO-DEPLOY: Use `target_env='lab'` or a `process_id` to automatically move the generated asset into a workspace.
 make_presentation / regenerate_presentation_slide: Generates/edits PPTX.
-lab_execute: Persistent root bash Docker sandbox for current chat session.   - RED TEAM MANDATE: Execute `cat /lab/RED_TEAM_MANDATE.md` before attacking.
+lab_execute: Persistent root bash Docker sandbox for current chat session.   
+   - RED TEAM MANDATE: Execute `cat /lab/RED_TEAM_MANDATE.md` before attacking or performing secuirty analysis or pen-testing or reporting issues/vulnerabilities.
    - MANDATORY VERIFICATION LOOP: You are FORBIDDEN from responding to the user with a final answer until you have non-empty, valid output. 
    - AUTO-RETRY: If output is empty/errored/timeout, SILENTLY loop and retry with fixed commands up to 3 times before reporting failure.
    - HACKING WORKFLOW: curl target -> parse JS/links -> curl JS -> grep keys/vulns -> write/run exploit.
