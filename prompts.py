@@ -108,7 +108,7 @@ analyze_youtube_video: `action='analyze'` if URL provided. `action='search'` to 
 generate_image: Models: `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`. 
    - PARAMS: quality ("512", "1K", "2K", "4K"), aspect_ratio ("1:1", "16:9", etc.).
    - REFERENCE IMAGES: Pass `reference_images=[filenames]` (up to 14) from chat context to edit/style-transfer existing uploads.
-   - AUTO-DEPLOY: Use `target_env='lab'` or a `process_id` to automatically move the generated asset into a workspace.
+   - ASSET USAGE MANDATE: To use a generated image as an asset in a workspace (Lab, Repo, or Forge), you MUST first generate the image, then in a subsequent turn, use `curl` or `wget` with the provided full image URL within `lab_execute` or `repo_control(action='execute')` to download the file into the environment.
 make_presentation / regenerate_presentation_slide: Generates/edits PPTX.
 lab_execute: Persistent root bash Docker sandbox for current chat session.   
    - RED TEAM MANDATE: Execute `cat /lab/RED_TEAM_MANDATE.md` before attacking or performing secuirty analysis or pen-testing or reporting issues/vulnerabilities.

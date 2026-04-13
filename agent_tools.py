@@ -51,7 +51,7 @@ def extensive_search(query: str, topic: str = "general", days: int = 3, max_resu
     except Exception as e:
         return f"Error during search: {str(e)}"
 
-def generate_image(model: str, prompt: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None, target_env: str = None, status: str = "") -> str:
+def generate_image(model: str, prompt: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None, status: str = "") -> str:
     """Generates an image using Gemini's Imagen model.
     Args:
         model: 'gemini-3.1-flash-image-preview' or 'gemini-3-pro-image-preview'
@@ -59,14 +59,12 @@ def generate_image(model: str, prompt: str, quality: str = "1K", aspect_ratio: s
         quality: Supported tiers are "512", "1K", "2K", "4K". (Default: "1K")
         aspect_ratio: Supported ratios: '1:1', '3:4', '4:3', '9:16', '16:9'.
         reference_images: List of filenames from the chat context to use as reference/conditioning (up to 14).
-        target_env: Optional: 'lab' or process_id to automatically move the generated image to that environment.
     """
     from app import PRIMARY_API_KEY, UPLOAD_FOLDER
     from flask import session
     import os
     import mimetypes
     import uuid
-    import docker
     
     client = genai.Client(api_key=PRIMARY_API_KEY)
     
@@ -132,46 +130,8 @@ def generate_image(model: str, prompt: str, quality: str = "1K", aspect_ratio: s
                 with open(file_path, "wb") as f:
                     f.write(img_data)
                 
-                result_md = f"![Generated Image](/view/{filename})"
-                
-                # Handle target_env deployment
-                if target_env:
-                    try:
-                        d_client = docker.from_env()
-                        chat_id = session.get('current_chat_id', 'default')
-                        import re
-                        sanitized_sid = re.sub(r'[^a-zA-Z0-9]', '', str(session.sid))
-                        sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
-                        dynamic_lab_container = f"stellar-lab-{sanitized_sid}-{sanitized_cid}"
-                        
-                        # Dynamically resolve container name
-                        container_name = dynamic_lab_container if target_env == "lab" else f"stellar-repo-{target_env}"
-                        try:
-                            container = d_client.containers.get(container_name)
-                        except:
-                            container_name = f"stellar-forge-{target_env}"
-                            container = d_client.containers.get(container_name)
-                        
-                        import tarfile
-                        import io
-                        dest_dir = "/lab" if target_env == "lab" else "/app"
-                        
-                        tar_stream = io.BytesIO()
-                        with tarfile.open(fileobj=tar_stream, mode='w') as tar:
-                            tar.add(file_path, arcname=filename)
-                        tar_stream.seek(0)
-                        
-                        if container.put_archive(dest_dir, tar_stream):
-                            result_md += f"\n\nDeployed to {target_env}: `{dest_dir}/{filename}`"
-                    except Exception as env_e:
-                        result_md += f"\n\n(Failed to deploy to {target_env}: {str(env_e)})"
-                
-                return result_md
+                return f"![Generated Image](https://stellarai.live/view/{filename})"
         return "Image model returned no visual data."
-    except Exception as e:
-        return f"Error generating image: {str(e)}"
-        
-        return "No image data found in response."
     except Exception as e:
         return f"Error generating image: {str(e)}"
 
