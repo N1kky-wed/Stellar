@@ -144,8 +144,13 @@ def generate_image(model: str, prompt: str, quality: str = "1K", aspect_ratio: s
                         sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
                         dynamic_lab_container = f"stellar-lab-{sanitized_sid}-{sanitized_cid}"
                         
+                        # Dynamically resolve container name
                         container_name = dynamic_lab_container if target_env == "lab" else f"stellar-repo-{target_env}"
-                        container = d_client.containers.get(container_name)
+                        try:
+                            container = d_client.containers.get(container_name)
+                        except:
+                            container_name = f"stellar-forge-{target_env}"
+                            container = d_client.containers.get(container_name)
                         
                         import tarfile
                         import io
@@ -1338,7 +1343,14 @@ def manage_files(action: str, file_name: str = None, target_env: str = "lab", so
 
     def get_container_name(env_id):
         if env_id == "lab": return dynamic_lab_container
-        return f"stellar-repo-{env_id}"
+        # Try repo prefix first
+        repo_name = f"stellar-repo-{env_id}"
+        try:
+            client.containers.get(repo_name)
+            return repo_name
+        except:
+            # Fallback to forge prefix
+            return f"stellar-forge-{env_id}"
 
     local_uploads = os.path.join(UPLOAD_FOLDER, session_id)
 
