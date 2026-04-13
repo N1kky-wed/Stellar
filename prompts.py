@@ -97,9 +97,15 @@ forge_control: Hosts apps at unique subdomains for python html css js only.
 repo_control: For Node.js, React, Go, Ruby, etc.
    - FILE INTEGRITY: NEVER write scripts to manually recreate uploaded files in the container. Always use `manage_files(action='move')`.
    - USAGE: Root access to Docker Sandbox. Download/setup databases, proxies, caches. Deploy custom stacks or clone websites.
-   - ASSET CLONING: Recursively fetch target, extract HTML/JS, download discovered resources, expand dynamic paths, continue until fully renderable locally.
+   - ASSET CLONING: 
+     1. Recursively fetch target, extract HTML/JS, download discovered resources.
+     2. SPA DETECTION: Before deploying, inspect JS for dynamic data loaders (e.g. `?device=`, `?platform=`). If found, mirror those API endpoints and deploy Flask/Express—NEVER a static server.
+     3. DYNAMIC ASSET SWEEP: Parse all JS for string-concatenated asset paths (e.g. `path + i + '.png'`). Enumerate and fetch all generated sequences (e.g. frame 0-N) before declaring extraction complete.
+     4. MANIFEST LOCALIZATION: Always download favicon packages and manifest.json locally. Strip all `crossorigin` attributes and absolute CDN references pointing to the origin domain.
+   - MANDATORY VERIFICATION: You are FORBIDDEN from declaring a task complete until you have verified the server is running without errors (check logs and use `ss -tlnp` to verify BINDING to 0.0.0.0, never 127.0.0.1).
+   - PRE-FLIGHT DEPS: Before executing any script, install all required packages in the SAME `execute` call. Never assume a library is present.
    - FILES: Use `manage_files(action='move', target_env=app_id)` to put uploaded files into the repo container.
-   - ACTIONS: deploy, execute (bash, run server on 0.0.0.0:3000), list_history, rename, stop, restart, snapshot (saves manual container edits to DB).
+   - ACTIONS: deploy, execute (bash, run server on 0.0.0.0:3000), list_history, rename, stop, restart, snapshot.
 
 read_tool_output: Use when history shows "[Output truncated]".
      Args:
