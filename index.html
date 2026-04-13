@@ -6068,23 +6068,40 @@
         };
         marked.setOptions({ renderer: renderer });
 
-        // --- Protect Math Blocks from Marked.js Escaping ---
+        // --- Protect Math and SVG Blocks from Marked.js Escaping ---
         const originalMarkedParse = marked.parse;
         marked.parse = function(text, options) {
             if (!text) return "";
             const mathBlocks = [];
-            // Regex matches block math $$, inline math $, and escaped brackets \[ \] and \( \)
-            let processedText = text.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?!\s)[^$\n]+?(?<!\s)\$)/g, (match) => {
+            const svgBlocks = [];
+            
+            // 1. Protect SVGs first
+            let processedText = text.replace(/(<svg[\s\S]*?<\/svg>)/gi, (match) => {
+                svgBlocks.push(match);
+                return `SVGBLOCKPLACEHOLDER${svgBlocks.length - 1}SVGBLOCK`;
+            });
+
+            // 2. Protect Math
+            processedText = processedText.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?!\s)[^$\n]+?(?<!\s)\$)/g, (match) => {
                 mathBlocks.push(match);
                 return `MATHBLOCKPLACEHOLDER${mathBlocks.length - 1}MATHBLOCK`;
             });
+
+            // Parse the markdown safely
             let html = originalMarkedParse.call(marked, processedText, options);
+
+            // 3. Restore Math
             mathBlocks.forEach((block, index) => {
-                // Restore the exact original block
-                // Use regex with global flag just in case, though there should be only one
                 const placeholderRegex = new RegExp(`MATHBLOCKPLACEHOLDER${index}MATHBLOCK`, 'g');
                 html = html.replace(placeholderRegex, () => block);
             });
+            
+            // 4. Restore SVGs intact
+            svgBlocks.forEach((block, index) => {
+                const placeholderRegex = new RegExp(`SVGBLOCKPLACEHOLDER${index}SVGBLOCK`, 'g');
+                html = html.replace(placeholderRegex, () => block);
+            });
+
             return html;
         };
 
