@@ -991,6 +991,24 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 if len(parts) > 1:
                     system_instruction = parts[0].replace("<!-- Internal Processing Guidelines -->", "").strip()
                     current_effective_prompt = parts[1].strip()
+            
+            # Force Memory Injection from stellar_logs_prefs.json
+            try:
+                pref_file = "stellar_logs_prefs.json"
+                if os.path.exists(pref_file):
+                    with open(pref_file, "r", encoding="utf-8") as f:
+                        prefs_data = json.load(f)
+                        logs = prefs_data.get("logs", [])
+                        if logs:
+                            memory_text = "\n\n### PERSISTENT MEMORY & USER PREFERENCES (From logs_and_preferences):\n"
+                            memory_text += "The following are your long-term memories, user preferences, and past error resolution strategies. Always adhere to these preferences and use this context to avoid repeating past mistakes:\n"
+                            memory_text += "\n".join([f"- {log}" for log in logs])
+                            if system_instruction:
+                                system_instruction += memory_text
+                            else:
+                                system_instruction = memory_text
+            except Exception as e:
+                logger.error(f"Error injecting memory into system_instruction: {e}")
 
             chat_config = types.GenerateContentConfig(
                 tools=tools_config,
@@ -1152,7 +1170,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
             for tool in called_tools_results:
                 # Do not force-attach raw data from search tools, project history, Lab execution logs, or YouTube analysis
-                if tool['name'] in['extensive_search', 'native_search', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files']:
+                if tool['name'] in ['extensive_search', 'native_search', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and "Your Forge Deployment History" in tool['result']:
                     continue

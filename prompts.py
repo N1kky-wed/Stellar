@@ -79,11 +79,9 @@ KEY BEHAVIORAL RULES:
 
 native_search(prompt, status): Fast factual lookups via Google. Pass standalone query.
 extensive_search(query, status): Deep research via Tavily (reports, news, multi-domain).
-logs_and_preferences(read, write, status): Stores/retrieves user preferences, past errors, and resolution strategies across environments.
-   - read (bool): Set True to retrieve past logs/preferences.
-   - write (str): Set text to save a new preference, error log, or resolution strategy.
-   - MANDATE: Write concise reports on what went wrong, how you fixed it, and any user preferences or useful context for future use cases.
-analyze_youtube_video: `action='analyze'` if URL provided. `action='search'` to find videos. Multi-turn: search -> analyze -> link with timestamp (e.g., &t=120s) or build based on the video.
+logs_and_preferences(write, status): Stores user preferences, past errors, and resolution strategies across environments.
+    - write (str): Set text to save a new preference, error log, or resolution strategy.
+    - MANDATE: Memory is AUTOMATICALLY provided to your context. Use this tool ONLY to save new concise reports on what went wrong, how you fixed it, and any user preferences or useful context for future use cases.analyze_youtube_video: `action='analyze'` if URL provided. `action='search'` to find videos. Multi-turn: search -> analyze -> link with timestamp (e.g., &t=120s) or build based on the video.
 generate_image: Models: `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`. 
    - PARAMS: quality ("512", "1K", "2K", "4K"), aspect_ratio ("1:1", "16:9", etc.).
    - REFERENCE IMAGES: Pass `reference_images=[filenames]` (up to 14) from chat context to edit/style-transfer existing uploads.

@@ -707,7 +707,7 @@
 
         .placeholder-status.clickable {
             cursor: pointer;
-            text-decoration: underline dotted;
+            text-decoration: none; /* Removed underline dotted */
         }
 
         .analysis-indicator.clickable {
@@ -831,9 +831,8 @@
         #chatList::-webkit-scrollbar,
         #profileModal::-webkit-scrollbar,
         #forge-status-log::-webkit-scrollbar,
-        .CodeMirror-scroll::-webkit-scrollbar
-
-        /* <-- ADD THIS LINE */
+        .CodeMirror-scroll::-webkit-scrollbar,
+        #logsPrefsList::-webkit-scrollbar
             {
             width: 8px;
             height: 8px;
@@ -853,9 +852,8 @@
         #chatList::-webkit-scrollbar-track,
         #profileModal::-webkit-scrollbar-track,
         #forge-status-log::-webkit-scrollbar-track,
-        .CodeMirror-scroll::-webkit-scrollbar-track
-
-        /* <-- ADD THIS LINE */
+        .CodeMirror-scroll::-webkit-scrollbar-track,
+        #logsPrefsList::-webkit-scrollbar-track
             {
             background: var(--scrollbar-track-bg);
             border-radius: 0px;
@@ -874,9 +872,8 @@
         #chatList::-webkit-scrollbar-thumb,
         #profileModal::-webkit-scrollbar-thumb,
         #forge-status-log::-webkit-scrollbar-thumb,
-        .CodeMirror-scroll::-webkit-scrollbar-thumb
-
-        /* <-- ADD THIS LINE */
+        .CodeMirror-scroll::-webkit-scrollbar-thumb,
+        #logsPrefsList::-webkit-scrollbar-thumb
             {
             background: linear-gradient(var(--scrollbar-thumb-start), var(--scrollbar-thumb-end));
             border-radius: 10px;
@@ -896,9 +893,8 @@
         #chatList::-webkit-scrollbar-thumb:hover,
         #profileModal::-webkit-scrollbar-thumb:hover,
         #forge-status-log::-webkit-scrollbar-thumb:hover,
-        .CodeMirror-scroll::-webkit-scrollbar-thumb:hover
-
-        /* <-- ADD THIS LINE */
+        .CodeMirror-scroll::-webkit-scrollbar-thumb:hover,
+        #logsPrefsList::-webkit-scrollbar-thumb:hover
             {
             background: linear-gradient(var(--scrollbar-thumb-hover-start), var(--scrollbar-thumb-hover-end));
             border: 1px solid var(--scrollbar-thumb-hover-border);
@@ -1500,6 +1496,8 @@
             border-bottom-right-radius: 4px;
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: var(--primary-text-color);
+            min-width: fit-content;
+            max-width: 90%;
         }
 
         .user-msg:hover {
@@ -1509,6 +1507,14 @@
 
         .user-msg .message-content {
             white-space: pre-wrap;
+        }
+
+        .status-text {
+            color: var(--secondary-text-color);
+            border-bottom: none !important;
+            text-decoration: none !important;
+            cursor: default !important;
+            pointer-events: none !important;
         }
 
         .file-feedback-active {
@@ -3488,7 +3494,7 @@
 
         .user-msg {
             position: relative;
-            padding-bottom: 45px !important; /* Ensure space for buttons */
+            padding-bottom: 35px !important; /* Reduced from 45px */
         }
 
         .edit-prompt-wrapper {
@@ -5104,8 +5110,18 @@
                             const textarea = document.createElement('textarea');
                             textarea.value = log;
                             textarea.className = 'log-entry-textarea';
-                            textarea.style.cssText = 'background:rgba(0,0,0,0.2); color:var(--primary-text-color); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:10px; min-height:80px; font-family:inherit; font-size:0.9rem; resize:vertical;';
-                            
+                            textarea.style.cssText = 'background:rgba(0,0,0,0.2); color:var(--primary-text-color); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:10px; height:auto; font-family:inherit; font-size:0.9rem; resize:none; overflow:hidden;';
+
+                            // Auto-resize to content
+                            setTimeout(() => {
+                                textarea.style.height = 'auto';
+                                textarea.style.height = textarea.scrollHeight + 'px';
+                            }, 0);
+
+                            textarea.oninput = () => {
+                                textarea.style.height = 'auto';
+                                textarea.style.height = textarea.scrollHeight + 'px';
+                            };                            
                             const actions = document.createElement('div');
                             actions.style.cssText = 'display:flex; justify-content:flex-end; gap:10px;';
                             
@@ -6592,105 +6608,107 @@
 
                 attachedFiles.forEach(file => {
                     const item = document.createElement('div');
-                    item.style.cssText = 'display: flex; flex-direction: column; align-items: center; width: 60px; padding: 5px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;';
+                        item.style.cssText = 'display: flex; flex-direction: column; align-items: center; width: 80px; padding: 5px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;';
 
-                    const preview = document.createElement('div');
-                    preview.style.cssText = 'width: 40px; height: 40px; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); margin-bottom: 4px; font-size: 0.6rem; color: #aaa; word-break: break-all; text-align: center;';
+                        const preview = document.createElement('div');
+                        preview.style.cssText = 'width: 60px; height: 60px; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); margin-bottom: 4px; font-size: 0.75rem; color: #aaa; word-break: break-all; text-align: center;';
 
-                    const fileType = isLocalFiles ? (file.type || '') : (file.mime_type || '');
-                    const fileName = isLocalFiles ? file.name : (file.display_name || file.name || 'FILE');
-                    const isImage = fileType.startsWith('image/');
+                        const fileType = isLocalFiles ? (file.type || '') : (file.mime_type || '');
+                        const fileName = isLocalFiles ? file.name : (file.display_name || file.name || 'FILE');
+                        const isImage = fileType.startsWith('image/');
 
-                    if (isImage && isLocalFiles) {
-                        const img = document.createElement('img');
-                        img.src = URL.createObjectURL(file);
-                        img.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
-                        preview.appendChild(img);
-                    } else {
-                        preview.textContent = fileName.split('.').pop().toUpperCase().substring(0, 4);
+                        if (isImage && isLocalFiles) {
+                            const img = document.createElement('img');
+                            img.src = URL.createObjectURL(file);
+                            img.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
+                            preview.appendChild(img);
+                        } else {
+                            preview.textContent = fileName.split('.').pop().toUpperCase().substring(0, 4);
+                        }
+
+                        const nameSpan = document.createElement('span');
+                        nameSpan.textContent = fileName;
+                        nameSpan.style.cssText = 'font-size: 0.65rem; color: var(--primary-text-color); width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;';
+
+                        item.appendChild(preview);
+                        item.appendChild(nameSpan);
+                        filesContainer.appendChild(item);
+                    });
+                    msg.appendChild(filesContainer);
                     }
 
-                    const nameSpan = document.createElement('span');
-                    nameSpan.textContent = fileName;
-                    nameSpan.style.cssText = 'font-size: 0.5rem; color: var(--primary-text-color); width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;';
+                    let contentDiv = null;
+                    if (text) {
+                    contentDiv = document.createElement("div");
+                    contentDiv.classList.add("message-content");
+                    contentDiv.textContent = text;
+                    msg.appendChild(contentDiv);
+                    }
 
-                    item.appendChild(preview);
-                    item.appendChild(nameSpan);
-                    filesContainer.appendChild(item);
-                });
-                msg.appendChild(filesContainer);
-            }
+                    const editWrapper = document.createElement('div');
+                    editWrapper.className = 'edit-prompt-wrapper';
 
-            let contentDiv = null;
-            if (text) {
-                contentDiv = document.createElement("div");
-                contentDiv.classList.add("message-content");
-                contentDiv.textContent = text;
-                msg.appendChild(contentDiv);
-            }
+                    const editIcon = document.createElement('span');
+                    editIcon.className = 'edit-prompt-icon';
+                    editIcon.title = 'Edit & Resubmit Prompt';
+                    editIcon.innerHTML = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>`;
 
-            const editWrapper = document.createElement('div');
-            editWrapper.className = 'edit-prompt-wrapper';
+                    const deleteIcon = document.createElement('span');
+                    deleteIcon.className = 'edit-prompt-icon delete-msg-icon';
+                    deleteIcon.title = 'Delete Message';
+                    deleteIcon.innerHTML = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg>`;
 
-            const editIcon = document.createElement('span');
-            editIcon.className = 'edit-prompt-icon';
-            editIcon.title = 'Edit & Resubmit Prompt';
-            editIcon.innerHTML = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>`;
+                    editWrapper.appendChild(editIcon);
+                    editWrapper.appendChild(deleteIcon);
+                    msg.appendChild(editWrapper);
 
-            const deleteIcon = document.createElement('span');
-            deleteIcon.className = 'edit-prompt-icon delete-msg-icon';
-            deleteIcon.title = 'Delete Message';
-            deleteIcon.innerHTML = `<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg>`;
+                    deleteIcon.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteMessageFromServer(id, msg);
+                    });
 
-            editWrapper.appendChild(editIcon);
-            editWrapper.appendChild(deleteIcon);
-            msg.appendChild(editWrapper);
+                    editIcon.addEventListener('click', (e) => {
+                    e.stopPropagation();
 
-            deleteIcon.addEventListener('click', (e) => {
-                e.stopPropagation();
-                deleteMessageFromServer(id, msg);
-            });
+                    const originalPromptBubble = e.target.closest('.user-msg');
+                    const filesContainer = originalPromptBubble.querySelector('div[style*="justify-content: flex-end"]');
 
-            editIcon.addEventListener('click', (e) => {
-                e.stopPropagation();
+                    if (contentDiv) contentDiv.style.display = 'none';
+                    editWrapper.style.display = 'none';
+                    if (filesContainer) filesContainer.style.display = 'none';
 
-                const originalPromptBubble = e.target.closest('.user-msg');
+                    const editContainer = document.createElement('div');
+                    editContainer.className = 'edit-container';
 
-                contentDiv.style.display = 'none';
-                editWrapper.style.display = 'none';
+                    const editTextarea = document.createElement('textarea');
+                    editTextarea.className = 'edit-textarea';
+                    editTextarea.value = text;
 
-                const editContainer = document.createElement('div');
-                editContainer.className = 'edit-container';
+                    const buttonContainer = document.createElement('div');
+                    buttonContainer.className = 'edit-buttons';
 
-                const editTextarea = document.createElement('textarea');
-                editTextarea.className = 'edit-textarea';
-                editTextarea.value = text;
+                    const saveButton = document.createElement('button');
+                    saveButton.className = 'edit-save-btn';
+                    saveButton.textContent = 'Save & Resubmit';
 
-                const buttonContainer = document.createElement('div');
-                buttonContainer.className = 'edit-buttons';
+                    const cancelButton = document.createElement('button');
+                    cancelButton.className = 'edit-cancel-btn';
+                    cancelButton.textContent = 'Cancel';
 
-                const saveButton = document.createElement('button');
-                saveButton.className = 'edit-save-btn';
-                saveButton.textContent = 'Save & Resubmit';
+                    buttonContainer.appendChild(cancelButton);
+                    buttonContainer.appendChild(saveButton);
+                    editContainer.appendChild(editTextarea);
+                    editContainer.appendChild(buttonContainer);
 
-                const cancelButton = document.createElement('button');
-                cancelButton.className = 'edit-cancel-btn';
-                cancelButton.textContent = 'Cancel';
+                    originalPromptBubble.appendChild(editContainer);
+                    editTextarea.focus();
 
-                buttonContainer.appendChild(cancelButton);
-                buttonContainer.appendChild(saveButton);
-                editContainer.appendChild(editTextarea);
-                editContainer.appendChild(buttonContainer);
-
-                originalPromptBubble.appendChild(editContainer);
-                editTextarea.focus();
-
-                const cleanupAndExitEditMode = () => {
-                    editContainer.remove();
-                    contentDiv.style.display = 'block';
-                    editWrapper.style.display = 'flex';
-                };
-
+                    const cleanupAndExitEditMode = () => {
+                        editContainer.remove();
+                        if (contentDiv) contentDiv.style.display = 'block';
+                        editWrapper.style.display = 'flex';
+                        if (filesContainer) filesContainer.style.display = 'flex';
+                    };
                 cancelButton.addEventListener('click', cleanupAndExitEditMode);
 
                 saveButton.addEventListener('click', async () => {
@@ -7179,10 +7197,10 @@
 
             stagedFiles.forEach((file, index) => {
                 const item = document.createElement('div');
-                item.style.cssText = 'position: relative; display: flex; flex-direction: column; align-items: center; width: 60px; padding: 5px; background: rgba(0,0,0,0.4); border: 1px solid var(--input-border); border-radius: 8px;';
+                item.style.cssText = 'position: relative; display: flex; flex-direction: column; align-items: center; width: 80px; padding: 5px; background: rgba(0,0,0,0.4); border: 1px solid var(--input-border); border-radius: 8px;';
 
                 const preview = document.createElement('div');
-                preview.style.cssText = 'width: 40px; height: 40px; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); margin-bottom: 4px; font-size: 0.7rem; color: #aaa; word-break: break-all; text-align: center;';
+                preview.style.cssText = 'width: 60px; height: 60px; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); margin-bottom: 4px; font-size: 0.75rem; color: #aaa; word-break: break-all; text-align: center;';
 
                 if (file.type.startsWith('image/')) {
                     const img = document.createElement('img');
@@ -7195,7 +7213,7 @@
 
                 const name = document.createElement('span');
                 name.textContent = file.name;
-                name.style.cssText = 'font-size: 0.6rem; color: var(--primary-text-color); width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;';
+                name.style.cssText = 'font-size: 0.65rem; color: var(--primary-text-color); width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center;';
 
                 const removeBtn = document.createElement('button');
                 removeBtn.innerHTML = '×';
@@ -7333,7 +7351,7 @@
                 }
                 placeholderMsg.dataset.id = placeholderId;
                 const contentDiv = document.createElement("div"); contentDiv.classList.add("message-content");
-                const statusSpan = document.createElement("span"); statusSpan.className = "placeholder-status"; if (serverFileIds.length > 0) statusSpan.classList.add("clickable", "analysis-placeholder"); statusSpan.textContent = placeholderText; contentDiv.appendChild(statusSpan);
+                const statusSpan = document.createElement("span"); statusSpan.className = "placeholder-status"; statusSpan.textContent = placeholderText; contentDiv.appendChild(statusSpan);
                 if (serverFileIds.length > 0) { const detailsDiv = document.createElement("div"); detailsDiv.className = "analysis-content"; detailsDiv.style.display = "none"; detailsDiv.innerHTML = "<small><i>Waiting for analysis details...</i></small>"; contentDiv.appendChild(detailsDiv); }
                 placeholderMsg.appendChild(contentDiv);
                 if (messagesDiv) messagesDiv.appendChild(placeholderMsg);
@@ -7415,7 +7433,11 @@
                     iconSpan.innerHTML = `<svg class="tool-spinner" viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;vertical-align:middle;margin-right:6px;"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
                     statusSpan.appendChild(iconSpan);
                 }
-                statusSpan.appendChild(document.createTextNode(displayMsg));
+                
+                const textSpan = document.createElement('span');
+                textSpan.className = 'status-text';
+                textSpan.textContent = displayMsg;
+                statusSpan.appendChild(textSpan);
 
                 if (isError) {
 
@@ -7427,14 +7449,18 @@
                     statusSpan.onclick = null;
                 } else {
                     statusSpan.style.color = '';
-                    if (detailsDiv && !statusSpan.classList.contains("clickable")) {
+                    // Only add clickable/analysis classes if we actually have details to show
+                    if (analysisDetails && detailsDiv && !statusSpan.classList.contains("clickable")) {
                         statusSpan.classList.add("clickable", "analysis-placeholder");
                         if (!statusSpan.onclick) {
                             statusSpan.onclick = () => toggleAnalysisDetails(msgDiv);
                         }
+                    } else if (!analysisDetails) {
+                        // Ensure they are removed if this is just a status update
+                        statusSpan.classList.remove("clickable", "analysis-placeholder");
+                        statusSpan.onclick = null;
                     }
-                }
-            }
+                }            }
 
             if (detailsDiv && analysisDetails) {
                 let html = '';

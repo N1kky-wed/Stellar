@@ -51,7 +51,7 @@ def extensive_search(query: str, topic: str = "general", days: int = 3, max_resu
     except Exception as e:
         return f"Error during search: {str(e)}"
 
-def generate_image(model: str, prompt: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list = None, target_env: str = None, status: str = "") -> str:
+def generate_image(model: str, prompt: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None, target_env: str = None, status: str = "") -> str:
     """Generates an image using Gemini's Imagen model.
     Args:
         model: 'gemini-3.1-flash-image-preview' or 'gemini-3-pro-image-preview'
@@ -197,11 +197,10 @@ def native_search(prompt: str, status: str = "") -> str:
     except Exception as e:
         return f"Error in native search: {str(e)}"
 
-def logs_and_preferences(read: bool = False, write: str = "", status: str = "") -> str:
-    """Stores or retrieves user preferences, previous errors, and resolution strategies across environments.
+def logs_and_preferences(write: str = "", status: str = "") -> str:
+    """Stores user preferences, previous errors, and resolution strategies. Memory is automatically provided to your context.
     
     Args:
-        read: If True, returns the stored logs and preferences.
         write: A string detailing a preference, error, or fix to save for the future.
         status: Status update for the user.
     """
@@ -219,33 +218,24 @@ def logs_and_preferences(read: bool = False, write: str = "", status: str = "") 
         except Exception as e:
             return f"Error initializing preferences file: {str(e)}"
             
-    output = ""
     try:
+        if not write:
+            return "Error: You must provide a 'write' string to save a preference."
+
         with open(pref_file, "r", encoding="utf-8") as f:
             data = json.load(f)
             
+        write = write.strip()
         if write:
-            write = write.strip()
-            if write:
-                data.setdefault("logs", []).append(write)
-                # Keep only the last 100 entries to prevent the file/context from getting too bloated
-                data["logs"] = data["logs"][-100:]
-                
-                with open(pref_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=4)
-                output += "Successfully saved to logs/preferences. "
+            data.setdefault("logs", []).append(write)
+            # Keep only the last 100 entries to prevent the file/context from getting too bloated
+            data["logs"] = data["logs"][-100:]
             
-        if read:
-            logs = data.get("logs", [])
-            if logs:
-                output += "Stored Logs & Preferences:\n" + "\n".join([f"- {log}" for log in logs])
-            else:
-                output += "No logs or preferences stored yet."
-                
-        if not read and not write:
-            output = "Error: You must specify read=True or provide a write string."
-            
-        return output.strip()
+            with open(pref_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+            return "Successfully saved to logs/preferences. It will be available in your context for future turns."
+        
+        return "Error: 'write' string was empty."
     except Exception as e:
         return f"Error accessing logs/preferences: {str(e)}"
 
