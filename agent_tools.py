@@ -1369,7 +1369,6 @@ available_tools = [
     native_search,
     extensive_search,
     generate_image,
-    render_svg,
     make_presentation,
     regenerate_presentation_slide,
     analyze_youtube_video,
@@ -1377,5 +1376,6 @@ available_tools = [
     forge_control,
     repo_control,
     lab_execute,
-    read_tool_output
+    read_tool_output,
+    logs_and_preferences
 ]

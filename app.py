@@ -1070,8 +1070,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             yield {'status': 'Performing extensive web research...'}
                         elif func_name == "generate_image":
                             yield {'status': 'Generating your image...'}
-                        elif func_name == "render_svg":
-                            yield {'status': 'Drawing...'}
+                        elif func_name == "logs_and_preferences":
+                            yield {'status': 'Syncing logs and preferences...'}
                         elif func_name == "make_presentation":
                             yield {'status': 'Creating presentation slides...'}
                         elif func_name == "analyze_youtube_video":
@@ -1108,7 +1108,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 func_to_call = getattr(agent_tools, func_name)
                                 
                                 # Dynamically pass the current model_id to specific tools
-                                if func_name in ["render_svg", "analyze_youtube_video"]:
+                                if func_name in ["analyze_youtube_video"]:
                                     if 'model_id' not in args_dict:
                                         args_dict['model_id'] = model_id
 
@@ -1131,7 +1131,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         # Truncate base64 image data to prevent blowing up the LLM's input token limit
                         # during the immediate next function_response turn!
                         llm_safe_res = res
-                        if isinstance(llm_safe_res, str) and 'data:image' in llm_safe_res and func_name != 'render_svg':
+                        if isinstance(llm_safe_res, str) and 'data:image' in llm_safe_res:
                             llm_safe_res = "Image successfully generated and rendered to the user's UI. Do not attempt to output the image markdown yourself."
 
                         function_responses.append(
@@ -1163,9 +1163,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 # Check if the result (or a significant part of it) is already in the output
                 already_present = False
                 if clean_res in accumulated_full_output:
-                    already_present = True
-                elif tool['name'] == 'render_svg' and '<svg' in accumulated_full_output:
-                    # If some SVG is already there, assume it's this one (prevents double rendering)
                     already_present = True
                 else:
                     # Look for unique identifiers like UUIDs or URLs in the tool result
@@ -4380,3 +4377,13 @@ cleanup_stale_containers()
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5013))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+ threaded=True)
+0.0', port=port, debug=False, threaded=True)
+_containers()
+    
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5013))
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+ threaded=True)
+0.0', port=port, debug=False, threaded=True)
+0.0', port=port, debug=False, threaded=True)
