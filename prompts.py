@@ -819,20 +819,6 @@ import os
 # Standard Client
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 ```
-"""
-
-def get_research_analysis_prompt(query: str, full_context: str) -> str:
-    return f"""Using the following multi-source context, perform an exhaustive, research-level analysis. Based on the information provided, do your own research and fact-check everything. Return only the raw URLs (no HTML/CSS formatting). Your output should consist of two parts:
-
-1. Comprehensive Analysis: Synthesize the given information into a detailed review that serves as the backbone of a research paper. This analysis must include:
-- A literature review and background discussion.
-- Detailed technical and methodological explanations.
-- A critical evaluation of approaches, highlighting strengths and limitations.
-- Key findings and insights drawn from the data.
-- Potential future research directions and actionable recommendations.
-
-2. Prompt: Based on your analysis, generate a specific, refined prompt for another LLM to further expand on the topic. Analyze the topic and determine the appropriate academic structure for the research paper.
-- Identify the discipline (STEM, humanities, social sciences, business, or policy analysis).
-- Suggest a suitable formatting style (e.g., IMRaD, essay-style, executive summary).
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object."""
 - Ensure your formatting aligns with academic best practices and citation standards. If any links are broken, mention only their titles without URLs.
 - Proceed with the comprehensive analysis using the recommended structure."""
