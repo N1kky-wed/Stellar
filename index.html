@@ -1301,7 +1301,7 @@
             font-size: 1.5rem;
             margin-bottom: 15px;
             text-align: left;
-            background: linear-gradient(135deg, #fff, #4285F4);
+            background: linear-gradient(135deg, #fff, var(--model-color-start));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             letter-spacing: 1px;
@@ -1375,14 +1375,14 @@
         }
 
         .password-change-form input:focus {
-            border-color: #4285F4;
+            border-color: var(--model-color-start);
             background: rgba(255, 255, 255, 0.05);
         }
 
         #changePasswordBtn {
             padding: 10px;
             border-radius: 10px;
-            background: #4285F4;
+            background: linear-gradient(45deg, var(--model-color-start), var(--model-color-end));
             color: #fff;
             border: none;
             font-weight: 600;
@@ -1392,9 +1392,28 @@
         }
 
         #changePasswordBtn:hover {
-            background: #3367d6;
             transform: translateY(-1px);
-            box-shadow: 0 5px 15px rgba(66, 133, 244, 0.3);
+            box-shadow: 0 5px 15px var(--model-color-shadow);
+            filter: brightness(1.1);
+        }
+
+        #openAgentSettingsBtn {
+            width: 100%;
+            padding: 10px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--primary-text-color);
+            border: 1px solid var(--model-color-border);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        #openAgentSettingsBtn:hover {
+            background: linear-gradient(45deg, var(--model-color-start), var(--model-color-end));
+            color: #fff;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px var(--model-color-shadow);
         }
 
         #logoutButtonProfile {
@@ -3414,13 +3433,19 @@
             border: 1px solid var(--input-border);
             border-radius: 50%;
             cursor: pointer;
-            display: none;
-            /* <-- HIDE BY DEFAULT */
+            display: flex;
             align-items: center;
             justify-content: center;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
             z-index: 99;
-            transition: background 0.2s ease, transform 0.2s ease, display 0s;
+            opacity: 0;
+            pointer-events: none;
+            transition: background 0.2s ease, transform 0.2s ease, opacity 0.3s ease;
+        }
+
+        #chatScrollToBottomBtn.visible {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         #chatScrollToBottomBtn:hover {
@@ -4156,7 +4181,8 @@
             box-shadow: 0 4px 15px rgba(255, 42, 77, 0.3);
         }
 
-        .chat-item {            width: 100%;
+        .chat-item {
+            width: 100%;
             box-sizing: border-box;
         }
 
@@ -4464,19 +4490,19 @@
 
         <!-- Admin Waitlist Modal -->
     <div id="adminWaitlistModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 3000; align-items: center; justify-content: center;">
-        <div class="modal-content" style="max-width: 800px; width: 90%; height: 80vh; background: #0a0a0f; border: 1px solid rgba(66, 133, 244, 0.3); border-radius: 20px; padding: 30px; display: flex; flex-direction: column; box-shadow: 0 0 40px rgba(0,0,0,0.5);">
+        <div class="modal-content" style="max-width: 800px; width: 90%; height: 80vh; background: #0a0a0f; border: 1px solid var(--model-color-border); border-radius: 20px; padding: 30px; display: flex; flex-direction: column; box-shadow: 0 0 40px rgba(0,0,0,0.5);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
-                <h2 style="background: linear-gradient(135deg, #fff, #4285F4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.8rem; letter-spacing: 1px;">Admin Dashboard</h2>
+                <h2 style="background: linear-gradient(135deg, #fff, var(--model-color-start)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.8rem; letter-spacing: 1px;">Admin Dashboard</h2>
                 <button id="closeAdminWaitlistBtn" style="background: none; border: none; color: #666; font-size: 2rem; cursor: pointer; transition: color 0.2s;">&times;</button>
             </div>
             <div id="waitlistContent" style="flex-grow: 1; overflow-y: auto; padding-right: 10px;">
                 <table style="width: 100%; border-collapse: collapse; color: #ccc; font-family: 'Poppins', sans-serif; font-size: 0.9rem;">
                     <thead>
                         <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                            <th style="padding: 12px; color: #4285F4;">ID</th>
-                            <th style="padding: 12px; color: #4285F4;">Name & Email</th>
-                            <th style="padding: 12px; color: #4285F4;">Created At</th>
-                            <th style="padding: 12px; color: #4285F4; text-align: right;">Action</th>
+                            <th style="padding: 12px; color: var(--model-color-start);">ID</th>
+                            <th style="padding: 12px; color: var(--model-color-start);">Name & Email</th>
+                            <th style="padding: 12px; color: var(--model-color-start);">Created At</th>
+                            <th style="padding: 12px; color: var(--model-color-start); text-align: right;">Action</th>
                         </tr>
                     </thead>
                     <tbody id="waitlistTableBody">
@@ -4555,7 +4581,7 @@
             </div>
 
             <div class="agent-settings-section" style="margin-top: 10px;">
-                <button id="openAgentSettingsBtn" type="button" style="width: 100%; padding: 10px; border-radius: 10px; background: rgba(123, 97, 255, 0.1); color: #7b61ff; border: 1px solid rgba(123, 97, 255, 0.2); font-weight: 600; cursor: pointer; transition: all 0.2s;">Agent Tool Settings</button>
+                <button id="openAgentSettingsBtn" type="button">Agent Tool Settings</button>
             </div>
 
             <button id="logoutButtonProfile">Logout</button>
@@ -7020,7 +7046,7 @@
                 codeLabContainer.style.display = 'flex';
                 headerContainer.appendChild(modeSelectorWrapper);
                 // Hide scroll-to-bottom button in CodeLab mode
-                document.getElementById('chatScrollToBottomBtn').style.display = 'none';
+                chatScrollToBottomBtn.classList.remove('visible');
                 // Forge container is now displayed by default
                 if (codeLabEditor) setTimeout(() => codeLabEditor.refresh(), 1);
 
@@ -7039,7 +7065,7 @@
                 inputBarContainer.appendChild(modeSelectorWrapper);
                 updateModelSelectTheme();
                 // Show scroll-to-bottom button when leaving CodeLab mode
-                document.getElementById('chatScrollToBottomBtn').style.display = '';
+                toggleScrollButton();
             }
 
             spectrumSearchBtn.style.display = (currentMode === 'spectrum') ? "inline-block" : "none";
@@ -7272,6 +7298,15 @@
             sendBtn.disabled = true;
             toggleSendStopButtons(true);
             setStatus("Processing...");
+
+            // Immediately move this chat to the top of the sidebar list
+            if (currentChatId) {
+                const activeChatItem = document.querySelector(`.chat-item[data-chat-id="${currentChatId}"]`);
+                const chatList = document.getElementById('chatList');
+                if (activeChatItem && chatList && chatList.firstChild !== activeChatItem) {
+                    chatList.prepend(activeChatItem);
+                }
+            }
 
             const userMsgId = Date.now() + '_user';
             if (query || stagedFiles.length > 0) {
@@ -8743,7 +8778,6 @@
                     inputContainer.style.display = 'flex';
                     sidebar.style.display = 'flex';
                     tokenCountBar.style.display = 'block';
-                    chatScrollToBottomBtn.style.display = 'flex';
 
                     if (data.role === 'admin') {
                         addAdminControls();
@@ -8809,7 +8843,7 @@
                         if (!user.is_approved) {
                              actionsHtml += `<button onclick="approveUser(${user.id}, '${user.username}')" style="background: rgba(0, 240, 144, 0.1); border: 1px solid rgba(0, 240, 144, 0.2); color: #00F090; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: 'Poppins', sans-serif; font-size: 0.75rem; font-weight: 600; transition: all 0.2s; margin-right: 0;">Approve User</button>`;
                         }
-                        actionsHtml += `<button onclick="impersonateUser(${user.id})" style="background: rgba(66, 133, 244, 0.1); border: 1px solid rgba(66, 133, 244, 0.2); color: #4285F4; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: 'Poppins', sans-serif; font-size: 0.75rem; font-weight: 600; transition: all 0.2s;">Impersonate</button>`;
+                        actionsHtml += `<button onclick="impersonateUser(${user.id})" style="background: var(--model-color-shadow); border: 1px solid var(--model-color-border); color: var(--model-color-start); padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: 'Poppins', sans-serif; font-size: 0.75rem; font-weight: 600; transition: all 0.2s;">Impersonate</button>`;
                         actionsHtml += '</div>';
 
                         row.innerHTML = `
@@ -9178,6 +9212,28 @@
             chatScrollToBottomBtn.addEventListener('click', scrollToBottom);
         }
 
+        function toggleScrollButton() {
+            if (!chatScrollToBottomBtn || currentMode === 'codelab') return;
+            const threshold = 150; // Pixels from bottom to hide the button
+
+            let isScrollable = false;
+            let distanceToBottom = 0;
+
+            if (messagesDiv && messagesDiv.scrollHeight > messagesDiv.clientHeight) {
+                isScrollable = true;
+                distanceToBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight;
+            } else if (document.documentElement.scrollHeight > document.documentElement.clientHeight) {
+                isScrollable = true;
+                distanceToBottom = document.documentElement.scrollHeight - document.documentElement.scrollTop - document.documentElement.clientHeight;
+            }
+
+            if (isScrollable && distanceToBottom > threshold) {
+                chatScrollToBottomBtn.classList.add('visible');
+            } else {
+                chatScrollToBottomBtn.classList.remove('visible');
+            }
+        }
+
         window.addEventListener("load", () => {
             // Short delay to ensure custom_select.js DOMContentLoaded logic has run
             setTimeout(() => {
@@ -9195,6 +9251,10 @@
                     updateModelSelectWidth(); 
                 }
             }, 100);
+
+            if (messagesDiv) messagesDiv.addEventListener('scroll', toggleScrollButton);
+            window.addEventListener('scroll', toggleScrollButton);
+            window.addEventListener('resize', toggleScrollButton);
 
             handleModeChange();
             checkAuthStatus();
