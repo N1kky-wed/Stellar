@@ -3326,7 +3326,14 @@ def get_user_chats():
     user_id = session['user_id']
     db = get_db()
     try:
-        cursor = db.execute('SELECT id, name, created_at FROM chats WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
+        cursor = db.execute('''
+            SELECT c.id, c.name, COALESCE(MAX(m.timestamp), c.created_at) as last_active 
+            FROM chats c 
+            LEFT JOIN messages m ON c.id = m.chat_id 
+            WHERE c.user_id = ? 
+            GROUP BY c.id 
+            ORDER BY last_active DESC
+        ''', (user_id,))
         chats = _fetch_as_dict(cursor)
         return jsonify(chats), 200
     except sqlite3.Error as e:

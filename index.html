@@ -1142,10 +1142,11 @@
 
         #chatList {
             list-style: none;
-            padding: 0;
-            margin: 0;
+            margin: 0 -20px 0 0; /* Pushes the scrollbar to the absolute right edge */
+            padding: 5px 12px 5px 0; /* Keeps the chat items away from the scrollbar */
             flex-grow: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             scrollbar-width: thin;
             scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track-bg);
         }
@@ -4154,14 +4155,8 @@
             transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(255, 42, 77, 0.3);
         }
-        
-        #chatList {
-            overflow-x: hidden;
-            padding: 10px;
-        }
-        
-        .chat-item {
-            width: 100%;
+
+        .chat-item {            width: 100%;
             box-sizing: border-box;
         }
 
@@ -9658,7 +9653,7 @@
         function createChatItemHtml(chat) {
             return `
         <div class="chat-item-main-content">
-            <span class="chat-name">${escapeHtml(chat.name)}</span>
+            <span class="chat-name" title="${escapeHtml(chat.name)}">${escapeHtml(chat.name)}</span>
             <div class="snippet-preview"></div>
             <div class="chat-item-token-counter">
                 <span class="token-text"></span>
