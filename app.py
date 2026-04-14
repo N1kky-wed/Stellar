@@ -2166,7 +2166,7 @@ def api_logs_preferences():
     db = get_db()
     
     if request.method == 'GET':
-        cursor = db.execute('SELECT id, log_entry FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at ASC', (user_id,))
+        cursor = db.execute('SELECT id, log_entry FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
         logs = [row['log_entry'] for row in cursor.fetchall()]
         return jsonify({'logs': logs})
             
@@ -2186,7 +2186,7 @@ def api_logs_preferences():
         if index is None:
             return jsonify({'error': 'Invalid request'}), 400
         
-        cursor = db.execute('SELECT id FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at ASC', (user_id,))
+        cursor = db.execute('SELECT id FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
         rows = cursor.fetchall()
         if 0 <= index < len(rows):
             log_id = rows[index]['id']
