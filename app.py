@@ -47,8 +47,27 @@ try:
     client = docker.from_env()
     client.ping()
     logging.info("Successfully connected to Docker daemon on startup.")
+    try:
+        client.networks.get("stellar_isolated")
+        logging.info("Found existing 'stellar_isolated' network.")
+    except docker.errors.NotFound:
+        logging.info("Creating 'stellar_isolated' network with ICC disabled.")
+        client.networks.create("stellar_isolated", driver="bridge", options={"com.docker.network.bridge.enable_icc": "false"})
 except Exception as e:
     logging.error(f"Could not connect to Docker daemon on startup. Please ensure Docker is running. Code execution will fail. Error: {e}")
+
+def ensure_user_network(docker_client, user_id):
+    if not user_id:
+        return "stellar_isolated"
+    network_name = f"stellar_net_{user_id}"
+    try:
+        docker_client.networks.get(network_name)
+    except docker.errors.NotFound:
+        try:
+            docker_client.networks.create(network_name, driver="bridge", options={"com.docker.network.bridge.enable_icc": "false"})
+        except docker.errors.APIError:
+            pass # Ignore if created concurrently
+    return network_name
 
 from telegram_bot import TelegramBot
 
@@ -1625,6 +1644,16 @@ def forge_iterate():
 def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='forge', subdomain=None):
     logs_buffer = []
 
+    user_id = None
+    with app_obj.app_context():
+        db = get_db()
+        cursor = db.execute('SELECT user_id FROM forge_history WHERE process_id = ?', (process_id,))
+        row = cursor.fetchone()
+        if row: user_id = row['user_id']
+    
+    client = docker.from_env()
+    user_network = ensure_user_network(client, user_id)
+
     def _put_event(data):
         if data.get('type') in ['log', 'error', 'install_log']:
             logs_buffer.append(str(data.get('content', '')))
@@ -1751,6 +1780,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 remove=False,
                 detach=True,
                 init=True,
+                network=user_network,
                 stdout=True,
                 stderr=True,
                 labels={
@@ -2000,6 +2030,11 @@ def forge_stream():
     if not process_id:
         return Response("process_id required", status=400)
 
+    db = get_db()
+    cursor = db.execute('SELECT 1 FROM forge_history WHERE process_id = ? AND user_id = ?', (process_id, session['user_id']))
+    if not cursor.fetchone() and process_id != session.get('forge_project', {}).get('process_id'):
+        return Response("unauthorized", status=403)
+
     def generate():
         pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
         pubsub.subscribe(process_id)
@@ -2038,6 +2073,11 @@ def forge_stop():
     process_id = data.get('process_id') or session.get('forge_project', {}).get('process_id')
     if not process_id:
         return jsonify({'error': 'process_id required'}), 400
+
+    db = get_db()
+    cursor = db.execute('SELECT 1 FROM forge_history WHERE process_id = ? AND user_id = ?', (process_id, session['user_id']))
+    if not cursor.fetchone() and process_id != session.get('forge_project', {}).get('process_id'):
+        return jsonify({'error': 'Forbidden. You do not own this process.'}), 403
 
     try:
         stop_and_cleanup_app_by_process_id(process_id, app_type='forge')
@@ -3688,6 +3728,8 @@ def run_code():
     final_frontend_code = None
     api_keys = {}
 
+    user_network = ensure_user_network(client, session['user_id'])
+
     main_code_basename = "app"
     if language == 'java':
         match = re.search(r'public\s+class\s+(\w+)', code)
@@ -3748,7 +3790,7 @@ def run_code():
                 working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
                 ports=ports_to_publish, mem_limit='1024m',
                 name=f"stellar-sandbox-{run_id}", remove=False, detach=True,
-                init=True,
+                init=True, network=user_network,
                 stdout=True, stderr=True,
                 labels={
                     "stellar_type": "run_code",
@@ -3839,7 +3881,7 @@ def manage_api_keys():
 def stop_container():
     if 'user_id' not in session:
         return jsonify({'error': 'Authentication required.'}), 401
-    
+
     if not client:
         return jsonify({'error': 'Docker client is not available.'}), 503
 
@@ -3852,13 +3894,15 @@ def stop_container():
     try:
         process_id = None
         app_type = 'run_code'
+        user_id = session['user_id']
+        db = get_db()
 
         for key in redis_client.scan_iter("runcode:process:*"):
             cid = redis_client.hget(key, "container_id")
             if cid and cid == container_id:
                 process_id = redis_client.hget(key, "process_id")
                 break
-        
+
         if not process_id:
             app_type = 'forge'
             for key in redis_client.scan_iter("forge:process:*"):
@@ -3868,14 +3912,23 @@ def stop_container():
                     break
 
         if process_id:
+            # Validate ownership
+            cursor = db.execute('SELECT 1 FROM forge_history WHERE process_id = ? AND user_id = ?', (process_id, user_id))
+            is_owner = cursor.fetchone() is not None
+
+            # Allow run_code containers that were created in the current session
+            # If it's a run_code container, it might not be in forge_history. We allow it if it's in their session
+            if not is_owner and app_type == 'run_code':
+                if session.get('last_run_code_process_id') != process_id:
+                     return jsonify({'error': 'Forbidden. You do not own this container.'}), 403
+            elif not is_owner and app_type == 'forge':
+                 return jsonify({'error': 'Forbidden. You do not own this container.'}), 403
+
             stop_and_cleanup_app_by_process_id(process_id, app_type)
             return jsonify({'success': True, 'message': f'Container {container_id[:12]} and its process stopped.'}), 200
         else:
-            container = client.containers.get(container_id)
-            logging.info(f"Stopping container {container.short_id} directly (no process found).")
-            container.stop(timeout=10)
-            return jsonify({'success': True, 'message': f'Container {container.short_id} stopped.'}), 200
-
+            # Verify direct container ID belongs to the user if we can't map it to a process
+            return jsonify({'error': 'Forbidden. Cannot verify ownership.'}), 403
     except docker.errors.NotFound:
         return jsonify({'success': False, 'message': 'Container not found (may have already stopped).'}), 404
     except Exception as e:

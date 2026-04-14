@@ -728,6 +728,8 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
 
             try:
                 client = docker.from_env()
+                from app import ensure_user_network
+                user_network = ensure_user_network(client, session['user_id'])
                 r_key = _redis_forge_key(process_id)
                 container = client.containers.run(
                     image='stellar-repo-host:latest',
@@ -737,6 +739,7 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
                     remove=False,
                     detach=True,
                     init=True,
+                    network=user_network,
                     stdout=True,
                     stderr=True,
                     working_dir='/app',
@@ -876,6 +879,8 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
             stop_and_cleanup_app_by_process_id(process_id, app_type='forge')
             
             client = docker.from_env()
+            from app import ensure_user_network
+            user_network = ensure_user_network(client, session['user_id'])
             r_key = _redis_forge_key(process_id)
 
             container = client.containers.run(
@@ -886,6 +891,7 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
                 detach=True,
                 init=True,
                 working_dir='/app',
+                network=user_network,
                 labels={
                     "stellar_type": "forge",
                     "stellar_process_id": process_id,
@@ -997,6 +1003,7 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
     try:
         session_id = session.sid
         chat_id = session.get('current_chat_id', 'default')
+        user_id = session.get('user_id')
         # Sanitize for Docker container naming
         sanitized_sid = re.sub(r'[^a-zA-Z0-9]', '', str(session_id))
         sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
@@ -1007,11 +1014,14 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
         # Fallback if no session (though highly unlikely in this app)
         container_name = "stellar-lab-sandbox"
         workspace_name = "lab_workspace"
+        user_id = None
 
     image_name = "stellar-lab-core:latest"
     
     try:
         client = docker.from_env()
+        from app import ensure_user_network
+        user_network = ensure_user_network(client, user_id)
     except Exception as e:
         return f"Error: Docker client not available: {str(e)}"
         
@@ -1092,7 +1102,8 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
                 init=True,
                 working_dir='/lab',
                 volumes={lab_workspace: {'bind': '/lab', 'mode': 'rw'}},
-                restart_policy={"Name": "unless-stopped"}
+                restart_policy={"Name": "unless-stopped"},
+                network=user_network
             )
         except Exception as e:
             return f"Failed to start Lab sandbox: {str(e)}"
@@ -1278,7 +1289,7 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
         source_env: 'chat' (uploads), 'lab', or process_id for repo.
     """
     from flask import session
-    from app import app, UPLOAD_FOLDER
+    from app import app, UPLOAD_FOLDER, get_db
     import os
     import docker
     import base64
@@ -1300,6 +1311,22 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
         dynamic_lab_container = f"stellar-lab-{sanitized_sid}-{sanitized_cid}"
     except:
         return "Error: Active session context required."
+
+    def validate_env_ownership(env_id):
+        if env_id in ("lab", "chat"): return True
+        try:
+            db = get_db()
+            cursor = db.execute('SELECT 1 FROM forge_history WHERE process_id = ? AND user_id = ?', (env_id, session['user_id']))
+            if cursor.fetchone(): return True
+            if env_id == session.get('forge_project', {}).get('process_id'): return True
+            if env_id == session.get('last_run_code_process_id'): return True
+        except: pass
+        return False
+
+    if not validate_env_ownership(target_env):
+        return f"Error: Unauthorized access to target environment '{target_env}'."
+    if not validate_env_ownership(source_env):
+        return f"Error: Unauthorized access to source environment '{source_env}'."
 
     def get_container_name(env_id):
         if env_id == "lab": return dynamic_lab_container
