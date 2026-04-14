@@ -115,7 +115,7 @@
 
         #forge-db-viewer .db-query-btn {
             padding: 8px 16px;
-            background: var(--nebula-confirm-start);
+            background: #00c292;
             border: none;
             border-radius: 6px;
             color: white;
@@ -578,9 +578,6 @@
             --stellar-msg-bg: rgba(0, 0, 0, 0.25);
             --stellar-msg-border: rgba(123, 97, 255, 0.2);
             --stellar-msg-hover-bg: rgba(0, 0, 0, 0.35);
-            --nebula-msg-bg: rgba(10, 25, 45, 0.4);
-            --nebula-msg-border: rgba(79, 172, 254, 0.3);
-            --nebula-msg-hover-bg: rgba(15, 35, 55, 0.5);
             --link-color: var(--model-color-start);
             --link-hover-color: var(--model-hover-color-start);
             --scrollbar-thumb-start: var(--model-color-start);
@@ -622,12 +619,6 @@
             --transition-duration-slow: 0.5s;
             --transition-timing-function: ease;
             --transition-cubic-bezier: cubic-bezier(0.25, 0.8, 0.25, 1);
-            --nebula-confirm-start: #00c292;
-            --nebula-confirm-end: #00a77d;
-            --nebula-regenerate-start: #ff8e8e;
-            --nebula-regenerate-end: #ff6b6b;
-            --nebula-button-shadow: rgba(0, 0, 0, 0.2);
-            --nebula-button-hover-brightness: 1.1;
             --output-copy-btn-bg: rgba(50, 50, 50, 0.7);
             --output-copy-btn-hover-bg: rgba(70, 70, 70, 0.8);
             --output-copy-btn-color: #d1d5db;
@@ -1624,7 +1615,6 @@
         }
 
         .research-output .message-content a,
-        .nebula-output .message-content a,
         .stellar-msg .message-content a {
             color: var(--link-color);
             text-decoration: none;
@@ -1633,14 +1623,12 @@
         }
 
         .research-output a:hover,
-        .nebula-output a:hover,
         .stellar-msg a:hover {
             color: var(--link-hover-color);
             border-bottom: 1px solid var(--link-hover-color);
         }
 
-        .research-output .message-content pre,
-        .nebula-output .message-content pre {
+        .research-output .message-content pre {
             background-color: var(--code-bg);
             border: 1.5px solid var(--code-border);
             color: var(--code-text-color);
@@ -1648,14 +1636,12 @@
         }
 
         .research-output .message-content code:not(pre>code),
-        .nebula-output .message-content code:not(pre>code),
         .stellar-msg .message-content code:not(pre>code) {
             background-color: var(--inline-code-bg);
             color: var(--inline-code-text-color);
         }
 
         .research-output .message-content .table-wrapper,
-        .nebula-output .message-content .table-wrapper,
         .stellar-msg .message-content .table-wrapper {
             border: 1px solid var(--table-border-color);
             overflow-x: auto;
@@ -1663,7 +1649,6 @@
         }
 
         .research-output .message-content table,
-        .nebula-output .message-content table,
         .stellar-msg .message-content table {
             border: none;
             border-color: var(--table-border-color);
@@ -1671,21 +1656,17 @@
 
         .research-output .message-content td,
         .research-output .message-content th,
-        .nebula-output .message-content td,
-        .nebula-output .message-content th,
         .stellar-msg .message-content td,
         .stellar-msg .message-content th {
             border-color: var(--table-border-color);
         }
 
         .research-output .message-content th,
-        .nebula-output .message-content th,
         .stellar-msg .message-content th {
             background-color: rgba(0, 0, 0, 0.1);
         }
 
-        .research-output .message-buttons,
-        .nebula-output .message-buttons {
+        .research-output .message-buttons {
             margin-top: 15px;
             padding-top: 10px;
             border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -1709,66 +1690,7 @@
             cursor: nwse-resize;
         }
 
-        .nebula-output {
-            background: var(--nebula-msg-bg);
-            align-self: stretch;
-            color: var(--primary-text-color);
-            border: 1px solid var(--nebula-msg-border);
-            max-width: none;
-            margin-left: 0;
-            box-shadow: 0 6px 20px rgba(0, 30, 50, 0.3);
-            resize: none;
-            overflow-x: hidden;
-            overflow-y: hidden;
-            min-width: 0;
-        }
-
-        .nebula-output:hover {
-            background: var(--nebula-msg-hover-bg);
-            border-color: var(--model-color-start);
-        }
-
-        .nebula-output .message-content h2 {
-            margin-bottom: 1em;
-            border-bottom: 1px solid var(--nebula-msg-border);
-            padding-bottom: 0.3em;
-            color: var(--link-color);
-            font-size: 1.3em;
-        }
-
-        .nebula-output .message-content h3 {
-            margin-top: 1.5em;
-            margin-bottom: 0.5em;
-            color: var(--primary-text-color);
-            font-weight: 600;
-            font-size: 1.1em;
-            border-bottom: 1px dashed rgba(255, 255, 255, 0.15);
-            padding-bottom: 0.2em;
-        }
-
-        .nebula-output .nebula-status {
-            font-size: 0.8em;
-            font-style: italic;
-            color: var(--secondary-text-color);
-            margin-left: 5px;
-        }
-
-        .nebula-output .nebula-steps-container {
-            margin-top: 1em;
-        }
-
-        .nebula-output .nebula-step-content {
-            margin-bottom: 1.5em;
-        }
-
-        .nebula-output .nebula-final-summary {
-            margin-top: 1.5em;
-            padding-top: 1em;
-            border-top: 1px solid var(--nebula-msg-border);
-            font-size: 0.95em;
-        }
-
-        .nebula-output::-webkit-resizer {
+        .research-output::-webkit-resizer {
             border-width: 0 0 8px 8px;
             border-style: solid;
             border-color: transparent transparent var(--model-color-border) var(--model-color-border);
@@ -1782,43 +1704,12 @@
             cursor: nwse-resize;
         }
 
-        .nebula-stop-auto-btn {
-            padding: 6px 10px;
-            font-size: 0.85rem;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 4px;
-            color: var(--secondary-text-color);
-            background: rgba(255, 255, 255, 0.05);
-            cursor: pointer;
-            transition: background var(--transition-duration-fast) var(--transition-timing-function), border-color var(--transition-duration-fast) var(--transition-timing-function), color var(--transition-duration-fast) var(--transition-timing-function), opacity var(--transition-duration-medium);
-            margin-left: 10px;
-            vertical-align: middle;
-            opacity: 0.7;
-            display: none;
-        }
-
-        .nebula-stop-auto-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.3);
-            color: var(--primary-text-color);
-            opacity: 1;
-        }
-
-        .nebula-stop-auto-btn:disabled {
-            cursor: not-allowed;
-            opacity: 0.4;
-            filter: grayscale(80%);
-        }
-
         .edit-paper-btn,
         .download-btn,
         #spectrumSearchBtn,
         #sendBtn,
         .modal-buttons button,
         .code-block-btn,
-        .nebula-download-btn,
-        .nebula-confirm-btn,
-        .nebula-regenerate-btn,
         #modeSelector {
             padding: 8px 16px;
             font-size: 0.9rem;
@@ -1835,8 +1726,6 @@
             justify-content: center;
         }
 
-        .nebula-confirm-btn:disabled,
-        .nebula-regenerate-btn:disabled,
         #modeSelector:disabled,
         #spectrumSearchBtn:disabled {
             cursor: not-allowed;
@@ -1855,15 +1744,6 @@
         .download-btn {
             background: linear-gradient(45deg, #00c292, #00d8b6);
             box-shadow: 0 4px 10px rgba(0, 216, 182, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-        }
-
-        .nebula-download-btn {
-            background: linear-gradient(45deg, #4facfe, #00f2fe);
-            box-shadow: 0 4px 10px rgba(79, 172, 254, 0.3);
-            text-decoration: none;
             border: 1px solid rgba(255, 255, 255, 0.2);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
@@ -1936,38 +1816,8 @@
             filter: brightness(1.1);
         }
 
-        .nebula-step-actions {
-            margin-top: 15px;
-            padding-top: 10px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            gap: 10px;
-            justify-content: flex-start;
-            transition: opacity var(--transition-duration-fast);
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .nebula-confirm-btn {
-            background: linear-gradient(45deg, var(--nebula-confirm-start), var(--nebula-confirm-end));
-            box-shadow: 0 2px 6px var(--nebula-button-shadow);
-        }
-
-        .nebula-regenerate-btn {
-            background: linear-gradient(45deg, var(--nebula-regenerate-start), var(--nebula-regenerate-end));
-            box-shadow: 0 2px 6px var(--nebula-button-shadow);
-        }
-
-        .nebula-confirm-btn:hover:not(:disabled),
-        .nebula-regenerate-btn:hover:not(:disabled) {
-            transform: translateY(-1px);
-            filter: brightness(var(--nebula-button-hover-brightness));
-            box-shadow: 0 4px 8px var(--nebula-button-shadow);
-        }
-
         .edit-paper-btn:hover,
-        .download-btn:hover,
-        .nebula-download-btn:hover {
+        .download-btn:hover {
             transform: translateY(-2px) scale(1.03);
             filter: brightness(1.1);
         }
@@ -1978,11 +1828,6 @@
 
         .download-btn:hover {
             box-shadow: 0 6px 15px rgba(0, 216, 182, 0.4);
-        }
-
-        .nebula-download-btn:hover {
-            box-shadow: 0 6px 15px rgba(79, 172, 254, 0.4);
-            background: linear-gradient(45deg, #00f2fe, #4facfe);
         }
 
         #spectrumSearchBtn.on,
@@ -2068,67 +1913,7 @@
             transform: translateY(0);
         }
 
-        #statusBar {
-            position: fixed;
-            bottom: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: calc(100% - 40px);
-            margin: 0 auto;
-            text-align: center;
-            padding: 8px;
-            font-size: 0.95rem;
-            color: var(--status-bar-idle-color);
-            background: var(--status-bar-idle-bg);
-            border-radius: 8px;
-            height: 36px;
-            opacity: 0.7;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 99;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            border: 1px solid transparent;
-            transition: all 0.8s var(--transition-cubic-bezier), background var(--transition-duration-medium) var(--transition-timing-function), color var(--transition-duration-medium) var(--transition-timing-function), box-shadow var(--transition-duration-medium) var(--transition-timing-function), border-color var(--transition-duration-medium) var(--transition-timing-function);
-            max-width: 1200px;
-        }
-
-        #statusBar.active {
-            background: var(--status-bar-bg);
-            color: var(--status-bar-color);
-            box-shadow: 0 0 20px var(--status-bar-shadow);
-            border: 1px solid var(--model-color-border);
-            opacity: 1;
-            transform: translateY(-5px) translateX(-50%);
-            white-space: normal;
-            padding: 12px;
-            animation: statusBarPulse 2.5s infinite alternate ease-in-out;
-            min-height: 36px;
-        }
-
-        @keyframes statusBarPulse {
-            0% {
-                box-shadow: 0 0 15px var(--status-bar-shadow);
-                opacity: 0.9;
-            }
-
-            100% {
-                box-shadow: 0 0 25px var(--status-bar-shadow);
-                opacity: 1;
-            }
-        }
-
-        #statusBar.error {
-            background: rgba(255, 107, 107, 0.3);
-            color: #ff8e8e;
-            box-shadow: 0 0 20px rgba(255, 107, 107, 0.4);
-            border-color: rgba(255, 107, 107, 0.5);
-            animation: none;
-        }
-
-                #inputContainer {
+        #inputContainer {
             position: fixed;
             bottom: 20px;
             left: 50%;
@@ -2528,8 +2313,7 @@
                 padding-right: 30px;
             }
 
-            #inputContainer,
-            #statusBar {
+            #inputContainer {
                 max-width: calc(100% - 60px);
             }
         }
@@ -2548,25 +2332,12 @@
                 padding-bottom: 200px;
             }
 
-            .message:not(.research-output):not(.nebula-output) {
+            .message:not(.research-output) {
                 max-width: 95%;
             }
 
-            .research-output,
-            .nebula-output {
+            .research-output {
                 min-width: calc(100% - 30px);
-            }
-
-            #statusBar {
-                margin: 0 15px;
-                width: calc(100% - 30px);
-                max-width: calc(100% - 30px);
-                transform: translateY(15px) translateX(-50%);
-                left: 50%;
-            }
-
-            #statusBar.active {
-                transform: translateY(5px) translateX(-50%);
             }
 
             .modal-content {
@@ -2673,8 +2444,7 @@
                 padding: 6px 8px;
             }
 
-            .research-output,
-            .nebula-output {
+            .research-output {
                 min-width: calc(100% - 30px);
             }
 
@@ -3885,11 +3655,11 @@
         }
 
         #forge-status-log .log-line.error {
-            color: var(--nebula-regenerate-start);
+            color: #ff6b6b;
         }
 
         #forge-status-log .log-line.success {
-            color: var(--nebula-confirm-start);
+            color: #00c292;
             font-weight: bold;
         }
 
@@ -4024,11 +3794,11 @@
         }
 
         .forge-resume-btn {
-            background-color: var(--nebula-confirm-start);
+            background-color: #00c292;
         }
 
         .forge-delete-btn {
-            background-color: var(--nebula-regenerate-start);
+            background-color: #ff6b6b;
         }
         
         .stellar-msg .message-content img {
@@ -4082,19 +3852,19 @@
             justify-content: space-between;
             align-items: center;
             padding: 12px 15px;
-            background: var(--nebula-bg-secondary, #1e1e2e);
-            border: 1px solid var(--nebula-border, #3a3a4a);
+            background: #1e1e2e;
+            border: 1px solid #3a3a4a;
             border-radius: 8px;
             margin-bottom: 10px;
             cursor: pointer;
             transition: background 0.2s ease;
         }
         .toggle-item:hover {
-            background: var(--nebula-bg-tertiary, #2a2a3a);
+            background: #2a2a3a;
         }
         .toggle-item span:first-child {
             font-size: 0.95em;
-            color: var(--nebula-text-primary, #e2e8f0);
+            color: #e2e8f0;
             font-weight: 500;
         }
         .toggle-checkbox {
@@ -4104,7 +3874,7 @@
             position: relative;
             width: 44px;
             height: 24px;
-            background-color: var(--nebula-border, #4a4a5a);
+            background-color: #4a4a5a;
             border-radius: 24px;
             transition: 0.3s;
         }
@@ -4601,7 +4371,7 @@
             <div id="logsPrefsList" style="flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:15px;"></div>
             <div style="padding:20px; border-top:1px solid rgba(255,255,255,0.1); display:flex; justify-content:flex-end; gap:12px;">
                 <button id="refreshLogsBtn" style="padding:10px 20px; border-radius:10px; background:rgba(255,255,255,0.05); color:white; border:1px solid rgba(255,255,255,0.1); cursor:pointer;">Refresh</button>
-                <button id="saveAllLogsBtn" style="padding:10px 20px; border-radius:10px; background:var(--nebula-confirm-start); color:white; border:none; cursor:pointer; font-weight:600;">Save All Changes</button>
+                <button id="saveAllLogsBtn" style="padding:10px 20px; border-radius:10px; background:#00c292; color:white; border:none; cursor:pointer; font-weight:600;">Save All Changes</button>
             </div>
         </div>
     </div>
@@ -4875,7 +4645,7 @@
 
                         <div id="forge-controls" style="display: flex; gap: 10px;">
                             <button id="forgeEndSessionBtn" class="codelab-action-btn"
-                                style="background-color: var(--nebula-regenerate-end); display: none;">End</button>
+                                style="background-color: #ff6b6b; display: none;">End</button>
                             <button id="forgeAttachBtn" class="codelab-action-btn"
                                 style="background: var(--input-bg); border: 1px solid var(--input-border); display: flex; align-items: center; gap: 5px; color: var(--primary-text-color); padding: 6px 10px; cursor: pointer;"
                                 title="Attach files">
@@ -4896,7 +4666,7 @@
                             <button id="forgeViewCodeBtn" class="codelab-action-btn codelab-ai-btn"
                                 style="display: none;">View</button>
                             <button id="forgeStartBtn" class="codelab-action-btn"
-                                style="background-color: var(--nebula-confirm-start); flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                style="background-color: #00c292; flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px;">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M8 5v14l11-7z" />
                                 </svg>
@@ -5205,7 +4975,6 @@
         const spectrumSearchBtn = document.getElementById("spectrumSearchBtn");
         const clearHistoryBtn = document.getElementById("clearHistoryBtn");
         const modelSelect = document.getElementById("modelSelect");
-        const statusBar = document.getElementById("statusBar");
         const inputContainer = document.getElementById("inputContainer");
         const chatContainer = document.getElementById("chatContainer");
         const editModalBackdrop = document.getElementById("editModalBackdrop");
@@ -5342,29 +5111,6 @@
         let forgeHtmlEditor = null;
         let forgePyEditor = null;
         let forgeReqsEditor = null;
-        const NEBULA_AUTO_CONTINUE_TIMEOUT = 20000;
-        let nebulaAutoContinueTimerId = null;
-
-        let nebulaProcess = {
-            isActive: false,
-            processId: null,
-            currentStep: 0,
-            userQuery: null,
-            planOutput: null,
-            frontendOutput: null,
-            backendOutput: null,
-            verificationOutput: null,
-            reportUrl: null,
-            messageElement: null
-        };
-        let nebulaProcessState = {
-            plan: null,
-            frontendCode: null,
-            backendCode: null,
-            verificationResult: null,
-            requiredKeys: [],
-            apiKeys: {}
-        };
 
         // --- START: New Stellar Forge Globals and Functions ---
         let forgeSseSource = null;
@@ -5626,7 +5372,7 @@
                 </div>
                 <div id="forge-editor-controls" style="display: flex; gap: 10px;">
                     <button id="forge-editor-close-btn" class="codelab-action-btn codelab-ai-btn">Close Editor</button>
-                    <button id="forge-editor-redeploy-btn" class="codelab-action-btn" style="background-color: var(--nebula-confirm-start);">Save & Redeploy</button>
+                    <button id="forge-editor-redeploy-btn" class="codelab-action-btn" style="background-color: #00c292;">Save & Redeploy</button>
                 </div>
             </div>
             <div id="forge-editor-body" style="flex-grow: 1; position: relative; overflow: hidden;">
@@ -6170,12 +5916,11 @@
         ];
 
         const modelThemes = {
-            sapphire: { start_rgb: '79, 172, 254', start: '#4facfe', end: '#00f2fe', border: 'rgba(79, 172, 254, 0.5)', shadow: 'rgba(79, 172, 254, 0.3)', inset: 'rgba(79, 172, 254, 0.2)', h_start: '#00f2fe', h_end: '#4facfe', h_border: 'rgba(79, 172, 254, 0.7)', h_shadow: 'rgba(79, 172, 254, 0.5)', h_inset: 'rgba(79, 172, 254, 0.3)', h_strong: 'rgba(79, 172, 254, 0.4)', statusBarBg: 'rgba(79, 172, 254, 0.2)', statusBarColor: '#e0f8ff', statusBarShadow: 'rgba(79, 172, 254, 0.4)', titleShadow: 'rgba(0, 100, 150, 0.4)', bodyBg1: '#0a192f', bodyBg2: '#112240', bodyBg3: '#1a3b5f', bodyBg4: '#112240', primaryText: '#e0f8ff', secondaryText: '#b3e5fc', headerBg: 'rgba(10, 25, 47, 0.4)', headerBorder: 'rgba(79, 172, 254, 0.2)', inputBg: 'rgba(10, 25, 47, 0.5)', inputBorder: 'rgba(79, 172, 254, 0.15)', inputFocusBg: 'rgba(17, 34, 64, 0.6)', userMsgBg: 'rgba(79, 172, 254, 0.1)', userMsgBorder: 'rgba(79, 172, 254, 0.3)', userMsgHoverBg: 'rgba(79, 172, 254, 0.15)', stellarMsgBg: 'rgba(5, 20, 35, 0.3)', stellarMsgBorder: 'rgba(79, 172, 254, 0.2)', stellarMsgHoverBg: 'rgba(10, 30, 45, 0.4)', nebulaMsgBg: 'rgba(10, 30, 45, 0.35)', nebulaMsgBorder: 'rgba(79, 172, 254, 0.3)', nebulaMsgHoverBg: 'rgba(15, 40, 55, 0.45)', tableBorder: 'rgba(79, 172, 254, 0.4)', codeBg: 'rgba(5, 20, 35, 0.9)', codeBorder: 'rgba(79, 172, 254, 0.5)', codeText: '#e0f8ff', inlineCodeText: '#80d8ff', copyBtnBg: 'rgba(79, 172, 254, 0.15)', copyBtnHoverBg: 'rgba(79, 172, 254, 0.25)', copyBtnColor: '#b3e5fc', copyBtnHoverColor: '#e0f8ff', copyBtnCopiedBg: '#4facfe', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(17, 34, 64, 0.7)', previewBtnBg: 'rgba(79, 172, 254, 0.15)', previewBtnHoverBg: 'rgba(79, 172, 254, 0.25)', previewBtnColor: '#b3e5fc', previewBtnHoverColor: '#e0f8ff', tokenLow: '#4facfe', tokenMedium: '#00f2fe', tokenHigh: '#ff8e8e' },
-            emerald: { start_rgb: '0, 194, 146', start: '#00c292', end: '#00a77d', border: 'rgba(0, 194, 146, 0.6)', shadow: 'rgba(0, 194, 146, 0.3)', inset: 'rgba(0, 194, 146, 0.2)', h_start: '#00a77d', h_end: '#00c292', h_border: 'rgba(0, 194, 146, 0.8)', h_shadow: 'rgba(0, 194, 146, 0.5)', h_inset: 'rgba(0, 194, 146, 0.3)', h_strong: 'rgba(0, 194, 146, 0.4)', statusBarBg: 'rgba(0, 194, 146, 0.25)', statusBarColor: '#a7f5e3', statusBarShadow: 'rgba(0, 194, 146, 0.4)', titleShadow: 'rgba(0, 100, 80, 0.4)', bodyBg1: '#0a2e26', bodyBg2: '#0f4d3f', bodyBg3: '#146d59', bodyBg4: '#0f4d3f', primaryText: '#e0fdf6', secondaryText: '#94d9c9', headerBg: 'rgba(10, 46, 38, 0.4)', headerBorder: 'rgba(0, 194, 146, 0.2)', inputBg: 'rgba(10, 46, 38, 0.5)', inputBorder: 'rgba(0, 194, 146, 0.15)', inputFocusBg: 'rgba(15, 77, 63, 0.6)', userMsgBg: 'rgba(0, 194, 146, 0.1)', userMsgBorder: 'rgba(0, 194, 146, 0.3)', userMsgHoverBg: 'rgba(0, 194, 146, 0.15)', stellarMsgBg: 'rgba(0, 50, 40, 0.3)', stellarMsgBorder: 'rgba(0, 194, 146, 0.2)', stellarMsgHoverBg: 'rgba(0, 60, 50, 0.4)', nebulaMsgBg: 'rgba(0, 60, 50, 0.35)', nebulaMsgBorder: 'rgba(0, 194, 146, 0.3)', nebulaMsgHoverBg: 'rgba(0, 70, 60, 0.45)', tableBorder: 'rgba(0, 194, 146, 0.4)', codeBg: 'rgba(5, 30, 25, 0.9)', codeBorder: 'rgba(0, 194, 146, 0.5)', codeText: '#e8fff8', inlineCodeText: '#50e3c2', copyBtnBg: 'rgba(0, 194, 146, 0.15)', copyBtnHoverBg: 'rgba(0, 194, 146, 0.25)', copyBtnColor: '#a7f5e3', copyBtnHoverColor: '#e8fff8', copyBtnCopiedBg: '#00a77d', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(15, 77, 63, 0.7)', previewBtnBg: 'rgba(0, 194, 146, 0.15)', previewBtnHoverBg: 'rgba(0, 194, 146, 0.25)', previewBtnColor: '#a7f5e3', previewBtnHoverColor: '#e8fff8', tokenLow: '#00c292', tokenMedium: '#00a77d', tokenHigh: '#d31027' },
-            lunarity: { start_rgb: '123, 97, 255', start: '#7b61ff', end: '#b554ff', border: 'rgba(181, 84, 255, 0.5)', shadow: 'rgba(123, 97, 255, 0.3)', inset: 'rgba(123, 97, 255, 0.2)', h_start: '#b554ff', h_end: '#7b61ff', h_border: 'rgba(123, 97, 255, 0.7)', h_shadow: 'rgba(123, 97, 255, 0.5)', h_inset: 'rgba(123, 97, 255, 0.3)', h_strong: 'rgba(123, 97, 255, 0.4)', statusBarBg: 'rgba(123, 97, 255, 0.2)', statusBarColor: '#e0d9ff', statusBarShadow: 'rgba(123, 97, 255, 0.4)', titleShadow: 'rgba(123, 97, 255, 0.3)', bodyBg1: '#0f0c29', bodyBg2: '#302b63', bodyBg3: '#24243e', bodyBg4: '#302b63', primaryText: '#f0f0f0', secondaryText: '#a9a3c7', headerBg: 'rgba(20, 16, 50, 0.3)', headerBorder: 'rgba(181, 84, 255, 0.15)', inputBg: 'rgba(20, 16, 50, 0.4)', inputBorder: 'rgba(181, 84, 255, 0.1)', inputFocusBg: 'rgba(30, 26, 60, 0.5)', userMsgBg: 'rgba(123, 97, 255, 0.15)', userMsgBorder: 'rgba(123, 97, 255, 0.3)', userMsgHoverBg: 'rgba(123, 97, 255, 0.2)', stellarMsgBg: 'rgba(0, 0, 0, 0.25)', stellarMsgBorder: 'rgba(123, 97, 255, 0.2)', stellarMsgHoverBg: 'rgba(0, 0, 0, 0.35)', nebulaMsgBg: 'rgba(10, 10, 25, 0.3)', nebulaMsgBorder: 'rgba(123, 97, 255, 0.3)', nebulaMsgHoverBg: 'rgba(15, 15, 35, 0.4)', tableBorder: 'rgba(123, 97, 255, 0.3)', codeBg: 'rgba(10, 10, 25, 0.85)', codeBorder: 'rgba(123, 97, 255, 0.4)', codeText: '#f5f5f5', inlineCodeText: '#cea9ff', copyBtnBg: 'rgba(255, 255, 255, 0.1)', copyBtnHoverBg: 'rgba(255, 255, 255, 0.2)', copyBtnColor: '#c5bfff', copyBtnHoverColor: '#f5f5f5', copyBtnCopiedBg: '#7b61ff', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(36, 36, 62, 0.8)', previewBtnBg: 'rgba(255, 255, 255, 0.1)', previewBtnHoverBg: 'rgba(255, 255, 255, 0.2)', previewBtnColor: '#c5bfff', previewBtnHoverColor: '#f5f5f5', tokenLow: '#7b61ff', tokenMedium: '#b554ff', tokenHigh: '#ff6b6b' },
-            crimson: { start_rgb: '211, 16, 39', start: '#D31027', end: '#9A0007', border: 'rgba(211, 16, 39, 0.6)', shadow: 'rgba(211, 16, 39, 0.3)', inset: 'rgba(211, 16, 39, 0.2)', h_start: '#9A0007', h_end: '#D31027', h_border: 'rgba(211, 16, 39, 0.8)', h_shadow: 'rgba(211, 16, 39, 0.5)', h_inset: 'rgba(211, 16, 39, 0.3)', h_strong: 'rgba(211, 16, 39, 0.4)', statusBarBg: 'rgba(211, 16, 39, 0.2)', statusBarColor: '#ffcdd2', statusBarShadow: 'rgba(211, 16, 39, 0.4)', titleShadow: 'rgba(100, 0, 0, 0.4)', bodyBg1: '#2b0404', bodyBg2: '#4d0a0a', bodyBg3: '#6f1010', bodyBg4: '#4d0a0a', primaryText: '#ffebee', secondaryText: '#f7c4c4', headerBg: 'rgba(43, 4, 4, 0.4)', headerBorder: 'rgba(211, 16, 39, 0.2)', inputBg: 'rgba(43, 4, 4, 0.5)', inputBorder: 'rgba(211, 16, 39, 0.15)', inputFocusBg: 'rgba(77, 10, 10, 0.6)', userMsgBg: 'rgba(211, 16, 39, 0.1)', userMsgBorder: 'rgba(211, 16, 39, 0.3)', userMsgHoverBg: 'rgba(211, 16, 39, 0.15)', stellarMsgBg: 'rgba(50, 0, 0, 0.3)', stellarMsgBorder: 'rgba(211, 16, 39, 0.2)', stellarMsgHoverBg: 'rgba(60, 0, 0, 0.4)', nebulaMsgBg: 'rgba(60, 5, 5, 0.35)', nebulaMsgBorder: 'rgba(211, 16, 39, 0.3)', nebulaMsgHoverBg: 'rgba(70, 10, 10, 0.45)', tableBorder: 'rgba(211, 16, 39, 0.4)', codeBg: 'rgba(40, 5, 5, 0.9)', codeBorder: 'rgba(211, 16, 39, 0.5)', codeText: '#ffebee', inlineCodeText: '#ff8a80', copyBtnBg: 'rgba(211, 16, 39, 0.15)', copyBtnHoverBg: 'rgba(211, 16, 39, 0.25)', copyBtnColor: '#ffcdd2', copyBtnHoverColor: '#ffebee', copyBtnCopiedBg: '#9A0007', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(77, 10, 10, 0.7)', previewBtnBg: 'rgba(211, 16, 39, 0.15)', previewBtnHoverBg: 'rgba(211, 16, 39, 0.25)', previewBtnColor: '#ffcdd2', previewBtnHoverColor: '#ffebee', tokenLow: '#D31027', tokenMedium: '#ff512f', tokenHigh: '#fffb00' },
-            obsidian: { start_rgb: '72, 85, 99', start: '#485563', end: '#29323c', border: 'rgba(72, 85, 99, 0.6)', shadow: 'rgba(72, 85, 99, 0.4)', inset: 'rgba(72, 85, 99, 0.2)', h_start: '#29323c', h_end: '#485563', h_border: 'rgba(72, 85, 99, 0.8)', h_shadow: 'rgba(72, 85, 99, 0.6)', h_inset: 'rgba(72, 85, 99, 0.3)', h_strong: 'rgba(72, 85, 99, 0.5)', statusBarBg: 'rgba(72, 85, 99, 0.3)', statusBarColor: '#cfd8dc', statusBarShadow: 'rgba(72, 85, 99, 0.4)', titleShadow: 'rgba(0, 0, 0, 0.4)', bodyBg1: '#0a0c0f', bodyBg2: '#11181f', bodyBg3: '#1a242f', bodyBg4: '#11181f', primaryText: '#eceff1', secondaryText: '#b0bec5', headerBg: 'rgba(26, 32, 39, 0.4)', headerBorder: 'rgba(72, 85, 99, 0.2)', inputBg: 'rgba(26, 32, 39, 0.5)', inputBorder: 'rgba(72, 85, 99, 0.15)', inputFocusBg: 'rgba(44, 62, 80, 0.6)', userMsgBg: 'rgba(72, 85, 99, 0.1)', userMsgBorder: 'rgba(72, 85, 99, 0.3)', userMsgHoverBg: 'rgba(72, 85, 99, 0.15)', stellarMsgBg: 'rgba(20, 30, 40, 0.3)', stellarMsgBorder: 'rgba(72, 85, 99, 0.2)', stellarMsgHoverBg: 'rgba(30, 40, 50, 0.4)', nebulaMsgBg: 'rgba(30, 40, 50, 0.35)', nebulaMsgBorder: 'rgba(72, 85, 99, 0.3)', nebulaMsgHoverBg: 'rgba(40, 50, 60, 0.45)', tableBorder: 'rgba(72, 85, 99, 0.4)', codeBg: 'rgba(15, 22, 30, 1)', codeBorder: 'rgba(72, 85, 99, 0.6)', codeText: '#eceff1', inlineCodeText: '#cfd8dc', copyBtnBg: 'rgba(72, 85, 99, 0.2)', copyBtnHoverBg: 'rgba(72, 85, 99, 0.3)', copyBtnColor: '#b0bec5', copyBtnHoverColor: '#eceff1', copyBtnCopiedBg: '#29323c', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(44, 62, 80, 0.7)', previewBtnBg: 'rgba(72, 85, 99, 0.2)', previewBtnHoverBg: 'rgba(72, 85, 99, 0.3)', previewBtnColor: '#b0bec5', previewBtnHoverColor: '#eceff1', tokenLow: '#485563', tokenMedium: '#6e7a85', tokenHigh: '#f3c700' },
-            'gemini pro': { start_rgb: '123, 97, 255', start: '#7b61ff', end: '#b554ff', border: 'rgba(181, 84, 255, 0.5)', shadow: 'rgba(123, 97, 255, 0.3)', inset: 'rgba(123, 97, 255, 0.2)', h_start: '#b554ff', h_end: '#7b61ff', h_border: 'rgba(123, 97, 255, 0.7)', h_shadow: 'rgba(123, 97, 255, 0.5)', h_inset: 'rgba(123, 97, 255, 0.3)', h_strong: 'rgba(123, 97, 255, 0.4)', statusBarBg: 'rgba(123, 97, 255, 0.2)', statusBarColor: '#e0d9ff', statusBarShadow: 'rgba(123, 97, 255, 0.4)', titleShadow: 'rgba(123, 97, 255, 0.3)', bodyBg1: '#0f0c29', bodyBg2: '#302b63', bodyBg3: '#24243e', bodyBg4: '#302b63', primaryText: '#f0f0f0', secondaryText: '#a9a3c7', headerBg: 'rgba(20, 16, 50, 0.3)', headerBorder: 'rgba(181, 84, 255, 0.15)', inputBg: 'rgba(20, 16, 50, 0.4)', inputBorder: 'rgba(181, 84, 255, 0.1)', inputFocusBg: 'rgba(30, 26, 60, 0.5)', userMsgBg: 'rgba(123, 97, 255, 0.15)', userMsgBorder: 'rgba(123, 97, 255, 0.3)', userMsgHoverBg: 'rgba(123, 97, 255, 0.2)', stellarMsgBg: 'rgba(0, 0, 0, 0.25)', stellarMsgBorder: 'rgba(123, 97, 255, 0.2)', stellarMsgHoverBg: 'rgba(0, 0, 0, 0.35)', nebulaMsgBg: 'rgba(10, 10, 25, 0.3)', nebulaMsgBorder: 'rgba(123, 97, 255, 0.3)', nebulaMsgHoverBg: 'rgba(15, 15, 35, 0.4)', tableBorder: 'rgba(123, 97, 255, 0.3)', codeBg: 'rgba(10, 10, 25, 0.85)', codeBorder: 'rgba(123, 97, 255, 0.4)', codeText: '#f5f5f5', inlineCodeText: '#cea9ff', copyBtnBg: 'rgba(255, 255, 255, 0.1)', copyBtnHoverBg: 'rgba(255, 255, 255, 0.2)', copyBtnColor: '#c5bfff', copyBtnHoverColor: '#f5f5f5', copyBtnCopiedBg: '#7b61ff', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(36, 36, 62, 0.8)', previewBtnBg: 'rgba(255, 255, 255, 0.1)', previewBtnHoverBg: 'rgba(255, 255, 255, 0.2)', previewBtnColor: '#c5bfff', previewBtnHoverColor: '#f5f5f5', tokenLow: '#7b61ff', tokenMedium: '#b554ff', tokenHigh: '#ff6b6b' }
+            sapphire: { start_rgb: '79, 172, 254', start: '#4facfe', end: '#00f2fe', border: 'rgba(79, 172, 254, 0.5)', shadow: 'rgba(79, 172, 254, 0.3)', inset: 'rgba(79, 172, 254, 0.2)', h_start: '#00f2fe', h_end: '#4facfe', h_border: 'rgba(79, 172, 254, 0.7)', h_shadow: 'rgba(79, 172, 254, 0.5)', h_inset: 'rgba(79, 172, 254, 0.3)', h_strong: 'rgba(79, 172, 254, 0.4)', titleShadow: 'rgba(0, 100, 150, 0.4)', bodyBg1: '#0a192f', bodyBg2: '#112240', bodyBg3: '#1a3b5f', bodyBg4: '#112240', primaryText: '#e0f8ff', secondaryText: '#b3e5fc', headerBg: 'rgba(10, 25, 47, 0.4)', headerBorder: 'rgba(79, 172, 254, 0.2)', inputBg: 'rgba(10, 25, 47, 0.5)', inputBorder: 'rgba(79, 172, 254, 0.15)', inputFocusBg: 'rgba(17, 34, 64, 0.6)', userMsgBg: 'rgba(79, 172, 254, 0.1)', userMsgBorder: 'rgba(79, 172, 254, 0.3)', userMsgHoverBg: 'rgba(79, 172, 254, 0.15)', stellarMsgBg: 'rgba(5, 20, 35, 0.3)', stellarMsgBorder: 'rgba(79, 172, 254, 0.2)', stellarMsgHoverBg: 'rgba(10, 30, 45, 0.4)', tableBorder: 'rgba(79, 172, 254, 0.4)', codeBg: 'rgba(5, 20, 35, 0.9)', codeBorder: 'rgba(79, 172, 254, 0.5)', codeText: '#e0f8ff', inlineCodeText: '#80d8ff', copyBtnBg: 'rgba(79, 172, 254, 0.15)', copyBtnHoverBg: 'rgba(79, 172, 254, 0.25)', copyBtnColor: '#b3e5fc', copyBtnHoverColor: '#e0f8ff', copyBtnCopiedBg: '#4facfe', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(17, 34, 64, 0.7)', previewBtnBg: 'rgba(79, 172, 254, 0.15)', previewBtnHoverBg: 'rgba(79, 172, 254, 0.25)', previewBtnColor: '#b3e5fc', previewBtnHoverColor: '#e0f8ff', tokenLow: '#4facfe', tokenMedium: '#00f2fe', tokenHigh: '#ff8e8e' },
+            emerald: { start_rgb: '0, 194, 146', start: '#00c292', end: '#00a77d', border: 'rgba(0, 194, 146, 0.6)', shadow: 'rgba(0, 194, 146, 0.3)', inset: 'rgba(0, 194, 146, 0.2)', h_start: '#00a77d', h_end: '#00c292', h_border: 'rgba(0, 194, 146, 0.8)', h_shadow: 'rgba(0, 194, 146, 0.5)', h_inset: 'rgba(0, 194, 146, 0.3)', h_strong: 'rgba(0, 194, 146, 0.4)', titleShadow: 'rgba(0, 100, 80, 0.4)', bodyBg1: '#0a2e26', bodyBg2: '#0f4d3f', bodyBg3: '#146d59', bodyBg4: '#0f4d3f', primaryText: '#e0fdf6', secondaryText: '#94d9c9', headerBg: 'rgba(10, 46, 38, 0.4)', headerBorder: 'rgba(0, 194, 146, 0.2)', inputBg: 'rgba(10, 46, 38, 0.5)', inputBorder: 'rgba(0, 194, 146, 0.15)', inputFocusBg: 'rgba(15, 77, 63, 0.6)', userMsgBg: 'rgba(0, 194, 146, 0.1)', userMsgBorder: 'rgba(0, 194, 146, 0.3)', userMsgHoverBg: 'rgba(0, 194, 146, 0.15)', stellarMsgBg: 'rgba(0, 50, 40, 0.3)', stellarMsgBorder: 'rgba(0, 194, 146, 0.2)', stellarMsgHoverBg: 'rgba(0, 60, 50, 0.4)', tableBorder: 'rgba(0, 194, 146, 0.4)', codeBg: 'rgba(5, 30, 25, 0.9)', codeBorder: 'rgba(0, 194, 146, 0.5)', codeText: '#e8fff8', inlineCodeText: '#50e3c2', copyBtnBg: 'rgba(0, 194, 146, 0.15)', copyBtnHoverBg: 'rgba(0, 194, 146, 0.25)', copyBtnColor: '#a7f5e3', copyBtnHoverColor: '#e8fff8', copyBtnCopiedBg: '#00a77d', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(15, 77, 63, 0.7)', previewBtnBg: 'rgba(0, 194, 146, 0.15)', previewBtnHoverBg: 'rgba(0, 194, 146, 0.25)', previewBtnColor: '#a7f5e3', previewBtnHoverColor: '#e8fff8', tokenLow: '#00c292', tokenMedium: '#00a77d', tokenHigh: '#d31027' },
+            lunarity: { start_rgb: '123, 97, 255', start: '#7b61ff', end: '#b554ff', border: 'rgba(181, 84, 255, 0.5)', shadow: 'rgba(123, 97, 255, 0.3)', inset: 'rgba(123, 97, 255, 0.2)', h_start: '#b554ff', h_end: '#7b61ff', h_border: 'rgba(123, 97, 255, 0.7)', h_shadow: 'rgba(123, 97, 255, 0.5)', h_inset: 'rgba(123, 97, 255, 0.3)', h_strong: 'rgba(123, 97, 255, 0.4)', titleShadow: 'rgba(123, 97, 255, 0.3)', bodyBg1: '#0f0c29', bodyBg2: '#302b63', bodyBg3: '#24243e', bodyBg4: '#302b63', primaryText: '#f0f0f0', secondaryText: '#a9a3c7', headerBg: 'rgba(20, 16, 50, 0.3)', headerBorder: 'rgba(181, 84, 255, 0.15)', inputBg: 'rgba(20, 16, 50, 0.4)', inputBorder: 'rgba(181, 84, 255, 0.1)', inputFocusBg: 'rgba(30, 26, 60, 0.5)', userMsgBg: 'rgba(123, 97, 255, 0.15)', userMsgBorder: 'rgba(123, 97, 255, 0.3)', userMsgHoverBg: 'rgba(123, 97, 255, 0.2)', stellarMsgBg: 'rgba(0, 0, 0, 0.25)', stellarMsgBorder: 'rgba(123, 97, 255, 0.2)', stellarMsgHoverBg: 'rgba(0, 0, 0, 0.35)', tableBorder: 'rgba(123, 97, 255, 0.3)', codeBg: 'rgba(10, 10, 25, 0.85)', codeBorder: 'rgba(123, 97, 255, 0.4)', codeText: '#f5f5f5', inlineCodeText: '#cea9ff', copyBtnBg: 'rgba(255, 255, 255, 0.1)', copyBtnHoverBg: 'rgba(255, 255, 255, 0.2)', copyBtnColor: '#c5bfff', copyBtnHoverColor: '#f5f5f5', copyBtnCopiedBg: '#7b61ff', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(36, 36, 62, 0.8)', previewBtnBg: 'rgba(255, 255, 255, 0.1)', previewBtnHoverBg: 'rgba(255, 255, 255, 0.2)', previewBtnColor: '#c5bfff', previewBtnHoverColor: '#f5f5f5', tokenLow: '#7b61ff', tokenMedium: '#b554ff', tokenHigh: '#ff6b6b' },
+            crimson: { start_rgb: '211, 16, 39', start: '#D31027', end: '#9A0007', border: 'rgba(211, 16, 39, 0.6)', shadow: 'rgba(211, 16, 39, 0.3)', inset: 'rgba(211, 16, 39, 0.2)', h_start: '#9A0007', h_end: '#D31027', h_border: 'rgba(211, 16, 39, 0.8)', h_shadow: 'rgba(211, 16, 39, 0.5)', h_inset: 'rgba(211, 16, 39, 0.3)', h_strong: 'rgba(211, 16, 39, 0.4)', titleShadow: 'rgba(100, 0, 0, 0.4)', bodyBg1: '#2b0404', bodyBg2: '#4d0a0a', bodyBg3: '#6f1010', bodyBg4: '#4d0a0a', primaryText: '#ffebee', secondaryText: '#f7c4c4', headerBg: 'rgba(43, 4, 4, 0.4)', headerBorder: 'rgba(211, 16, 39, 0.2)', inputBg: 'rgba(43, 4, 4, 0.5)', inputBorder: 'rgba(211, 16, 39, 0.15)', inputFocusBg: 'rgba(77, 10, 10, 0.6)', userMsgBg: 'rgba(211, 16, 39, 0.1)', userMsgBorder: 'rgba(211, 16, 39, 0.3)', userMsgHoverBg: 'rgba(211, 16, 39, 0.15)', stellarMsgBg: 'rgba(50, 0, 0, 0.3)', stellarMsgBorder: 'rgba(211, 16, 39, 0.2)', stellarMsgHoverBg: 'rgba(60, 0, 0, 0.4)', tableBorder: 'rgba(211, 16, 39, 0.4)', codeBg: 'rgba(40, 5, 5, 0.9)', codeBorder: 'rgba(211, 16, 39, 0.5)', codeText: '#ffebee', inlineCodeText: '#ff8a80', copyBtnBg: 'rgba(211, 16, 39, 0.15)', copyBtnHoverBg: 'rgba(211, 16, 39, 0.25)', copyBtnColor: '#ffcdd2', copyBtnHoverColor: '#ffebee', copyBtnCopiedBg: '#9A0007', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(77, 10, 10, 0.7)', previewBtnBg: 'rgba(211, 16, 39, 0.15)', previewBtnHoverBg: 'rgba(211, 16, 39, 0.25)', previewBtnColor: '#ffcdd2', previewBtnHoverColor: '#ffebee', tokenLow: '#D31027', tokenMedium: '#ff512f', tokenHigh: '#fffb00' },
+            obsidian: { start_rgb: '72, 85, 99', start: '#485563', end: '#29323c', border: 'rgba(72, 85, 99, 0.6)', shadow: 'rgba(72, 85, 99, 0.4)', inset: 'rgba(72, 85, 99, 0.2)', h_start: '#29323c', h_end: '#485563', h_border: 'rgba(72, 85, 99, 0.8)', h_shadow: 'rgba(72, 85, 99, 0.6)', h_inset: 'rgba(72, 85, 99, 0.3)', h_strong: 'rgba(72, 85, 99, 0.5)', titleShadow: 'rgba(0, 0, 0, 0.4)', bodyBg1: '#0a0c0f', bodyBg2: '#11181f', bodyBg3: '#1a242f', bodyBg4: '#11181f', primaryText: '#eceff1', secondaryText: '#b0bec5', headerBg: 'rgba(26, 32, 39, 0.4)', headerBorder: 'rgba(72, 85, 99, 0.2)', inputBg: 'rgba(26, 32, 39, 0.5)', inputBorder: 'rgba(72, 85, 99, 0.15)', inputFocusBg: 'rgba(44, 62, 80, 0.6)', userMsgBg: 'rgba(72, 85, 99, 0.1)', userMsgBorder: 'rgba(72, 85, 99, 0.3)', userMsgHoverBg: 'rgba(72, 85, 99, 0.15)', stellarMsgBg: 'rgba(20, 30, 40, 0.3)', stellarMsgBorder: 'rgba(72, 85, 99, 0.2)', stellarMsgHoverBg: 'rgba(30, 40, 50, 0.4)', tableBorder: 'rgba(72, 85, 99, 0.4)', codeBg: 'rgba(15, 22, 30, 1)', codeBorder: 'rgba(72, 85, 99, 0.6)', codeText: '#eceff1', inlineCodeText: '#cfd8dc', copyBtnBg: 'rgba(72, 85, 99, 0.2)', copyBtnHoverBg: 'rgba(72, 85, 99, 0.3)', copyBtnColor: '#b0bec5', copyBtnHoverColor: '#eceff1', copyBtnCopiedBg: '#29323c', copyBtnCopiedColor: '#ffffff', scrollbarTrack: 'rgba(44, 62, 80, 0.7)', previewBtnBg: 'rgba(72, 85, 99, 0.2)', previewBtnHoverBg: 'rgba(72, 85, 99, 0.3)', previewBtnColor: '#b0bec5', previewBtnHoverColor: '#eceff1', tokenLow: '#485563', tokenMedium: '#6e7a85', tokenHigh: '#f3c700' }
         };
 
         if (typeof hljs !== 'undefined') { hljs.configure({ ignoreUnescapedHTML: true }); }
@@ -6413,12 +6158,7 @@
             const code = codeEl.textContent;
 
 
-            const nebulaMessage = runButton.closest('.nebula-output');
             let processId = null;
-            if (nebulaMessage && nebulaMessage.dataset.id) {
-
-                processId = nebulaMessage.dataset.id.replace('nebula-output-', '');
-            }
 
 
             runButton.classList.add('running');
@@ -6503,7 +6243,7 @@
                                 linkEl.target = '_blank';
                                 linkEl.rel = 'noopener noreferrer';
                                 linkEl.textContent = `Server is live: ${data.url}`;
-                                linkEl.style.cssText = "color: var(--nebula-confirm-start, #00c292); font-weight: bold; text-decoration: underline;";
+                                linkEl.style.cssText = "color: #00c292; font-weight: bold; text-decoration: underline;";
                                 const p = document.createElement('p');
                                 p.style.marginBottom = '10px';
                                 p.appendChild(linkEl);
@@ -6609,7 +6349,6 @@
                 });
                 if (response.ok) {
                     messageElement.remove();
-                    updateStatusBarPosition();
                 } else {
                     const err = await response.json();
                     alert("Failed to delete message: " + (err.error || "Unknown error"));
@@ -6946,32 +6685,8 @@
         }
 
         function setStatus(text, isError = false) {
-            if (!statusBar) return; 
-            
-            let displayMsg = text;
-            if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
-                const hasPermission = ('Notification' in window) && Notification.permission === "granted";
-                if (agentSettings.notifications_enabled && hasPermission) {
-                    displayMsg = text + " (I'll notify you when it's done)";
-                } else if (!text.endsWith("...")) {
-                    displayMsg = text + "...";
-                }
-            }
-
-            currentStatusText = text; 
-            statusBar.textContent = displayMsg;
-            const analysisAreaHasContent = document.getElementById('analysis-progress-area')?.childElementCount > 0;
-            const stagedFilesExist = stagedFilesContainer?.childElementCount > 0 && stagedFilesContainer?.style.display !== 'none';
-            
-            const isActive = text.toLowerCase() !== "idle" || isProcessing || nebulaProcess.isActive || analysisAreaHasContent || stagedFilesExist;
-            statusBar.classList.toggle("active", isActive && !isError); statusBar.classList.toggle("error", isError);
-            if (isActive && !isError) { statusBar.style.animation = ''; requestAnimationFrame(() => { statusBar.style.animation = 'statusBarPulse 2.5s infinite alternate ease-in-out'; }); } else { statusBar.style.animation = ''; }
-            updateStatusBarPosition();
+            currentStatusText = text;
             updateFavicon();
-        }
-        function updateStatusBarPosition() {
-            if (!inputContainer || !statusBar) return;
-            try { const inputRect = inputContainer.getBoundingClientRect(); const progressArea = document.getElementById('analysis-progress-area'); const progressAreaHeight = (progressArea && progressArea.offsetHeight > 0 && progressArea.style.display !== 'none') ? progressArea.offsetHeight : 0; const stagedContainer = document.getElementById('stagedFilesContainer'); const stagedHeight = (stagedContainer && stagedContainer.offsetHeight > 0 && stagedContainer.style.display !== 'none') ? stagedContainer.offsetHeight + 5 : 0; const extraGap = (progressAreaHeight > 0 || stagedHeight > 0) ? 10 : 0; statusBar.style.bottom = `${window.innerHeight - inputRect.top + 5 + progressAreaHeight + stagedHeight + extraGap}px`; } catch (e) { const inputRect = inputContainer.getBoundingClientRect(); statusBar.style.bottom = `${window.innerHeight - inputRect.top + 5}px`; }
         }
         function updateFavicon() {
             let link = document.getElementById('dynamic-favicon');
@@ -7004,7 +6719,7 @@
             link.href = "data:image/svg+xml;base64," + btoa(svg);
         }
         function adjustTextareaHeight() {
-            if (!chatInput) return; try { chatInput.style.height = "auto"; const newHeight = Math.min(chatInput.scrollHeight, 240); chatInput.style.height = `${newHeight}px`; chatInput.style.overflowY = newHeight >= 240 ? "auto" : "hidden"; updateStatusBarPosition(); } catch (e) { }
+            if (!chatInput) return; try { chatInput.style.height = "auto"; const newHeight = Math.min(chatInput.scrollHeight, 240); chatInput.style.height = `${newHeight}px`; chatInput.style.overflowY = newHeight >= 240 ? "auto" : "hidden"; } catch (e) { }
         }
         function showEditModal(id, htmlContent, msgDiv) {
             currentEditingMsg = msgDiv; currentEditingMsgId = id; try { editMarkdownInput.value = turndownService.turndown(htmlContent || ""); } catch (e) { editMarkdownInput.value = "Error converting."; } if (editModalBackdrop) editModalBackdrop.style.display = "flex"; if (editMarkdownInput) setTimeout(() => editMarkdownInput.focus(), 100);
@@ -7013,7 +6728,6 @@
             if (editModalBackdrop) editModalBackdrop.style.display = "none"; currentEditingMsg = null; currentEditingMsgId = null; if (editMarkdownInput) editMarkdownInput.value = "";
         }
 
-        /* DEPRECATED NEBULA FUNCTIONS REMOVED */
         function updateSpectrumSearchButtonState(isOn) {
             useSpectrumSearch = isOn;
             if (spectrumSearchBtn) {
@@ -7111,10 +6825,10 @@
                     let cssVarName;
                     if (key.startsWith('h_')) { if (key === 'h_strong') cssVarName = '--model-hover-shadow-strong'; else if (key === 'h_inset') cssVarName = '--model-hover-color-shadow-inset'; else if (key === 'h_shadow') cssVarName = '--model-hover-color-shadow'; else if (key === 'h_border') cssVarName = '--model-hover-color-border'; else cssVarName = `--model-hover-color-${key.substring(2).replace('_', '-')}`; }
                     else if (['start', 'end', 'border', 'shadow', 'inset'].includes(key)) { cssVarName = `--model-color-${key.replace('_', '-')}`; }
-                    else { switch (key) { case 'bodyBg1': cssVarName = '--body-bg-color1'; break; case 'bodyBg2': cssVarName = '--body-bg-color2'; break; case 'bodyBg3': cssVarName = '--body-bg-color3'; break; case 'bodyBg4': cssVarName = '--body-bg-color4'; break; case 'titleShadow': cssVarName = '--title-shadow-color'; break; case 'statusBarBg': cssVarName = '--status-bar-bg'; break; case 'statusBarColor': cssVarName = '--status-bar-color'; break; case 'statusBarShadow': cssVarName = '--status-bar-shadow'; break; case 'primaryText': cssVarName = '--primary-text-color'; break; case 'secondaryText': cssVarName = '--secondary-text-color'; break; case 'headerBg': cssVarName = '--header-bg'; break; case 'headerBorder': cssVarName = '--header-border'; break; case 'inputBg': cssVarName = '--input-bg'; break; case 'inputBorder': cssVarName = '--input-border'; break; case 'inputFocusBg': cssVarName = '--input-focus-bg'; break; case 'userMsgBg': cssVarName = '--user-msg-bg'; break; case 'userMsgBorder': cssVarName = '--user-msg-border'; break; case 'userMsgHoverBg': cssVarName = '--user-msg-hover-bg'; break; case 'stellarMsgBg': cssVarName = '--stellar-msg-bg'; break; case 'stellarMsgBorder': cssVarName = '--stellar-msg-border'; break; case 'stellarMsgHoverBg': cssVarName = '--stellar-msg-hover-bg'; break; case 'nebulaMsgBg': cssVarName = '--nebula-msg-bg'; break; case 'nebulaMsgBorder': cssVarName = '--nebula-msg-border'; break; case 'nebulaMsgHoverBg': cssVarName = '--nebula-msg-hover-bg'; break; case 'tableBorder': cssVarName = '--table-border-color'; break; case 'codeBg': cssVarName = '--code-bg'; break; case 'codeBorder': cssVarName = '--code-border'; break; case 'codeText': cssVarName = '--code-text-color'; break; case 'inlineCodeText': cssVarName = '--inline-code-text-color'; break; case 'copyBtnBg': cssVarName = '--code-btn-bg'; break; case 'copyBtnHoverBg': cssVarName = '--code-btn-hover-bg'; break; case 'copyBtnColor': cssVarName = '--code-btn-color'; break; case 'copyBtnHoverColor': cssVarName = '--code-btn-hover-color'; break; case 'copyBtnCopiedBg': cssVarName = '--copy-btn-copied-bg'; break; case 'copyBtnCopiedColor': cssVarName = '--copy-btn-copied-color'; break; case 'scrollbarTrack': cssVarName = '--scrollbar-track-bg'; break; case 'previewBtnBg': cssVarName = '--preview-btn-bg'; break; case 'previewBtnHoverBg': cssVarName = '--preview-btn-hover-bg'; break; case 'previewBtnColor': cssVarName = '--preview-btn-color'; break; case 'previewBtnHoverColor': cssVarName = '--preview-btn-hover-color'; break; case 'tokenLow': cssVarName = '--token-bar-fill-low'; break; case 'tokenMedium': cssVarName = '--token-bar-fill-medium'; break; case 'tokenHigh': cssVarName = '--token-bar-fill-high'; break; default: cssVarName = null; } }
+                    else { switch (key) { case 'bodyBg1': cssVarName = '--body-bg-color1'; break; case 'bodyBg2': cssVarName = '--body-bg-color2'; break; case 'bodyBg3': cssVarName = '--body-bg-color3'; break; case 'bodyBg4': cssVarName = '--body-bg-color4'; break; case 'titleShadow': cssVarName = '--title-shadow-color'; break; case 'primaryText': cssVarName = '--primary-text-color'; break; case 'secondaryText': cssVarName = '--secondary-text-color'; break; case 'headerBg': cssVarName = '--header-bg'; break; case 'headerBorder': cssVarName = '--header-border'; break; case 'inputBg': cssVarName = '--input-bg'; break; case 'inputBorder': cssVarName = '--input-border'; break; case 'inputFocusBg': cssVarName = '--input-focus-bg'; break; case 'userMsgBg': cssVarName = '--user-msg-bg'; break; case 'userMsgBorder': cssVarName = '--user-msg-border'; break; case 'userMsgHoverBg': cssVarName = '--user-msg-hover-bg'; break; case 'stellarMsgBg': cssVarName = '--stellar-msg-bg'; break; case 'stellarMsgBorder': cssVarName = '--stellar-msg-border'; break; case 'stellarMsgHoverBg': cssVarName = '--stellar-msg-hover-bg'; break; case 'tableBorder': cssVarName = '--table-border-color'; break; case 'codeBg': cssVarName = '--code-bg'; break; case 'codeBorder': cssVarName = '--code-border'; break; case 'codeText': cssVarName = '--code-text-color'; break; case 'inlineCodeText': cssVarName = '--inline-code-text-color'; break; case 'copyBtnBg': cssVarName = '--code-btn-bg'; break; case 'copyBtnHoverBg': cssVarName = '--code-btn-hover-bg'; break; case 'copyBtnColor': cssVarName = '--code-btn-color'; break; case 'copyBtnHoverColor': cssVarName = '--code-btn-hover-color'; break; case 'copyBtnCopiedBg': cssVarName = '--copy-btn-copied-bg'; break; case 'copyBtnCopiedColor': cssVarName = '--copy-btn-copied-color'; break; case 'scrollbarTrack': cssVarName = '--scrollbar-track-bg'; break; case 'previewBtnBg': cssVarName = '--preview-btn-bg'; break; case 'previewBtnHoverBg': cssVarName = '--preview-btn-hover-bg'; break; case 'previewBtnColor': cssVarName = '--preview-btn-color'; break; case 'previewBtnHoverColor': cssVarName = '--preview-btn-hover-color'; break; case 'tokenLow': cssVarName = '--token-bar-fill-low'; break; case 'tokenMedium': cssVarName = '--token-bar-fill-medium'; break; case 'tokenHigh': cssVarName = '--token-bar-fill-high'; break; default: cssVarName = null; } }
                     if (cssVarName) { root.style.setProperty(cssVarName, theme[key]); } if (key === 'start_rgb') { root.style.setProperty('--model-color-start-rgb', theme[key]); }
                 });
-                root.style.setProperty('--link-color', theme.start); root.style.setProperty('--link-hover-color', theme.h_start); root.style.setProperty('--input-focus-border', theme.border); root.style.setProperty('--inline-code-bg', theme.stellarMsgBg || 'rgba(0,0,0, 0.3)'); root.style.setProperty('--status-bar-idle-color', theme.secondaryText); root.style.setProperty('--status-bar-idle-bg', 'rgba(0, 0, 0, 0.2)'); root.style.setProperty('--scrollbar-thumb-start', theme.start); root.style.setProperty('--scrollbar-thumb-end', theme.end); root.style.setProperty('--scrollbar-thumb-border', theme.border); root.style.setProperty('--scrollbar-thumb-hover-start', theme.h_start); root.style.setProperty('--scrollbar-thumb-hover-end', theme.h_end); root.style.setProperty('--scrollbar-thumb-hover-border', theme.h_border);
+                root.style.setProperty('--link-color', theme.start); root.style.setProperty('--link-hover-color', theme.h_start); root.style.setProperty('--input-focus-border', theme.border); root.style.setProperty('--inline-code-bg', theme.stellarMsgBg || 'rgba(0,0,0, 0.3)'); root.style.setProperty('--scrollbar-thumb-start', theme.start); root.style.setProperty('--scrollbar-thumb-end', theme.end); root.style.setProperty('--scrollbar-thumb-border', theme.border); root.style.setProperty('--scrollbar-thumb-hover-start', theme.h_start); root.style.setProperty('--scrollbar-thumb-hover-end', theme.h_end); root.style.setProperty('--scrollbar-thumb-hover-border', theme.h_border);
                 root.style.setProperty('--output-copy-btn-bg', theme.copyBtnBg || 'rgba(50, 50, 50, 0.7)');
                 root.style.setProperty('--output-copy-btn-hover-bg', theme.copyBtnHoverBg || 'rgba(70, 70, 70, 0.8)');
                 root.style.setProperty('--output-copy-btn-color', theme.secondaryText || '#d1d5db');
@@ -7126,46 +6840,7 @@
             updateFavicon();
         }
 
-        /* Additional deprecated Nebula functions removed (getNebulaStepTitle, displayNebulaStepOutput,
-           saveNebulaKeysAndContinue, _createAndAppendStepDiv, renderAllNebulaSteps, handleNebulaConfirm,
-           handleNebulaRegenerate, createNebulaMessageContainer, cleanupNebulaProcess, startNebulaProcess,
-           parsePlanAndSetupKeys, requestNebulaStep, updateNebulaButtonStates, handleNebulaCompletion) */
-
-
-
-        /* DEPRECATED NEBULA CODE BLOCK REMOVED - All Nebula process management functions have been deleted */
-
-
-
-        /* DEPRECATED NEBULA CODE BLOCK REMOVED - All Nebula process management functions have been deleted */
-
-
-
-
-
-
-
-
-
-        /* ALL NEBULA FUNCTIONS REMOVED - Nebula feature deprecated */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        /* ALL DEPRECATED FUNCTIONS REMOVED */
 
         function downloadHtml(contentToDownload, currentWidth = 900) { if (!contentToDownload) { setStatus("No content.", true); setTimeout(() => setStatus(currentStatusText), 2000); return; } setStatus("Preparing download..."); const styles = ` body { font-family: 'Poppins', sans-serif; line-height: 1.7; color: #333; background-color: #f0f2f5; margin: 0; padding: 20px; } .main-content-wrapper { background-color: #fdfdff; border: 1px solid #eee; padding: 30px; margin: 0 auto; max-width: ${currentWidth}px; } h1, h2, h3, h4, h5, h6 { color: #302b63; margin-top: 1.5em; margin-bottom: 0.5em; } h1 { font-size: 2em; border-bottom: 1px solid #ddd; padding-bottom: 0.3em;} h2 { font-size: 1.6em; } h3 { font-size: 1.3em; } p { margin: 1em 0; } a { color: #7b61ff; text-decoration: none; } a:hover { text-decoration: underline; } pre { background-color: #f0f0f0; padding: 15px; border-radius: 4px; overflow-x: auto; border: 1px solid #ddd; color: #333; white-space: pre-wrap; word-wrap: break-word; font-family: monospace; line-height: 1.6; } code { font-family: monospace; background-color: #eee; padding: 0.2em 0.4em; border-radius: 3px; } pre > code { background-color: transparent; padding: 0; border: none; } .table-wrapper { overflow-x: auto; max-width: 100%; margin: 1em 0; border: 1px solid #ccc; border-radius: 4px; } table { border-collapse: collapse; width: 100%; margin: 0; border: none; } th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; word-break: break-word; border-width: 0 0 1px 0; } tr td:first-child, tr th:first-child { border-left: none; } tr td:last-child, tr th:last-child { border-right: none; } tr:last-child td { border-bottom: none; } th { background-color: #f2f2f2; font-weight: 600; } ul, ol { margin-left: 2em; margin-bottom: 1em; } blockquote { border-left: 4px solid #ccc; padding-left: 1em; margin-left: 0; color: #666; } .katex { font-size: 1.1em; } .katex-display { display: block; text-align: center; margin: 1em 0; } .katex-display > .katex { display: inline-block; text-align: initial; } .dl-header, .dl-footer { padding: 10px 30px; max-width: ${currentWidth}px; margin: 20px auto; font-size: 0.9em; color: #555; text-align: center; } .dl-header { border-bottom: 1px dashed #ccc; } .dl-footer { border-top: 1px dashed #ccc; margin-top: 30px; } `; const filenameBase = (lastRefinedQuery || "stellar_research").substring(0, 50).replace(/[^a-z0-9_\-\.]/gi, '_').toLowerCase(); const html = `<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <title>Stellar Research: ${filenameBase}</title> <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" crossorigin="anonymous"> <style>${styles}</style> </head> <body> <div class="dl-header"> <h1>Stellar Research Paper</h1> <p>Generated: ${new Date().toLocaleString()}</p> ${lastRefinedQuery ? `<p>Query: "${escapeHtml(lastRefinedQuery)}"</p>` : ''} </div> <div class="main-content-wrapper"> ${contentToDownload} </div> <div class="dl-footer"> <p>Stellar AI.</p> </div> </body> </html>`; try { const blob = new Blob([html], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${filenameBase}.html`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); setStatus(currentStatusText); } catch (e) { setStatus("Download failed.", true); appendStellarMessage("DL err.", Date.now() + '_dl_err'); setTimeout(() => setStatus(currentStatusText), 3000); } }
 
@@ -7196,7 +6871,6 @@
             if (filesOrEvent.target && filesOrEvent.target.type === 'file' && filesOrEvent.target.id === 'fileUpload') {
                 filesOrEvent.target.value = null;
             }
-            updateStatusBarPosition();
         }
 
         function handlePasteEvent(event) {
@@ -7221,7 +6895,6 @@
             if (stagedFiles.length === 0) {
                 container.innerHTML = '';
                 container.style.display = 'none';
-                updateStatusBarPosition();
                 return;
             }
 
@@ -7260,7 +6933,6 @@
                 item.appendChild(name);
                 container.appendChild(item);
             });
-            updateStatusBarPosition();
         }
 
         function removeStagedFile(index) {
@@ -7276,9 +6948,7 @@
                 lastEditIcon.remove();
             }
 
-            if (currentMode !== 'nebula' && isProcessing) { setStatus("Wait...", true); setTimeout(() => setStatus(currentStatusText, false), 2000); return; }
-            if (currentMode === 'nebula' && nebulaProcess.isActive) { let reason = isProcessing ? `Wait Step ${nebulaProcess.currentStep}.` : (nebulaProcess.currentStep <= 3 ? `Confirm/Regen Step ${nebulaProcess.currentStep}.` : "Nebula done."); setStatus(`Cannot start: ${reason}`, true); setTimeout(() => setStatus(currentStatusText, false), 3000); return; }
-            clearTimeout(nebulaAutoContinueTimerId); nebulaAutoContinueTimerId = null;
+            if (isProcessing) { setStatus("Wait...", true); setTimeout(() => setStatus(currentStatusText, false), 2000); return; }
 
             if (chatContainer.style.display === 'none') {
                 setStatus("Please log in to send messages.", true);
@@ -7355,14 +7025,6 @@
                     setTimeout(() => setStatus(currentStatusText, false), 4000);
                     return;
                 }
-            }
-
-            if (currentMode === 'nebula') {
-                if (!originalQuery) { setStatus("Nebula needs a description.", true); isProcessing = false; sendBtn.disabled = false; toggleSendStopButtons(false); setTimeout(() => setStatus(currentStatusText, false), 3000); return; }
-                // --- THIS IS THE FIX ---
-                // Pass the serverFileIds array as the second argument.
-                startNebulaProcess(originalQuery, serverFileIds);
-                return;
             }
 
             // ... rest of the function for other modes ...
@@ -7488,7 +7150,7 @@
                     msgDiv.classList.remove("placeholder-message");
 
 
-                    statusSpan.style.color = 'var(--nebula-regenerate-start, #ff6b6b)';
+                    statusSpan.style.color = '#ff6b6b';
                     statusSpan.classList.remove("clickable", "analysis-placeholder");
                     statusSpan.onclick = null;
                 } else {
@@ -8278,12 +7940,12 @@
             notifiedForLongTask = false;
 
             const finalStatus = showErrorStatus ? (errorMsg || "Stream Error") : "Idle";
-            const shouldBeIdle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0;
+            const shouldBeIdle = !isProcessing && stagedFiles.length === 0;
             setStatus(showErrorStatus ? finalStatus : (shouldBeIdle ? "Idle" : currentStatusText), showErrorStatus);
             if (showErrorStatus) {
                 updateStellarMessagePlaceholder(placeholderId, `Error: ${errorMsg || 'Failed'}`, true);
                 setTimeout(() => {
-                    const shouldBeIdleAfterError = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0;
+                    const shouldBeIdleAfterError = !isProcessing && stagedFiles.length === 0;
                     setStatus(shouldBeIdleAfterError ? "Idle" : currentStatusText, false);
                 }, 4000);
             }
@@ -8298,23 +7960,7 @@
         }
 
 
-        function enableRegenButtonsForCompletedNebula(messageElement) {
-            if (!messageElement) return;
-            const allConfirmBtns = messageElement.querySelectorAll('.nebula-confirm-btn');
-            const allRegenerateBtns = messageElement.querySelectorAll('.nebula-regenerate-btn');
-            const allStopAutoBtns = messageElement.querySelectorAll('.nebula-stop-auto-btn');
-
-            allConfirmBtns.forEach(btn => btn.disabled = true);
-            allStopAutoBtns.forEach(btn => {
-                btn.disabled = true;
-                btn.style.display = 'none';
-            });
-
-            // Enable all regenerate buttons so the user can go back to any step.
-            allRegenerateBtns.forEach(btn => {
-                btn.disabled = false;
-            });
-        } function toggleAnalysisDetails(messageElement) { if (!messageElement) return; const det = messageElement.querySelector('.analysis-content'); if (det) { const isHidden = det.style.display === 'none'; det.style.display = isHidden ? 'block' : 'none'; if (isHidden) { det.querySelectorAll('.formatted-analysis-context pre code').forEach(c => { if (!c.dataset.highlighted) { try { if (typeof hljs !== 'undefined') { hljs.highlightElement(c); c.dataset.highlighted = 'yes'; } } catch (e) { } } }); setTimeout(() => det.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100); } } }
+        function toggleAnalysisDetails(messageElement) { if (!messageElement) return; const det = messageElement.querySelector('.analysis-content'); if (det) { const isHidden = det.style.display === 'none'; det.style.display = isHidden ? 'block' : 'none'; if (isHidden) { det.querySelectorAll('.formatted-analysis-context pre code').forEach(c => { if (!c.dataset.highlighted) { try { if (typeof hljs !== 'undefined') { hljs.highlightElement(c); c.dataset.highlighted = 'yes'; } } catch (e) { } } }); setTimeout(() => det.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100); } } }
 
         async function loadHistory(chatIdToLoad = null, targetMessageId = null, highlightTerm = null) {
             if (!messagesDiv) return;
@@ -8344,36 +7990,9 @@
                         try {
                             if (messageType === "user") {
                                 appendUserMessage(content, msgId, msg.attached_files || [], false);
-                            } else if (messageType === "nebula_output") {
-                                const reportUrl = msg.report_url || null;
-                                const processId = msgId.replace('nebula-output-', '') || Date.now();
-                                const nebulaMsgElement = createNebulaMessageContainer(processId);
-
-                                let tempNebulaState = { messageElement: nebulaMsgElement, planOutput: null, frontendOutput: null, backendOutput: null, verificationOutput: null };
-                                let stepOutputs = msg.nebula_output || {};
-                                const sortedSteps = Object.keys(stepOutputs).map(s => parseInt(s.replace('step', ''))).filter(n => !isNaN(n)).sort((a, b) => a - b);
-
-                                sortedSteps.forEach(stepNum => {
-                                    const stepKey = `step${stepNum}`;
-                                    if (stepOutputs[stepKey]) {
-                                        let origProc = nebulaProcess;
-                                        nebulaProcess = tempNebulaState;
-                                        displayNebulaStepOutput(stepNum, stepOutputs[stepKey]);
-                                        nebulaProcess = origProc;
-                                    }
-                                });
-
-                                enableRegenButtonsForCompletedNebula(nebulaMsgElement);
-
-                                const statusSpan = nebulaMsgElement.querySelector('.nebula-status');
-                                if (statusSpan) statusSpan.textContent = `(Loaded)`;
-
-                                const summaryDiv = nebulaMsgElement.querySelector('.nebula-final-summary');
-                                if (summaryDiv && reportUrl) {
-                                    summaryDiv.innerHTML = '';
-                                    const downloadLink = document.createElement("a");
-                                    downloadLink.textContent = "Download Report (MD)";
-                                    downloadLink.className = "nebula-download-btn";
+                            } else {
+                                const isResearch = msg.is_research_output;
+                                    downloadLink.className = "download-btn";
                                     downloadLink.href = reportUrl;
                                     downloadLink.target = "_blank";
                                     summaryDiv.appendChild(downloadLink);
@@ -8450,31 +8069,7 @@
                     const lastMessage = data.history[data.history.length - 1];
                     const lastUserMessage = data.history.filter(m => m.message_type === 'user').pop();
 
-                    if (lastMessage && lastMessage.message_type === "nebula_output") {
-                        const stepOutputs = lastMessage.nebula_output || {};
-                        const stepKeys = Object.keys(stepOutputs);
-                        const maxStep = Math.max(0, ...stepKeys.map(k => parseInt(k.replace('step', ''))).filter(n => !isNaN(n)));
-                        const lastMessageElement = messagesDiv.querySelector(`.message[data-id="${lastMessage.id}"]`);
-
-                        if (maxStep > 0 && maxStep < 4) {
-                            console.log("Restoring incomplete Nebula process from history.");
-                            modeSelector.value = 'nebula';
-                            handleModeChange();
-
-                            nebulaProcess.isActive = true;
-                            nebulaProcess.messageElement = lastMessageElement;
-                            nebulaProcess.processId = lastMessage.id.replace('nebula-output-', '');
-                            nebulaProcess.userQuery = lastUserMessage ? lastUserMessage.message_content : "";
-                            nebulaProcess.planOutput = stepOutputs.step1 || null;
-                            nebulaProcess.frontendOutput = stepOutputs.step2 || null;
-                            nebulaProcess.backendOutput = stepOutputs.step3 || null;
-                            nebulaProcess.verificationOutput = stepOutputs.step4 || null;
-                            nebulaProcess.currentStep = maxStep;
-
-                            setStatus(`Nebula: Restored at Step ${maxStep}. Confirm to continue.`);
-                            updateNebulaButtonStates();
-                        }
-                    } else if (lastUserMessage && lastUserMessage.message_content) {
+                    if (lastUserMessage && lastUserMessage.message_content) {
 
                         const lastStellarMessage = data.history[data.history.length - 1];
                         if (lastStellarMessage && lastStellarMessage.is_research_output) {
@@ -8502,7 +8097,7 @@
                     }
                 } else {
 
-                    const welcome = "Heyy there! I'm Stellar, and I can help you with research papers using Spectrum Mode, which includes Spectral Search! and building websites/apps with Nebula Mode!  I can also generate data analysis reports with extreme infographics using Cosmos! You can even Preview code blocks to see them live! I've got different models too, like Emerald for quick stuff or Obsidian for super complex things! ✨  ";
+                    const welcome = "Heyy there! I'm Stellar, and I can help you with research papers using Spectrum Mode, which includes Spectral Search!  I can also generate data analysis reports with extreme infographics using Cosmos! You can even Preview code blocks to see them live! I've got different models too, like Emerald for quick stuff or Obsidian for super complex things! ✨  ";
                     appendStellarMessage(welcome, "welcome-msg");
                 }
                 historyLoaded = true;
@@ -8514,7 +8109,7 @@
                 updateModelSelectTheme();
                 updateModelSelectWidth();
                 adjustTextareaHeight();
-                const idle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0;
+                const idle = !isProcessing && stagedFiles.length === 0;
                 if (idle) setStatus("Idle");
                 else setStatus(currentStatusText);
             }
@@ -8560,7 +8155,7 @@
         }
 
         async function createNewChat(selectNew = true) {
-            if (isProcessing || (nebulaProcess.isActive && nebulaProcess.currentStep <= 3)) {
+            if (isProcessing) {
                 setStatus("Cannot create new chat while processing.", true);
                 setTimeout(() => setStatus(currentStatusText, false), 3000);
                 return;
@@ -8595,7 +8190,7 @@
 
 
         async function selectChat(chatId) {
-            if (isProcessing || (nebulaProcess.isActive && nebulaProcess.currentStep <= 3)) {
+            if (isProcessing) {
                 setStatus("Cannot switch chat while processing.", true);
                 setTimeout(() => setStatus(currentStatusText, false), 3000);
                 return;
@@ -8655,7 +8250,7 @@
 
         async function deleteChat(chatId, chatName) {
 
-            if (isProcessing || (nebulaProcess.isActive && nebulaProcess.currentStep <= 3)) {
+            if (isProcessing) {
                 setStatus("Cannot delete chat while processing.", true);
                 setTimeout(() => setStatus(currentStatusText, false), 3000);
                 return;
@@ -9133,9 +8728,8 @@
         // REPLACE the old clearHistoryBtn block with this one
         if (clearHistoryBtn) {
             clearHistoryBtn.addEventListener("click", async () => {
-                if (isProcessing || (nebulaProcess.isActive && nebulaProcess.currentStep <= 3)) {
-                    const msg = isProcessing ? "Wait..." : `Wait Nebula Step ${nebulaProcess.currentStep}.`;
-                    setStatus(msg, true);
+                if (isProcessing) {
+                    setStatus("Wait...", true);
                     setTimeout(() => setStatus(currentStatusText, false), 2000);
                     return;
                 }
@@ -9158,7 +8752,6 @@
                                         
                     // Reset CodeLab UI specifically
                     if (currentMode === 'codelab') {
-                        showProblemGenerator();
                         const outputPanel = document.getElementById('codelab-output-panel');
                         if (outputPanel) outputPanel.innerHTML = '';
                         if (codeLabEditor) codeLabEditor.setValue("# Welcome to Stellar CodeLab!\n# Click 'Run' to see this message in the output.\n\nprint('Hello, CodeLab!')");
@@ -9173,7 +8766,7 @@
 
                     setStatus("History cleared");
                     setTimeout(() => {
-                        const shouldBeIdle = !isProcessing && !nebulaProcess.isActive && stagedFiles.length === 0;
+                        const shouldBeIdle = !isProcessing && stagedFiles.length === 0;
                         if (shouldBeIdle) setStatus("Idle");
                     }, 1500);
                 } catch (err) {
@@ -9265,7 +8858,7 @@
             // Setup for Stellar Forge mode
             setupForgeUI();
 
-            setTimeout(() => { adjustTextareaHeight(); updateStatusBarPosition(); scrollToBottom(); }, 300);
+            setTimeout(() => { adjustTextareaHeight(); scrollToBottom(); }, 300);
 
             const closeBtn = document.getElementById('live-preview-close-btn');
             if (closeBtn) closeBtn.addEventListener('click', hideLivePreview);
@@ -9736,9 +9329,7 @@
             let idToStop = null;
             let placeholderId = null;
 
-            if (nebulaProcess.isActive && nebulaProcess.processId) {
-                idToStop = nebulaProcess.processId.toString();
-            } else if (currentStreamQueryId) {
+            if (currentStreamQueryId) {
                 idToStop = currentStreamQueryId;
                 placeholderId = document.querySelector('.placeholder-message')?.dataset.id;
             }
@@ -9746,9 +9337,6 @@
             if (!idToStop) {
                 console.warn("Stop clicked, but no active process ID found.");
                 cleanupStream(true, "Stopped by user.", null);
-                if (nebulaProcess.isActive) {
-                    cleanupNebulaProcess(true, "Process stopped by user.");
-                }
                 return;
             }
 
