@@ -1496,13 +1496,17 @@
             border-bottom-right-radius: 4px;
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: var(--primary-text-color);
-            min-width: fit-content;
+            width: fit-content;
             max-width: 90%;
         }
 
         .user-msg:hover {
             background: rgba(255, 255, 255, 0.08);
             border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .user-msg:has(.edit-container) {
+            width: 100%;
         }
 
         .user-msg .message-content {
@@ -2684,7 +2688,8 @@
         .message-content {
             word-wrap: break-word;
             overflow-wrap: break-word;
-            white-space: normal;
+            /* Use pre-wrap to preserve newlines and wrap long lines */
+            white-space: pre-wrap; 
             position: relative;
         }
 
@@ -3551,6 +3556,7 @@
             flex-direction: column;
             gap: 10px;
             width: 100%;
+            min-width: 250px;
         }
 
         .edit-textarea {
@@ -3565,6 +3571,7 @@
             padding: 10px;
             resize: vertical;
             outline: none;
+            overflow: hidden;
         }
 
         .edit-buttons {
@@ -6078,7 +6085,11 @@
             const html = originalLink(href, title, text);
             return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
         };
-        marked.setOptions({ renderer: renderer });
+        marked.setOptions({ 
+            renderer: renderer,
+            breaks: true,  // This converts single \n characters into <br> tags
+            gfm: true      // Ensures GitHub Flavored Markdown is enabled
+        });
 
         // --- Protect Math and SVG Blocks from Marked.js Escaping ---
         const originalMarkedParse = marked.parse;
@@ -6680,6 +6691,12 @@
                     editTextarea.className = 'edit-textarea';
                     editTextarea.value = text;
 
+                    const adjustHeight = () => {
+                        editTextarea.style.height = 'auto';
+                        editTextarea.style.height = editTextarea.scrollHeight + 'px';
+                    };
+                    editTextarea.addEventListener('input', adjustHeight);
+
                     const buttonContainer = document.createElement('div');
                     buttonContainer.className = 'edit-buttons';
 
@@ -6698,6 +6715,7 @@
 
                     originalPromptBubble.appendChild(editContainer);
                     editTextarea.focus();
+                    adjustHeight();
 
                     const cleanupAndExitEditMode = () => {
                         editContainer.remove();

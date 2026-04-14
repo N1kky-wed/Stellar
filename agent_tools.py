@@ -17,10 +17,11 @@ logger = logging.getLogger(__name__)
 SVG_START_RE = re.compile(r'^```(?:svg|xml)?\s*', re.IGNORECASE)
 SVG_END_RE = re.compile(r'\s*```$')
 
-def extensive_search(query: str, topic: str = "general", days: int = 3, max_results: int = 10, status: str) -> str:
+def extensive_search(query: str, status: str, topic: str = "general", days: int = 3, max_results: int = 10) -> str:
     """Performs a deep web search using Tavily API.
     Args:
         query: The search query
+        status: Status update for the user.
         topic: 'general' or 'news'
         days: for news, how many days back
         max_results: number of results to return
@@ -51,11 +52,12 @@ def extensive_search(query: str, topic: str = "general", days: int = 3, max_resu
     except Exception as e:
         return f"Error during search: {str(e)}"
 
-def generate_image(model: str, prompt: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None, status: str) -> str:
+def generate_image(model: str, prompt: str, status: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None) -> str:
     """Generates an image using Gemini's Imagen model.
     Args:
         model: 'gemini-3.1-flash-image-preview' or 'gemini-3-pro-image-preview'
         prompt: detailed descriptive prompt for the image
+        status: Status update for the user.
         quality: Supported tiers are "512", "1K", "2K", "4K". (Default: "1K")
         aspect_ratio: Supported ratios: '1:1', '3:4', '4:3', '9:16', '16:9'.
         reference_images: List of filenames from the chat context to use as reference/conditioning (up to 14).
@@ -139,6 +141,7 @@ def native_search(prompt: str, status: str) -> str:
     """Uses gemini-2.5-flash-lite with Google Search tool enabled to search the web and return the result.
     Args:
         prompt: A fully self-contained search query to send to Google. Never use pronouns like 'it' or 'that', specify exactly what you are looking for.
+        status: Status update for the user.
     """
     import datetime
     from app import PRIMARY_API_KEY
@@ -157,12 +160,12 @@ def native_search(prompt: str, status: str) -> str:
     except Exception as e:
         return f"Error in native search: {str(e)}"
 
-def logs_and_preferences(write: str = "", status: str, user_id: str = "global") -> str:
+def logs_and_preferences(status: str, write: str = "", user_id: str = "global") -> str:
     """Stores user preferences, previous errors, and resolution strategies. Memory is automatically provided to your context.
     
     Args:
-        write: A string detailing a preference, error, or fix to save for the future.
         status: Status update for the user.
+        write: A string detailing a preference, error, or fix to save for the future.
     """
     import json
     import os
@@ -199,10 +202,11 @@ def logs_and_preferences(write: str = "", status: str, user_id: str = "global") 
     except Exception as e:
         return f"Error accessing logs/preferences: {str(e)}"
 
-def make_presentation(topic: str, num_slides: int = 10, style: str = "corporate", additional_context: str = "", status: str) -> str:
+def make_presentation(topic: str, status: str, num_slides: int = 10, style: str = "corporate", additional_context: str = "") -> str:
     """Generate a fully designed PowerPoint presentation where each slide is a full-bleed AI generated image containing text.
     Args:
         topic: The topic of the presentation
+        status: Status update for the user.
         num_slides: Number of slides
         style: descriptive style for the presentation (e.g. "educational infographic", "minimalist executive", "dark technical documentation")
         additional_context: detailed research information to include in the slides
@@ -333,11 +337,12 @@ def make_presentation(topic: str, num_slides: int = 10, style: str = "corporate"
     
     return f"PRESENTATION_DATA:{json.dumps(result_data)}"
 
-def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic: str, style: str, additional_context: str = "", feedback: str = "", status: str) -> str:
+def regenerate_presentation_slide(presentation_id: str, slide_index: int, status: str, topic: str = "", style: str = "", additional_context: str = "", feedback: str = "") -> str:
     """Regenerate a specific slide of an existing presentation based on feedback.
     Args:
         presentation_id: the ID of the presentation
         slide_index: 0-based index of the slide to regenerate
+        status: Status update for the user.
         topic: original topic
         style: original style
         additional_context: original context
@@ -466,10 +471,11 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, topic:
     return f"REGENERATED_SLIDE:{json.dumps({'presentation_id': presentation_id, 'slide_index': slide_index, 'url': f'/view/pres_{presentation_id}/{slide_img_filename}'})}"
 
 
-def forge_control(action: str, app_id: str = None, changes: dict = None, prompt: str = None, project_name: str = None, status: str) -> str:
+def forge_control(action: str, status: str, app_id: str = None, changes: dict = None, prompt: str = None, project_name: str = None) -> str:
     """Control the user's Forge deployments.
     Args:
         action: "list_history", "read_files", "create", or "modify"
+        status: Status update for the user.
         app_id: the Forge application identifier, Project Title, or Subdomain (required for 'read_files' and 'modify')
         changes: key-value config/code changes to apply (e.g. {'app.py': '...'})
         prompt: Instruction for AI-driven modification or creation
@@ -681,10 +687,11 @@ def forge_control(action: str, app_id: str = None, changes: dict = None, prompt:
     except Exception as e:
         return f"Error in forge_control: {str(e)}"
 
-def repo_control(action: str, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 3000, command: str = None, status: str) -> str:
+def repo_control(action: str, status: str, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 3000, command: str = None) -> str:
     """Control and manage repository-based or custom-stack deployments.
     Args:
         action: "deploy", "execute", "list_history", "rename", "stop", "restart", or "snapshot"
+        status: Status update for the user.
         app_id: the Deployment ID, Project Title, or Subdomain (required for all actions except 'deploy' and 'list_history')
         project_name: Custom name for the project (used for unique subdomain in 'deploy' and 'rename')
         files: List of file paths to save into the database (required for 'snapshot')
@@ -968,13 +975,14 @@ def repo_control(action: str, app_id: str = None, project_name: str = None, file
 
 
 
-def lab_execute(command: str, timeout: int = 60, status: str) -> str:
+def lab_execute(command: str, status: str, timeout: int = 60) -> str:
     """Executes a bash command in a persistent, isolated Docker sandbox.
     Use this tool to experiment, test Python code, install libraries (apt-get/pip), run shell scripts, clone git repos, or inspect external APIs.
     The sandbox persists across turns, so you can install a tool in one turn and use it in the next.
     
     Args:
         command: The bash command to run (e.g. `python3 script.py`, `pip install x`, `curl -I https...`).
+        status: Status update for the user.
         timeout: Execution timeout in seconds (default 60).
     """
     import subprocess
@@ -1111,14 +1119,14 @@ def lab_execute(command: str, timeout: int = 60, status: str) -> str:
     except Exception as e:
         return f"Error executing command in Lab: {str(e)}"
 
-def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100, status: str) -> str:
+def read_tool_output(output_id: int, status: str, start_line: int = 0, max_lines: int = 100) -> str:
     """Reads a specific slice of a past tool's output from the database.
     Use this when a tool's history says [Output truncated] to retrieve the full text without polluting your context window.
     Args:
         output_id: The ID of the tool execution to read.
+        status: Status update for the user.
         start_line: The line number to start reading from (0-indexed). Default is 0.
         max_lines: The maximum number of lines to return. Default is 100.
-        status: Status update for the user.
     """
     import sqlite3
     try:
@@ -1151,10 +1159,11 @@ def read_tool_output(output_id: int, start_line: int = 0, max_lines: int = 100, 
     except Exception as e:
         return f"Error reading tool output: {str(e)}"
 
-def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite-preview", status: str) -> str:
+def analyze_youtube_video(query: str, status: str, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
     """Analyzes a specific YouTube video or searches for the best video based on a query.
     Args:
         query: What you want to find/analyze. Mandatory for both actions.
+        status: Status update for the user.
         action: 'analyze' (default) to interrogate a video's content, or 'search' to find videos matching the query.
         video_url: The full YouTube URL (required for 'analyze').
         start_time: Optional start offset for 'analyze' (e.g., '1m10s', '60s').
@@ -1258,11 +1267,12 @@ def analyze_youtube_video(query: str, action: str = "analyze", video_url: str = 
     except Exception as e:
         return f"Error analyzing YouTube video: {str(e)}"
 
-def manage_files(action: str, file_name: str = None, target_env: str = "lab", source_env: str = "chat", status: str) -> str:
+def manage_files(action: str, status: str, file_name: str = None, target_env: str = "lab", source_env: str = "chat") -> str:
     """
     Manage user-uploaded files or export code out of execution environments.
     Args:
         action: 'read' (list uploads), 'move' (transfer file/folder), 'project' (export to user).
+        status: Status update for the user.
         file_name: The name of the file or folder to move or project.
         target_env: 'lab' or process_id for repo.
         source_env: 'chat' (uploads), 'lab', or process_id for repo.

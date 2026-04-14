@@ -4004,7 +4004,7 @@ class OrphanContainerMonitor:
                     if created_ts_str:
                         try:
                             created_ts = float(created_ts_str)
-                            if current_time - created_ts < 60 * 60:
+                            if current_time - created_ts < 60 * 60 * 60:
                                 # Grace period for startup
                                 continue
                         except ValueError:
@@ -4031,13 +4031,15 @@ class OrphanContainerMonitor:
 
 def cleanup_stale_containers():
     try:
-        # Always reset any stuck statuses in the database to 'stopped' on startup
+        # Reset only very old statuses in the database to 'stopped' on startup
         try:
             with app.app_context():
                 db = get_db()
-                db.execute("UPDATE forge_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created')")
+                # 60 hours in seconds
+                sixty_hours_ago = (datetime.datetime.now() - datetime.timedelta(hours=60)).strftime('%Y-%m-%d %H:%M:%S')
+                db.execute("UPDATE forge_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created') AND created_at < ?", (sixty_hours_ago,))
                 db.commit()
-                logging.info("Database status for forge_history reset to 'stopped'.")
+                logging.info(f"Database status for forge_history reset for apps older than {sixty_hours_ago}.")
         except Exception as db_err:
             logging.error(f"Failed to reset database statuses: {db_err}")
 
@@ -4054,15 +4056,28 @@ def cleanup_stale_containers():
             logging.info("No stale sandbox containers found on startup.")
             return
 
-        logging.warning(f"Found {len(all_stale)} stale sandbox container(s). Cleaning up...")
+        logging.warning(f"Found {len(all_stale)} stale sandbox container(s). Checking creation times...")
+        current_time = time.time()
         for container in all_stale:
             try:
+                # Check for 60-hour grace period
+                labels = container.labels
+                created_ts_str = labels.get("created_at_ts")
+                if created_ts_str:
+                    try:
+                        created_ts = float(created_ts_str)
+                        if current_time - created_ts < 60 * 60 * 60:
+                            logging.info(f"Skipping recently created container (within 60h): {container.name}")
+                            continue
+                    except ValueError:
+                        pass
+
                 logging.warning(f"Force-removing stale container: {container.name} ({container.short_id})")
                 container.remove(force=True) 
             except docker.errors.NotFound:
                 logging.info(f"Container {container.name} was already removed.")
             except Exception as e:
-                logging.error(f"Error during cleanup of container {container.name}: {e}")
+                logger.error(f"Error during cleanup of container {container.name}: {e}")
         logging.info("Stale container cleanup complete.")
 
     except docker.errors.DockerException as e:
