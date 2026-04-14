@@ -36,21 +36,27 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
     import json
     current_date = datetime.datetime.now().strftime('%A, %B %d, %Y')
     
-    # Force Memory Injection from stellar_logs_prefs_{user_id}.json
+    # Force Memory Injection from database user_logs_prefs
     memory_text = ""
     try:
-        pref_file = f"stellar_logs_prefs_{user_id}.json" if user_id else "stellar_logs_prefs.json"
-        if os.path.exists(pref_file):
-            with open(pref_file, "r", encoding="utf-8") as f:
-                prefs_data = json.load(f)
-                logs = prefs_data.get("logs", [])
-                if logs:
-                    memory_text = "\n\n### PERSISTENT MEMORY & USER PREFERENCES (From logs_and_preferences):\n"
-                    memory_text += "The following are your long-term memories, user preferences, and past error resolution strategies. Always adhere to these preferences and use this context to avoid repeating past mistakes:\n"
-                    memory_text += "\n".join([f"- {log}" for log in logs])
+        import sqlite3
+        # We assume stellar_local.db is in the same directory or accessible
+        db_path = "stellar_local.db"
+        user_id_str = str(user_id) if user_id else "global"
+        
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT log_entry FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at ASC', (user_id_str,))
+        logs = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        if logs:
+            memory_text = "\n\n### PERSISTENT MEMORY & USER PREFERENCES (From logs_and_preferences):\n"
+            memory_text += "The following are your long-term memories, user preferences, and past error resolution strategies. Always adhere to these preferences and use this context to avoid repeating past mistakes:\n"
+            memory_text += "\n".join([f"- {log}" for log in logs])
     except Exception as e:
-        # We don't want to crash the prompt generation if the memory file is corrupted
-        memory_text = f"\n\n(Error loading persistent memory: {str(e)})"
+        # We don't want to crash the prompt generation if the database is busy or missing
+        memory_text = f"\n\n(Error loading persistent memory from DB: {str(e)})"
 
     return f"""<!-- Internal Processing Guidelines -->
 

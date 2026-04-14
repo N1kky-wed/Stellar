@@ -348,6 +348,17 @@ def initialize_database():
             except Exception as e:
                 print(f"Error adding 'attached_files' column: {e}")
 
+        # Add user_logs_prefs table
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_logs_prefs'")
+        if cursor.fetchone() is None:
+            cursor.execute('''CREATE TABLE user_logs_prefs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL, -- user email or 'global'
+                log_entry TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )''')
+            print("Created 'user_logs_prefs' table.")
+
         cursor.execute("PRAGMA table_info(users)")
         users_columns = [info[1] for info in cursor.fetchall()]
         if 'display_name' not in users_columns:
@@ -2151,33 +2162,36 @@ def api_logs_preferences():
     if 'user_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
     
-    user_id = session['user_id']
-    pref_file = f"stellar_logs_prefs_{user_id}.json"
+    user_id = str(session['user_id'])
+    db = get_db()
     
     if request.method == 'GET':
-        if not os.path.exists(pref_file):
-            return jsonify({'logs': []})
-        with open(pref_file, "r", encoding="utf-8") as f:
-            return jsonify(json.load(f))
+        cursor = db.execute('SELECT id, log_entry FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at ASC', (user_id,))
+        logs = [row['log_entry'] for row in cursor.fetchall()]
+        return jsonify({'logs': logs})
             
     elif request.method == 'POST':
         data = request.get_json()
         if not data or 'logs' not in data:
             return jsonify({'error': 'Invalid data'}), 400
-        with open(pref_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+        
+        db.execute('DELETE FROM user_logs_prefs WHERE user_id = ?', (user_id,))
+        for log in data['logs']:
+            db.execute('INSERT INTO user_logs_prefs (user_id, log_entry) VALUES (?, ?)', (user_id, log))
+        db.commit()
         return jsonify({'success': True})
         
     elif request.method == 'DELETE':
         index = request.args.get('index', type=int)
-        if index is None or not os.path.exists(pref_file):
+        if index is None:
             return jsonify({'error': 'Invalid request'}), 400
-        with open(pref_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if 0 <= index < len(data.get('logs', [])):
-            data['logs'].pop(index)
-            with open(pref_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
+        
+        cursor = db.execute('SELECT id FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at ASC', (user_id,))
+        rows = cursor.fetchall()
+        if 0 <= index < len(rows):
+            log_id = rows[index]['id']
+            db.execute('DELETE FROM user_logs_prefs WHERE id = ?', (log_id,))
+            db.commit()
             return jsonify({'success': True})
         return jsonify({'error': 'Index out of bounds'}), 400
 

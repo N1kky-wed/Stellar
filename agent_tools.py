@@ -167,38 +167,38 @@ def logs_and_preferences(status: str, write: str = "", user_id: str = "global") 
         status: Status update for the user.
         write: A string detailing a preference, error, or fix to save for the future.
     """
-    import json
-    import os
+    import sqlite3
+    from app import DATABASE_NAME
     
-    # Store with user-specific filename
-    pref_file = f"stellar_logs_prefs_{user_id}.json"
-    
-    # Initialize the file if it doesn't exist
-    if not os.path.exists(pref_file):
-        try:
-            with open(pref_file, "w", encoding="utf-8") as f:
-                json.dump({"logs": []}, f)
-        except Exception as e:
-            return f"Error initializing preferences file: {str(e)}"
-            
     try:
         if not write:
             return "Error: You must provide a 'write' string to save a preference."
 
-        with open(pref_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            
         write = write.strip()
-        if write:
-            data.setdefault("logs", []).append(write)
-            # Keep only the last 100 entries to prevent the file/context from getting too bloated
-            data["logs"] = data["logs"][-100:]
-            
-            with open(pref_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
-            return "Successfully saved to logs/preferences. It will be available in your context for future turns."
+        if not write:
+            return "Error: 'write' string was empty."
+
+        conn = sqlite3.connect(DATABASE_NAME)
+        cursor = conn.cursor()
         
-        return "Error: 'write' string was empty."
+        # Insert new log
+        cursor.execute('INSERT INTO user_logs_prefs (user_id, log_entry) VALUES (?, ?)', (user_id, write))
+        
+        # Keep only the last 100 entries for this user to prevent bloat
+        cursor.execute('''
+            DELETE FROM user_logs_prefs 
+            WHERE id IN (
+                SELECT id FROM user_logs_prefs 
+                WHERE user_id = ? 
+                ORDER BY created_at DESC 
+                LIMIT -1 OFFSET 100
+            )
+        ''', (user_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return "Successfully saved to logs/preferences. It will be available in your context for future turns."
     except Exception as e:
         return f"Error accessing logs/preferences: {str(e)}"
 
