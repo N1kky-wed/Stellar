@@ -7991,14 +7991,6 @@
                                 appendUserMessage(content, msgId, msg.attached_files || [], false);
                             } else {
                                 const isResearch = msg.is_research_output;
-                                    downloadLink.className = "download-btn";
-                                    downloadLink.href = reportUrl;
-                                    downloadLink.target = "_blank";
-                                    summaryDiv.appendChild(downloadLink);
-                                }
-
-                            } else {
-                                const isResearch = msg.is_research_output;
                                 const msgDiv = document.createElement("div");
                                 msgDiv.classList.add("message", "stellar-msg");
                                 if (isResearch) msgDiv.classList.add("research-output");
