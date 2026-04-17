@@ -4244,6 +4244,11 @@ def intercept_subdomains():
 
             excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
             headers =[(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
+            
+            # Add cache control to ensure the browser always gets the latest iteration
+            headers.append(('Cache-Control', 'no-cache, no-store, must-revalidate'))
+            headers.append(('Pragma', 'no-cache'))
+            headers.append(('Expires', '0'))
 
             # FIX: Stream the response back in chunks instead of buffering with resp.content
             def generate():
