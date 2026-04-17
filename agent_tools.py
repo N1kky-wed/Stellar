@@ -527,7 +527,7 @@ def forge_control(action: str, status: str, app_id: str = None, changes: dict = 
                 return "Error: app_id, Project Title, or Subdomain is required to read files."
             
             # Resolve the project (checking Title, ID, or Subdomain)
-            cursor = db.execute('SELECT project_name, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT project_name, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             
             if not row:
@@ -546,7 +546,7 @@ def forge_control(action: str, status: str, app_id: str = None, changes: dict = 
             if not app_id or not project_name:
                 return "Error: Both 'app_id' (current project) and 'project_name' (new name) are required for rename."
             
-            cursor = db.execute('SELECT process_id, project_name, subdomain FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT process_id, project_name, subdomain FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             if not row: return f"Error: Project '{app_id}' not found."
             
@@ -597,12 +597,12 @@ def forge_control(action: str, status: str, app_id: str = None, changes: dict = 
                 return "Error: app_id or Project Title is required for modification."
             
             # Resolve title/ID/subdomain with fuzzy matching
-            cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT process_id, project_name, files_snapshot, subdomain FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             
             if not row:
                 fuzzy_query = f"%{app_id}%"
-                cursor = db.execute('SELECT process_id, project_name, files_snapshot FROM forge_history WHERE (project_name LIKE ? OR subdomain LIKE ?) AND user_id = ? ORDER BY created_at DESC', (fuzzy_query, fuzzy_query, session.get('user_id')))
+                cursor = db.execute('SELECT process_id, project_name, files_snapshot, subdomain FROM forge_history WHERE (project_name LIKE ? OR subdomain LIKE ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (fuzzy_query, fuzzy_query, session.get('user_id')))
                 row = cursor.fetchone()
 
             if not row:
@@ -771,7 +771,7 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
 
         if action == "execute":
             if not app_id or not command: return "Error: 'app_id' and 'command' are required for execute."
-            cursor = db.execute('SELECT process_id, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT process_id, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             if not row: return f"Error: Deployment '{app_id}' not found."
             p_id = row['process_id']
@@ -829,7 +829,7 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
             if not app_id or not project_name:
                 return "Error: Both 'app_id' (current project) and 'project_name' (new name) are required for rename."
             
-            cursor = db.execute('SELECT process_id, project_name FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT process_id, project_name FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             if not row: return f"Error: Deployment '{app_id}' not found."
             
@@ -843,7 +843,7 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
 
         if action == "stop":
             if not app_id: return "Error: app_id is required to stop a deployment."
-            cursor = db.execute('SELECT process_id FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT process_id FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             if not row: return f"Error: Deployment '{app_id}' not found."
             
@@ -853,7 +853,7 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
         if action == "restart":
             if not app_id: return "Error: app_id is required to restart a deployment."
             
-            cursor = db.execute('SELECT process_id, project_name, files_snapshot, subdomain FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT process_id, project_name, files_snapshot, subdomain FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             if not row: return f"Error: Deployment '{app_id}' not found."
             
@@ -946,7 +946,7 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
             if not app_id or not files:
                 return "Error: app_id and a list of 'files' paths are required to snapshot manual edits."
             
-            cursor = db.execute('SELECT process_id, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ?', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT process_id, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             if not row: return f"Error: Deployment '{app_id}' not found."
             

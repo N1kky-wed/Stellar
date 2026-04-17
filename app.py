@@ -423,7 +423,7 @@ def initialize_database():
         if 'subdomain' not in columns:
             try:
                 cursor.execute("ALTER TABLE forge_history ADD COLUMN subdomain TEXT")
-                cursor.execute("CREATE UNIQUE INDEX idx_subdomain ON forge_history(subdomain)")
+                cursor.execute("CREATE INDEX idx_subdomain ON forge_history(subdomain)")
                 print("Added 'subdomain' column to 'forge_history' table.")
             except Exception as e:
                 print(f"Error adding 'subdomain' column: {e}")
@@ -435,7 +435,7 @@ def initialize_database():
             tool_name TEXT NOT NULL,
             input_params TEXT,
             result TEXT,
-            timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
         )''')
 
@@ -687,7 +687,7 @@ def generate_unique_subdomain(project_name):
     slug = base_slug
     counter = 1
     while True:
-        cursor = db.execute("SELECT 1 FROM forge_history WHERE subdomain = ?", (slug,))
+        cursor = db.execute("SELECT 1 FROM forge_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (slug,))
         if not cursor.fetchone():
             return slug
         slug = f"{base_slug}-{counter}"
@@ -1187,7 +1187,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 # Do not force-attach raw data from search tools, project history, Lab execution logs, or YouTube analysis, or preference logs
                 if tool['name'] in ['extensive_search', 'native_search', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences']:
                     continue
-                if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and "Your Forge Deployment History" in tool['result']:
+                if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and ("Your Forge Deployment History" in tool['result'] or "Source Code for Project" in tool['result']):
                     continue
 
                 if not isinstance(tool['result'], str): continue
@@ -4186,12 +4186,12 @@ def intercept_subdomains():
         subdomain = domain_parts[0]
 
         db = get_db()
-        cursor = db.execute("SELECT process_id FROM forge_history WHERE subdomain = ?", (subdomain,))
+        cursor = db.execute("SELECT process_id, subdomain FROM forge_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (subdomain,))
         row = cursor.fetchone()
 
         # Fallback to process_id (uuid) if it's a temporary run_code container
         process_id = row['process_id'] if row else subdomain
-
+        
         app_info = None
         with active_apps_lock:
             app_info = active_apps.get(process_id)
@@ -4212,6 +4212,8 @@ def intercept_subdomains():
                     }
                     with active_apps_lock:
                         active_apps[process_id] = app_info
+                else:
+                    logger.debug(f"No active app found in Redis for {process_id} (subdomain: {subdomain})")
             except Exception as e:
                 logger.error(f"Redis lookup failed for app {process_id}: {e}")
                 return "Error looking up application state.", 500
@@ -4219,11 +4221,16 @@ def intercept_subdomains():
         if not app_info or not app_info.get("port"):
             return f"Application '{subdomain}' is stopped or unavailable. Start it in Stellar Forge.", 503
 
+        # Critical Fix: Don't even try to proxy if we know it's exited
+        if app_info.get("status") == "exited":
+            return f"Application '{subdomain}' has stopped. Please restart it.", 404
+
         target_port = app_info["port"]
         path = request.full_path # Preserves exact routing paths and query parameters!
         target_url = f"http://127.0.0.1:{target_port}{path}"
 
         try:
+            logger.debug(f"Proxying request for {subdomain} ({process_id}) to port {target_port}")
             resp = requests.request(
                 method=request.method,
                 url=target_url,

@@ -4281,9 +4281,8 @@
                 <table style="width: 100%; border-collapse: collapse; color: #ccc; font-family: 'Poppins', sans-serif; font-size: 0.9rem;">
                     <thead>
                         <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                            <th style="padding: 12px; color: var(--model-color-start);">ID</th>
                             <th style="padding: 12px; color: var(--model-color-start);">Name & Email</th>
-                            <th style="padding: 12px; color: var(--model-color-start);">Created At</th>
+                            <th style="padding: 12px; color: var(--model-color-start);">Last Active</th>
                             <th style="padding: 12px; color: var(--model-color-start); text-align: right;">Action</th>
                         </tr>
                     </thead>
@@ -8450,13 +8449,13 @@
         }
 
         async function loadWaitlist() {
-            waitlistTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Fetching users...</td></tr>';
+            waitlistTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px;">Fetching users...</td></tr>';
             try {
                 const response = await fetch('/api/admin/waitlist');
                 const data = await response.json();
                 waitlistTableBody.innerHTML = '';
                 if (data.length === 0) {
-                    waitlistTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">No users found</td></tr>';
+                    waitlistTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px;">No users found</td></tr>';
                 } else {
                     data.forEach(user => {
                         const row = document.createElement('tr');
@@ -8470,17 +8469,18 @@
                         actionsHtml += `<button onclick="impersonateUser(${user.id})" style="background: var(--model-color-shadow); border: 1px solid var(--model-color-border); color: var(--model-color-start); padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: 'Poppins', sans-serif; font-size: 0.75rem; font-weight: 600; transition: all 0.2s;">Impersonate</button>`;
                         actionsHtml += '</div>';
 
+                        const lastActive = user.last_active || 'Never';
+
                         row.innerHTML = `
-                            <td style="padding: 12px;">${user.id}</td>
                             <td style="padding: 12px;">${displayName}</td>
-                            <td style="padding: 12px;">${user.created_at}</td>
+                            <td style="padding: 12px;">${lastActive}</td>
                             <td style="padding: 12px; text-align: right;">${actionsHtml}</td>
                         `;
                         waitlistTableBody.appendChild(row);
                     });
                 }
             } catch (err) {
-                waitlistTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #FF2A4D;">Failed to fetch users</td></tr>';
+                waitlistTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px; color: #FF2A4D;">Failed to fetch users</td></tr>';
             }
         }
 
