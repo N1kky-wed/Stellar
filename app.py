@@ -4228,7 +4228,20 @@ def intercept_subdomains():
             excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
             headers =[(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
 
-            return Response(resp.content, resp.status_code, headers)
+            # FIX: Stream the response back in chunks instead of buffering with resp.content
+            def generate():
+                try:
+                    # Yield data as it comes in from the container
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            yield chunk
+                finally:
+                    # CRITICAL: If the user refreshes/disconnects, Flask stops consuming 
+                    # the generator. This finally block executes and severs the connection 
+                    # to the inner container, freeing up its threads immediately.
+                    resp.close()
+
+            return Response(stream_with_context(generate()), resp.status_code, headers)
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Dynamic proxy error for app {process_id}: {e}")

@@ -5117,7 +5117,7 @@
         let currentAuthImageIndex = 0;
         let currentChatId = null;
         let currentUsername = null;
-        let tokenCounterInterval = null;
+
         let currentSearchTerm = '';
 
         let forgeHtmlEditor = null;
@@ -6156,6 +6156,37 @@
             return outputContainer.querySelector('.code-output-content');
         }
         messagesDiv.addEventListener('click', async function (event) {
+            const downloadButton = event.target.closest('.download-code-btn');
+            if (downloadButton) {
+                event.stopPropagation();
+                const codeContentWrapper = downloadButton.closest('.code-content-original');
+                if (!codeContentWrapper) return;
+                const codeElement = codeContentWrapper.querySelector('code');
+                if (!codeElement) return;
+                const codeToDownload = codeElement.textContent;
+                const langClass = codeElement.className.match(/language-(\w+)/);
+                let extension = langClass ? langClass[1] : 'txt';
+                const extensionMap = { 'python': 'py', 'javascript': 'js', 'java': 'java', 'c': 'c', 'cpp': 'cpp', 'csharp': 'cs', 'php': 'php', 'typescript': 'ts', 'kotlin': 'kt', 'go': 'go', 'rust': 'rs', 'html': 'html', 'css': 'css', 'json': 'json', 'xml': 'xml', 'yaml': 'yaml', 'markdown': 'md' };
+                extension = extensionMap[extension] || 'txt';
+                const fileName = `stellar_code.${extension}`;
+                const blob = new Blob([codeToDownload], { type: 'text/plain;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+                return;
+            }
+
+            const clickable = event.target.closest('.message-content .analysis-placeholder, .message-content .analysis-indicator.clickable');
+            if (clickable) {
+                const msgEl = clickable.closest('.message');
+                if (msgEl) { toggleAnalysisDetails(msgEl); }
+                return;
+            }
+
             const runButton = event.target.closest('.run-code-btn');
             if (!runButton || runButton.disabled) return;
             event.stopPropagation();
@@ -7074,11 +7105,6 @@
                 if (messagesDiv) messagesDiv.appendChild(placeholderMsg);
                 scrollToBottom();
 
-                const registerPayload = { query: originalQuery || " ", model_id: selectedModel, mode: modeForBackend, pending_files: serverFileIds, chat_id: currentChatId, hidden: silent, disabled_tools: Object.keys(agentSettings).filter(t => !agentSettings[t]) };
-                const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(registerPayload) });
-                if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error || `Register fail HTTP ${response.status}`); }
-                const data = await response.json(); if (!data.query_id) { throw new Error("No query_id received from registration."); }
-                const query_id = data.query_id;
                 startLongTaskMonitor(placeholderId);
                 initAndStartStreaming(
                     originalQuery,
@@ -7117,9 +7143,11 @@
                 setTimeout(scrollToBottom, 50);
             } catch (e) {
                 contentDiv.textContent = "Error rendering message content.";
+            }
+            if (messagesDiv) {
+                messagesDiv.appendChild(msg);
                 scrollToBottom();
             }
-            if (messagesDiv) messagesDiv.appendChild(msg);
             updateTokenCount();
         }
         function appendStellarMessagePlaceholder(id, initialText, hasFiles) { }
@@ -8232,8 +8260,7 @@
             if (selectedItem) {
                 selectedItem.classList.add('active');
             }
-            clearInterval(tokenCounterInterval);
-            tokenCounterInterval = null;
+
 
             const targetMessageId = selectedItem?.dataset.messageId || null;
             const highlightTerm = selectedItem?.dataset.searchTerm || null;
@@ -8273,8 +8300,7 @@
                         currentChatId = null;
                         messagesDiv.innerHTML = '';
                         historyLoaded = false;
-                        clearInterval(tokenCounterInterval);
-                        tokenCounterInterval = null;
+
                         await loadChatList();
                     }
                     setStatus(`Chat "${chatName}" deleted.`, false);
@@ -8651,69 +8677,7 @@
         }
 
 
-        messagesDiv.addEventListener('click', function (event) {
 
-            const downloadButton = event.target.closest('.download-code-btn');
-
-            if (downloadButton) {
-                event.stopPropagation();
-
-
-                const codeContentWrapper = downloadButton.closest('.code-content-original');
-                if (!codeContentWrapper) return;
-
-                const codeElement = codeContentWrapper.querySelector('code');
-                if (!codeElement) return;
-
-
-                const codeToDownload = codeElement.textContent;
-
-
-                const langClass = codeElement.className.match(/language-(\w+)/);
-                let extension = langClass ? langClass[1] : 'txt';
-
-                const extensionMap = {
-                    'python': 'py',
-                    'javascript': 'js',
-                    'java': 'java',
-                    'c': 'c',
-                    'cpp': 'cpp',
-                    'csharp': 'cs',
-                    'php': 'php',
-                    'typescript': 'ts',
-                    'kotlin': 'kt',
-                    'go': 'go',
-                    'rust': 'rs',
-                    'html': 'html',
-                    'css': 'css',
-                    'json': 'json',
-                    'xml': 'xml',
-                    'yaml': 'yaml',
-                    'markdown': 'md',
-                };
-
-                extension = extensionMap[extension] || 'txt';
-
-                const fileName = `stellar_code.${extension}`;
-
-
-
-                const blob = new Blob([codeToDownload], { type: 'text/plain;charset=utf-8' });
-
-
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = fileName;
-
-
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-
-
-                URL.revokeObjectURL(link.href);
-            }
-        });
         if (sendBtn) sendBtn.addEventListener("click", () => handleSend());
         if (chatInput) { chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }); chatInput.addEventListener("input", adjustTextareaHeight); }
         if (modeSelector) modeSelector.addEventListener("change", handleModeChange);
@@ -8780,7 +8744,7 @@
             });
         }
         if (fileUploadInput) { fileUploadInput.addEventListener('change', handleFileUpload); }
-        if (messagesDiv) { messagesDiv.addEventListener('click', function (event) { const clickable = event.target.closest('.message-content .analysis-placeholder, .message-content .analysis-indicator.clickable'); if (clickable) { const msgEl = clickable.closest('.message'); if (msgEl) { toggleAnalysisDetails(msgEl); } } }); }
+
 
 
 
@@ -8799,6 +8763,10 @@
             if (event.target === agentSettingsModal) {
                 hideAgentSettingsModal();
             }
+        });
+
+        window.addEventListener('beforeunload', () => {
+            if (typeof audioContext !== 'undefined' && audioContext) stopListening(false);
         });
 
         changePasswordForm.addEventListener('submit', handleChangePassword);
@@ -9426,9 +9394,9 @@
                 if (codeLabEditor.getOption("mode") !== language) {
                     codeLabEditor.setOption("mode", language);
                     if (language === 'python') {
-                        codeLabEditor.setValue("# Welcome to Stellar CodeLab!\nprint('Hello, CodeLab!')");
+                        if (codeLabEditor) codeLabEditor.setValue("# Welcome to Stellar CodeLab!\nprint('Hello, CodeLab!')");
                     } else {
-                        codeLabEditor.setValue(`// Start coding in ${language}`);
+                        if (codeLabEditor) codeLabEditor.setValue(`// Start coding in ${language}`);
                     }
                 }
             }
