@@ -74,7 +74,7 @@ from telegram_bot import TelegramBot
 telegram_bot = TelegramBot()
 
 def send_login_notification(username, display_name=None, is_waitlist=False):
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
     name_str = f"{display_name} ({username})" if display_name else username
     if is_waitlist:
         message_body = f"⏳ New Waitlist Registration\nUser: {name_str}\nTime: {timestamp}"
@@ -312,7 +312,7 @@ def initialize_database():
                 role TEXT DEFAULT 'user',
                 is_approved BOOLEAN DEFAULT 0,
                 login_count INTEGER NOT NULL DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT datetime('now', 'localtime')
             )''')
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chats'")
@@ -321,7 +321,7 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 name TEXT NOT NULL DEFAULT 'New Chat',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME DEFAULT datetime('now', 'localtime'),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )''')
 
@@ -337,7 +337,7 @@ def initialize_database():
                 file_analysis_context TEXT,
                 visualization_html TEXT,
                 hidden BOOLEAN DEFAULT 0,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timestamp DATETIME DEFAULT datetime('now', 'localtime'),
                 FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )''')
 
@@ -374,7 +374,7 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id TEXT NOT NULL, -- user email or 'global'
                 log_entry TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT datetime('now', 'localtime')
             )''')
             print("Created 'user_logs_prefs' table.")
 
@@ -409,8 +409,8 @@ def initialize_database():
                     container_id TEXT,
                     status TEXT,
                     deployment_url TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    created_at DATETIME DEFAULT datetime('now', 'localtime'),
+                    last_updated DATETIME DEFAULT datetime('now', 'localtime'),
                     resource_usage TEXT,
                     files_snapshot TEXT,
                     build_logs TEXT,
@@ -435,7 +435,7 @@ def initialize_database():
             tool_name TEXT NOT NULL,
             input_params TEXT,
             result TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            timestamp DATETIME DEFAULT datetime('now', 'localtime'),
             FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
         )''')
 
@@ -1683,7 +1683,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     params.append(final_logs)
 
                 if updates:
-                    updates.append("last_updated = CURRENT_TIMESTAMP")
+                    updates.append("last_updated = datetime('now', 'localtime')")
                     params.append(process_id)
                     sql = f"UPDATE forge_history SET {', '.join(updates)} WHERE process_id = ?"
                     db.execute(sql, tuple(params))
@@ -3283,12 +3283,22 @@ def send_approval_email(recipient_email, display_name):
 def get_admin_waitlist():
     if session.get('role') != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
-    
+
     db = get_db()
-    cursor = db.execute("SELECT id, username, display_name, role, is_approved, created_at FROM users ORDER BY created_at DESC")
+    # Calculate last_active as the max(timestamp) from messages joined via chats
+    query = """
+        SELECT 
+            u.id, u.username, u.display_name, u.role, u.is_approved, u.created_at,
+            MAX(m.timestamp) as last_active
+        FROM users u
+        LEFT JOIN chats c ON u.id = c.user_id
+        LEFT JOIN messages m ON c.id = m.chat_id
+        GROUP BY u.id
+        ORDER BY last_active DESC, u.created_at DESC
+    """
+    cursor = db.execute(query)
     waitlist = _fetch_as_dict(cursor)
     return jsonify(waitlist), 200
-
 @app.route('/api/admin/approve', methods=['POST'])
 def approve_user():
     if session.get('role') != 'admin':
