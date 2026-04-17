@@ -312,7 +312,7 @@ def initialize_database():
                 role TEXT DEFAULT 'user',
                 is_approved BOOLEAN DEFAULT 0,
                 login_count INTEGER NOT NULL DEFAULT 0,
-                created_at DATETIME DEFAULT datetime('now', 'localtime')
+                created_at DATETIME DEFAULT (datetime('now', 'localtime'))
             )''')
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chats'")
@@ -321,7 +321,7 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 name TEXT NOT NULL DEFAULT 'New Chat',
-                created_at DATETIME DEFAULT datetime('now', 'localtime'),
+                created_at DATETIME DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )''')
 
@@ -337,7 +337,7 @@ def initialize_database():
                 file_analysis_context TEXT,
                 visualization_html TEXT,
                 hidden BOOLEAN DEFAULT 0,
-                timestamp DATETIME DEFAULT datetime('now', 'localtime'),
+                timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )''')
 
@@ -374,7 +374,7 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id TEXT NOT NULL, -- user email or 'global'
                 log_entry TEXT NOT NULL,
-                created_at DATETIME DEFAULT datetime('now', 'localtime')
+                created_at DATETIME DEFAULT (datetime('now', 'localtime'))
             )''')
             print("Created 'user_logs_prefs' table.")
 
@@ -409,8 +409,8 @@ def initialize_database():
                     container_id TEXT,
                     status TEXT,
                     deployment_url TEXT,
-                    created_at DATETIME DEFAULT datetime('now', 'localtime'),
-                    last_updated DATETIME DEFAULT datetime('now', 'localtime'),
+                    created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+                    last_updated DATETIME DEFAULT (datetime('now', 'localtime')),
                     resource_usage TEXT,
                     files_snapshot TEXT,
                     build_logs TEXT,
@@ -435,7 +435,7 @@ def initialize_database():
             tool_name TEXT NOT NULL,
             input_params TEXT,
             result TEXT,
-            timestamp DATETIME DEFAULT datetime('now', 'localtime'),
+            timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
             FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
         )''')
 
