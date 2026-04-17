@@ -5811,7 +5811,9 @@
                         addLogToForge(`Deployment successful! URL: ${data.url}`, 'success');
 
                         setTimeout(() => {
-                            previewFrame.src = data.url;
+                            // Append a timestamp to completely bypass browser iframe caching
+                            const separator = data.url.includes('?') ? '&' : '?';
+                            previewFrame.src = data.url + separator + 't=' + Date.now();
                             loadingOverlay.style.display = 'none';
                         }, 1500);
 

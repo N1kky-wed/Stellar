@@ -1725,7 +1725,8 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     _put_event({'type': 'log', 'content': f'Reusing existing container ({container.short_id})...'})
                     
                     # Stop old app process
-                    container.exec_run("pkill -9 -f 'python app.py'")
+                    # Use a robust python-based approach since pkill/ps might be missing in slim images
+                    container.exec_run("python3 -c \"import os, signal; my_pid = os.getpid(); [os.kill(int(p), signal.SIGKILL) for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid and 'app.py' in open(f'/proc/{p}/cmdline').read()]\"")
                     
                     # Wait for the port to be fully released to prevent false-positive readiness
                     for _ in range(20):
