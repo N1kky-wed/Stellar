@@ -496,7 +496,18 @@ def forge_control(action: str, status: str, app_id: str = None, changes: dict = 
             if 'user_id' not in session:
                 return "Error: Authentication required."
             db = get_db()
-            cursor = db.execute('SELECT project_name, process_id, status, deployment_url, subdomain, created_at FROM forge_history WHERE user_id = ? ORDER BY created_at DESC', (session['user_id'],))
+            # Group by process_id and take the latest iteration (max id)
+            cursor = db.execute('''
+                SELECT fh.project_name, fh.process_id, fh.status, fh.deployment_url, fh.subdomain, fh.created_at 
+                FROM forge_history fh
+                INNER JOIN (
+                    SELECT process_id, MAX(id) as latest_id
+                    FROM forge_history
+                    WHERE user_id = ?
+                    GROUP BY process_id
+                ) latest ON fh.id = latest.latest_id
+                ORDER BY fh.created_at DESC
+            ''', (session['user_id'],))
             history = cursor.fetchall()
             if not history:
                 return "You have no past Forge deployments."
@@ -653,7 +664,7 @@ def forge_control(action: str, status: str, app_id: str = None, changes: dict = 
         except: pass
         
         app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, actual_app_id, old_container_id, 'forge'), daemon=True)
+        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, actual_app_id, old_container_id, 'forge', subdomain), daemon=True)
         thread.start()
 
         # Shared Wait Loop

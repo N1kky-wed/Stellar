@@ -1586,7 +1586,10 @@ def forge_iterate():
 
         process_id = old_process_id if old_process_id else str(uuid.uuid4())
         
-        project_title = generate_forge_title(user_prompt)
+        # Preserve existing project title or generate one if missing
+        project_title = session['forge_project'].get('project_name')
+        if not project_title:
+            project_title = generate_forge_title(user_prompt)
         
         # Get existing subdomain or generate a new one if it somehow got lost
         subdomain = session['forge_project'].get('subdomain')
@@ -4370,6 +4373,8 @@ def forge_redeploy():
         process_id = old_process_id if old_process_id else str(uuid.uuid4())
         
         project_title = session.get('forge_project', {}).get('project_name')
+        subdomain = session.get('forge_project', {}).get('subdomain')
+        
         if not project_title:
              project_title = f"Forge Redeploy {process_id[:8]}"
 
@@ -4382,9 +4387,9 @@ def forge_redeploy():
         try:
             db = get_db()
             db.execute('''
-                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(updated_files)))
+                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(updated_files), subdomain))
             db.commit()
         except Exception as e:
             logger.error(f"Failed to record forge history redeploy: {e}")
@@ -4398,7 +4403,7 @@ def forge_redeploy():
             logger.exception("Failed to persist redeploy forge state for %s", process_id)
 
         app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, updated_files, process_id, old_container_id, 'forge'))
+        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, updated_files, process_id, old_container_id, 'forge', subdomain))
         thread.daemon = True
         thread.start()
 
@@ -4416,10 +4421,15 @@ def get_forge_history():
     user_id = session['user_id']
     db = get_db()
     cursor = db.execute('''
-        SELECT id, project_name, process_id, status, deployment_url, created_at, last_updated 
-        FROM forge_history
-        WHERE user_id = ?
-        ORDER BY created_at DESC
+        SELECT fh.id, fh.project_name, fh.process_id, fh.status, fh.deployment_url, fh.created_at, fh.last_updated 
+        FROM forge_history fh
+        INNER JOIN (
+            SELECT process_id, MAX(id) as latest_id
+            FROM forge_history
+            WHERE user_id = ?
+            GROUP BY process_id
+        ) latest ON fh.id = latest.latest_id
+        ORDER BY fh.created_at DESC
     ''', (user_id,))
     history = _fetch_as_dict(cursor)
     return jsonify({'history': history})
@@ -4455,12 +4465,14 @@ def resume_forge_history(history_id):
 
     process_id = str(uuid.uuid4())
     project_name = entry.get('project_name') or "Forge Project"
+    subdomain = entry.get('subdomain')
 
     session['forge_project'] = {
         'files': files,
         'container_id': None,
         'process_id': process_id,
-        'project_name': project_name
+        'project_name': project_name,
+        'subdomain': subdomain
     }
     session.modified = True
 
