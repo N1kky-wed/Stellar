@@ -53,12 +53,12 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
         conn.close()
 
         if logs:
-            memory_text = "\n\n### [CRITICAL] PERSISTENT MEMORY & USER PREFERENCES:\n"
-            memory_text += "You MUST strictly adhere to the following stored memories and user preferences for this specific user:\n"
+            memory_text = "\n\n### PERSISTENT MEMORY & USER PREFERENCES (From logs_and_preferences):\n"
+            memory_text += "The following are your long-term memories, user preferences, and past error resolution strategies. Always adhere to these preferences and use this context to avoid repeating past mistakes:\n"
             memory_text += "\n".join([f"- {log}" for log in logs])
-            memory_text += "\n\n"
     except Exception as e:
-        memory_text = f"\n\n(Note: Persistent memory sync skipped: {str(e)})"
+        # We don't want to crash the prompt generation if the database is busy or missing
+        memory_text = f"\n\n(Error loading persistent memory from DB: {str(e)})"
 
     return f"""<!-- Internal Processing Guidelines -->
 
