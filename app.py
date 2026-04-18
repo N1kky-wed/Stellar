@@ -258,7 +258,6 @@ MODEL_NAMES = {
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 adminpass=os.getenv("Admin")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 REFINE_API_KEY = os.getenv("RTP_API_KEY")
@@ -3627,49 +3626,6 @@ def change_display_name_route():
     except Exception as e:
         logger.error(f"Error changing display name: {e}")
         return jsonify({"success": False, "message": "Server error."}), 500
-
-@app.route('/unsplash', methods=['GET'])
-def get_unsplash_images():
-    if not UNSPLASH_ACCESS_KEY:
-        return jsonify({"error": "Unsplash API key is missing."}), 500
-
-    query_themes = ["abstract security", "connectivity", "new beginnings", "technology network", "digital art"]
-    selected_query = random.choice(query_themes)
-
-    url = f"https://api.unsplash.com/photos/random"
-    params = {
-        "count": 5,
-        "query": selected_query,
-        "orientation": "landscape"
-    }
-    headers = {
-        "Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"
-    }
-
-    try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        photos = response.json()
-        
-        image_urls = []
-        for photo in photos:
-            if 'urls' in photo and 'regular' in photo['urls']:
-                image_urls.append(photo['urls']['regular'])
-            elif 'urls' in photo and 'full' in photo['urls']:
-                image_urls.append(photo['urls']['full'])
-
-        if not image_urls:
-            return jsonify({"error": "No images found from Unsplash API."}), 404
-
-        return jsonify({"image_urls": image_urls}), 200
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to fetch images from Unsplash: {e}", exc_info=True)
-        return jsonify({"error": f"Failed to fetch images from Unsplash. Please check API key, network connection, or API limits. Details: {e}"}), 500
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid response from Unsplash API: {e}", exc_info=True)
-        return jsonify({"error": "Invalid response from Unsplash API."}), 500
-
 
 @app.route('/favicon.ico')
 def favicon():

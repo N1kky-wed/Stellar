@@ -77,7 +77,6 @@ sys.modules['sqlitecloud'] = MagicMock()
 
 # Setup Env Vars
 os.environ['TAVILY_API_KEY'] = 'test_key'
-os.environ['UNSPLASH_ACCESS_KEY'] = 'test_key'
 os.environ['Admin'] = 'admin'
 os.environ['RTP_API_KEY'] = 'test_key'
 os.environ['SEARCH_API_KEY'] = 'test_key'
