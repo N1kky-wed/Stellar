@@ -204,6 +204,32 @@
             border: 1px solid var(--scrollbar-thumb-hover-border);
         }
 
+        #waitlistContent::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        #waitlistContent::-webkit-scrollbar-track {
+            background: var(--scrollbar-track-bg);
+            border-radius: 0px;
+        }
+
+        #waitlistContent::-webkit-scrollbar-thumb {
+            background: linear-gradient(var(--scrollbar-thumb-start), var(--scrollbar-thumb-end));
+            border-radius: 10px;
+            border: 1px solid var(--scrollbar-thumb-border);
+        }
+
+        #waitlistContent::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(var(--scrollbar-thumb-hover-start), var(--scrollbar-thumb-hover-end));
+            border: 1px solid var(--scrollbar-thumb-hover-border);
+        }
+
+        #waitlistContent {
+            scrollbar-width: thin;
+            scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track-bg);
+        }
+
         .code-output-container {
             margin-top: -1.2em;
             padding-top: 10px;
@@ -1043,7 +1069,7 @@
             border-color: rgba(255, 255, 255, 0.4);
         }
 
-                #sidebar {
+        #sidebar {
             position: fixed;
             top: 0;
             left: 0;
@@ -1057,8 +1083,9 @@
             transform: translateX(-100%);
             transition: transform 0.3s ease-in-out;
             z-index: 105;
-            display: flex;
-            flex-direction: column;
+            display: grid !important;
+            grid-template-rows: max-content max-content max-content max-content minmax(0, 1fr) max-content;
+            gap: 0;
             padding: 20px;
         }
 
@@ -1071,8 +1098,9 @@
             align-items: center;
             justify-content: space-between;
             padding-bottom: 15px;
-            margin-bottom: 15px;
+            margin: 0 0 15px 0 !important; /* Locks out any margin-top: auto */
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
         }
 
         .sidebar-header h3 {
@@ -1103,7 +1131,8 @@
         .user-info {
             font-size: 0.9rem;
             color: var(--secondary-text-color);
-            margin-bottom: 20px;
+            margin: 0 0 20px 0 !important;
+            flex-shrink: 0;
         }
 
         .user-info strong {
@@ -1122,7 +1151,8 @@
             cursor: pointer;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
             transition: all 0.3s ease;
-            margin-bottom: 20px;
+            margin: 0 0 20px 0 !important;
+            flex-shrink: 0;
         }
 
         #newChatBtn:hover {
@@ -1133,19 +1163,20 @@
 
         #chatList {
             list-style: none;
-            margin: 0 -20px 0 0; /* Pushes the scrollbar to the absolute right edge */
-            padding: 5px 12px 5px 0; /* Keeps the chat items away from the scrollbar */
-            flex-grow: 1;
+            margin: 0 -20px 0 0 !important;
+            padding: 5px 12px 5px 0 !important;
+            display: block !important;
+            height: 100%; /* Fill the grid track */
             overflow-y: auto;
             overflow-x: hidden;
             scrollbar-width: thin;
             scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track-bg);
         }
 
-        /* ADD THIS CSS */
         .chat-search-container {
             position: relative;
-            margin-bottom: 15px;
+            margin: 0 0 15px 0 !important;
+            flex-shrink: 0;
         }
 
         .chat-search-container .search-icon {
@@ -3858,6 +3889,164 @@
             transform: none;
         }
 
+        /* Admin Dashboard Toggle Switch */
+        .admin-toggle {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .admin-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .admin-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255,255,255,0.1);
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 24px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .admin-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background-color: #aaa;
+            transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 50%;
+        }
+
+        input:checked + .admin-slider {
+            background-color: rgba(0, 240, 144, 0.2);
+            border-color: rgba(0, 240, 144, 0.3);
+        }
+
+        input:checked + .admin-slider:before {
+            transform: translateX(20px);
+            background-color: #00F090;
+            box-shadow: 0 0 10px rgba(0, 240, 144, 0.4);
+        }
+
+        .user-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 24px;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .user-card:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--model-color-border);
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .user-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .user-info {
+            flex-grow: 1;
+        }
+
+        .user-name {
+            color: #fff;
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .user-email {
+            color: #888;
+            font-size: 0.85rem;
+            display: block;
+        }
+
+        .user-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 12px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .stat-value {
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+
+        .user-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            color: #555;
+            margin-top: auto;
+        }
+
+        .user-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        .impersonate-btn {
+            flex-grow: 1;
+            background: var(--model-color-shadow);
+            border: 1px solid var(--model-color-border);
+            color: var(--model-color-start);
+            padding: 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .impersonate-btn:hover {
+            background: var(--model-color-start);
+            color: #000;
+        }
+
         /* Custom Toggle Switch Styles */
         .toggle-item {
             display: flex;
@@ -3943,7 +4132,7 @@
 
         #logoutButton {
             width: calc(100% - 30px);
-            margin: 15px auto;
+            margin: 15px auto 0 auto !important;
             padding: 12px;
             background: rgba(255, 42, 77, 0.1);
             color: #ff2a4d;
@@ -4270,26 +4459,20 @@
         </div>
     </div>
 
-        <!-- Admin Waitlist Modal -->
-    <div id="adminWaitlistModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 3000; align-items: center; justify-content: center;">
-        <div class="modal-content" style="max-width: 800px; width: 90%; height: 80vh; background: #0a0a0f; border: 1px solid var(--model-color-border); border-radius: 20px; padding: 30px; display: flex; flex-direction: column; box-shadow: 0 0 40px rgba(0,0,0,0.5);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
-                <h2 style="background: linear-gradient(135deg, #fff, var(--model-color-start)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 1.8rem; letter-spacing: 1px;">Admin Dashboard</h2>
-                <button id="closeAdminWaitlistBtn" style="background: none; border: none; color: #666; font-size: 2rem; cursor: pointer; transition: color 0.2s;">&times;</button>
+    <!-- Admin Waitlist Modal -->
+    <div id="adminWaitlistModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #050508; z-index: 3000; flex-direction: column; animation: fadeIn 0.3s ease-out;">
+        <div style="height: 100%; width: 100%; display: flex; flex-direction: column; padding: 40px; box-sizing: border-box; overflow: hidden;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px;">
+                <div>
+                    <h2 style="background: linear-gradient(135deg, #fff, var(--model-color-start)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 2.2rem; letter-spacing: 1px; margin: 0;">Admin Dashboard</h2>
+                    <p style="color: #666; margin: 8px 0 0 0; font-size: 0.95rem;">Manage platform access and monitor user activity.</p>
+                </div>
+                <button id="closeAdminWaitlistBtn" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); color: #fff; width: 45px; height: 45px; border-radius: 12px; font-size: 1.5rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center;">&times;</button>
             </div>
-            <div id="waitlistContent" style="flex-grow: 1; overflow-y: auto; padding-right: 10px;">
-                <table style="width: 100%; border-collapse: collapse; color: #ccc; font-family: 'Poppins', sans-serif; font-size: 0.9rem;">
-                    <thead>
-                        <tr style="text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                            <th style="padding: 12px; color: var(--model-color-start);">Name & Email</th>
-                            <th style="padding: 12px; color: var(--model-color-start);">Last Active</th>
-                            <th style="padding: 12px; color: var(--model-color-start); text-align: right;">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="waitlistTableBody">
-                        <!-- Rows populated by JS -->
-                    </tbody>
-                </table>
+            <div id="waitlistContent" style="flex-grow: 1; overflow-y: auto; padding: 25px 10px 40px 0;">
+                <div id="waitlistGrid" class="tool-grid">
+                    <!-- Cards populated by JS -->
+                </div>
             </div>
         </div>
     </div>
@@ -8438,53 +8621,150 @@
         }
 
         const adminWaitlistModal = document.getElementById('adminWaitlistModal');
-        const waitlistTableBody = document.getElementById('waitlistTableBody');
+        const waitlistGrid = document.getElementById('waitlistGrid');
         const closeAdminWaitlistBtn = document.getElementById('closeAdminWaitlistBtn');
 
         if (closeAdminWaitlistBtn) {
-            closeAdminWaitlistBtn.onclick = () => adminWaitlistModal.style.display = 'none';
+            closeAdminWaitlistBtn.onclick = () => {
+                adminWaitlistModal.style.display = 'none';
+                document.body.style.overflow = '';
+            };
         }
 
         async function openAdminWaitlist() {
             adminWaitlistModal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
             loadWaitlist();
         }
 
+        function formatTokens(tokens) {
+            if (!tokens) return '0';
+            if (tokens < 1000) return tokens;
+            if (tokens < 1000000) return (tokens / 1000).toFixed(1) + 'K';
+            return (tokens / 1000000).toFixed(1) + 'M';
+        }
+
+        function formatDateTime(utcStr) {
+            if (!utcStr || utcStr === 'Never') return utcStr;
+            const date = new Date(utcStr + ' UTC');
+            if (isNaN(date.getTime())) return utcStr;
+
+            const options = {
+                timeZone: 'Asia/Kolkata',
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            };
+
+            const formatter = new Intl.DateTimeFormat('en-IN', options);
+            const parts = formatter.formatToParts(date);
+            
+            let day, month, year, hour, minute, dayPeriod;
+            parts.forEach(p => {
+                if (p.type === 'day') day = p.value;
+                if (p.type === 'month') month = p.value;
+                if (p.type === 'year') year = p.value;
+                if (p.type === 'hour') hour = p.value;
+                if (p.type === 'minute') minute = p.value;
+                if (p.type === 'dayPeriod') dayPeriod = p.value;
+            });
+
+            const getOrdinal = (n) => {
+                const s = ["th", "st", "nd", "rd"],
+                      v = n % 100;
+                return n + (s[(v - 20) % 10] || s[v] || s[0]);
+            };
+
+            return `${getOrdinal(parseInt(day))} ${month} ${year}, ${hour}:${minute} ${dayPeriod}`;
+        }
+
         async function loadWaitlist() {
-            waitlistTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px;">Fetching users...</td></tr>';
+            waitlistGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">Initializing grid...</div>';
             try {
                 const response = await fetch('/api/admin/waitlist');
                 const data = await response.json();
-                waitlistTableBody.innerHTML = '';
+                waitlistGrid.innerHTML = '';
                 if (data.length === 0) {
-                    waitlistTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px;">No users found</td></tr>';
+                    waitlistGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">No entities found.</div>';
                 } else {
                     data.forEach(user => {
-                        const row = document.createElement('tr');
-                        row.style.borderBottom = '1px solid rgba(255,255,255,0.02)';
-                        const displayName = (user.display_name && user.display_name !== user.username) ? user.display_name + ' (' + user.username + ')' : user.username;
+                        const card = document.createElement('div');
+                        card.className = 'user-card';
                         
-                        let actionsHtml = '<div style="display: flex; justify-content: flex-end; gap: 8px;">';
-                        if (!user.is_approved) {
-                             actionsHtml += `<button onclick="approveUser(${user.id}, '${user.username}')" style="background: rgba(0, 240, 144, 0.1); border: 1px solid rgba(0, 240, 144, 0.2); color: #00F090; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: 'Poppins', sans-serif; font-size: 0.75rem; font-weight: 600; transition: all 0.2s; margin-right: 0;">Approve User</button>`;
-                        }
-                        actionsHtml += `<button onclick="impersonateUser(${user.id})" style="background: var(--model-color-shadow); border: 1px solid var(--model-color-border); color: var(--model-color-start); padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: 'Poppins', sans-serif; font-size: 0.75rem; font-weight: 600; transition: all 0.2s;">Impersonate</button>`;
-                        actionsHtml += '</div>';
+                        const rawName = user.display_name || user.username.split('@')[0];
+                        const name = rawName.length > 10 ? rawName.substring(0, 10) + '...' : rawName;
+                        const email = user.username;
+                        const lastActive = formatDateTime(user.last_active || 'Never');
+                        const chats = user.num_chats || 0;
+                        const projects = user.num_projects || 0;
+                        const tokens = formatTokens(user.total_tokens_approx);
 
-                        const lastActive = user.last_active || 'Never';
+                        const isSelf = user.username === sidebarUsername.textContent; // Using sidebarUsername as it holds current user's name/email
+                        const isAdmin = user.role === 'admin';
+                        const toggleHtml = isAdmin ? 
+                            `<span style="background: rgba(0, 240, 144, 0.1); color: #00F090; padding: 4px 10px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Admin</span>` :
+                            `<label class="admin-toggle" title="${user.is_approved ? 'Disable Access' : 'Enable Access'}">
+                                <input type="checkbox" ${user.is_approved ? 'checked' : ''} onchange="toggleUserAccess(${user.id}, this.checked)">
+                                <span class="admin-slider"></span>
+                            </label>`;
 
-                        row.innerHTML = `
-                            <td style="padding: 12px;">${displayName}</td>
-                            <td style="padding: 12px;">${lastActive}</td>
-                            <td style="padding: 12px; text-align: right;">${actionsHtml}</td>
+                        card.innerHTML = `
+                            <div class="user-card-header">
+                                <div class="user-info">
+                                    <span class="user-name" title="${rawName}">${name}</span>
+                                    <span class="user-email">${email}</span>
+                                </div>
+                                ${toggleHtml}
+                            </div>
+                            <div class="user-stats">
+                                <div class="stat-item">
+                                    <span class="stat-value">${chats}</span>
+                                    <span class="stat-label">Chats</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${projects}</span>
+                                    <span class="stat-label">Projects</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${tokens}</span>
+                                    <span class="stat-label">Tokens</span>
+                                </div>
+                            </div>
+                            <div class="user-meta">
+                                <span>Last active: ${lastActive}</span>
+                            </div>
+                            <div class="user-actions">
+                                <button class="impersonate-btn" onclick="impersonateUser(${user.id})">Impersonate</button>
+                            </div>
                         `;
-                        waitlistTableBody.appendChild(row);
+                        waitlistGrid.appendChild(card);
                     });
                 }
             } catch (err) {
-                waitlistTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px; color: #FF2A4D;">Failed to fetch users</td></tr>';
+                waitlistGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #FF2A4D;">Critical error fetching waitlist.</div>';
             }
         }
+
+        window.toggleUserAccess = async function(userId, isApproved) {
+            try {
+                const response = await fetch('/api/admin/toggle_access', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, is_approved: isApproved })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    alert('Status update failed: ' + data.error);
+                    loadWaitlist(); // Revert UI
+                }
+            } catch (err) {
+                alert('Connection error');
+                loadWaitlist(); // Revert UI
+            }
+        };
 
         window.impersonateUser = async function(userId) {
             try {
@@ -8672,10 +8952,12 @@
 
         function showAgentSettingsModal() {
             agentSettingsModal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
         }
 
         function hideAgentSettingsModal() {
             agentSettingsModal.style.display = 'none';
+            document.body.style.overflow = '';
         }
 
 

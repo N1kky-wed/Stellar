@@ -56,6 +56,28 @@ try:
 except Exception as e:
     logging.error(f"Could not connect to Docker daemon on startup. Please ensure Docker is running. Code execution will fail. Error: {e}")
 
+from functools import wraps
+
+def require_approval(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required.'}), 401
+        
+        # We check the session first for speed, but the index route syncs it with DB
+        if not session.get('is_approved'):
+            # Double check with DB to be sure
+            db = get_db()
+            cursor = db.execute('SELECT is_approved FROM users WHERE id = ?', (session['user_id'],))
+            row = cursor.fetchone()
+            if row and row[0]:
+                session['is_approved'] = True
+            else:
+                session['is_approved'] = False
+                return jsonify({'error': 'Access denied. You are on the waitlist or your access has been revoked.'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
 def ensure_user_network(docker_client, user_id):
     if not user_id:
         return "stellar_isolated"
@@ -312,7 +334,7 @@ def initialize_database():
                 role TEXT DEFAULT 'user',
                 is_approved BOOLEAN DEFAULT 0,
                 login_count INTEGER NOT NULL DEFAULT 0,
-                created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP)
             )''')
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chats'")
@@ -321,7 +343,7 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 name TEXT NOT NULL DEFAULT 'New Chat',
-                created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )''')
 
@@ -337,7 +359,7 @@ def initialize_database():
                 file_analysis_context TEXT,
                 visualization_html TEXT,
                 hidden BOOLEAN DEFAULT 0,
-                timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
+                timestamp DATETIME DEFAULT (CURRENT_TIMESTAMP),
                 FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )''')
 
@@ -374,7 +396,7 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id TEXT NOT NULL, -- user email or 'global'
                 log_entry TEXT NOT NULL,
-                created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP)
             )''')
             print("Created 'user_logs_prefs' table.")
 
@@ -409,8 +431,8 @@ def initialize_database():
                     container_id TEXT,
                     status TEXT,
                     deployment_url TEXT,
-                    created_at DATETIME DEFAULT (datetime('now', 'localtime')),
-                    last_updated DATETIME DEFAULT (datetime('now', 'localtime')),
+                    created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+                    last_updated DATETIME DEFAULT (CURRENT_TIMESTAMP),
                     resource_usage TEXT,
                     files_snapshot TEXT,
                     build_logs TEXT,
@@ -818,6 +840,7 @@ def upload_files_to_gemini(session_id, filenames):
     return gemini_files
 
 @app.route('/upload_files', methods=['POST'])
+@require_approval
 def upload_files():
     session_id = get_current_session_id()
     if not session_id:
@@ -1376,9 +1399,8 @@ def _extract_json_from_response(response_text):
     return None
 
 @app.route('/codelab/forge/start', methods=['POST'])
+@require_approval
 def forge_start():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
     if not client:
         return jsonify({'error': 'Docker client not available. Is Docker running?'}), 503
 
@@ -1500,8 +1522,9 @@ def forge_start():
 
 
 @app.route('/codelab/forge/iterate', methods=['POST'])
+@require_approval
 def forge_iterate():
-    if 'user_id' not in session or 'forge_project' not in session:
+    if 'forge_project' not in session:
         return jsonify({'error': 'No active session.'}), 400
     if not client:
         return jsonify({'error': 'Docker client not available. Is Docker running?'}), 503
@@ -1686,7 +1709,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     params.append(final_logs)
 
                 if updates:
-                    updates.append("last_updated = datetime('now', 'localtime')")
+                    updates.append("last_updated = CURRENT_TIMESTAMP")
                     params.append(process_id)
                     sql = f"UPDATE forge_history SET {', '.join(updates)} WHERE process_id = ?"
                     db.execute(sql, tuple(params))
@@ -2026,10 +2049,8 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         cleanup_thread.start()
 
 @app.route('/codelab/forge/stream')
+@require_approval
 def forge_stream():
-    if 'user_id' not in session:
-        return Response("auth error", status=401)
-
     process_id = request.args.get('process_id')
     if not process_id:
         return Response("process_id required", status=400)
@@ -2069,10 +2090,8 @@ def forge_stream():
 
 
 @app.route('/codelab/forge/stop', methods=['POST'])
+@require_approval
 def forge_stop():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     data = request.get_json(silent=True) or {}
     process_id = data.get('process_id') or session.get('forge_project', {}).get('process_id')
     if not process_id:
@@ -2135,11 +2154,9 @@ def stop_and_cleanup_app_by_process_id(process_id, app_type='forge'):
 
 
 @app.route('/get_history', methods=['GET'])
+@require_approval
 def get_history_route():
     try:
-        if 'user_id' not in session:
-            return jsonify({'status': 'Failed: Not logged in', 'history': []}), 401
-        
         chat_id = request.args.get('chat_id')
         if not chat_id and 'current_chat_id' in session:
             chat_id = session['current_chat_id']
@@ -2165,10 +2182,9 @@ def get_history_route():
         return jsonify({'status': 'Failed: Server error fetching history', 'history': []}), 500
 
 @app.route('/update_message', methods=['POST'])
+@require_approval
 def update_message_route():
     try:
-        if 'user_id' not in session:
-            return jsonify({'status': 'Failed: Not logged in'}), 401
         data = request.get_json()
         if not data:
             return jsonify({'status': 'Failed: No JSON data received'}), 400
@@ -2202,11 +2218,9 @@ def update_message_route():
         return jsonify({'status': 'Failed: Server error during update'}), 500
 
 @app.route('/api/logs_preferences', methods=['GET', 'POST', 'DELETE'])
+@require_approval
 def api_logs_preferences():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
-    
-    user_id = str(session['user_id'])
+    user_id = session['username']
     db = get_db()
     
     if request.method == 'GET':
@@ -2240,11 +2254,9 @@ def api_logs_preferences():
         return jsonify({'error': 'Index out of bounds'}), 400
 
 @app.route('/register_query', methods=['POST'])
+@require_approval
 def register_query():
     try:
-        if 'user_id' not in session:
-            return jsonify({'error': 'Authentication required to register queries.'}), 401
-
         data = request.get_json()
         if not data:
             return jsonify({'error': 'No JSON data received'}), 400
@@ -2289,6 +2301,7 @@ def register_query():
 
 
 @app.route('/refine_stream', methods=['GET'])
+@require_approval
 def refine_stream():
     start_time = time.time()
     query_id = request.args.get('query_id')
@@ -2297,10 +2310,6 @@ def refine_stream():
     if not session_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Session error. Please refresh.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
-
-    if 'user_id' not in session:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Authentication required to use features.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=401)
 
     if not query_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Missing query identifier.', 'error': True})}\n\n"
@@ -2467,6 +2476,7 @@ def refine_stream():
 
 
 @app.route('/search_stream', methods=['GET'])
+@require_approval
 def search_stream():
     start_time = time.time()
     query_id = request.args.get('query_id')
@@ -2475,10 +2485,6 @@ def search_stream():
     if not session_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Session error. Please refresh.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
-
-    if 'user_id' not in session:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Authentication required to use features.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=401)
 
     if not query_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Missing query identifier.', 'error': True})}\n\n"
@@ -2771,6 +2777,7 @@ def search_stream():
     return Response(stream_with_context(generate_research_stream_with_id()), mimetype='text/event-stream')
 
 @app.route('/cosmos_stream', methods=['GET'])
+@require_approval
 def cosmos_stream():
     start_time = time.time()
     query_id = request.args.get('query_id')
@@ -2779,10 +2786,6 @@ def cosmos_stream():
     if not session_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Session error. Please refresh.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
-    
-    if 'user_id' not in session:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Authentication required to use features.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=401)
 
     if not query_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Missing query identifier.', 'error': True})}\n\n"
@@ -3030,10 +3033,8 @@ stop_flags = {}
 stop_flags_lock = threading.Lock()
 
 @app.route('/api/stop_generation', methods=['POST'])
+@require_approval
 def stop_generation():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     data = request.get_json()
     query_id = data.get('query_id')
 
@@ -3054,10 +3055,8 @@ def check_and_log_stop(query_id, stage=""):
     return False
 
 @app.route('/api/messages/delete', methods=['POST'])
+@require_approval
 def delete_message():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     data = request.get_json()
     message_id = data.get('message_id')
 
@@ -3089,10 +3088,8 @@ def delete_message():
         return jsonify({'error': 'An internal error occurred.'}), 500
 
 @app.route('/api/messages/delete_after', methods=['POST'])
+@require_approval
 def delete_messages_after():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     data = request.get_json()
     message_id = data.get('message_id')
     chat_id = data.get('chat_id')
@@ -3134,11 +3131,9 @@ def delete_messages_after():
         return jsonify({'error': 'An internal error occurred.'}), 500
     
 @app.route('/clear_history', methods=['POST'])
+@require_approval
 def clear_history():
     try:
-        if 'user_id' not in session:
-            return jsonify({'status': 'Failed', 'message': 'Authentication required to clear history.'}), 401
-
         user_id = session['user_id']
 
         chat_id = session.get('current_chat_id')
@@ -3283,26 +3278,113 @@ def send_approval_email(recipient_email, display_name):
     except Exception as e:
         logger.error(f"FAILURE sending approval email: {str(e)}")
 
+def send_revocation_email(recipient_email, display_name):
+    sender = "stellarai.live@gmail.com"
+    password = "xhlb etoe kunw poas"
+    
+    msg = EmailMessage()
+    msg['Subject'] = "Stellar: Access Status Update"
+    msg['From'] = f"Stellar AI <{sender}>"
+    msg['To'] = recipient_email
+
+    html_content = f"""
+    <html>
+    <body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Inter', sans-serif; color: #333333;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #ffffff; padding: 40px 0;">
+            <tr>
+                <td align="center">
+                    <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 16px; padding: 40px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.05);">
+                        <tr>
+                            <td>
+                                <h1 style="margin: 0; padding: 0; font-size: 2.5rem; letter-spacing: 4px; color: #111111;">STELLAR</h1>
+                                <p style="color: #FF2A4D; font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; letter-spacing: 1px; margin-top: 10px; margin-bottom: 30px;">ACCESS REVOKED</p>
+                                
+                                <h2 style="font-size: 1.5rem; font-weight: normal; margin-bottom: 20px; color: #111111;">Hello, {display_name}</h2>
+                                
+                                <p style="color: #555555; font-size: 1rem; line-height: 1.6; margin-bottom: 40px;">
+                                    Your access to the Stellar Autonomous Environment has been suspended. You have been placed back on our waitlist. We will notify you if your access is restored in the future.
+                                </p>
+                                
+                                <div style="display: inline-block; border: 1px solid #e0e0e0; color: #666666; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 1rem; letter-spacing: 0.5px;">STATUS: ON WAITLIST</div>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+    
+    msg.set_content(f"Hello {display_name}, your access to Stellar has been revoked and you have been placed back on the waitlist.")
+    msg.add_alternative(html_content, subtype='html')
+
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(sender, password)
+            smtp.send_message(msg)
+        logger.info(f"SUCCESS: Revocation email sent successfully to {recipient_email}.")
+    except Exception as e:
+        logger.error(f"FAILURE sending revocation email: {str(e)}")
+
 @app.route('/api/admin/waitlist', methods=['GET'])
 def get_admin_waitlist():
     if session.get('role') != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
 
     db = get_db()
-    # Calculate last_active as the max(timestamp) from messages joined via chats
+    # Calculate last_active, num_chats, num_projects, and total_tokens_approx
     query = """
-        SELECT 
+        SELECT
             u.id, u.username, u.display_name, u.role, u.is_approved, u.created_at,
-            MAX(m.timestamp) as last_active
+            (SELECT MAX(m.timestamp) FROM chats c JOIN messages m ON c.id = m.chat_id WHERE c.user_id = u.id) as last_active,
+            (SELECT COUNT(*) FROM chats WHERE user_id = u.id) as num_chats,
+            (SELECT COUNT(*) FROM forge_history WHERE user_id = u.id) as num_projects,
+            (SELECT SUM(LENGTH(m.message_content)) FROM chats c JOIN messages m ON c.id = m.chat_id WHERE c.user_id = u.id) as total_tokens_approx
         FROM users u
-        LEFT JOIN chats c ON u.id = c.user_id
-        LEFT JOIN messages m ON c.id = m.chat_id
-        GROUP BY u.id
         ORDER BY last_active DESC, u.created_at DESC
     """
     cursor = db.execute(query)
     waitlist = _fetch_as_dict(cursor)
     return jsonify(waitlist), 200
+
+@app.route('/api/admin/toggle_access', methods=['POST'])
+def toggle_user_access():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    data = request.get_json()
+    user_id = data.get('user_id')
+    new_status = data.get('is_approved')
+
+    if user_id is None or new_status is None:
+        return jsonify({'error': 'User ID and status required'}), 400
+
+    db = get_db()
+    try:
+        # Prevent disabling admins
+        cursor = db.execute("SELECT username, role, is_approved FROM users WHERE id = ?", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        if user['role'] == 'admin':
+            return jsonify({'error': 'Cannot disable access for admin users'}), 400
+
+        db.execute("UPDATE users SET is_approved = ? WHERE id = ?", (1 if new_status else 0, user_id))
+        db.commit()
+
+        recipient = user['username'] if '@' in user['username'] else None
+        if recipient:
+            if new_status and not user['is_approved']:
+                threading.Thread(target=send_approval_email, args=(recipient, user['username']), daemon=True).start()
+            elif not new_status and user['is_approved']:
+                threading.Thread(target=send_revocation_email, args=(recipient, user['username']), daemon=True).start()
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/admin/approve', methods=['POST'])
 def approve_user():
     if session.get('role') != 'admin':
@@ -3375,22 +3457,21 @@ def check_auth_status():
         cursor = db.execute('SELECT username, display_name, role, is_approved FROM users WHERE id = ?', (session['user_id'],))
         user = _fetchone_as_dict(cursor)
         if user:
+            session['is_approved'] = bool(user['is_approved'])
             return jsonify({
                 "logged_in": True,
                 "username": user['username'],
                 "display_name": user['display_name'] or user['username'],
                 "role": user['role'],
-                "is_approved": bool(user['is_approved'])
+                "is_approved": session['is_approved']
             }), 200
         else:
             return jsonify({"logged_in": False}), 200
     else:
         return jsonify({"logged_in": False}), 200
 @app.route('/api/chats', methods=['GET'])
+@require_approval
 def get_user_chats():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-    
     user_id = session['user_id']
     db = get_db()
     try:
@@ -3412,10 +3493,8 @@ def get_user_chats():
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/chats/new', methods=['POST'])
+@require_approval
 def create_new_chat():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-    
     user_id = session['user_id']
     db = get_db()
     try:
@@ -3438,10 +3517,8 @@ def create_new_chat():
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/set_active_chat', methods=['POST'])
+@require_approval
 def set_active_chat():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     data = request.get_json()
     chat_id = data.get('chat_id')
     if not chat_id:
@@ -3459,10 +3536,8 @@ def set_active_chat():
     
     return jsonify({'success': True, 'message': f'Active chat set to {chat_id}'})
 @app.route('/api/chats/<int:chat_id>/delete', methods=['DELETE'])
+@require_approval
 def delete_chat_route(chat_id):
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-    
     user_id = session['user_id']
     db = get_db()
     try:
@@ -3489,10 +3564,8 @@ def delete_chat_route(chat_id):
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/chats/<int:chat_id>/name', methods=['POST'])
+@require_approval
 def update_chat_name_route(chat_id):
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-    
     user_id = session['user_id']
     db = get_db()
     cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))
@@ -3519,10 +3592,8 @@ def update_chat_name_route(chat_id):
         return jsonify({'success': False, 'message': f'Error updating chat name: {str(e)}'}), 500
 
 @app.route('/api/chats/<int:chat_id>/tokens', methods=['GET'])
+@require_approval
 def get_chat_tokens_route(chat_id):
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-    
     user_id = session['user_id']
     db = get_db()
     cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))
@@ -3534,17 +3605,12 @@ def get_chat_tokens_route(chat_id):
     return jsonify({'token_count': token_count}), 200
 
 @app.route('/api/user/profile', methods=['GET'])
+@require_approval
 def get_user_profile():
-    if 'user_id' not in session:
-        return jsonify({"success": False, "message": "Not logged in."}), 401
-    
     return jsonify({"success": True, "username": session['username'], "user_id": session['user_id']}), 200
-
 @app.route('/api/user/change_display_name', methods=['POST'])
+@require_approval
 def change_display_name_route():
-    if 'user_id' not in session:
-        return jsonify({"success": False, "message": "Authentication required."}), 401
-    
     user_id = session['user_id']
     data = request.get_json()
     new_name = data.get('new_display_name')
@@ -3628,9 +3694,11 @@ def index():
     cursor = db.execute('SELECT is_approved FROM users WHERE id = ?', (session['user_id'],))
     user_data = cursor.fetchone()
 
-    # If the user was approved in the DB, update their session
-    if user_data and user_data[0] == 1:
-        session['is_approved'] = True
+    # Sync is_approved state with database
+    if user_data:
+        session['is_approved'] = bool(user_data[0])
+    else:
+        session.pop('is_approved', None)
 
     if not session.get('is_approved'):
         return serve_no_cache('waitlist.html')
@@ -3641,10 +3709,8 @@ def index():
         
     return serve_no_cache('index.html')
 @app.route('/api/chats/search_messages', methods=['GET'])
+@require_approval
 def search_messages_route():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-    
     user_id = session['user_id']
     search_term = request.args.get('search_term', '').strip()
 
@@ -3721,12 +3787,12 @@ def search_messages_route():
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/run_code', methods=['POST'])
+@require_approval
 def run_code():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
     if not client:
         return jsonify({'error': 'Docker client not available. Is Docker running?'}), 503
 
+    user_id = session['user_id']
     data = request.get_json()
     code = data.get('code')
     language = data.get('language')
@@ -3862,10 +3928,8 @@ def run_code():
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
 @app.route('/api/user/api_keys', methods=['POST'])
+@require_approval
 def manage_api_keys():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     user_id = session['user_id']
     data = request.get_json()
     if not data or not isinstance(data.get('api_keys'), dict):
@@ -3892,10 +3956,8 @@ def manage_api_keys():
 
 
 @app.route('/api/stop_container', methods=['POST'])
+@require_approval
 def stop_container():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     if not client:
         return jsonify({'error': 'Docker client is not available.'}), 503
 
@@ -3951,10 +4013,8 @@ def stop_container():
 
 
 @app.route('/api/visualize', methods=['POST'])
+@require_approval
 def generate_visualization():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     data = request.get_json()
     content = data.get('content')
     message_id = data.get('message_id') # Get message_id to persist visualization
@@ -4114,6 +4174,36 @@ class OrphanContainerMonitor:
                             pass
                         except Exception as e:
                             logger.error(f"Failed to remove orphan {container.short_id}: {e}")
+                    else:
+                        # Runtime Health Check for active apps
+                        try:
+                            app_data = None
+                            with active_apps_lock:
+                                app_data = active_apps.get(process_id)
+                            
+                            # Only check if it's supposed to be 'running'
+                            if app_data and app_data.get('port') and app_data.get('status') == 'running':
+                                # Use created_ts to avoid racing with initial startup (5 min grace period)
+                                if current_time - created_ts > 300: 
+                                    target_port = app_data['port']
+                                    try:
+                                        # Use host loopback to check the mapped port
+                                        check_url = f"http://127.0.0.1:{target_port}/api/ping"
+                                        # Use a short timeout to prevent monitor stalls
+                                        resp = requests.get(check_url, timeout=5)
+                                        if resp.status_code >= 500:
+                                            logger.error(f"OrphanContainerMonitor: App {process_id} health check returned {resp.status_code}")
+                                            with active_apps_lock:
+                                                active_apps[process_id]['status'] = 'failed'
+                                            redis_client.hset(_redis_forge_key(process_id), "status", "failed")
+                                    except Exception as req_err:
+                                        logger.error(f"OrphanContainerMonitor: App {process_id} health check failed (Connection Error): {req_err}")
+                                        # Mark as failed in Redis and memory so user sees the error
+                                        with active_apps_lock:
+                                            active_apps[process_id]['status'] = 'failed'
+                                        redis_client.hset(_redis_forge_key(process_id), "status", "failed")
+                        except Exception as h_err:
+                            logger.error(f"OrphanContainerMonitor: Health check logic error: {h_err}")
             except Exception as e:
                 logger.error(f"OrphanContainerMonitor: Error processing container {container.short_id}: {e}")
 
@@ -4173,11 +4263,14 @@ def cleanup_stale_containers():
     except Exception as e:
         logging.error(f"An unexpected error occurred during stale container cleanup: {e}")
 
-# Start the orphan monitor
-orphan_monitor = OrphanContainerMonitor(interval=60)
+# Start the orphan monitor - only in the main process to avoid multi-worker redundancy
 if not app.config.get('TESTING'):
+    # Note: In gunicorn, this might still trigger per worker if not careful, 
+    # but we initialize active_apps per process anyway.
+    orphan_monitor = OrphanContainerMonitor(interval=300)
     orphan_monitor.start()
     atexit.register(orphan_monitor.stop)
+
 active_apps = {}
 active_apps_lock = threading.Lock()
 @app.before_request
@@ -4190,8 +4283,16 @@ def intercept_subdomains():
         subdomain = domain_parts[0]
 
         db = get_db()
-        cursor = db.execute("SELECT process_id, subdomain FROM forge_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (subdomain,))
+        cursor = db.execute("SELECT process_id, subdomain, user_id FROM forge_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (subdomain,))
         row = cursor.fetchone()
+
+        if row:
+            # Verify owner approval
+            owner_id = row['user_id']
+            owner_cursor = db.execute("SELECT is_approved FROM users WHERE id = ?", (owner_id,))
+            owner_row = owner_cursor.fetchone()
+            if not owner_row or not owner_row[0]:
+                return f"Access Denied. The owner of '{subdomain}' is not approved or their access has been revoked.", 403
 
         # Fallback to process_id (uuid) if it's a temporary run_code container
         process_id = row['process_id'] if row else subdomain
@@ -4208,7 +4309,7 @@ def intercept_subdomains():
                     redis_key = _redis_runcode_key(process_id)
                     redis_data = redis_client.hgetall(redis_key)
 
-                if redis_data and redis_data.get("host_port") and redis_data.get("status") in["running", "created", "exited"]:
+                if redis_data and redis_data.get("host_port") and redis_data.get("status") in ["running", "created", "exited", "failed"]:
                     app_info = {
                         "port": int(redis_data["host_port"]),
                         "container_id": redis_data.get("container_id"),
@@ -4271,21 +4372,34 @@ def intercept_subdomains():
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Dynamic proxy error for app {process_id}: {e}")
+            
+            # Passive Health Check: If connection is refused/reset, mark as failed immediately
+            if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+                with active_apps_lock:
+                    if process_id in active_apps:
+                        active_apps[process_id]['status'] = 'failed'
+                try:
+                    redis_client.hset(_redis_forge_key(process_id), "status", "failed")
+                except:
+                    pass
+
             if app_info.get("status") == "exited":
                  return "Application not found or has been stopped.", 404
             return f"Error proxying request to application.", 502
 
 
 @app.route('/codelab/forge/files', methods=['GET'])
+@require_approval
 def forge_get_files():
-    if 'user_id' not in session or 'forge_project' not in session:
+    if 'forge_project' not in session:
         return jsonify({'error': 'No active Forge session.'}), 404
     return jsonify(session['forge_project'].get('files', {}))
 
 @app.route('/codelab/forge/database', methods=['GET'])
+@require_approval
 def forge_get_database():
     """Fetch the SQLite database file from the running Forge container."""
-    if 'user_id' not in session or 'forge_project' not in session:
+    if 'forge_project' not in session:
         return jsonify({'error': 'No active Forge session.'}), 404
     
     process_id = session['forge_project'].get('process_id')
@@ -4343,8 +4457,9 @@ def forge_get_database():
 
 
 @app.route('/codelab/forge/redeploy', methods=['POST'])
+@require_approval
 def forge_redeploy():
-    if 'user_id' not in session or 'forge_project' not in session:
+    if 'forge_project' not in session:
         return jsonify({'error': 'No active session.'}), 400
     if not client:
         return jsonify({'error': 'Docker client not available.'}), 503
@@ -4415,10 +4530,8 @@ def forge_redeploy():
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 
 @app.route('/api/forge/history', methods=['GET'])
+@require_approval
 def get_forge_history():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     user_id = session['user_id']
     db = get_db()
     cursor = db.execute('''
@@ -4436,10 +4549,8 @@ def get_forge_history():
     return jsonify({'history': history})
 
 @app.route('/api/forge/history/<int:history_id>/resume', methods=['POST'])
+@require_approval
 def resume_forge_history(history_id):
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     user_id = session['user_id']
     db = get_db()
     cursor = db.execute('SELECT * FROM forge_history WHERE id = ? AND user_id = ?', (history_id, user_id))
@@ -4491,13 +4602,10 @@ def resume_forge_history(history_id):
     return jsonify({'success': True, 'message': 'Project loaded.', 'files': files, 'process_id': process_id})
 
 @app.route('/api/forge/history/<int:history_id>', methods=['DELETE'])
+@require_approval
 def delete_forge_history(history_id):
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required.'}), 401
-
     user_id = session['user_id']
     db = get_db()
-
     cursor = db.execute('SELECT process_id, container_id FROM forge_history WHERE id = ? AND user_id = ?', (history_id, user_id))
     entry = _fetchone_as_dict(cursor)
 
