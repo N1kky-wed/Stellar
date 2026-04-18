@@ -40,8 +40,10 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
     memory_text = ""
     try:
         import sqlite3
-        # We assume stellar_local.db is in the same directory or accessible
-        db_path = "stellar_local.db"
+        import os
+        # Use absolute path to ensure we find the DB
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(base_dir, "stellar_local.db")
         user_id_str = str(user_id) if user_id else "global"
         
         conn = sqlite3.connect(db_path)
@@ -51,12 +53,12 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
         conn.close()
 
         if logs:
-            memory_text = "\n\n### PERSISTENT MEMORY & USER PREFERENCES (From logs_and_preferences):\n"
-            memory_text += "The following are your long-term memories, user preferences, and past error resolution strategies. Always adhere to these preferences and use this context to avoid repeating past mistakes:\n"
+            memory_text = "\n\n### [CRITICAL] PERSISTENT MEMORY & USER PREFERENCES:\n"
+            memory_text += "You MUST strictly adhere to the following stored memories and user preferences for this specific user:\n"
             memory_text += "\n".join([f"- {log}" for log in logs])
+            memory_text += "\n\n"
     except Exception as e:
-        # We don't want to crash the prompt generation if the database is busy or missing
-        memory_text = f"\n\n(Error loading persistent memory from DB: {str(e)})"
+        memory_text = f"\n\n(Note: Persistent memory sync skipped: {str(e)})"
 
     return f"""<!-- Internal Processing Guidelines -->
 
