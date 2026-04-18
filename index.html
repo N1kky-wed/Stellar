@@ -5085,7 +5085,6 @@
             const refreshLogsBtn = document.getElementById('refreshLogsBtn');
             const saveAllLogsBtn = document.getElementById('saveAllLogsBtn');
 
-            let memoryTokenDebounceTimeout;
             function updateMemoryTokenFootprint() {
                 const textareas = document.querySelectorAll('.log-entry-textarea');
                 const textList = Array.from(textareas).map(ta => ta.value.trim()).filter(t => t.length > 0);
@@ -5096,22 +5095,19 @@
                     return;
                 }
 
-                clearTimeout(memoryTokenDebounceTimeout);
-                memoryTokenDebounceTimeout = setTimeout(() => {
-                    fetch('/api/utils/count_tokens', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text_list: textList })
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        const footprintEl = document.getElementById('memoryTokenFootprint');
-                        if (footprintEl && data.token_count !== undefined) {
-                            footprintEl.textContent = `${data.token_count.toLocaleString()} Tokens`;
-                        }
-                    })
-                    .catch(err => console.error('Error counting tokens:', err));
-                }, 500); // 500ms debounce
+                fetch('/api/utils/count_tokens', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text_list: textList })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    const footprintEl = document.getElementById('memoryTokenFootprint');
+                    if (footprintEl && data.token_count !== undefined) {
+                        footprintEl.textContent = `${data.token_count.toLocaleString()} Tokens`;
+                    }
+                })
+                .catch(err => console.error('Error counting tokens:', err));
             }
 
             function fetchAndRenderLogs() {
@@ -5144,7 +5140,6 @@
                             textarea.oninput = () => {
                                 textarea.style.height = 'auto';
                                 textarea.style.height = textarea.scrollHeight + 'px';
-                                updateMemoryTokenFootprint();
                             };                            const actions = document.createElement('div');
                             actions.style.cssText = 'display:flex; justify-content:flex-end; gap:10px;';
                             
