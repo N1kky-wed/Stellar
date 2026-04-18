@@ -2150,6 +2150,14 @@ def stop_and_cleanup_app_by_process_id(process_id, app_type='forge'):
     except Exception:
         logger.exception("Failed to delete redis key for %s", process_id)
 
+    # Update database status to stopped
+    try:
+        db = get_db()
+        db.execute("UPDATE forge_history SET status = 'stopped' WHERE process_id = ?", (process_id,))
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to update database status to stopped for {process_id}: {e}")
+
 
 
 @app.route('/get_history', methods=['GET'])
@@ -2219,7 +2227,7 @@ def update_message_route():
 @app.route('/api/logs_preferences', methods=['GET', 'POST', 'DELETE'])
 @require_approval
 def api_logs_preferences():
-    user_id = session['username']
+    user_id = str(session['user_id'])
     db = get_db()
     
     if request.method == 'GET':
