@@ -4559,6 +4559,7 @@
                 <div style="display:flex; align-items:center; gap:12px;">
                     <span style="font-size:1.5rem;">🧠</span>
                     <h3 style="margin:0; font-size:1.2rem; color:var(--primary-text-color);">Memory Management</h3>
+                    <span id="memoryTokenFootprint" style="background:rgba(0,194,146,0.1); color:#00c292; font-size:0.75rem; font-family:'JetBrains Mono', monospace; padding:4px 10px; border-radius:100px; border:1px solid rgba(0,194,146,0.2); margin-left:8px;">0 Tokens</span>
                 </div>
                 <button id="closeLogsPrefsBtn" style="background:none; border:none; color:var(--secondary-text-color); font-size:1.5rem; cursor:pointer;">&times;</button>
             </div>
@@ -5084,6 +5085,35 @@
             const refreshLogsBtn = document.getElementById('refreshLogsBtn');
             const saveAllLogsBtn = document.getElementById('saveAllLogsBtn');
 
+            let memoryTokenDebounceTimeout;
+            function updateMemoryTokenFootprint() {
+                const textareas = document.querySelectorAll('.log-entry-textarea');
+                const textList = Array.from(textareas).map(ta => ta.value.trim()).filter(t => t.length > 0);
+                
+                if (textList.length === 0) {
+                    const footprintEl = document.getElementById('memoryTokenFootprint');
+                    if (footprintEl) footprintEl.textContent = '0 Tokens';
+                    return;
+                }
+
+                clearTimeout(memoryTokenDebounceTimeout);
+                memoryTokenDebounceTimeout = setTimeout(() => {
+                    fetch('/api/utils/count_tokens', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text_list: textList })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        const footprintEl = document.getElementById('memoryTokenFootprint');
+                        if (footprintEl && data.token_count !== undefined) {
+                            footprintEl.textContent = `${data.token_count.toLocaleString()} Tokens`;
+                        }
+                    })
+                    .catch(err => console.error('Error counting tokens:', err));
+                }, 500); // 500ms debounce
+            }
+
             function fetchAndRenderLogs() {
                 logsPrefsList.innerHTML = '<div style="color:var(--secondary-text-color); text-align:center; padding:20px;">Synchronizing memory nodes...</div>';
                 fetch('/api/logs_preferences')
@@ -5093,12 +5123,13 @@
                         const logs = data.logs || [];
                         if (logs.length === 0) {
                             logsPrefsList.innerHTML = '<div style="color:var(--secondary-text-color); text-align:center; padding:20px;">No memory nodes stored.</div>';
+                            updateMemoryTokenFootprint();
                             return;
                         }
                         logs.forEach((log, index) => {
                             const item = document.createElement('div');
                             item.style.cssText = 'background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:15px; display:flex; flex-direction:column; gap:10px; position:relative;';
-                            
+
                             const textarea = document.createElement('textarea');
                             textarea.value = log;
                             textarea.className = 'log-entry-textarea';
@@ -5113,8 +5144,8 @@
                             textarea.oninput = () => {
                                 textarea.style.height = 'auto';
                                 textarea.style.height = textarea.scrollHeight + 'px';
-                            };                            
-                            const actions = document.createElement('div');
+                                updateMemoryTokenFootprint();
+                            };                            const actions = document.createElement('div');
                             actions.style.cssText = 'display:flex; justify-content:flex-end; gap:10px;';
                             
                             const deleteBtn = document.createElement('button');
@@ -5123,13 +5154,21 @@
                             deleteBtn.onclick = () => {
                                 fetch(`/api/logs_preferences?index=${index}`, { method: 'DELETE' })
                                     .then(res => res.json())
-                                    .then(res => { if(res.success) fetchAndRenderLogs(); });
+                                    .then(res => { 
+                                        if(res.success) {
+                                            item.remove(); 
+                                            updateMemoryTokenFootprint();
+                                            // Re-render to update indices if needed, but remove from DOM immediately for snappy feel
+                                            fetchAndRenderLogs(); 
+                                        } 
+                                    });
                             };
                             item.appendChild(textarea);
                             item.appendChild(actions);
                             actions.appendChild(deleteBtn);
                             logsPrefsList.appendChild(item);
                         });
+                        updateMemoryTokenFootprint();
                     });
             }
 

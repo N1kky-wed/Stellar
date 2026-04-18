@@ -3607,10 +3607,29 @@ def get_chat_tokens_route(chat_id):
     chat_ownership = cursor.fetchone()
     if not chat_ownership:
         return jsonify({'error': 'Unauthorized to access this chat\'s tokens.'}), 403
-    
+
     token_count = count_chat_tokens(chat_id)
     return jsonify({'token_count': token_count}), 200
 
+@app.route('/api/utils/count_tokens', methods=['POST'])
+@require_approval
+def api_count_tokens():
+    data = request.get_json()
+    text_list = data.get('text_list', [])
+    if not text_list:
+        return jsonify({'token_count': 0}), 200
+
+    try:
+        from google.genai import types
+        client = genai.Client(api_key=PRIMARY_API_KEY)
+        contents = [types.Content(role="user", parts=[types.Part(text=t)]) for t in text_list]
+        token_count_response = client.models.count_tokens(
+            model="gemini-2.5-flash-lite", contents=contents
+        )
+        return jsonify({'token_count': token_count_response.total_tokens}), 200
+    except Exception as e:
+        logger.error(f"Error in api_count_tokens: {e}")
+        return jsonify({'error': str(e)}), 500
 @app.route('/api/user/profile', methods=['GET'])
 @require_approval
 def get_user_profile():
