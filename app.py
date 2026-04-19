@@ -182,8 +182,8 @@ def login_google():
                 db.commit()
                 user['display_name'] = name
         
-        # Update login count
-        db.execute('UPDATE users SET login_count = login_count + 1 WHERE id = ?', (user['id'],))
+        # Update login count and last active
+        db.execute('UPDATE users SET login_count = login_count + 1, last_active = CURRENT_TIMESTAMP WHERE id = ?', (user['id'],))
         db.commit()
 
         try:
@@ -333,6 +333,7 @@ def initialize_database():
                 role TEXT DEFAULT 'user',
                 is_approved BOOLEAN DEFAULT 0,
                 login_count INTEGER NOT NULL DEFAULT 0,
+                last_active DATETIME DEFAULT (CURRENT_TIMESTAMP),
                 created_at DATETIME DEFAULT (CURRENT_TIMESTAMP)
             )''')
 
@@ -407,6 +408,13 @@ def initialize_database():
                 print("Added 'display_name' column to 'users' table.")
             except Exception as e:
                 print(f"Error adding 'display_name' column: {e}")
+
+        if 'last_active' not in users_columns:
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN last_active DATETIME")
+                print("Added 'last_active' column to 'users' table.")
+            except Exception as e:
+                print(f"Error adding 'last_active' column: {e}")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_api_keys'")
         if cursor.fetchone() is None:
@@ -3343,8 +3351,7 @@ def get_admin_waitlist():
     # Calculate last_active, num_chats, num_projects, and total_tokens_approx
     query = """
         SELECT
-            u.id, u.username, u.display_name, u.role, u.is_approved, u.created_at,
-            (SELECT MAX(m.timestamp) FROM chats c JOIN messages m ON c.id = m.chat_id WHERE c.user_id = u.id) as last_active,
+            u.id, u.username, u.display_name, u.role, u.is_approved, u.created_at, u.last_active,
             (SELECT COUNT(*) FROM chats WHERE user_id = u.id) as num_chats,
             (SELECT COUNT(*) FROM forge_history WHERE user_id = u.id) as num_projects,
             (SELECT SUM(LENGTH(m.message_content)) FROM chats c JOIN messages m ON c.id = m.chat_id WHERE c.user_id = u.id) as total_tokens_approx
@@ -4256,6 +4263,17 @@ if not app.config.get('TESTING'):
 
 active_apps = {}
 active_apps_lock = threading.Lock()
+
+@app.before_request
+def update_last_active():
+    if 'user_id' in session:
+        try:
+            db = get_db()
+            db.execute("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE id = ?", (session['user_id'],))
+            db.commit()
+        except Exception as e:
+            pass # Silently fail to not interrupt user experience
+
 @app.before_request
 def intercept_subdomains():
     host = request.headers.get('Host', '')

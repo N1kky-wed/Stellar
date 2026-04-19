@@ -858,7 +858,13 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
             row = cursor.fetchone()
             if not row: return f"Error: Deployment '{app_id}' not found."
             
-            stop_and_cleanup_app_by_process_id(row['process_id'], app_type='forge')
+            p_id = row['process_id']
+            stop_and_cleanup_app_by_process_id(p_id, app_type='forge')
+            
+            # Explicitly update DB just in case, though stop_and_cleanup now does it too
+            db.execute("UPDATE forge_history SET status = 'stopped' WHERE process_id = ?", (p_id,))
+            db.commit()
+            
             return f"Deployment '{app_id}' has been stopped."
 
         if action == "restart":

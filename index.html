@@ -6101,9 +6101,13 @@
                 return `SVGBLOCKPLACEHOLDER${svgBlocks.length - 1}SVGBLOCK`;
             });
 
-            // 2. Protect Math
-            processedText = processedText.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?!\s)[^$\n]+?(?<!\s)\$)/g, (match) => {
-                mathBlocks.push(match);
+            // 2. Protect Math - Improved to avoid currency conflicts ($2,000)
+            processedText = processedText.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?!\s)[^$\n]{1,500}?(?<!\s)\$(?!\d))/g, (match) => {
+                let transformed = match;
+                if (match.startsWith('$') && !match.startsWith('$$')) {
+                    transformed = '\\(' + match.slice(1, -1) + '\\)';
+                }
+                mathBlocks.push(transformed);
                 return `MATHBLOCKPLACEHOLDER${mathBlocks.length - 1}MATHBLOCK`;
             });
 
@@ -6141,8 +6145,9 @@
         // Note: COSMOS_COMPATIBLE_MODELS kept for cosmos mode validation
         const COSMOS_COMPATIBLE_MODELS = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"];
         const katexDelimiters = [
-            { left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false },
-            { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }
+            { left: '$$', right: '$$', display: true },
+            { left: '\\(', right: '\\)', display: false },
+            { left: '\\[', right: '\\]', display: true }
         ];
 
         const modelThemes = {
