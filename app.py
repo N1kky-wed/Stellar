@@ -257,6 +257,13 @@ MODEL_NAMES = {
 }
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
+def get_fallback_chain(start_model):
+    chain = ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]
+    if start_model in chain:
+        idx = chain.index(start_model)
+        return chain[idx:]
+    return [start_model, "gemini-3.1-flash-lite-preview"]
+
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 adminpass=os.getenv("Admin")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -343,6 +350,7 @@ def initialize_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 name TEXT NOT NULL DEFAULT 'New Chat',
+                token_count INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )''')
@@ -415,6 +423,15 @@ def initialize_database():
                 print("Added 'last_active' column to 'users' table.")
             except Exception as e:
                 print(f"Error adding 'last_active' column: {e}")
+
+        cursor.execute("PRAGMA table_info(chats)")
+        chats_columns = [info[1] for info in cursor.fetchall()]
+        if 'token_count' not in chats_columns:
+            try:
+                cursor.execute("ALTER TABLE chats ADD COLUMN token_count INTEGER DEFAULT 0")
+                print("Added 'token_count' column to 'chats' table.")
+            except Exception as e:
+                print(f"Error adding 'token_count' column: {e}")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_api_keys'")
         if cursor.fetchone() is None:
@@ -538,6 +555,17 @@ def insert_message(chat_id, message_type, message_content,
                             generate_chat_name(target_chat_id, target_query)
                     
                     threading.Thread(target=thread_target, args=(current_app._get_current_object(), chat_id, user_query_for_name), daemon=True).start()
+
+            # Trigger Token Count update in background
+            def token_update_thread(app_instance, target_chat_id):
+                with app_instance.app_context():
+                    try:
+                        count_chat_tokens(target_chat_id)
+                    except Exception as e:
+                        logger.error(f"Error in token_update_thread: {e}")
+
+            threading.Thread(target=token_update_thread, args=(current_app._get_current_object(), chat_id), daemon=True).start()
+
             return last_id
         except sqlite3.OperationalError as e:
             logger.error(f"Database error in insert_message (Attempt {attempt + 1}/{max_retries}): {e}", exc_info=True)
@@ -726,26 +754,89 @@ def generate_unique_subdomain(project_name):
 def count_chat_tokens(chat_id=None):
     db = get_db()
     try:
+        # Get user_id for memory retrieval
+        cursor = db.execute('SELECT user_id FROM chats WHERE id = ?', (chat_id,))
+        chat_row = cursor.fetchone()
+        user_id = chat_row['user_id'] if chat_row else None
+
+        # 1. Get the exact system instruction (Refined Prompt template)
+        from prompts import get_refinement_prompt
+        # We pass empty history and query because we just want the 'wrapper' parts (System + Memory)
+        full_system_prompt = get_refinement_prompt("", [], user_id=user_id)
+        
+        # Extract everything before 'Conversation History:'
+        system_parts = full_system_prompt.split("Conversation History:")
+        system_instruction = system_parts[0].strip()
+
+        # Get messages
         cursor = db.execute(
-            '''SELECT message_type, message_content FROM messages WHERE chat_id = ? ORDER BY timestamp ASC''',
+            '''SELECT id, message_type, message_content, timestamp FROM messages WHERE chat_id = ? ORDER BY timestamp ASC''',
             (chat_id,)
         )
-        history_for_tokens = []
-        for row in _fetch_as_dict(cursor):
-            role = "user" if row['message_type'] == "user" else "model"
-            # Strip massive base64 images from token counter
-            clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', row['message_content'])
-            history_for_tokens.append(types.Content(role=role, parts=[types.Part(text=clean_content)]))
+        messages = _fetch_as_dict(cursor)
+        
+        # Get tool calls
+        cursor = db.execute(
+            '''SELECT id, tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? ORDER BY timestamp ASC''',
+            (chat_id,)
+        )
+        tool_calls = _fetch_as_dict(cursor)
 
-        if not history_for_tokens:
+        # Merge messages and tool calls by timestamp
+        combined_history = []
+        for m in messages:
+            combined_history.append({'type': 'message', 'data': m, 'ts': m['timestamp']})
+        for t in tool_calls:
+            combined_history.append({'type': 'tool', 'data': t, 'ts': t['timestamp']})
+        
+        combined_history.sort(key=lambda x: x['ts'])
+
+        # Start history with the System Instruction
+        history_for_tokens = [types.Content(role="system", parts=[types.Part(text=system_instruction)])]
+
+        for item in combined_history:
+            if item['type'] == 'message':
+                row = item['data']
+                role = "user" if row['message_type'] == "user" else "model"
+                clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', row['message_content'])
+                history_for_tokens.append(types.Content(role=role, parts=[types.Part(text=clean_content)]))
+            else:
+                # Tool call
+                t = item['data']
+                res_str = str(t['result'])
+                lines = res_str.split('\n')
+                num_lines = len(lines)
+                num_chars = len(res_str)
+
+                if 'data:image' in res_str:
+                    clean_res = "[Image Generated]"
+                elif num_chars > 600 or num_lines > 20:
+                    clean_res = f"[Output truncated. ID: {t['id']}, Lines: {num_lines}, Length: {num_chars} chars. Use read_tool_output(output_id={t['id']}) to view.]"
+                else:
+                    clean_res = res_str
+
+                tool_hist_entry = f"- [{t['timestamp']}] Tool: `{t['tool_name']}` (ID: {t['id']}) | Input: `{t['input_params']}` | Result: `{clean_res}`"
+                history_for_tokens.append(types.Content(role="user", parts=[types.Part(text=tool_hist_entry)]))
+
+        if len(history_for_tokens) <= 1: # Only system prompt
             return 0
          
         client = genai.Client(api_key=PRIMARY_API_KEY)
         token_count_response = client.models.count_tokens(
             model="gemini-2.5-flash-lite", contents=history_for_tokens
         )
-        logger.info(f"Token count for chat {chat_id}: {token_count_response.total_tokens}")
-        return token_count_response.total_tokens
+        t_count = token_count_response.total_tokens
+        
+        # Save to DB
+        try:
+            db = get_db()
+            db.execute("UPDATE chats SET token_count = ? WHERE id = ?", (t_count, chat_id))
+            db.commit()
+        except Exception as db_e:
+            logger.error(f"Error saving token count to DB for chat {chat_id}: {db_e}")
+
+        logger.info(f"Token count for chat {chat_id}: {t_count}")
+        return t_count
     except Exception as e:
         logger.error(f"Error counting tokens for chat {chat_id}: {e}")
         return 0
@@ -1322,7 +1413,13 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             else:
                  break
 
-    error_message = f"{ERROR_CODE}: Failed to generate response for {display_name} after {attempts} attempts (tried {current_key_index + 1} keys). Last Error: {str(last_exception)}"
+    error_info = {
+        "model": display_name,
+        "attempts": attempts,
+        "keys_tried": current_key_index + 1,
+        "last_error": str(last_exception)
+    }
+    error_message = f"{ERROR_CODE}: {display_name} failed to process the request. (Technical Details: {json.dumps(error_info)})"
     yield {'result': accumulated_full_output + error_message if accumulated_full_output else error_message}
 
 
@@ -1755,8 +1852,10 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     _put_event({'type': 'log', 'content': f'Reusing existing container ({container.short_id})...'})
                     
                     # Stop old app process
-                    # Use a robust python-based approach since pkill/ps might be missing in slim images
-                    container.exec_run("python3 -c \"import os, signal; my_pid = os.getpid(); [os.kill(int(p), signal.SIGKILL) for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid and 'app.py' in open(f'/proc/{p}/cmdline').read()]\"")
+                    # Kill both 'sh' and 'python' processes to prevent port conflicts
+                    container.exec_run("python3 -c \"import os, signal; my_pid = os.getpid(); [os.kill(int(p), signal.SIGKILL) for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid and any(kw in open(f'/proc/{p}/cmdline').read('\x00') for kw in ['app.py', 'python', 'flask'])]\"", user='root')
+                    container.exec_run("pkill -9 python || true", user='root')
+                    container.exec_run("pkill -f 'python app.py' || true", user='root')
                     
                     # Wait for the port to be fully released to prevent false-positive readiness
                     for _ in range(20):
@@ -2395,26 +2494,31 @@ def refine_stream():
                 conv_hist_list.append(tool_hist_context)
 
             refined_query_result = None
-            selected_model = model_id
+            models_to_try = get_fallback_chain(model_id)
+            last_error_details = ""
 
-            for model_attempt in range(max_model_attempts):
-                if check_and_log_stop(query_id, f"LLM call attempt {model_attempt+1}"): return
-                current_model = selected_model
+            for current_model in models_to_try:
+                if check_and_log_stop(query_id, f"LLM call {current_model}"): return
                 display_name = MODEL_NAMES.get(current_model, current_model)
                 current_api_key = PRIMARY_API_KEY
+                
                 if not current_api_key:
                     yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
-                    llm_error_occurred = True
                     return
-                if model_attempt > 0:
-                    yield f"data: {json.dumps({'status': f'Initial model failed. Falling back to {display_name}...', 'phase': 'refining'})}\n\n"
-                    time.sleep(1)
-                yield f"data: {json.dumps({'status': f'Thinking with {display_name}...', 'phase': 'refining'})}\n\n"
-                username = session.get('username')
-                user_id = session.get('user_id')
 
-                # Append the text prompt
-                text_prompt = get_refinement_prompt(user_query_from_frontend, conv_hist_list, username=username, disabled_tools=disabled_tools, user_id=user_id)                
+                if current_model == "gemini-3.1-flash-lite-preview" and last_error_details:
+                    yield f"data: {json.dumps({'status': 'Primary models busy. Lunarity is generating diagnostic report...', 'phase': 'diagnostic'})}\n\n"
+                    from prompts import get_error_explanation_prompt
+                    text_prompt = get_error_explanation_prompt(user_query_from_frontend, last_error_details)
+                else:
+                    if current_model != models_to_try[0]:
+                        yield f"data: {json.dumps({'status': f'Model failed. Falling back to {display_name}...', 'phase': 'refining'})}\n\n"
+                        time.sleep(1)
+                    yield f"data: {json.dumps({'status': f'Thinking with {display_name}...', 'phase': 'refining'})}\n\n"
+                    username = session.get('username')
+                    user_id = session.get('user_id')
+                    text_prompt = get_refinement_prompt(user_query_from_frontend, conv_hist_list, username=username, disabled_tools=disabled_tools, user_id=user_id)                
+
                 # Create a copy of multimodal_prompt and add the text_prompt
                 final_prompt = multimodal_prompt.copy()
                 final_prompt.append(types.Part.from_text(text=text_prompt))
@@ -2429,27 +2533,25 @@ def refine_stream():
                     chat_id=chat_id,
                     disabled_tools=disabled_tools
                 )
+                
                 refined_query_result = ""
+                model_failed = False
                 for item in generator_output:
                     if 'status' in item:
                         yield f"data: {json.dumps({'status': item['status'], 'phase': 'refining'})}\n\n"
                     elif 'result' in item:
                         temp_result = item['result']
                         if isinstance(temp_result, str) and temp_result.startswith(ERROR_CODE):
-                            # Extract and send the EXACT Python error to the UI
-                            exact_error = temp_result.replace(ERROR_CODE, "").strip(": ")
-                            yield f"data: {json.dumps({'status': f'Prompt Error: {exact_error}', 'error': True})}\n\n"
-                            refined_query_result = None
+                            last_error_details = temp_result
+                            model_failed = True
                             break
                         else:
                             refined_query_result += temp_result
-                if refined_query_result is not None:
+                
+                if not model_failed and refined_query_result:
                     break
                 else:
-                    if model_attempt == 0 and fallback_model and fallback_model != model_id:
-                        selected_model = fallback_model
-                    else:
-                         pass
+                    refined_query_result = None
 
             if refined_query_result is not None:
                 if check_and_log_stop(query_id, "database insert"): return
@@ -2631,45 +2733,54 @@ def search_stream():
             if check_and_log_stop(query_id, "research LLM call"): return
             
             research_analysis_result = None
-            selected_analysis_model = model_id
-            for model_attempt in range(max_model_attempts):
-                current_model = selected_analysis_model
+            analysis_models_to_try = get_fallback_chain(model_id)
+            last_analysis_error = ""
+
+            for current_model in analysis_models_to_try:
+                if check_and_log_stop(query_id, f"research LLM call {current_model}"): return
                 display_name = MODEL_NAMES.get(current_model, current_model)
                 current_api_key = PRIMARY_API_KEY
+                
                 if not current_api_key:
-                    yield f"data: {json.dumps({'status': 'Error: API Key for Search Analysis is missing.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
-                    error_occurred = True
+                    yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
                     return
-                if model_attempt > 0:
-                     fallback_status = f'Analysis model failed. Falling back to {display_name}...'
-                     yield f"data: {json.dumps({'status': fallback_status, 'phase': 'analysis_llm'})}\n\n"
-                     time.sleep(1)
-                yield f"data: {json.dumps({'status': f'Analyzing context with {display_name}...', 'phase': 'analysis_llm'})}\n\n"
-                research_prompt = get_research_analysis_prompt(user_query, full_context)
+
+                if current_model == "gemini-3.1-flash-lite-preview" and last_analysis_error:
+                    yield f"data: {json.dumps({'status': 'Analysis failed. Lunarity is generating diagnostic report...', 'phase': 'analysis_diagnostic'})}\n\n"
+                    from prompts import get_error_explanation_prompt
+                    research_prompt = get_error_explanation_prompt(user_query, last_analysis_error)
+                else:
+                    if current_model != analysis_models_to_try[0]:
+                        yield f"data: {json.dumps({'status': f'Analysis model failed. Falling back to {display_name}...', 'phase': 'analysis_llm'})}\n\n"
+                        time.sleep(1)
+                    yield f"data: {json.dumps({'status': f'Analyzing context with {display_name}...', 'phase': 'analysis_llm'})}\n\n"
+                    research_prompt = get_research_analysis_prompt(user_query, full_context)
+
                 generator_output_analysis = gemini_generate(
                     prompt=research_prompt, model_id=current_model, key=current_api_key,
                     attempts=len(BACKUP_API_KEYS),
                     model_display_name=f"{display_name} (Analysis)",
                     chat_id=chat_id
                 )
+                
                 research_analysis_result = ""
+                analysis_failed = False
                 for item in generator_output_analysis:
                     if 'status' in item:
                         yield f"data: {json.dumps({'status': item['status'], 'phase': 'analysis_llm'})}\n\n"
                     elif 'result' in item:
                         temp_result_analysis = item['result']
                         if isinstance(temp_result_analysis, str) and temp_result_analysis.startswith(ERROR_CODE):
-                            research_analysis_result = None
+                            last_analysis_error = temp_result_analysis
+                            analysis_failed = True
                             break
                         else:
                             research_analysis_result += temp_result_analysis
-                if research_analysis_result is not None:
-                     break
+                
+                if not analysis_failed and research_analysis_result:
+                    break
                 else:
-                     if model_attempt == 0 and fallback_model and fallback_model != model_id:
-                         selected_analysis_model = fallback_model
-                     else:
-                         pass
+                    research_analysis_result = None
 
             if not research_analysis_result:
                 yield f"data: {json.dumps({'status': f'Research analysis failed after all attempts for query_id {query_id}.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
@@ -2680,21 +2791,29 @@ def search_stream():
             if check_and_log_stop(query_id, "expansion LLM call"): return
             
             final_result = None
-            selected_expansion_model = model_id
-            for model_attempt in range(max_model_attempts):
-                current_model = selected_expansion_model
+            expansion_models_to_try = get_fallback_chain(model_id)
+            last_expansion_error = ""
+
+            for current_model in expansion_models_to_try:
+                if check_and_log_stop(query_id, f"expansion LLM call {current_model}"): return
                 display_name = MODEL_NAMES.get(current_model, current_model)
                 current_api_key = PRIMARY_API_KEY
+
                 if not current_api_key:
-                    yield f"data: {json.dumps({'status': 'Error: API Key for Search Expansion is missing.', 'error': True, 'phase': 'expansion_llm'})}\n\n"
-                    error_occurred = True
+                    yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
                     return
-                if model_attempt > 0:
-                    fallback_status = f'Expansion model failed. Falling back to {display_name}...'
-                    yield f"data: {json.dumps({'status': fallback_status, 'phase': 'expansion_llm'})}\n\n"
-                    time.sleep(1)
-                yield f"data: {json.dumps({'status': f'{display_name} is finalizing the paper...', 'phase': 'expansion_llm'})}\n\n"
-                final_prompt = get_final_expansion_prompt(user_query, research_analysis_result, full_context)
+
+                if current_model == "gemini-3.1-flash-lite-preview" and last_expansion_error:
+                    yield f"data: {json.dumps({'status': 'Expansion failed. Lunarity is generating diagnostic report...', 'phase': 'expansion_diagnostic'})}\n\n"
+                    from prompts import get_error_explanation_prompt
+                    final_prompt = get_error_explanation_prompt(user_query, last_expansion_error)
+                else:
+                    if current_model != expansion_models_to_try[0]:
+                        yield f"data: {json.dumps({'status': f'Expansion model failed. Falling back to {display_name}...', 'phase': 'expansion_llm'})}\n\n"
+                        time.sleep(1)
+                    yield f"data: {json.dumps({'status': f'{display_name} is finalizing the paper...', 'phase': 'expansion_llm'})}\n\n"
+                    final_prompt = get_final_expansion_prompt(user_query, research_analysis_result, full_context)
+
                 generator_output_expansion = gemini_generate(
                     prompt=final_prompt, model_id=current_model, key=current_api_key,
                     attempts=len(BACKUP_API_KEYS),
@@ -2702,25 +2821,25 @@ def search_stream():
                     chat_id=chat_id,
                     disabled_tools=disabled_tools
                 )
+
                 final_result = ""
+                expansion_failed = False
                 for item in generator_output_expansion:
                     if 'status' in item:
                          yield f"data: {json.dumps({'status': item['status'], 'phase': 'expansion_llm'})}\n\n"
                     elif 'result' in item:
                         temp_result_expansion = item['result']
                         if isinstance(temp_result_expansion, str) and temp_result_expansion.startswith(ERROR_CODE):
-                            final_result = None
+                            last_expansion_error = temp_result_expansion
+                            expansion_failed = True
                             break
                         else:
                             final_result += temp_result_expansion
-                if final_result is not None:
+
+                if not expansion_failed and final_result:
                     break
                 else:
-                    if model_attempt == 0 and fallback_model and fallback_model != model_id:
-                        selected_expansion_model = fallback_model
-                    else:
-                        pass
-            
+                    final_result = None
             if not final_result:
                 yield f"data: {json.dumps({'status': f'Failed to generate the final research paper after all attempts for query_id {query_id}.', 'error': True, 'phase': 'expansion_llm'})}\n\n"
                 error_occurred = True
@@ -3354,7 +3473,7 @@ def get_admin_waitlist():
             u.id, u.username, u.display_name, u.role, u.is_approved, u.created_at, u.last_active,
             (SELECT COUNT(*) FROM chats WHERE user_id = u.id) as num_chats,
             (SELECT COUNT(*) FROM forge_history WHERE user_id = u.id) as num_projects,
-            (SELECT SUM(LENGTH(m.message_content)) FROM chats c JOIN messages m ON c.id = m.chat_id WHERE c.user_id = u.id) as total_tokens_approx
+            (SELECT SUM(token_count) FROM chats WHERE user_id = u.id) as total_tokens_approx
         FROM users u
         ORDER BY last_active DESC, u.created_at DESC
     """
@@ -3610,12 +3729,15 @@ def update_chat_name_route(chat_id):
 def get_chat_tokens_route(chat_id):
     user_id = session['user_id']
     db = get_db()
-    cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))
-    chat_ownership = cursor.fetchone()
-    if not chat_ownership:
+    cursor = db.execute('SELECT token_count FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))
+    row = cursor.fetchone()
+    if not row:
         return jsonify({'error': 'Unauthorized to access this chat\'s tokens.'}), 403
 
-    token_count = count_chat_tokens(chat_id)
+    token_count = row['token_count']
+    if token_count == 0:
+         token_count = count_chat_tokens(chat_id)
+         
     return jsonify({'token_count': token_count}), 200
 
 @app.route('/api/utils/count_tokens', methods=['POST'])
@@ -4625,5 +4747,12 @@ def delete_forge_history(history_id):
 cleanup_stale_containers()
     
 if __name__ == '__main__':
+    # Ensure Docker images are ready before starting the server
+    try:
+        logger.info("Verifying and building Docker images via dockersetup.py...")
+        subprocess.run([sys.executable, "dockersetup.py"], check=True)
+    except Exception as e:
+        logger.error(f"Failed to run dockersetup.py: {e}")
+
     port = int(os.environ.get('PORT', 5013))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

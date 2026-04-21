@@ -852,20 +852,60 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
             db.commit()
             return f"Deployment renamed to '{project_name}'! New URL: {new_url}"
 
+        def _perform_snapshot(p_id, container_name, current_snapshot):
+            try:
+                client = docker.from_env()
+                container = client.containers.get(container_name)
+                # We identify files to snapshot by looking at the current snapshot keys
+                # This ensures we don't accidentally snapshot huge binary folders like node_modules
+                # unless they were part of the project's tracked files.
+                # However, for repo, we should also look for known code files.
+                tracked_files = list(current_snapshot.keys())
+                
+                # Scan for any code files in /app to ensure new files are captured
+                res = container.exec_run("find . -maxdepth 3 -not -path '*/.*' -not -path './node_modules/*' -not -path './venv/*' -type f", workdir="/app")
+                if res.exit_code == 0:
+                    found_files = res.output.decode('utf-8', 'replace').strip().split('\n')
+                    for f in found_files:
+                        f = f.lstrip('./')
+                        if f and f not in tracked_files:
+                            tracked_files.append(f)
+                
+                count = 0
+                for file_path in tracked_files:
+                    # Remove leading /app/ if present
+                    clean_path = file_path.replace('/app/', '').lstrip('/')
+                    if clean_path in ['repo', 'port']: continue
+                    
+                    res = container.exec_run(f"cat {clean_path}", workdir="/app")
+                    if res.exit_code == 0:
+                        current_snapshot[clean_path] = res.output.decode('utf-8', 'replace')
+                        count += 1
+                
+                db.execute("UPDATE forge_history SET files_snapshot = ? WHERE process_id = ?", (json.dumps(current_snapshot), p_id))
+                db.commit()
+                return count
+            except Exception as e:
+                print(f"Auto-snapshot failed for {p_id}: {e}")
+                return 0
+
         if action == "stop":
             if not app_id: return "Error: app_id is required to stop a deployment."
-            cursor = db.execute('SELECT process_id FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
+            cursor = db.execute('SELECT process_id, files_snapshot FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
             row = cursor.fetchone()
             if not row: return f"Error: Deployment '{app_id}' not found."
             
             p_id = row['process_id']
-            stop_and_cleanup_app_by_process_id(p_id, app_type='forge')
+            current_snapshot = json.loads(row['files_snapshot'])
             
-            # Explicitly update DB just in case, though stop_and_cleanup now does it too
+            # Deterministic Auto-Snapshot before destruction
+            snap_count = _perform_snapshot(p_id, f"stellar-repo-{p_id}", current_snapshot)
+            
+            stop_and_cleanup_app_by_process_id(p_id, app_type='forge')
             db.execute("UPDATE forge_history SET status = 'stopped' WHERE process_id = ?", (p_id,))
             db.commit()
             
-            return f"Deployment '{app_id}' has been stopped."
+            return f"Deployment '{app_id}' has been stopped. Auto-snapshotted {snap_count} files for persistence."
 
         if action == "restart":
             if not app_id: return "Error: app_id is required to restart a deployment."
@@ -877,7 +917,16 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
             process_id = row['process_id']
             project_title = row['project_name']
             subdomain = row['subdomain']
+            current_snapshot = json.loads(row['files_snapshot'])
+            
+            # Deterministic Auto-Snapshot before destruction
+            _perform_snapshot(process_id, f"stellar-repo-{process_id}", current_snapshot)
+            
+            # Reload updated snapshot
+            cursor = db.execute('SELECT files_snapshot FROM forge_history WHERE process_id = ?', (process_id,))
+            row = cursor.fetchone()
             snapshot = json.loads(row['files_snapshot'])
+            
             repo_url = snapshot.get('repo')
             port = snapshot.get('port', 3000)
             

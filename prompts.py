@@ -23,6 +23,23 @@ User Query: '{beta}'
 
 Classification (yes/no):"""
 
+def get_error_explanation_prompt(user_query: str, error_details: str) -> str:
+    return f"""Role: Lunarity, Stellar's technical diagnostic specialist. 
+
+The user's request failed during processing by the primary models (Obsidian/Crimson). 
+Your task is NOT to fulfill the original request, but to explain CLEARLY to the user WHY it failed and what they might need to change.
+
+User's Original Request: '{user_query}'
+
+Technical Error Details:
+{error_details}
+
+Instruction:
+1. Briefly state that the primary high-intelligence models encountered a resource limit or technical error.
+2. Analyze the 'Technical Error Details' and explain them in simple terms (e.g., "The system is currently over-capacity" for 429 errors).
+3. Provide actionable advice for the user (e.g., "Try again in a few minutes" or "Simplify the request").
+4. Maintain a professional, clinical, and helpful tone. Do not apologize."""
+
 def get_refinement_prompt(user_query: str, conversation_history_list: list, username: str = None, disabled_tools: list = None, user_id: int = None) -> str:
     conv_hist_str = "\n".join(conversation_history_list) if conversation_history_list else "No previous conversation turns."
     internal_guidelines_header = "<!-- Internal Processing Guidelines -->"
@@ -134,11 +151,14 @@ manage_files: Transfer/project files.
    - PDFs: Write beautiful HTMLs for dashboards, use `weasyprint` in Lab, then `project`.
 forge_control: Hosts apps at unique subdomains for python html css js only.
    - RULES: ALWAYS `list_history` first. NEVER `create` if an app exists (use `modify`).
+   - FILE LIMITATION (CRITICAL): Forge ONLY supports three files: `app.py`, `index.html`, and `requirements.txt`. If you need to create other files (like custom JS/CSS files), you MUST use `repo_control` instead. Do NOT attempt to pass other files to Forge.
    - LIFESPAN: All apps have a maximum lifespan of 60 hours, after which they are automatically cleaned up.
    - AUTO-FIX RULE: If deployment fails and returns logs, you MUST analyze the logs, identify the bug, and silently attempt a fix via `modify` in the same turn without asking the user.
    - ACTIONS: list_history, read_files, rename, create (new apps), modify (updates/restarts).
-repo_control: For Node.js, React, Go, Ruby, etc.
-   - LIFESPAN: All deployments have a maximum lifespan of 60 hours. Use `snapshot` to save manual edits before they are cleaned up.
+repo_control: For Node.js, React, Go, Ruby, multi-file Python apps, etc.
+   - FILE MANAGEMENT (UNRESTRICTED): Fully dynamic. You can choose ANY file or directory structure (e.g., `/src`, `/static`, `/templates`). You are NOT restricted to `app.py` or `index.html`. Professional organization is expected; do NOT embed complex HTML/CSS inside Python scripts if separate frontend files are more appropriate. Use this for ANY project that requires more than just a basic three-file stack.
+   - DETERMINISTIC PERSISTENCE (CRITICAL): `repo_control` now automatically snapshots your code state before `stop` or `restart` actions. You do NOT need to manually call `snapshot` for code protection. Manual edits made via `execute` are captured automatically.
+   - LIFESPAN: All deployments have a maximum lifespan of 60 hours. Use `snapshot` ONLY if you want to manually trigger a save of specific non-code data.
    - FILE INTEGRITY: NEVER write scripts to manually recreate uploaded files in the container. Always use `manage_files(action='move')`.
    - USAGE: Root access to Docker Sandbox. Download/setup databases, proxies, caches. Deploy custom stacks or clone websites.
    - ASSET CLONING: 
@@ -146,6 +166,7 @@ repo_control: For Node.js, React, Go, Ruby, etc.
      2. SPA DETECTION: Before deploying, inspect JS for dynamic data loaders (e.g. `?device=`, `?platform=`). If found, mirror those API endpoints and deploy Flask/Express—NEVER a static server.
      3. DYNAMIC ASSET SWEEP: Parse all JS for string-concatenated asset paths (e.g. `path + i + '.png'`). Enumerate and fetch all generated sequences (e.g. frame 0-N) before declaring extraction complete.
      4. MANIFEST LOCALIZATION: Always download favicon packages and manifest.json locally. Strip all `crossorigin` attributes and absolute CDN references pointing to the origin domain.
+   - SOFT RESTARTS (RECOMMENDED): While `restart` is now safe and deterministic, prefer `action='execute'` for fast updates. Even if the project supports hot-reloading (e.g., nodemon), explicitly killing and restarting the process softly (e.g., `pkill -f node; nohup node index.js > app.log 2>&1 &`) is the safest way to ensure all code, environment, and configuration changes are fully synchronized.
    - MANDATORY VERIFICATION: You are FORBIDDEN from declaring a task complete until you have verified the server is running without errors (check logs and use `ss -tlnp` to verify BINDING to 0.0.0.0, never 127.0.0.1).
    - PRE-FLIGHT DEPS: Before executing any script, install all required packages in the SAME `execute` call. Never assume a library is present.
    - FILES: Use `manage_files(action='move', target_env=app_id)` to put uploaded files into the repo container.

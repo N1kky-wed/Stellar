@@ -8546,7 +8546,7 @@
 
 
 
-        async function updateTokenCount() {
+        async function updateTokenCount(forceUpdate = false) {
 
             document.querySelectorAll('.chat-item-token-counter').forEach(el => {
                 el.style.display = 'none';
@@ -8571,7 +8571,8 @@
             }
 
             try {
-                const response = await fetch(`/api/chats/${currentChatId}/tokens`);
+                const url = forceUpdate ? `/api/chats/${currentChatId}/tokens?refresh=true` : `/api/chats/${currentChatId}/tokens`;
+                const response = await fetch(url);
                 if (!response.ok) {
                     console.error("Failed to fetch token count:", response.status);
                     return;
