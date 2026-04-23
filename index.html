@@ -722,73 +722,110 @@
             color: var(--secondary-text-color);
         }
 
-        .placeholder-status {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            font-style: normal;
-        }
+/* --- SUPERCHARGED STATUS UI --- */
+.placeholder-status {
+    display: flex;
+    flex-direction: column;
+    gap: 12px; /* Increased gap for better breathing room */
+    font-style: normal;
+    margin-top: 5px;
+    padding-left: 2px;
+}
 
-        .status-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.95em;
-            transition: all 0.3s ease;
-        }
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 14px; /* More space between icon and text */
+    font-size: 0.95rem; /* Fixed rem size instead of em so it stays consistent */
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    
+    /* Smooth slide-in for new steps */
+    animation: statusSlideIn 0.3s ease-out forwards;
+    opacity: 0;
+    transform: translateY(8px);
+}
 
-        .status-item.active .status-text {
-            background: linear-gradient(
-                90deg,
-                var(--secondary-text-color) 0%,
-                #ffffff 50%,
-                var(--secondary-text-color) 100%
-            );
-            background-size: 200% auto;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            animation: shimmer 2s linear infinite;
-            font-weight: 500;
-        }
+@keyframes statusSlideIn {
+    to { opacity: 1; transform: translateY(0); }
+}
 
-        .status-item.active .status-icon-container {
-            color: var(--model-color-start);
-        }
+.status-text {
+    font-family: 'Poppins', sans-serif;
+    letter-spacing: 0.3px;
+    line-height: 1.4;
+}
 
-        .status-item.completed {
-            color: var(--secondary-text-color);
-        }
+.status-item.active .status-text {
+    /* Upgraded Shimmer: Weaves model colors into the white sweep */
+    background: linear-gradient(
+        110deg,
+        var(--secondary-text-color) 0%,
+        var(--model-color-start) 30%,
+        #ffffff 50%,
+        var(--model-color-end) 70%,
+        var(--secondary-text-color) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 2.5s linear infinite;
+    font-weight: 600; /* Much thicker and bolder */
+}
 
-        .status-item.completed .status-text {
-            -webkit-text-fill-color: var(--secondary-text-color);
-        }
+.status-item.completed {
+    color: var(--secondary-text-color);
+}
 
-        @keyframes shimmer {
-            to { background-position: 200% center; }
-        }
+.status-item.completed .status-text {
+    -webkit-text-fill-color: var(--secondary-text-color);
+    font-weight: 500; /* Slightly thicker than base for legibility */
+    opacity: 0.85;
+}
 
-        .status-item.error .status-text {
-            color: #ff6b6b;
-            -webkit-text-fill-color: #ff6b6b;
-            background: none;
-            animation: none;
-        }
+.status-icon-container {
+    width: 20px; /* Slightly larger container to anchor the list */
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0; 
+}
 
-        .status-icon-container {
-            width: 16px;
-            height: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+.checkmark {
+    color: #00F090; /* Premium neon green */
+    filter: drop-shadow(0 0 6px rgba(0, 240, 144, 0.4)); /* Subtle glowing aura */
+}
 
-        .checkmark {
-            color: #00c292;
-        }
+.status-item.active .status-icon-container {
+    color: var(--model-color-start);
+    filter: drop-shadow(0 0 8px var(--model-color-shadow)); /* Glow for active spinner */
+}
 
-        .status-error-icon {
-            color: #ff6b6b;
-        }
+/* Smoother cubic-bezier rotation for the new spinner */
+.tool-spinner {
+    animation: tool-spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes tool-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+    to { background-position: 200% center; }
+}
+
+.status-item.error .status-text {
+    color: #ff6b6b;
+    -webkit-text-fill-color: #ff6b6b;
+    background: none;
+    animation: none;
+}
+
+.status-error-icon {
+    color: #ff6b6b;
+}
+/* ---------------------------------- */
 
         .placeholder-status.clickable {
             cursor: pointer;
@@ -7477,7 +7514,7 @@
                 if (!statusSpan.style.display || statusSpan.style.display !== 'flex') {
                     statusSpan.style.display = 'flex';
                     statusSpan.style.flexDirection = 'column';
-                    statusSpan.style.gap = '6px';
+                    statusSpan.style.gap = '12px';
                     statusSpan.innerHTML = ''; // clear initial placeholder text if needed
                 }
 
@@ -7506,7 +7543,7 @@
                              currentActiveItem.querySelector('.status-icon-container').innerHTML = '<svg class="status-error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
                         } else {
                              currentActiveItem.classList.add('completed');
-                             currentActiveItem.querySelector('.status-icon-container').innerHTML = '<svg class="checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                             currentActiveItem.querySelector('.status-icon-container').innerHTML = '<svg class="checkmark" viewBox="0 0 24 24" fill="currentColor" style="width:18px;height:18px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
                         }
                     }
 
@@ -7516,7 +7553,10 @@
                         item.className = 'status-item active';
                         item.innerHTML = `
                             <div class="status-icon-container">
-                                <svg class="tool-spinner" viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                                <svg class="tool-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" style="width:18px;height:18px;">
+                                    <circle cx="12" cy="12" r="10" opacity="0.2"></circle>
+                                    <path d="M12 2a10 10 0 0 1 10 10"></path>
+                                </svg>
                             </div>
                             <div class="status-text">${escapeHtml(displayMsg)}</div>
                         `;
