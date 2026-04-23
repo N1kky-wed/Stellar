@@ -494,6 +494,22 @@ def initialize_database():
             except Exception as e:
                 print(f"Error adding 'is_temp' column: {e}")
 
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='scheduled_tasks'")
+        if cursor.fetchone() is None:
+            cursor.execute('''CREATE TABLE scheduled_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                chat_id INTEGER NOT NULL,
+                task_prompt TEXT NOT NULL,
+                model_id TEXT NOT NULL,  -- STORES THE MODEL THAT CREATED THE TASK
+                execute_at DATETIME,
+                recurring_minutes INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                last_run DATETIME,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
+            )''')
+
         db.commit()
 
 initialize_database()
@@ -1315,7 +1331,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
             for tool in called_tools_results:
                 # Do not force-attach raw data from search tools, project history, Lab execution logs, or YouTube analysis, or preference logs
-                if tool['name'] in ['extensive_search', 'native_search', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences']:
+                if tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and ("Your Forge Deployment History" in tool['result'] or "Source Code for Project" in tool['result']):
                     continue
@@ -3373,8 +3389,8 @@ def serve_turndown():
     return send_from_directory('.', 'turndown.js')
 
 def send_approval_email(recipient_email, display_name):
-    sender = "stellarai.live@gmail.com"
-    password = "xhlb etoe kunw poas"
+    sender = os.getenv("EMAIL_USER")
+    password = os.getenv("EMAIL_PASS")
     
     msg = EmailMessage()
     msg['Subject'] = "Stellar: Access Granted"
@@ -3422,8 +3438,8 @@ def send_approval_email(recipient_email, display_name):
         logger.error(f"FAILURE sending approval email: {str(e)}")
 
 def send_revocation_email(recipient_email, display_name):
-    sender = "stellarai.live@gmail.com"
-    password = "xhlb etoe kunw poas"
+    sender = os.getenv("EMAIL_USER")
+    password = os.getenv("EMAIL_PASS")
     
     msg = EmailMessage()
     msg['Subject'] = "Stellar: Access Status Update"
@@ -4777,9 +4793,85 @@ def delete_forge_history(history_id):
 
     return jsonify({'success': True, 'message': 'History entry deleted.'})
 cleanup_stale_containers()
-    
-if __name__ == '__main__':
-    # Ensure Docker images are ready before starting the server
+
+class TaskSchedulerMonitor:
+    def __init__(self, app_instance, interval=60):
+        self.app_instance = app_instance
+        self.interval = interval
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
+
+    def start(self):
+        self.thread.start()
+
+    def stop(self):
+        self.stop_event.set()
+
+    def _monitor_loop(self):
+        while not self.stop_event.is_set():
+            try:
+                self._check_tasks()
+            except Exception as e:
+                logger.error(f"Error in TaskSchedulerMonitor: {e}")
+            time.sleep(self.interval)
+
+    def _check_tasks(self):
+        with self.app_instance.app_context():
+            db = get_db()
+            cursor = db.execute('''
+                SELECT id, user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes
+                FROM scheduled_tasks
+                WHERE is_active = 1
+                AND (execute_at IS NULL OR execute_at <= datetime('now', 'localtime'))
+            ''')
+            tasks = cursor.fetchall()
+            for task in tasks:
+                self._execute_ai_task(task['user_id'], task['chat_id'], task['task_prompt'], task['model_id'])
+                if task['recurring_minutes'] > 0:
+                    db.execute('''
+                        UPDATE scheduled_tasks
+                        SET execute_at = datetime('now', 'localtime', '+' || ? || ' minutes'), last_run = datetime('now', 'localtime')
+                        WHERE id = ?
+                    ''', (task['recurring_minutes'], task['id']))
+                else:
+                    db.execute("UPDATE scheduled_tasks SET is_active = 0, last_run = datetime('now', 'localtime') WHERE id = ?", (task['id'],))
+            db.commit()
+
+    def _execute_ai_task(self, user_id, chat_id, task_prompt, model_id):
+        with self.app_instance.app_context():
+            from flask import g
+            # Set global context for tools to use in background threads
+            g.user_id = user_id
+            g.chat_id = chat_id
+            
+            from app import get_conversation_history, insert_message, gemini_generate, PRIMARY_API_KEY
+            history = get_conversation_history(chat_id)
+            conv_hist_list = [f"{'User' if m['message_type']=='user' else 'Stellar'}: {m['message_content']}" for m in history[-10:]]
+
+            from prompts import get_refinement_prompt
+            # Wrap the task prompt in a directive to prevent hallucinations/refusals
+            directive_prompt = f"### SCHEDULED TASK EXECUTION MANDATE\nYou are executing a pre-authorized scheduled task. You MUST use the necessary tools to fulfill this request immediately. Do not apologize or simulate the action.\n\nTask: {task_prompt}"
+            
+            system_prompt = get_refinement_prompt(directive_prompt, conv_hist_list, user_id=user_id)
+
+            generator = gemini_generate(
+                prompt=system_prompt, 
+                model_id=model_id, # MODEL LOCK ENFORCED
+                key=PRIMARY_API_KEY, 
+                chat_id=chat_id
+            )
+
+            final_output = ""
+            for chunk in generator:
+                if 'result' in chunk: final_output += chunk['result']
+
+            if final_output:
+                insert_message(chat_id, "stellar", f"**⏰ Scheduled Execution ({model_id}):**\n\n{final_output}")
+
+task_scheduler = TaskSchedulerMonitor(app)
+task_scheduler.start()
+
+if __name__ == '__main__':    # Ensure Docker images are ready before starting the server
     try:
         logger.info("Verifying and building Docker images via dockersetup.py...")
         subprocess.run([sys.executable, "dockersetup.py"], check=True)

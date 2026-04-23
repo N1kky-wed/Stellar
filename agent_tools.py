@@ -17,40 +17,122 @@ logger = logging.getLogger(__name__)
 SVG_START_RE = re.compile(r'^```(?:svg|xml)?\s*', re.IGNORECASE)
 SVG_END_RE = re.compile(r'\s*```$')
 
-def extensive_search(query: str, status: str, topic: str = "general", days: int = 3, max_results: int = 10) -> str:
-    """Performs a deep web search using Tavily API.
+def web_search(action: str, query: str, status: str, search_depth: str = "advanced", topic: str = "general", days: int = 3, max_results: int = 10, include_answer: bool = True) -> str:
+    """Unified Search Engine. Use 'quick' for Google-speed facts or 'extensive' for deep Tavily research.
     Args:
-        query: The search query
+        action: 'quick' (Google Search) or 'extensive' (Tavily Deep Search).
+        query: The search terms.
         status: Status update for the user.
-        topic: 'general' or 'news'
-        days: for news, how many days back
-        max_results: number of results to return
+        search_depth: 'basic' or 'advanced' (for extensive).
+        topic: 'general' or 'news'.
+        days: How many days back for news (for extensive).
+        max_results: Number of results (1-20).
+        include_answer: Request a generated AI summary (for extensive).
     """
-    api_key = os.getenv("TAVILY_API_KEY")
-    if not api_key:
-        return "Error: Tavily API key not found."
-    
-    client = TavilyClient(api_key=api_key)
-    try:
-        response = client.search(query=query, topic=topic, days=days, max_results=max_results, search_depth="advanced")
-        results = response.get('results', [])
-        if not results:
-            return "No results found."
+    from app import PRIMARY_API_KEY
+    import os
+
+    if action == "quick":
+        client = genai.Client(api_key=PRIMARY_API_KEY)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash-lite',
+            contents=query,
+            config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+        )
+        return response.text
+
+    elif action == "extensive":
+        from tavily import TavilyClient
+        t_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+        response = t_client.search(query=query, topic=topic, days=days, max_results=max_results, search_depth=search_depth, include_answer=include_answer)
+        return str(response)
+
+def send_self_email(subject: str, body: str, status: str, attachment_path: str = None) -> str:
+    """Secure Closed-Loop Mailer. Sends reports/files ONLY to your registered email address.
+    Args:
+        subject: Subject line.
+        body: Content of the email.
+        status: Status update for the user.
+        attachment_path: Optional path to a file in /outputs or /uploads to attach.
+    """
+    from flask import session, g, has_request_context
+    import smtplib, mimetypes, os, sqlite3
+    from email.message import EmailMessage
+
+    # Handle background context where session is unavailable
+    user_email = None
+    if has_request_context():
+        user_email = session.get('username')
         
-        formatted = "### Search Results:\n\n"
-        from bs4 import BeautifulSoup
-        import re
-        for r in results:
-            content = r.get('content', '')
-            if content:
-                content = BeautifulSoup(content, 'html.parser').get_text(separator=' ', strip=True)
-                content = re.sub(r'\s+', ' ', content)
-            
-            formatted += f"**[{r.get('title', 'Unknown Title')}]({r.get('url', '#')})**\n"
-            formatted += f"{content}\n\n"
-        return formatted
+    if not user_email and hasattr(g, 'user_id'):
+        try:
+            from app import DATABASE_NAME
+            conn = sqlite3.connect(DATABASE_NAME)
+            conn.row_factory = sqlite3.Row
+            user = conn.execute('SELECT username FROM users WHERE id = ?', (g.user_id,)).fetchone()
+            if user:
+                user_email = user['username']
+            conn.close()
+        except Exception as db_e:
+            logger.error(f"Error fetching email for background task: {db_e}")
+
+    if not user_email:
+        return "Error: Could not determine recipient email address (Session/Context missing)."
+
+    sender_email = os.getenv("EMAIL_USER")
+    sender_password = os.getenv("EMAIL_PASS")
+
+    msg = EmailMessage()
+    msg['Subject'] = f"[STELLAR] {subject}"
+    msg['From'] = f"Stellar System <{sender_email}>"
+    msg['To'] = user_email
+    msg.set_content(f"{body}\n\n---\nTransmission from your Stellar Environment.")
+
+    if attachment_path and os.path.exists(attachment_path):
+        ctype, encoding = mimetypes.guess_type(attachment_path)
+        maintype, subtype = (ctype or 'application/octet-stream').split('/', 1)
+        with open(attachment_path, 'rb') as fp:
+            msg.add_attachment(fp.read(), maintype=maintype, subtype=subtype, filename=os.path.basename(attachment_path))
+
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(sender_email, sender_password)
+            smtp.send_message(msg)
+        return f"Success: Email sent to {user_email}."
     except Exception as e:
-        return f"Error during search: {str(e)}"
+        return f"Mail Failure: {str(e)}"
+
+def schedule_task(task_prompt: str, status: str, model_id: str, execute_at: str = None, recurring_minutes: int = 0) -> str:
+    """Schedules an autonomous task. 
+    Args:
+        task_prompt: Instructions for the AI to follow when the time triggers.
+        status: Status update for the user.
+        model_id: Your current model identifier (e.g., 'gemini-3-flash-preview' for Crimson). MANDATORY for persistence.
+        execute_at: ISO datetime 'YYYY-MM-DD HH:MM:SS' for one-time tasks.
+        recurring_minutes: Minutes between executions for repeating tasks.
+    """
+    from flask import session, request, has_request_context, g
+    from app import get_db
+
+    db = get_db()
+    
+    u_id = None
+    c_id = None
+    
+    if has_request_context():
+        u_id = session.get('user_id')
+        c_id = session.get('current_chat_id')
+        
+    if not u_id: u_id = getattr(g, 'user_id', None)
+    if not c_id: c_id = getattr(g, 'chat_id', None)
+    
+    if not u_id or not c_id:
+        return "Error: Could not determine User or Chat ID for scheduling."
+
+    db.execute('INSERT INTO scheduled_tasks (user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes) VALUES (?,?,?,?,?,?)',
+               (u_id, c_id, task_prompt, model_id, execute_at, recurring_minutes))
+    db.commit()
+    return f"Task scheduled! {model_id} is locked for this persistent automation."
 
 def generate_image(model: str, prompt: str, status: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None) -> str:
     """Generates an image using Gemini's Imagen model.
@@ -137,28 +219,7 @@ def generate_image(model: str, prompt: str, status: str, quality: str = "1K", as
     except Exception as e:
         return f"Error generating image: {str(e)}"
 
-def native_search(prompt: str, status: str) -> str:
-    """Uses gemini-2.5-flash-lite with Google Search tool enabled to search the web and return the result.
-    Args:
-        prompt: A fully self-contained search query to send to Google. Never use pronouns like 'it' or 'that', specify exactly what you are looking for.
-        status: Status update for the user.
-    """
-    import datetime
-    from app import PRIMARY_API_KEY
-    try:
-        current_date = datetime.datetime.now().strftime('%A, %B %d, %Y')
-        client = genai.Client(api_key=PRIMARY_API_KEY)
-        response = client.models.generate_content(
-            model='gemini-2.5-flash-lite',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=f"Today's date is {current_date}.",
-                tools=[types.Tool(google_search=types.GoogleSearch())]
-            )
-        )
-        return response.text
-    except Exception as e:
-        return f"Error in native search: {str(e)}"
+
 
 def logs_and_preferences(status: str, write: str = "", user_id: str = "global") -> str:
     """Stores user preferences, previous errors, and resolution strategies. Memory is automatically provided to your context.
@@ -1508,8 +1569,9 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
 # Define the tools list for Gemini
 
 available_tools = [
-    native_search,
-    extensive_search,
+    web_search,
+    send_self_email,
+    schedule_task,
     generate_image,
     make_presentation,
     regenerate_presentation_slide,

@@ -51,8 +51,10 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
     import datetime
     import os
     import json
-    current_date = datetime.datetime.now().strftime('%A, %B %d, %Y')
-    
+    now = datetime.datetime.now()
+    current_date = now.strftime('%A, %B %d, %Y')
+    current_time = now.strftime('%I:%M:%S %p')
+
     # Force Memory Injection from database user_logs_prefs
     memory_text = ""
     try:
@@ -79,7 +81,7 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
 
     return f"""<!-- Internal Processing Guidelines -->
 
-Role: Stellar, an elite AI Agent. Identity: Absolute precision, technical mastery, professional directness. You operate on the stellarai.live platform. Capabilities: Real-time search, native full-stack app generation. Date: {current_date}.
+Role: Stellar, an elite AI Agent. Identity: Absolute precision, technical mastery, professional directness. You operate on the stellarai.live platform. Capabilities: Real-time search, native full-stack app generation. Current Local Time (IST): {current_time} on {current_date}.
 
 {disabled_tools_str}
 {memory_text}
@@ -125,8 +127,9 @@ KEY BEHAVIORAL RULES:
 
 7. TOOLING SPECIFICATIONS (CRITICAL: The 'status' parameter is MANDATORY for all tools. Use it to provide professional, concise, and technical updates to the user in real-time):
 
-native_search(prompt, status): Fast factual lookups via Google. Pass standalone query.
-extensive_search(query, status): Deep research via Tavily (reports, news, multi-domain).
+web_search(action, query, status, ...): Unified Search Engine. Use 'quick' (Google) for fast factual lookups or 'extensive' (Tavily) for deep multi-domain research.
+send_self_email(subject, body, status, attachment_path): Secure Closed-Loop Mailer. Sends reports/files ONLY to the registered email address.
+schedule_task(task_prompt, status, model_id, execute_at, recurring_minutes): Persistent automation engine. You MUST pass your current model identifier (model_id) to ensure Model-Locked Persistence.
 logs_and_preferences(write, status): Build your long-term memory. Stores user preferences, past errors, and resolution strategies across environments.
     - write (str): Set text to save a new preference, error log, or resolution strategy.
     - MANDATE: Memory is AUTOMATICALLY provided to your context at the start of every turn. You cannot "read" from this tool.

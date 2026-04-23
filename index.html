@@ -4678,6 +4678,14 @@
                 <button id="openAgentSettingsBtn" type="button">Agent Tool Settings</button>
             </div>
 
+            <div class="toggle-item" style="margin-top: 15px; background: rgba(255,255,255,0.05);">
+                <span>Browser Notifications</span>
+                <label class="admin-toggle">
+                    <input type="checkbox" id="profile-notifications-toggle" checked>
+                    <span class="admin-slider"></span>
+                </label>
+            </div>
+
             <button id="logoutButtonProfile">Logout</button>
         </div>
     </div>
@@ -4772,28 +4780,13 @@
                 <div class="tool-card">
                     <div class="tool-card-header">
                         <div class="tool-card-icon">🌐</div>
-                        <div class="tool-card-title">Extensive Web Search</div>
+                        <div class="tool-card-title">Unified Web Search</div>
                     </div>
-                    <div class="tool-card-desc">Deep multi-domain research, real-time news monitoring, and cross-source factual verification.</div>
+                    <div class="tool-card-desc">Deep multi-domain research, real-time news monitoring, and high-speed factual lookups.</div>
                     <div class="tool-card-footer">
                         <span class="status-label">Tool Status</span>
                         <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
-                            <input type="checkbox" id="toolToggle-extensive_search" checked class="toggle-checkbox">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="tool-card">
-                    <div class="tool-card-header">
-                        <div class="tool-card-icon">⚡</div>
-                        <div class="tool-card-title">Fast Web Search</div>
-                    </div>
-                    <div class="tool-card-desc">High-speed factual lookups and real-time grounding for immediate query resolution.</div>
-                    <div class="tool-card-footer">
-                        <span class="status-label">Tool Status</span>
-                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
-                            <input type="checkbox" id="toolToggle-native_search" checked class="toggle-checkbox">
+                            <input type="checkbox" id="toolToggle-web_search" checked class="toggle-checkbox">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
@@ -4889,16 +4882,31 @@
                     </div>
                 </div>
 
-                <div class="tool-card" style="border-color: var(--model-color-start); background: rgba(var(--model-color-start-rgb), 0.05);">
+                <div class="tool-card">
                     <div class="tool-card-header">
-                        <div class="tool-card-icon">🔔</div>
-                        <div class="tool-card-title">Browser Notifications</div>
+                        <div class="tool-card-icon">✉️</div>
+                        <div class="tool-card-title">Mail Service</div>
                     </div>
-                    <div class="tool-card-desc">Enable system-level desktop alerts for completion of long-running orchestration tasks.</div>
+                    <div class="tool-card-desc">Closed-loop transmission system. Sends reports and files directly to your registered email.</div>
                     <div class="tool-card-footer">
-                        <span class="status-label" style="color: var(--model-color-start)">System Sync</span>
+                        <span class="status-label">Tool Status</span>
                         <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
-                            <input type="checkbox" id="toolToggle-notifications_enabled" checked class="toggle-checkbox">
+                            <input type="checkbox" id="toolToggle-send_self_email" checked class="toggle-checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-card-header">
+                        <div class="tool-card-icon">⏱️</div>
+                        <div class="tool-card-title">Task Scheduler</div>
+                    </div>
+                    <div class="tool-card-desc">Persistent automation engine. Schedules specific models to perform autonomous tasks while offline.</div>
+                    <div class="tool-card-footer">
+                        <span class="status-label">Tool Status</span>
+                        <label class="toggle-item" style="margin:0; padding:0; background:none; border:none;">
+                            <input type="checkbox" id="toolToggle-schedule_task" checked class="toggle-checkbox">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
@@ -5168,14 +5176,15 @@
             'logs_and_preferences': true,
             'generate_image': true,
             'make_presentation': true,
-            'extensive_search': true,
-            'native_search': true,
+            'web_search': true,
             'lab_execute': true,
             'forge_control': true,
             'repo_control': true,
             'manage_files': true,
             'read_tool_output': true,
             'analyze_youtube_video': true,
+            'send_self_email': true,
+            'schedule_task': true,
             'notifications_enabled': true
         };
         let agentSettings = JSON.parse(localStorage.getItem('agentSettings')) || defaultAgentSettings;
@@ -5192,6 +5201,17 @@
         // Setup event listener for agent tools changes
         document.addEventListener('DOMContentLoaded', () => {
             applySettingsUI();
+            
+            const profileNotificationsToggle = document.getElementById('profile-notifications-toggle');
+            if (profileNotificationsToggle) {
+                profileNotificationsToggle.checked = agentSettings.notifications_enabled !== false;
+                profileNotificationsToggle.addEventListener('change', (e) => {
+                    agentSettings.notifications_enabled = e.target.checked;
+                    localStorage.setItem('agentSettings', JSON.stringify(agentSettings));
+                    if (e.target.checked) requestNotificationPermission();
+                });
+            }
+
             const toolsList = document.getElementById('agentToolsSettingsList');
             if (toolsList) {
                 toolsList.addEventListener('change', function(e) {
