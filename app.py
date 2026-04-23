@@ -319,6 +319,9 @@ def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(DATABASE_NAME)
         g.db.row_factory = sqlite3.Row
+        # Enable WAL mode and set timeout for concurrency
+        g.db.execute("PRAGMA journal_mode=WAL;")
+        g.db.execute("PRAGMA busy_timeout=5000;")
     return g.db
 
 @app.teardown_appcontext
@@ -330,6 +333,8 @@ def close_db(error):
 def initialize_database():
     with app.app_context():
         db = get_db()
+        db.execute("PRAGMA journal_mode=WAL;")
+        db.execute("PRAGMA busy_timeout=5000;")
         cursor = db.cursor()
         
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
@@ -1103,6 +1108,8 @@ def is_output_cut_off(text: str, key: str) -> bool:
 
 
 def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None, chat_id=None, disabled_tools=None):
+    from flask import g
+    g.model_id = model_id # Set ground-truth model for tools
     display_name = model_display_name or MODEL_NAMES.get(model_id)
 
     def record_tool_call(t_name, t_input, t_result):
@@ -4816,28 +4823,60 @@ class TaskSchedulerMonitor:
             time.sleep(self.interval)
 
     def _check_tasks(self):
+        import uuid
+        worker_id = str(uuid.uuid4()) # Unique ID for this thread/worker
+
         with self.app_instance.app_context():
             db = get_db()
-            cursor = db.execute('''
-                SELECT id, user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes
-                FROM scheduled_tasks
-                WHERE is_active = 1
-                AND (execute_at IS NULL OR execute_at <= datetime('now', 'localtime'))
-            ''')
-            tasks = cursor.fetchall()
-            for task in tasks:
-                self._execute_ai_task(task['user_id'], task['chat_id'], task['task_prompt'], task['model_id'])
-                if task['recurring_minutes'] > 0:
-                    db.execute('''
-                        UPDATE scheduled_tasks
-                        SET execute_at = datetime('now', 'localtime', '+' || ? || ' minutes'), last_run = datetime('now', 'localtime')
-                        WHERE id = ?
-                    ''', (task['recurring_minutes'], task['id']))
-                else:
-                    db.execute("UPDATE scheduled_tasks SET is_active = 0, last_run = datetime('now', 'localtime') WHERE id = ?", (task['id'],))
+            # ATOMIC CLAIM: Try to lock any pending task that is due
+            db.execute('''
+                UPDATE scheduled_tasks 
+                SET status = 'running', lock_id = ?
+                WHERE id IN (
+                    SELECT id FROM scheduled_tasks
+                    WHERE is_active = 1 
+                    AND status = 'pending'
+                    AND (execute_at IS NULL OR execute_at <= datetime('now', 'localtime'))
+                    LIMIT 1
+                )
+            ''', (worker_id,))
             db.commit()
 
-    def _execute_ai_task(self, user_id, chat_id, task_prompt, model_id):
+            # Now find the task WE just locked
+            cursor = db.execute('''
+                SELECT id, user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes, metadata
+                FROM scheduled_tasks
+                WHERE lock_id = ? AND status = 'running'
+            ''', (worker_id,))
+            task = cursor.fetchone()
+            
+            if task:
+                try:
+                    self._execute_ai_task(task['user_id'], task['chat_id'], task['task_prompt'], task['model_id'], task['metadata'])
+                    
+                    if task['recurring_minutes'] > 0:
+                        db.execute('''
+                            UPDATE scheduled_tasks
+                            SET execute_at = datetime('now', 'localtime', '+' || ? || ' minutes'), 
+                                last_run = datetime('now', 'localtime'),
+                                status = 'pending',
+                                lock_id = NULL
+                            WHERE id = ?
+                        ''', (task['recurring_minutes'], task['id']))
+                    else:
+                        db.execute('''
+                            UPDATE scheduled_tasks 
+                            SET is_active = 0, status = 'completed', last_run = datetime('now', 'localtime'), lock_id = NULL 
+                            WHERE id = ?
+                        ''', (task['id'],))
+                except Exception as e:
+                    logger.error(f"Task Execution Failed (ID {task['id']}): {e}")
+                    # Release lock on failure so it can be retried
+                    db.execute("UPDATE scheduled_tasks SET status = 'pending', lock_id = NULL WHERE id = ?", (task['id'],))
+                
+                db.commit()
+
+    def _execute_ai_task(self, user_id, chat_id, task_prompt, model_id, metadata):
         with self.app_instance.app_context():
             from flask import g
             # Set global context for tools to use in background threads
@@ -4849,8 +4888,9 @@ class TaskSchedulerMonitor:
             conv_hist_list = [f"{'User' if m['message_type']=='user' else 'Stellar'}: {m['message_content']}" for m in history[-10:]]
 
             from prompts import get_refinement_prompt
-            # Wrap the task prompt in a directive to prevent hallucinations/refusals
-            directive_prompt = f"### SCHEDULED TASK EXECUTION MANDATE\nYou are executing a pre-authorized scheduled task. You MUST use the necessary tools to fulfill this request immediately. Do not apologize or simulate the action.\n\nTask: {task_prompt}"
+            # Wrap the task prompt in a directive and include the scratchpad metadata
+            meta_context = f"\n**TASK SCRATCHPAD (TRANSIENT STATE):**\n{metadata}\n" if metadata else ""
+            directive_prompt = f"### SCHEDULED TASK EXECUTION MANDATE\nYou are executing a pre-authorized scheduled task.{meta_context}\nYou MUST use the necessary tools to fulfill this request immediately. Do not apologize or simulate the action.\n\nTask: {task_prompt}"
             
             system_prompt = get_refinement_prompt(directive_prompt, conv_hist_list, user_id=user_id)
 

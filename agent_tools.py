@@ -68,6 +68,8 @@ def send_self_email(subject: str, body: str, status: str, attachment_path: str =
         try:
             from app import DATABASE_NAME
             conn = sqlite3.connect(DATABASE_NAME)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout=5000;")
             conn.row_factory = sqlite3.Row
             user = conn.execute('SELECT username FROM users WHERE id = ?', (g.user_id,)).fetchone()
             if user:
@@ -102,26 +104,32 @@ def send_self_email(subject: str, body: str, status: str, attachment_path: str =
     except Exception as e:
         return f"Mail Failure: {str(e)}"
 
-def schedule_task(task_prompt: str, status: str, model_id: str, execute_at: str = None, recurring_minutes: int = 0) -> str:
-    """Schedules an autonomous task. 
+def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_id: int = None, execute_at: str = None, recurring_minutes: int = 0, metadata: str = None) -> str:
+    """Schedules, lists, or cancels autonomous tasks.
     Args:
-        task_prompt: Instructions for the AI to follow when the time triggers.
+        task_prompt: Instructions for the AI to follow (required for 'schedule').
         status: Status update for the user.
-        model_id: Your current model identifier (e.g., 'gemini-3-flash-preview' for Crimson). MANDATORY for persistence.
+        action: 'schedule' (default), 'list' (to see pending tasks), or 'cancel' (to stop a task).
+        task_id: The ID of the task to cancel (required for 'cancel').
         execute_at: ISO datetime 'YYYY-MM-DD HH:MM:SS' for one-time tasks.
         recurring_minutes: Minutes between executions for repeating tasks.
+        metadata: Optional scratchpad for task-specific state (retry counts, transient notes).
     """
     from flask import session, request, has_request_context, g
     from app import get_db
+    import sqlite3
 
     db = get_db()
-    
     u_id = None
     c_id = None
+    # Server-side model detection to prevent hallucination
+    current_model = getattr(g, 'model_id', 'gemini-3.1-flash-lite-preview')
     
     if has_request_context():
         u_id = session.get('user_id')
         c_id = session.get('current_chat_id')
+        if request.is_json:
+            current_model = request.json.get('model_id', current_model)
         
     if not u_id: u_id = getattr(g, 'user_id', None)
     if not c_id: c_id = getattr(g, 'chat_id', None)
@@ -129,10 +137,30 @@ def schedule_task(task_prompt: str, status: str, model_id: str, execute_at: str 
     if not u_id or not c_id:
         return "Error: Could not determine User or Chat ID for scheduling."
 
-    db.execute('INSERT INTO scheduled_tasks (user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes) VALUES (?,?,?,?,?,?)',
-               (u_id, c_id, task_prompt, model_id, execute_at, recurring_minutes))
+    if action == "list":
+        try:
+            cursor = db.execute('SELECT id, task_prompt, model_id, execute_at, recurring_minutes, metadata FROM scheduled_tasks WHERE user_id = ? AND is_active = 1', (u_id,))
+            tasks = cursor.fetchall()
+            if not tasks: return "No active scheduled tasks found."
+            output = "### Active Scheduled Tasks:\n"
+            for t in tasks:
+                meta_snip = f" | State: {t['metadata'][:30]}..." if t['metadata'] else ""
+                output += f"- **ID {t['id']}** [{t['model_id']}]: \"{t['task_prompt'][:50]}...\"{meta_snip} | Next: {t['execute_at']} | Every: {t['recurring_minutes']}m\n"
+            return output
+        except Exception as e:
+            return f"Error listing tasks: {str(e)}"
+
+    elif action == "cancel":
+        if not task_id: return "Error: 'task_id' is required to cancel a task."
+        db.execute('UPDATE scheduled_tasks SET is_active = 0 WHERE id = ? AND user_id = ?', (task_id, u_id))
+        db.commit()
+        return f"Success: Task {task_id} has been cancelled."
+
+    # Default: Schedule
+    db.execute('INSERT INTO scheduled_tasks (user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes, metadata) VALUES (?,?,?,?,?,?,?)',
+               (u_id, c_id, task_prompt, current_model, execute_at, recurring_minutes, metadata))
     db.commit()
-    return f"Task scheduled! {model_id} is locked for this persistent automation."
+    return f"Task scheduled! {current_model} is locked for this persistent automation."
 
 def generate_image(model: str, prompt: str, status: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None) -> str:
     """Generates an image using Gemini's Imagen model.
@@ -1110,11 +1138,8 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
 
 def lab_execute(command: str, status: str, timeout: int = 60) -> str:
     """Executes a bash command in a persistent, isolated Docker sandbox.
-    Use this tool to experiment, test Python code, install libraries (apt-get/pip), run shell scripts, clone git repos, or inspect external APIs.
-    The sandbox persists across turns, so you can install a tool in one turn and use it in the next.
-    
     Args:
-        command: The bash command to run (e.g. `python3 script.py`, `pip install x`, `curl -I https...`).
+        command: The bash command to run.
         status: Status update for the user.
         timeout: Execution timeout in seconds (default 60).
     """
@@ -1124,31 +1149,35 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
     import os
     import re
     import shutil
-    from flask import session
-    
-    # Attempt to grab current session context dynamically
-    try:
-        session_id = session.sid
-        chat_id = session.get('current_chat_id', 'default')
-        user_id = session.get('user_id')
-        # Sanitize for Docker container naming
-        sanitized_sid = re.sub(r'[^a-zA-Z0-9]', '', str(session_id))
-        sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
-        
-        container_name = f"stellar-lab-{sanitized_sid}-{sanitized_cid}"
-        workspace_name = f"lab_workspace_{sanitized_sid}_{sanitized_cid}"
-    except:
-        # Fallback if no session (though highly unlikely in this app)
-        container_name = "stellar-lab-sandbox"
-        workspace_name = "lab_workspace"
-        user_id = None
+    from flask import session, g, has_request_context
 
-    image_name = "stellar-lab-core:latest"
-    
+    # Deterministic Context Detection
+    u_id = None
+    c_id = 'default'
+    s_id = 'no_session'
+
+    if has_request_context():
+        u_id = session.get('user_id')
+        c_id = session.get('current_chat_id', 'default')
+        s_id = getattr(session, 'sid', 'no_session')
+
+    # Fallback to background context
+    if not u_id: u_id = getattr(g, 'user_id', None)
+    if c_id == 'default': c_id = getattr(g, 'chat_id', 'default')
+
+    # Sanitize for Docker/FS safety
+    clean_uid = re.sub(r'[^a-zA-Z0-9]', '', str(u_id)) if u_id else "anon"
+    clean_cid = re.sub(r'[^a-zA-Z0-9]', '', str(c_id))
+
+    # Workspace naming now linked to User+Chat for background continuity
+    container_name = f"stellar-lab-u{clean_uid}-c{clean_cid}"
+    workspace_name = f"lab_workspace_u{clean_uid}_c{clean_cid}"
+
+    image_name = "stellar-lab-core:latest"    
     try:
         client = docker.from_env()
         from app import ensure_user_network
-        user_network = ensure_user_network(client, user_id)
+        user_network = ensure_user_network(client, u_id)
     except Exception as e:
         return f"Error: Docker client not available: {str(e)}"
         
@@ -1158,13 +1187,14 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
 
     # --- DETERMINISTIC FIX: Auto-sync uploaded files to the lab workspace ---
     try:
-        local_dir = os.path.join(UPLOAD_FOLDER, str(session.sid))
-        if os.path.exists(local_dir):
-            for f in os.listdir(local_dir):
-                src = os.path.join(local_dir, f)
-                dst = os.path.join(lab_workspace, f)
-                if os.path.isfile(src):
-                    shutil.copy2(src, dst)
+        if s_id != 'no_session':
+            local_dir = os.path.join(UPLOAD_FOLDER, str(s_id))
+            if os.path.exists(local_dir):
+                for f in os.listdir(local_dir):
+                    src = os.path.join(local_dir, f)
+                    dst = os.path.join(lab_workspace, f)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, dst)
     except Exception as sync_e:
         pass # Silent fail if permissions or path issues
     # ------------------------------------------------------------------------
