@@ -722,6 +722,74 @@
             color: var(--secondary-text-color);
         }
 
+        .placeholder-status {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-style: normal;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95em;
+            transition: all 0.3s ease;
+        }
+
+        .status-item.active .status-text {
+            background: linear-gradient(
+                90deg,
+                var(--secondary-text-color) 0%,
+                #ffffff 50%,
+                var(--secondary-text-color) 100%
+            );
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 2s linear infinite;
+            font-weight: 500;
+        }
+
+        .status-item.active .status-icon-container {
+            color: var(--model-color-start);
+        }
+
+        .status-item.completed {
+            color: var(--secondary-text-color);
+        }
+
+        .status-item.completed .status-text {
+            -webkit-text-fill-color: var(--secondary-text-color);
+        }
+
+        @keyframes shimmer {
+            to { background-position: 200% center; }
+        }
+
+        .status-item.error .status-text {
+            color: #ff6b6b;
+            -webkit-text-fill-color: #ff6b6b;
+            background: none;
+            animation: none;
+        }
+
+        .status-icon-container {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .checkmark {
+            color: #00c292;
+        }
+
+        .status-error-icon {
+            color: #ff6b6b;
+        }
+
         .placeholder-status.clickable {
             cursor: pointer;
             text-decoration: none; /* Removed underline dotted */
@@ -4195,6 +4263,12 @@
             background: rgba(255, 107, 107, 0.1);
         }
 
+        /* Specific hover effect for temp chat (incognito action) */
+        #headerTempChatBtn:hover {
+            color: #b554ff; /* Purple Glow */
+            background: rgba(181, 84, 255, 0.1);
+        }
+
         /* Specific hover effect for new chat (positive action) */
         #headerNewChatBtn:hover {
             color: #00F090;
@@ -4487,6 +4561,21 @@
         </div>
         <div class="header-right">
             <div id="modeSelectorHeaderContainer" style="margin-right: 10px;"></div>
+
+            <!-- NEW TEMP CHAT BUTTON -->
+            <button id="headerTempChatBtn" class="header-icon-btn" title="Temporary Chat (Incognito)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <!-- Hat brim -->
+                    <path d="M2 12h20" />
+                    <!-- Hat top -->
+                    <path d="M5 12v-3a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v3" />
+                    <!-- Eyes -->
+                    <circle cx="8" cy="17" r="2.5" />
+                    <circle cx="16" cy="17" r="2.5" />
+                    <!-- Glasses bridge -->
+                    <line x1="10.5" y1="17" x2="13.5" y2="17" />
+                </svg>
+            </button>
 
             <button id="headerNewChatBtn" class="header-icon-btn" title="New Chat" onclick="createNewChat()">
                 <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -7384,28 +7473,82 @@
             const detailsDiv = msgDiv.querySelector('.analysis-content');
 
             if (statusSpan) {
-                statusSpan.innerHTML = '';
-                
+                // Ensure status container is styled correctly
+                if (!statusSpan.style.display || statusSpan.style.display !== 'flex') {
+                    statusSpan.style.display = 'flex';
+                    statusSpan.style.flexDirection = 'column';
+                    statusSpan.style.gap = '6px';
+                    statusSpan.innerHTML = ''; // clear initial placeholder text if needed
+                }
+
                 let displayMsg = newText;
+                let showNotificationMeta = false;
                 if (isProcessing && taskStartTime && (Date.now() - taskStartTime > 20000)) {
                     const hasPermission = ('Notification' in window) && Notification.permission === "granted";
                     if (agentSettings.notifications_enabled && hasPermission) {
-                        displayMsg = newText + " (I'll notify you when it's done)";
+                        showNotificationMeta = true;
                     } else if (!newText.endsWith("...")) {
                         displayMsg = newText + "...";
                     }
                 }
 
-                if (isProcessing && !isError && newText && newText.toLowerCase() !== "idle") {
-                    const iconSpan = document.createElement('span');
-                    iconSpan.innerHTML = `<svg class="tool-spinner" viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;vertical-align:middle;margin-right:6px;"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
-                    statusSpan.appendChild(iconSpan);
-                }
+                // 1. Mark previous active as completed
+                const currentActiveItem = statusSpan.querySelector('.status-item.active');
                 
-                const textSpan = document.createElement('span');
-                textSpan.className = 'status-text';
-                textSpan.textContent = displayMsg;
-                statusSpan.appendChild(textSpan);
+                // Check if the exact same message is being set again to avoid duplicates
+                if (currentActiveItem && currentActiveItem.querySelector('.status-text').textContent === displayMsg && !isError) {
+                    // Do nothing if it's identical text
+                } else {
+                    if (currentActiveItem) {
+                        currentActiveItem.classList.remove('active');
+                        if (isError) {
+                             currentActiveItem.classList.add('error');
+                             currentActiveItem.querySelector('.status-icon-container').innerHTML = '<svg class="status-error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+                        } else {
+                             currentActiveItem.classList.add('completed');
+                             currentActiveItem.querySelector('.status-icon-container').innerHTML = '<svg class="checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+                        }
+                    }
+
+                    // 2. Create new active status
+                    if (!isError && newText && newText.toLowerCase() !== "idle" && newText.toLowerCase() !== "done") {
+                        const item = document.createElement('div');
+                        item.className = 'status-item active';
+                        item.innerHTML = `
+                            <div class="status-icon-container">
+                                <svg class="tool-spinner" viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                            </div>
+                            <div class="status-text">${escapeHtml(displayMsg)}</div>
+                        `;
+                        statusSpan.appendChild(item);
+                    } else if (isError) {
+                        const item = document.createElement('div');
+                        item.className = 'status-item error';
+                        item.innerHTML = `
+                            <div class="status-icon-container">
+                                <svg class="status-error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </div>
+                            <div class="status-text">${escapeHtml(displayMsg)}</div>
+                        `;
+                        statusSpan.appendChild(item);
+                    }
+                }
+
+                // Handle meta-status notification line (Option 1)
+                let metaNotify = statusSpan.querySelector('.status-meta-notify');
+                if (showNotificationMeta) {
+                    if (!metaNotify) {
+                        metaNotify = document.createElement('div');
+                        metaNotify.className = 'status-meta-notify';
+                        metaNotify.style.fontSize = '0.85em';
+                        metaNotify.style.marginTop = '4px';
+                        metaNotify.style.opacity = '0.8';
+                        metaNotify.textContent = "System will notify you when this task is complete.";
+                        statusSpan.appendChild(metaNotify);
+                    }
+                } else if (metaNotify) {
+                    metaNotify.remove();
+                }
 
                 if (isError) {
 
@@ -9075,6 +9218,43 @@
         sidebarToggleBtn.addEventListener('click', toggleSidebar);
         sidebarCloseBtn.addEventListener('click', toggleSidebar);
         newChatBtn.addEventListener('click', createNewChat);
+
+        const headerTempChatBtn = document.getElementById('headerTempChatBtn');
+        if (headerTempChatBtn) {
+            headerTempChatBtn.addEventListener('click', async () => {
+                if (isProcessing) {
+                    setStatus("Cannot switch chat while processing.", true);
+                    setTimeout(() => setStatus(currentStatusText, false), 3000);
+                    return;
+                }
+                
+                setStatus("Starting Incognito Session...");
+                try {
+                    const response = await fetch('/api/chats/new_temp', { method: 'POST' });
+                    if (!response.ok) throw new Error("Failed to create temporary chat");
+                    const data = await response.json();
+                    
+                    // Deselect active chat in the sidebar
+                    document.querySelectorAll('.chat-item').forEach(item => item.classList.remove('active'));
+                    
+                    // Set backend to new temp chat ID
+                    currentChatId = data.chat_id;
+                    
+                    // Clear the frontend UI
+                    messagesDiv.innerHTML = '';
+                    historyLoaded = true; // Set true so it doesn't auto-load past DB history
+                    
+                    // Inject intro message
+                    const tempWelcome = "**Incognito Mode Enabled**.\n\nYou are now in a temporary, isolated session. This conversation is hidden from the sidebar, and will be permanently deleted when you start a new temp chat.";
+                    appendStellarMessage(tempWelcome, "temp-welcome-msg");
+                    
+                    setStatus("Incognito Mode Active", false);
+                    setTimeout(() => setStatus("Idle"), 2500);
+                } catch (err) {
+                    setStatus("Error starting temp chat", true);
+                }
+            });
+        }
         profileIcon.addEventListener('click', showProfileModal);
         profileCloseBtn.addEventListener('click', hideProfileModal);
         openAgentSettingsBtn.addEventListener('click', showAgentSettingsModal);

@@ -485,6 +485,15 @@ def initialize_database():
             FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
         )''')
 
+        cursor.execute("PRAGMA table_info(chats)")
+        chats_columns = [info[1] for info in cursor.fetchall()]
+        if 'is_temp' not in chats_columns:
+            try:
+                cursor.execute("ALTER TABLE chats ADD COLUMN is_temp BOOLEAN DEFAULT 0")
+                print("Added 'is_temp' column to 'chats' table.")
+            except Exception as e:
+                print(f"Error adding 'is_temp' column: {e}")
+
         db.commit()
 
 initialize_database()
@@ -503,7 +512,7 @@ def get_current_chat_id(user_id):
         if cursor.fetchone():
             return chat_id
 
-    cursor = db.execute('SELECT id FROM chats WHERE user_id = ? ORDER BY created_at DESC LIMIT 1', (user_id,))
+    cursor = db.execute('SELECT id FROM chats WHERE user_id = ? AND is_temp = 0 ORDER BY created_at DESC LIMIT 1', (user_id,))
     last_chat = cursor.fetchone()
 
     if last_chat:
@@ -2514,7 +2523,7 @@ def refine_stream():
                     if current_model != models_to_try[0]:
                         yield f"data: {json.dumps({'status': f'Model failed. Falling back to {display_name}...', 'phase': 'refining'})}\n\n"
                         time.sleep(1)
-                    yield f"data: {json.dumps({'status': f'Thinking with {display_name}...', 'phase': 'refining'})}\n\n"
+                    
                     username = session.get('username')
                     user_id = session.get('user_id')
                     text_prompt = get_refinement_prompt(user_query_from_frontend, conv_hist_list, username=username, disabled_tools=disabled_tools, user_id=user_id)                
@@ -2753,7 +2762,7 @@ def search_stream():
                     if current_model != analysis_models_to_try[0]:
                         yield f"data: {json.dumps({'status': f'Analysis model failed. Falling back to {display_name}...', 'phase': 'analysis_llm'})}\n\n"
                         time.sleep(1)
-                    yield f"data: {json.dumps({'status': f'Analyzing context with {display_name}...', 'phase': 'analysis_llm'})}\n\n"
+                    
                     research_prompt = get_research_analysis_prompt(user_query, full_context)
 
                 generator_output_analysis = gemini_generate(
@@ -2811,7 +2820,7 @@ def search_stream():
                     if current_model != expansion_models_to_try[0]:
                         yield f"data: {json.dumps({'status': f'Expansion model failed. Falling back to {display_name}...', 'phase': 'expansion_llm'})}\n\n"
                         time.sleep(1)
-                    yield f"data: {json.dumps({'status': f'{display_name} is finalizing the paper...', 'phase': 'expansion_llm'})}\n\n"
+                    
                     final_prompt = get_final_expansion_prompt(user_query, research_analysis_result, full_context)
 
                 generator_output_expansion = gemini_generate(
@@ -3083,7 +3092,7 @@ def cosmos_stream():
                     fallback_status = f'Generation model failed. Falling back to {display_name}...'
                     yield f"data: {json.dumps({'status': fallback_status, 'phase': 'generation_llm'})}\n\n"
                     time.sleep(1)
-                yield f"data: {json.dumps({'status': f'{display_name} is creating the report...', 'phase': 'generation_llm'})}\n\n"
+                
                 cosmos_prompt = get_cosmos_report_prompt(user_query, full_context)
                 generator_output = gemini_generate(
                     prompt=cosmos_prompt, model_id=current_model, key=current_api_key,
@@ -3612,7 +3621,7 @@ def get_user_chats():
             SELECT c.id, c.name, COALESCE(MAX(m.timestamp), c.created_at) as last_active 
             FROM chats c 
             LEFT JOIN messages m ON c.id = m.chat_id 
-            WHERE c.user_id = ? 
+            WHERE c.user_id = ? AND c.is_temp = 0
             GROUP BY c.id 
             ORDER BY last_active DESC
         ''', (user_id,))
@@ -3647,6 +3656,29 @@ def create_new_chat():
         return jsonify({'error': f'Database error: {str(e)}'}), 500
     except Exception as e:
         logger.error(f"Unexpected error in create_new_chat: {e}", exc_info=True)
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/chats/new_temp', methods=['POST'])
+@require_approval
+def create_temp_chat():
+    user_id = session['user_id']
+    db = get_db()
+    try:
+        # Delete any previous temp chats for this user to keep the DB clean!
+        # Cascading deletes will automatically wipe out associated messages and tool calls.
+        db.execute('DELETE FROM chats WHERE user_id = ? AND is_temp = 1', (user_id,))
+        
+        # Create the new temporary chat
+        cursor = db.execute('INSERT INTO chats (user_id, name, is_temp) VALUES (?, ?, 1)', (user_id, 'Incognito Session'))
+        db.commit()
+        new_chat_id = cursor.lastrowid
+
+        session['current_chat_id'] = new_chat_id
+        session.modified = True
+        
+        return jsonify({'success': True, 'chat_id': new_chat_id}), 201
+    except Exception as e:
+        logger.error(f"Error in create_temp_chat: {e}", exc_info=True)
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/set_active_chat', methods=['POST'])
@@ -3840,7 +3872,7 @@ def search_messages_route():
                 T2.message_type
             FROM chats AS T1
             LEFT JOIN messages AS T2 ON T1.id = T2.chat_id
-            WHERE T1.user_id = ? AND (
+            WHERE T1.user_id = ? AND T1.is_temp = 0 AND (
                 T1.name LIKE ? OR
                 T2.message_content LIKE ?
             )
