@@ -792,8 +792,9 @@
 }
 
 .checkmark {
-    color: #00F090; /* Premium neon green */
-    filter: drop-shadow(0 0 6px rgba(0, 240, 144, 0.4)); /* Subtle glowing aura */
+    color: var(--secondary-text-color);
+    opacity: 0.7;
+    filter: none; /* Removes the clashing green glow */
 }
 
 .status-item.active .status-icon-container {
