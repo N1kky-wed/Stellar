@@ -56,7 +56,7 @@ def send_self_email(subject: str, body: str, status: str, attachment_path: str =
         attachment_path: Optional path to a file in /outputs or /uploads to attach.
     """
     from flask import session, g, has_request_context
-    import smtplib, mimetypes, os, sqlite3
+    import smtplib, mimetypes, os, sqlite3, markdown
     from email.message import EmailMessage
 
     # Handle background context where session is unavailable
@@ -88,13 +88,84 @@ def send_self_email(subject: str, body: str, status: str, attachment_path: str =
     msg['Subject'] = f"[STELLAR] {subject}"
     msg['From'] = f"Stellar System <{sender_email}>"
     msg['To'] = user_email
-    msg.set_content(f"{body}\n\n---\nTransmission from your Stellar Environment.")
+    
+    # Text Version
+    text_content = f"{body}\n\n---\nTransmission from your Stellar Environment."
+    msg.set_content(text_content)
 
-    if attachment_path and os.path.exists(attachment_path):
-        ctype, encoding = mimetypes.guess_type(attachment_path)
-        maintype, subtype = (ctype or 'application/octet-stream').split('/', 1)
-        with open(attachment_path, 'rb') as fp:
-            msg.add_attachment(fp.read(), maintype=maintype, subtype=subtype, filename=os.path.basename(attachment_path))
+    # HTML Version (Markdown Rendered)
+    try:
+        html_body = markdown.markdown(body, extensions=['extra', 'codehilite', 'tables'])
+        html_content = f"""
+        <html>
+          <head>
+            <style>
+              body {{ font-family: sans-serif; line-height: 1.6; color: #333; }}
+              code {{ background: #f4f4f4; padding: 2px 4px; border-radius: 4px; }}
+              pre {{ background: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; }}
+              table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
+              th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+              th {{ background-color: #f2f2f2; }}
+              hr {{ border: 0; border-top: 1px solid #eee; margin: 20px 0; }}
+              .footer {{ font-size: 0.85em; color: #777; margin-top: 20px; }}
+            </style>
+          </head>
+          <body>
+            {html_body}
+            <div class="footer">
+              <hr>
+              Transmission from your Stellar Environment.
+            </div>
+          </body>
+        </html>
+        """
+        msg.add_alternative(html_content, subtype='html')
+    except Exception as md_e:
+        logger.error(f"Markdown rendering failed: {md_e}")
+
+    # Robust Attachment Handling
+    if attachment_path:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        allowed_dirs = [
+            os.path.abspath(os.path.join(base_dir, 'outputs')),
+            os.path.abspath(os.path.join(base_dir, 'uploads')),
+            os.path.abspath(os.path.join(base_dir, 'sandbox_runs'))
+        ]
+        
+        candidate_path = os.path.abspath(attachment_path) if os.path.isabs(attachment_path) else os.path.abspath(os.path.join(base_dir, attachment_path))
+        is_allowed = any(candidate_path.startswith(d + os.sep) for d in allowed_dirs)
+        
+        # Fallback: check if the exact filename exists in outputs or uploads
+        if not is_allowed or not os.path.exists(candidate_path):
+            filename = os.path.basename(attachment_path)
+            for d in [allowed_dirs[0], allowed_dirs[1]]: # outputs and uploads
+                fallback_path = os.path.join(d, filename)
+                if os.path.exists(fallback_path) and os.path.isfile(fallback_path):
+                    candidate_path = fallback_path
+                    is_allowed = True
+                    break
+
+        resolved_path = candidate_path if (is_allowed and os.path.exists(candidate_path) and os.path.isfile(candidate_path)) else None
+
+        if resolved_path:
+            ctype, encoding = mimetypes.guess_type(resolved_path)
+            if ctype is None or encoding is not None:
+                ctype = 'application/octet-stream'
+            maintype, subtype = ctype.split('/', 1)
+            
+            try:
+                with open(resolved_path, 'rb') as fp:
+                    msg.add_attachment(
+                        fp.read(),
+                        maintype=maintype,
+                        subtype=subtype,
+                        filename=os.path.basename(resolved_path)
+                    )
+                logger.info(f"Successfully attached file: {resolved_path}")
+            except Exception as att_e:
+                logger.error(f"Failed to attach file {resolved_path}: {att_e}")
+        else:
+            logger.warning(f"Attachment path invalid, denied, or not found: {attachment_path}")
 
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
@@ -102,6 +173,7 @@ def send_self_email(subject: str, body: str, status: str, attachment_path: str =
             smtp.send_message(msg)
         return f"Success: Email sent to {user_email}."
     except Exception as e:
+        logger.error(f"Mail Failure: {str(e)}")
         return f"Mail Failure: {str(e)}"
 
 def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_id: int = None, execute_at: str = None, recurring_minutes: int = 0, metadata: str = None) -> str:
@@ -109,8 +181,8 @@ def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_
     Args:
         task_prompt: Instructions for the AI to follow (required for 'schedule').
         status: Status update for the user.
-        action: 'schedule' (default), 'list' (to see pending tasks), or 'cancel' (to stop a task).
-        task_id: The ID of the task to cancel (required for 'cancel').
+        action: 'schedule' (default), 'list' (to see pending tasks), 'cancel' (to stop a task), or 'edit' (to modify a task).
+        task_id: The ID of the task to cancel or edit (required for 'cancel'/'edit').
         execute_at: ISO datetime 'YYYY-MM-DD HH:MM:SS' for one-time tasks.
         recurring_minutes: Minutes between executions for repeating tasks.
         metadata: Optional scratchpad for task-specific state (retry counts, transient notes).
@@ -155,6 +227,32 @@ def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_
         db.execute('UPDATE scheduled_tasks SET is_active = 0 WHERE id = ? AND user_id = ?', (task_id, u_id))
         db.commit()
         return f"Success: Task {task_id} has been cancelled."
+
+    elif action == "edit":
+        if not task_id: return "Error: 'task_id' is required to edit a task."
+        updates = []
+        params = []
+        if task_prompt:
+            updates.append("task_prompt = ?")
+            params.append(task_prompt)
+        if execute_at:
+            updates.append("execute_at = ?")
+            params.append(execute_at)
+        if recurring_minutes is not None:
+            updates.append("recurring_minutes = ?")
+            params.append(recurring_minutes)
+        if metadata:
+            updates.append("metadata = ?")
+            params.append(metadata)
+        
+        if not updates:
+            return "Error: No parameters provided to edit."
+        
+        params.append(task_id)
+        params.append(u_id)
+        db.execute(f'UPDATE scheduled_tasks SET {", ".join(updates)} WHERE id = ? AND user_id = ?', tuple(params))
+        db.commit()
+        return f"Success: Task {task_id} has been updated."
 
     # Default: Schedule
     db.execute('INSERT INTO scheduled_tasks (user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes, metadata) VALUES (?,?,?,?,?,?,?)',
@@ -1460,23 +1558,34 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
     except Exception as e:
         return f"Error: Docker client not available: {str(e)}"
 
-    try:
-        session_id = str(session.sid)
-        chat_id = str(session.get('current_chat_id', 'default'))
-        sanitized_sid = re.sub(r'[^a-zA-Z0-9]', '', session_id)
-        sanitized_cid = re.sub(r'[^a-zA-Z0-9]', '', chat_id)
-        dynamic_lab_container = f"stellar-lab-{sanitized_sid}-{sanitized_cid}"
-    except:
-        return "Error: Active session context required."
+    from flask import g, has_request_context
+    u_id = None
+    c_id = 'default'
+    s_id = 'no_session'
+
+    if has_request_context():
+        u_id = session.get('user_id')
+        c_id = session.get('current_chat_id', 'default')
+        s_id = getattr(session, 'sid', 'no_session')
+
+    if not u_id: u_id = getattr(g, 'user_id', None)
+    if c_id == 'default': c_id = getattr(g, 'chat_id', 'default')
+
+    clean_uid = re.sub(r'[^a-zA-Z0-9]', '', str(u_id)) if u_id else "anon"
+    clean_cid = re.sub(r'[^a-zA-Z0-9]', '', str(c_id))
+    
+    dynamic_lab_container = f"stellar-lab-u{clean_uid}-c{clean_cid}"
+    session_id = str(s_id)
 
     def validate_env_ownership(env_id):
         if env_id in ("lab", "chat"): return True
         try:
             db = get_db()
-            cursor = db.execute('SELECT 1 FROM forge_history WHERE process_id = ? AND user_id = ?', (env_id, session['user_id']))
+            cursor = db.execute('SELECT 1 FROM forge_history WHERE process_id = ? AND user_id = ?', (env_id, u_id))
             if cursor.fetchone(): return True
-            if env_id == session.get('forge_project', {}).get('process_id'): return True
-            if env_id == session.get('last_run_code_process_id'): return True
+            if has_request_context():
+                if env_id == session.get('forge_project', {}).get('process_id'): return True
+                if env_id == session.get('last_run_code_process_id'): return True
         except: pass
         return False
 
@@ -1550,8 +1659,12 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
 
     elif action == "project":
         if not file_name: return "Error: 'file_name' required."
-        source_name = get_container_name(target_env) # target_env is used as source here
-        source_dir = "/lab" if target_env == "lab" else "/app"
+        
+        # Correctly identify the source container for projection
+        env_to_use = source_env if (source_env and source_env != "chat") else target_env
+        
+        source_name = get_container_name(env_to_use)
+        source_dir = "/lab" if env_to_use == "lab" else "/app"
         
         try:
             container = client.containers.get(source_name)

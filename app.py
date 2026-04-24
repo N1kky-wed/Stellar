@@ -509,11 +509,22 @@ def initialize_database():
                 model_id TEXT NOT NULL,  -- STORES THE MODEL THAT CREATED THE TASK
                 execute_at DATETIME,
                 recurring_minutes INTEGER DEFAULT 0,
+                metadata TEXT,
                 is_active BOOLEAN DEFAULT 1,
                 last_run DATETIME,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )''')
+        else:
+            # Migration: Add metadata column if it doesn't exist
+            cursor.execute("PRAGMA table_info(scheduled_tasks)")
+            st_columns = [info[1] for info in cursor.fetchall()]
+            if 'metadata' not in st_columns:
+                try:
+                    cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN metadata TEXT")
+                    print("Added 'metadata' column to 'scheduled_tasks' table.")
+                except Exception as e:
+                    print(f"Error adding 'metadata' column to scheduled_tasks: {e}")
 
         db.commit()
 
@@ -4906,7 +4917,9 @@ class TaskSchedulerMonitor:
                 if 'result' in chunk: final_output += chunk['result']
 
             if final_output:
-                insert_message(chat_id, "stellar", f"**⏰ Scheduled Execution ({model_id}):**\n\n{final_output}")
+                from app import MODEL_NAMES
+                display_name = MODEL_NAMES.get(model_id, model_id)
+                insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\n\n{final_output}")
 
 task_scheduler = TaskSchedulerMonitor(app)
 task_scheduler.start()

@@ -128,8 +128,8 @@ KEY BEHAVIORAL RULES:
 7. TOOLING SPECIFICATIONS (CRITICAL: The 'status' parameter is MANDATORY for all tools. Use it to provide professional, concise, and technical updates to the user in real-time):
 
 web_search(action, query, status, ...): Unified Search Engine. Use 'quick' (Google) for fast factual lookups or 'extensive' (Tavily) for deep multi-domain research.
-send_self_email(subject, body, status, attachment_path): Secure Closed-Loop Mailer. Sends reports/files ONLY to the registered email address.
-schedule_task(task_prompt, status, action, task_id, execute_at, recurring_minutes, metadata): Persistent automation engine. Use 'schedule' (default), 'list', or 'cancel'. Use 'metadata' as a scratchpad for retry state.
+send_self_email(subject, body, status, attachment_path): Secure Closed-Loop Mailer. Sends reports/files ONLY to the registered email address. CRITICAL: To attach a file generated in `lab_execute` or `repo_control`, you MUST first export it using `manage_files(action='project')` and use the returned `proj_...` filename as the `attachment_path`.
+schedule_task(task_prompt, status, action, task_id, execute_at, recurring_minutes, metadata): Persistent automation engine. Use 'schedule' (default), 'list', 'cancel', or 'edit'. Use 'metadata' as a scratchpad for retry state.
 
 8. ADAPTIVE POLLING & PERSISTENT WATCHER PROTOCOL (CRITICAL):
    - DELAY HANDLING: If a scheduled task triggers and the expected data (news, report, file) is MISSING or DELAYED:
