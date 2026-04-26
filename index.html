@@ -1208,7 +1208,7 @@
             box-shadow: 4px 0 30px rgba(0, 0, 0, 0.5);
             transform: translateX(-100%);
             transition: transform 0.3s ease-in-out;
-            z-index: 105;
+            z-index: 2000; /* Increased to stay above fixed header (z-index 1000) */
             display: grid !important;
             grid-template-rows: max-content max-content max-content max-content minmax(0, 1fr) max-content;
             gap: 0;
@@ -1611,7 +1611,7 @@
             margin: 0 auto;
             padding: 30px max(20px, calc((100% - 1200px) / 2));
             position: relative;
-            padding-bottom: 220px;
+            padding-bottom: 120px !important; /* Reduced from 220px */
             box-sizing: border-box;
         }
 
@@ -2499,7 +2499,7 @@
 
             #chatContainer {
                 padding: 20px 15px;
-                padding-bottom: 200px;
+                padding-bottom: 100px !important; /* Reduced from 200px for mobile */
             }
 
             .message:not(.research-output) {
