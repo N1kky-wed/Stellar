@@ -39,11 +39,9 @@
            ========================================================= */
         html {
             background-color: var(--body-bg-color1) !important; 
-            overscroll-behavior-y: none; 
         }
 
         body {
-            overscroll-behavior-y: none;
             background-attachment: fixed; 
         }
 
@@ -1626,6 +1624,7 @@
             box-sizing: border-box;
             scrollbar-width: thin;
             scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track-bg);
+            touch-action: pan-y; /* Explicitly allow vertical panning on mobile */
         }
 
                 .message {
@@ -4565,11 +4564,16 @@
                 padding: 8px 10px;
             }
 
-            /* Hide the chat title completely on very small screens to make room for buttons */
+            /* Restore chat title with reduced size for small screens */
             #chatTitle {
-                display: none; 
+                display: block;
+                font-size: 1.1rem;
+                margin-left: 5px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 80px; 
             }
-
             .header-right {
                 width: 100%;
                 justify-content: flex-end;
