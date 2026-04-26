@@ -1341,6 +1341,18 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
             pass # Failsafe against write permission errors
     # ----------------------------------
 
+    # --- GENERATIVE AI MANDATE INJECTION ---
+    gen_ai_mandate_path = os.path.join(lab_workspace, "GENERATIVE_AI_MANDATE.md")
+    if not os.path.exists(gen_ai_mandate_path):
+        try:
+            # Use os.path.dirname(__file__) to get the directory of agent_tools.py
+            host_mandate_path = os.path.join(os.path.dirname(__file__), "GENERATIVE_AI_MANDATE.md")
+            if os.path.exists(host_mandate_path):
+                shutil.copy2(host_mandate_path, gen_ai_mandate_path)
+        except Exception:
+            pass
+    # ----------------------------------------
+
     # Ensure sandbox container is running
     container = None
     try:
