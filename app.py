@@ -3958,7 +3958,8 @@ def submit_waitlist_form():
 
 @app.route('/favicon.ico')
 def favicon():
-    return '', 204
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#7b61ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 2 17 12 22 22 17 22 7"/><circle cx="12" cy="12" r="4"/><path d="M12 2v6M22 7l-6 3M22 17l-6-3M12 22v-6M2 17l6-3M2 7l6 3"/></svg>'
+    return Response(svg, mimetype='image/svg+xml')
 
 @app.route('/')
 def index():
