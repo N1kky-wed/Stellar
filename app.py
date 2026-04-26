@@ -721,31 +721,38 @@ def generate_chat_name(chat_id, first_message_content):
         try:
             prompt = f"Given the following first message of a conversation, generate a very short, descriptive name (max 5 words) for this chat. Respond only with the name.\n\nMessage: {first_message_content}"
             model_name = "gemini-2.5-flash-lite"
-            api_key = PRIMARY_API_KEY
-            if not api_key:
-                logger.warning("PRIMARY_API_KEY not found for chat name generation. Skipping name generation.")
-                return
-
-            try:
-                client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
-                chat = client.chats.create(model=model_name, config={'tools': []})
-                r = chat.send_message(prompt)
-                
-                generated_name = "New Chat"
-                if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
-                    response_text = r.candidates[0].content.parts[0].text.strip()
-                    generated_name = response_text.replace('"', '').replace("'", '').strip()
-                    if len(generated_name.split()) > 5:
-                        generated_name = ' '.join(generated_name.split()[:5]) + '...'
-                
-                logger.info(f"LLM generated name: '{generated_name}' for chat_id: {chat_id}")
-                db.execute('UPDATE chats SET name = ? WHERE id = ?', (generated_name, chat_id))
-                db.commit()
-                logger.info(f"Chat name updated in DB for chat_id {chat_id} to '{generated_name}'")
-            except Exception as e:
-                logger.error(f"Error in generate_chat_name (LLM call/DB update for chat {chat_id}): {e}", exc_info=True)
+            
+            raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+            keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+            
+            for current_key in keys_to_try:
+                try:
+                    client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
+                    chat = client.chats.create(model=model_name, config={'tools': []})
+                    r = chat.send_message(prompt)
+                    
+                    generated_name = "New Chat"
+                    if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
+                        response_text = r.candidates[0].content.parts[0].text.strip()
+                        generated_name = response_text.replace('"', '').replace("'", '').strip()
+                        if len(generated_name.split()) > 5:
+                            generated_name = ' '.join(generated_name.split()[:5]) + '...'
+                    
+                    logger.info(f"LLM generated name: '{generated_name}' for chat_id: {chat_id}")
+                    db.execute('UPDATE chats SET name = ? WHERE id = ?', (generated_name, chat_id))
+                    db.commit()
+                    logger.info(f"Chat name updated in DB for chat_id {chat_id} to '{generated_name}'")
+                    return # Success
+                except Exception as e:
+                    error_string = str(e).lower()
+                    if '429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string):
+                        logger.warning(f"Quota exceeded during chat name generation. Trying next key...")
+                        continue
+                    else:
+                        raise e
+            
         except Exception as e:
-            logger.error(f"Unexpected error in generate_chat_name (outer block for chat {chat_id}): {e}", exc_info=True)
+            logger.error(f"Error in generate_chat_name (chat {chat_id}): {e}")
 
 def generate_forge_title(user_prompt):
     try:
@@ -754,22 +761,33 @@ def generate_forge_title(user_prompt):
             
         prompt = f"Given the following user prompt for creating a web application, generate a very short, catchy, and descriptive title (max 5 words) for the project. Respond only with the title. Do not use quotes.\n\nUser Prompt: {user_prompt}"
         model_name = "gemini-2.5-flash-lite"
-        api_key = PRIMARY_API_KEY
-        if not api_key:
-            return "Forge Project"
+        
+        raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+        keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
 
-        client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
-        chat = client.chats.create(model=model_name, config={'tools': []})
-        r = chat.send_message(prompt)
+        for current_key in keys_to_try:
+            try:
+                client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
+                chat = client.chats.create(model=model_name, config={'tools': []})
+                r = chat.send_message(prompt)
+                
+                generated_name = "Forge Project"
+                if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
+                    response_text = r.candidates[0].content.parts[0].text.strip()
+                    generated_name = response_text.replace('"', '').replace("'", '').strip()
+                    if len(generated_name.split()) > 6:
+                        generated_name = ' '.join(generated_name.split()[:6])
+                
+                return generated_name
+            except Exception as e:
+                error_string = str(e).lower()
+                if '429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string):
+                    logger.warning(f"Quota exceeded during forge title generation. Trying next key...")
+                    continue
+                else:
+                    raise e
         
-        generated_name = "Forge Project"
-        if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
-            response_text = r.candidates[0].content.parts[0].text.strip()
-            generated_name = response_text.replace('"', '').replace("'", '').strip()
-            if len(generated_name.split()) > 6:
-                generated_name = ' '.join(generated_name.split()[:6])
-        
-        return generated_name
+        return "Forge Project"
     except Exception as e:
         logger.error(f"Error generating forge title: {e}")
         return "Forge Project"
@@ -1647,7 +1665,7 @@ def forge_start():
             raise ValueError("Primary API key for Forge is not configured.")
 
         chat_id = session.get('current_chat_id')
-        generator = gemini_generate(prompt=final_prompt, model_id=model_id, key=api_key, chat_id=chat_id, disabled_tools=disabled_tools)
+        generator = gemini_generate(prompt=final_prompt, model_id=model_id, key=api_key, chat_id=chat_id, disabled_tools=disabled_tools, gemini_files_data=gemini_files_data)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
         raw_response = ""
@@ -1791,7 +1809,7 @@ def forge_iterate():
             raise ValueError("Primary API key for Forge is not configured.")
 
         chat_id = session.get('current_chat_id')
-        generator = gemini_generate(prompt=final_prompt, model_id=model_id, key=api_key, chat_id=chat_id, disabled_tools=disabled_tools)
+        generator = gemini_generate(prompt=final_prompt, model_id=model_id, key=api_key, chat_id=chat_id, disabled_tools=disabled_tools, gemini_files_data=gemini_files_data)
         
         # --- FIX: Consume the generator fully to allow retries/status messages to run ---
         raw_response = ""
@@ -2631,7 +2649,8 @@ def refine_stream():
                     model_display_name=f"{display_name}",
                     username=username,
                     chat_id=chat_id,
-                    disabled_tools=disabled_tools
+                    disabled_tools=disabled_tools,
+                    gemini_files_data=gemini_files_data
                 )
                 
                 refined_query_result = ""
@@ -2860,7 +2879,8 @@ def search_stream():
                     prompt=research_prompt, model_id=current_model, key=current_api_key,
                     attempts=len(BACKUP_API_KEYS),
                     model_display_name=f"{display_name} (Analysis)",
-                    chat_id=chat_id
+                    chat_id=chat_id,
+                    gemini_files_data=gemini_files_data
                 )
                 
                 research_analysis_result = ""
@@ -2919,7 +2939,8 @@ def search_stream():
                     attempts=len(BACKUP_API_KEYS),
                     model_display_name=f"{display_name} (Expansion)",
                     chat_id=chat_id,
-                    disabled_tools=disabled_tools
+                    disabled_tools=disabled_tools,
+                    gemini_files_data=gemini_files_data
                 )
 
                 final_result = ""
@@ -3189,7 +3210,8 @@ def cosmos_stream():
                     prompt=cosmos_prompt, model_id=current_model, key=current_api_key,
                     attempts=1,
                     model_display_name=f"{display_name} (Cosmos)",
-                    chat_id=chat_id
+                    chat_id=chat_id,
+                    gemini_files_data=gemini_files_data
                 )
                 temp_result_html = None
                 for item in generator_output:
