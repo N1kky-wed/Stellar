@@ -7491,9 +7491,13 @@
                     silent
                 );
             } catch (err) {
-                const errorMsg = `Error: ${err.message}`;
+                let displayErr = err.message || "Unknown error";
+                if (displayErr.toLowerCase().includes("failed to fetch") || displayErr.toLowerCase().includes("networkerror")) {
+                    displayErr = "Network Connection Error";
+                }
+                const errorMsg = `Error: ${displayErr}`;
                 updateStellarMessagePlaceholder(placeholderId, errorMsg, true);
-                setStatus(`Error: ${err.message}`, true);
+                setStatus(`Error: ${displayErr}`, true);
                 isProcessing = false; sendBtn.disabled = false; toggleSendStopButtons(false); setTimeout(() => setStatus(currentStatusText, false), 4000);
             }
         }
@@ -8379,7 +8383,11 @@
                         retryCount++;
                         setTimeout(attemptStreamConnection, 2000 * retryCount);
                     } else {
-                        cleanupStream(true, `Failed to establish stream after retries: ${err.message}`, placeholderId);
+                        let streamErr = err.message || "Unknown error";
+                        if (streamErr.toLowerCase().includes("failed to fetch") || streamErr.toLowerCase().includes("networkerror")) {
+                            streamErr = "Network Connection Error";
+                        }
+                        cleanupStream(true, `Failed to establish stream after retries: ${streamErr}`, placeholderId);
                     }
                 }
             };

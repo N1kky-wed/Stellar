@@ -2,9 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stellar</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.ico">
+    <link rel="preconnect" href="https://apis.google.com">
+    <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <meta name="description" content="A persistent, stateful AI operating system for total autonomous agency across infrastructure, research, and design. Orchestrate Docker clusters, clone Git repos, and perform deep research with YouTube intelligence. From Red-Team sandboxes to professional PPTs and interactive Cosmos reports, Stellar builds, hosts, and orchestrates with a continuous ground-truth memory ledger.">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap');
@@ -15,7 +19,7 @@
             --border: rgba(255, 255, 255, 0.08);
             --accent-lunarity: #4285F4;
             --accent-emerald: #00F090;
-            --text-muted: #666670;
+            --text-muted: #9ca3af;
         }
 
         body, html {
@@ -274,7 +278,7 @@
         <div class="code-canvas" id="codeCanvas" aria-hidden="true"></div>
     </div>
 
-    <div class="gateway-wrapper" id="gatewayWrapper">
+    <main class="gateway-wrapper" id="gatewayWrapper">
         <div class="auth-card">
             
             <div class="loading-overlay" id="loadingOverlay">
@@ -304,12 +308,12 @@
                 <div class="persona"><div class="dot eme"></div> EMERALD</div>
             </div>
         </div>
-    </div>
+    </main>
 
     <!-- Firebase App (the core Firebase SDK) -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <!-- Firebase Auth -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 
     <script>
         // Firebase Configuration
@@ -433,7 +437,12 @@
                 btn.innerHTML = originalContent;
                 overlay.classList.remove('active');
                 msg.className = 'error-text';
-                msg.innerText = error.message || "GATEWAY_ERROR";
+                
+                let displayMsg = error.message || "GATEWAY_ERROR";
+                if (displayMsg.startsWith("Firebase: ")) {
+                    displayMsg = displayMsg.substring(10).split(" (auth/")[0];
+                }
+                msg.innerText = displayMsg;
             }
         };
     </script>
