@@ -316,135 +316,137 @@
     <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 
     <script>
-        // Firebase Configuration
-        const firebaseConfig = {
-            apiKey: "AIzaSyBudjAFQDp8vIQ_9V6fp9lg2295qdS1vGU",
-            authDomain: "stellarai-live.firebaseapp.com",
-            projectId: "stellarai-live",
-            storageBucket: "stellarai-live.firebasestorage.app",
-            messagingSenderId: "971792935736",
-            appId: "1:971792935736:web:047d6d3adebdd33cc52fcd",
-            measurementId: "G-KRF7BQDPN8"
-        };
+        document.addEventListener('DOMContentLoaded', () => {
+            // Firebase Configuration
+            const firebaseConfig = {
+                apiKey: "AIzaSyBudjAFQDp8vIQ_9V6fp9lg2295qdS1vGU",
+                authDomain: "stellarai-live.firebaseapp.com",
+                projectId: "stellarai-live",
+                storageBucket: "stellarai-live.firebasestorage.app",
+                messagingSenderId: "971792935736",
+                appId: "1:971792935736:web:047d6d3adebdd33cc52fcd",
+                measurementId: "G-KRF7BQDPN8"
+            };
 
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const provider = new firebase.auth.GoogleAuthProvider();
+            // Initialize Firebase
+            firebase.initializeApp(firebaseConfig);
+            const auth = firebase.auth();
+            const provider = new firebase.auth.GoogleAuthProvider();
 
-        const maskWrapper = document.getElementById('maskWrapper');
-        const codeCanvas = document.getElementById('codeCanvas');
-        const snippets = [
-            "def provision_docker_cluster(node_id):",
-            "ledger = db.query('SELECT * FROM ground_truth')",
-            "raise StateDriftException('Ledger mismatch')",
-            "container = client.containers.run(network='bridge')",
-            "async function mountPagedMemory(stream) {",
-            "return chunks.map(chunk => compressMetadata(chunk));",
-            "def proxy_wildcard(path):",
-            "container_ip = redis.get(f'route:{host}')",
-            "[OBSIDIAN] Adversarial security audit...",
-            "INSERT INTO interactions (agent_id) VALUES ('obsidian');",
-            "0x0000000000000000", "0xFFFFFFFFFFFFFFFF", "sys.stdout.write"
-        ];
+            const maskWrapper = document.getElementById('maskWrapper');
+            const codeCanvas = document.getElementById('codeCanvas');
+            const snippets = [
+                "def provision_docker_cluster(node_id):",
+                "ledger = db.query('SELECT * FROM ground_truth')",
+                "raise StateDriftException('Ledger mismatch')",
+                "container = client.containers.run(network='bridge')",
+                "async function mountPagedMemory(stream) {",
+                "return chunks.map(chunk => compressMetadata(chunk));",
+                "def proxy_wildcard(path):",
+                "container_ip = redis.get(f'route:{host}')",
+                "[OBSIDIAN] Adversarial security audit...",
+                "INSERT INTO interactions (agent_id) VALUES ('obsidian');",
+                "0x0000000000000000", "0xFFFFFFFFFFFFFFFF", "sys.stdout.write"
+            ];
 
-        let baseDump = "";
-        for (let i = 0; i < 150; i++) { 
-            let line = "";
-            while (line.length < 350) { line += snippets[Math.floor(Math.random() * snippets.length)] + "  "; }
-            baseDump += line + "\n";
-        }
-        codeCanvas.textContent = baseDump + baseDump;
+            let baseDump = "";
+            for (let i = 0; i < 150; i++) { 
+                let line = "";
+                while (line.length < 350) { line += snippets[Math.floor(Math.random() * snippets.length)] + "  "; }
+                baseDump += line + "\n";
+            }
+            codeCanvas.textContent = baseDump + baseDump;
 
-        const wrapper = document.getElementById('gatewayWrapper');
-        let mouseX = 0, mouseY = 0, targetX = 0, targetY = 0;
+            const wrapper = document.getElementById('gatewayWrapper');
+            let mouseX = 0, mouseY = 0, targetX = 0, targetY = 0;
 
-        document.addEventListener('mousemove', (e) => {
-            maskWrapper.style.setProperty('--mouse-x', `${e.clientX}px`);
-            maskWrapper.style.setProperty('--mouse-y', `${e.clientY}px`);
-            
-            mouseX = (e.clientX - window.innerWidth/2) / 75;
-            mouseY = (e.clientY - window.innerHeight/2) / 75;
-        });
-
-        function animate3D() {
-            if (Math.abs(mouseX - targetX) > 0.001) targetX += (mouseX - targetX) * 0.04;
-            if (Math.abs(mouseY - targetY) > 0.001) targetY += (mouseY - targetY) * 0.04;
-            
-            wrapper.style.transform = `rotateY(${targetX}deg) rotateX(${-targetY}deg)`;
-            requestAnimationFrame(animate3D);
-        }
-        animate3D();
-
-        document.getElementById('googleAuthBtn').onclick = async function() {
-            const btn = this;
-            const originalContent = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<div class="loader-ring" style="width: 20px; height: 20px; margin-bottom: 0; margin-right: 10px; border-width: 2px; border-color: rgba(255,255,255,0.2); border-top-color: #fff;"></div> Authenticating...';
-
-            const overlay = document.getElementById('loadingOverlay');
-            const loaderText = document.getElementById('loaderText');
-            const msg = document.getElementById('auth-message');
-            msg.innerText = '';
-            
-            try {
-                const result = await auth.signInWithPopup(provider);
-                const idToken = await result.user.getIdToken();
+            document.addEventListener('mousemove', (e) => {
+                maskWrapper.style.setProperty('--mouse-x', `${e.clientX}px`);
+                maskWrapper.style.setProperty('--mouse-y', `${e.clientY}px`);
                 
-                overlay.classList.add('active');
-                loaderText.innerText = "VERIFYING IDENTITY...";
+                mouseX = (e.clientX - window.innerWidth/2) / 75;
+                mouseY = (e.clientY - window.innerHeight/2) / 75;
+            });
 
-                const response = await fetch('/login/google', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        id_token: idToken,
-                        display_name: result.user.displayName 
-                    })
-                });
+            function animate3D() {
+                if (Math.abs(mouseX - targetX) > 0.001) targetX += (mouseX - targetX) * 0.04;
+                if (Math.abs(mouseY - targetY) > 0.001) targetY += (mouseY - targetY) * 0.04;
                 
-                const data = await response.json();
-                if (data.success) {
-                    const sequence = [
-                        "IDENTITY_VERIFIED",
-                        "MOUNTING GROUND-TRUTH LEDGER...",
-                        "PROVISIONING DOCKER INSTANCE...",
-                        "ESTABLISHING SECURE TUNNEL..."
-                    ];
+                wrapper.style.transform = `rotateY(${targetX}deg) rotateX(${-targetY}deg)`;
+                requestAnimationFrame(animate3D);
+            }
+            animate3D();
 
-                    let step = 0;
-                    const interval = setInterval(() => {
-                        if (step < sequence.length) {
-                            loaderText.innerText = sequence[step];
-                            step++;
-                        } else {
-                            clearInterval(interval);
-                            loaderText.style.color = "#00F090";
-                            loaderText.innerText = "ACCESS GRANTED. INITIALIZING...";
-                            setTimeout(() => window.location.href = '/', 1000);
-                        }
-                    }, 600);
-                } else {
+            document.getElementById('googleAuthBtn').onclick = async function() {
+                const btn = this;
+                const originalContent = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<div class="loader-ring" style="width: 20px; height: 20px; margin-bottom: 0; margin-right: 10px; border-width: 2px; border-color: rgba(255,255,255,0.2); border-top-color: #fff;"></div> Authenticating...';
+
+                const overlay = document.getElementById('loadingOverlay');
+                const loaderText = document.getElementById('loaderText');
+                const msg = document.getElementById('auth-message');
+                msg.innerText = '';
+                
+                try {
+                    const result = await auth.signInWithPopup(provider);
+                    const idToken = await result.user.getIdToken();
+                    
+                    overlay.classList.add('active');
+                    loaderText.innerText = "VERIFYING IDENTITY...";
+
+                    const response = await fetch('/login/google', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            id_token: idToken,
+                            display_name: result.user.displayName 
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        const sequence = [
+                            "IDENTITY_VERIFIED",
+                            "MOUNTING GROUND-TRUTH LEDGER...",
+                            "PROVISIONING DOCKER INSTANCE...",
+                            "ESTABLISHING SECURE TUNNEL..."
+                        ];
+
+                        let step = 0;
+                        const interval = setInterval(() => {
+                            if (step < sequence.length) {
+                                loaderText.innerText = sequence[step];
+                                step++;
+                            } else {
+                                clearInterval(interval);
+                                loaderText.style.color = "#00F090";
+                                loaderText.innerText = "ACCESS GRANTED. INITIALIZING...";
+                                setTimeout(() => window.location.href = '/', 1000);
+                            }
+                        }, 600);
+                    } else {
+                        btn.disabled = false;
+                        btn.innerHTML = originalContent;
+                        overlay.classList.remove('active');
+                        msg.className = 'error-text';
+                        msg.innerText = data.message || "AUTHENTICATION_FAILED";
+                    }
+                } catch (error) {
+                    console.error(error);
                     btn.disabled = false;
                     btn.innerHTML = originalContent;
                     overlay.classList.remove('active');
                     msg.className = 'error-text';
-                    msg.innerText = data.message || "AUTHENTICATION_FAILED";
+                    
+                    let displayMsg = error.message || "GATEWAY_ERROR";
+                    if (displayMsg.startsWith("Firebase: ")) {
+                        displayMsg = displayMsg.substring(10).split(" (auth/")[0];
+                    }
+                    msg.innerText = displayMsg;
                 }
-            } catch (error) {
-                console.error(error);
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
-                overlay.classList.remove('active');
-                msg.className = 'error-text';
-                
-                let displayMsg = error.message || "GATEWAY_ERROR";
-                if (displayMsg.startsWith("Firebase: ")) {
-                    displayMsg = displayMsg.substring(10).split(" (auth/")[0];
-                }
-                msg.innerText = displayMsg;
-            }
-        };
+            };
+        });
     </script>
 </body>
 </html>
