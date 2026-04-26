@@ -907,11 +907,12 @@ def change_user_password(user_id, current_password, new_password):
         return False, f"Server error: {str(e)}"
 
 
-def upload_files_to_gemini(session_id, filenames):
+def upload_files_to_gemini(session_id, filenames, api_key=None):
     """Uploads local files to Gemini File API and waits for them to become ACTIVE."""
     from google import genai
     import mimetypes
-    client = genai.Client(api_key=PRIMARY_API_KEY)
+    api_key = api_key or PRIMARY_API_KEY
+    client = genai.Client(api_key=api_key)
     session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session_id)
     
     # Whitelist of extensions and MIME types supported by Gemini Native File API
@@ -1118,7 +1119,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
         return False
 
 
-def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None, chat_id=None, disabled_tools=None):
+def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None, chat_id=None, disabled_tools=None, gemini_files_data=None):
     from flask import g
     g.model_id = model_id # Set ground-truth model for tools
     display_name = model_display_name or MODEL_NAMES.get(model_id)
@@ -1199,7 +1200,63 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             import agent_tools
             
             while True:
-                r = chat.send_message(message_to_send)
+                try:
+                    r = chat.send_message(message_to_send)
+                except Exception as loop_e:
+                    error_string = str(loop_e).lower()
+                    if '429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string):
+                        if (current_key_index + 1) < len(keys_to_try):
+                            current_key_index += 1
+                            current_key = keys_to_try[current_key_index]
+                            yield {'status': f'Quota exceeded. Switching to backup key...'}
+                            
+                            client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
+                            
+                            if gemini_files_data:
+                                session_id = get_current_session_id()
+                                if session_id:
+                                    filenames = [gf['display_name'] for gf in gemini_files_data if not gf.get('fallback_to_lab')]
+                                    if filenames:
+                                        new_files_data = upload_files_to_gemini(session_id, filenames, api_key=current_key)
+                                        uri_map = {}
+                                        for old_f in gemini_files_data:
+                                            for new_f in new_files_data:
+                                                if old_f.get('display_name') == new_f.get('display_name') and old_f.get('uri') and new_f.get('uri'):
+                                                    uri_map[old_f['uri']] = new_f['uri']
+                                                    old_f['uri'] = new_f['uri']
+                                        
+                                        def update_part_uri(part):
+                                            if hasattr(part, 'file_data') and part.file_data and hasattr(part.file_data, 'file_uri'):
+                                                old_uri = part.file_data.file_uri
+                                                if old_uri in uri_map:
+                                                    return types.Part.from_uri(file_uri=uri_map[old_uri], mime_type=part.file_data.mime_type)
+                                            return part
+                                        
+                                        if isinstance(message_to_send, list):
+                                            message_to_send = [update_part_uri(p) for p in message_to_send]
+                                        
+                                        if isinstance(current_effective_prompt, list):
+                                            for i in range(len(current_effective_prompt)):
+                                                current_effective_prompt[i] = update_part_uri(current_effective_prompt[i])
+
+                            old_history = chat.get_history() if hasattr(chat, 'get_history') else []
+                            new_history = []
+                            for h_msg in old_history:
+                                new_parts = []
+                                for p in getattr(h_msg, 'parts', []):
+                                    if gemini_files_data and 'update_part_uri' in locals():
+                                        p = update_part_uri(p)
+                                    new_parts.append(p)
+                                new_history.append(types.Content(role=h_msg.role, parts=new_parts))
+                                    
+                            chat = client.chats.create(model=model_id, config=chat_config, history=new_history)
+                            continue
+                        else:
+                            yield {'status': 'Quota exceeded on all keys. Cannot proceed.'}
+                            raise loop_e
+                    else:
+                        raise loop_e
+
                 if not r.candidates:
                     finish_reason_obj = getattr(r, 'prompt_feedback', {}).get('finish_reason', 'UNKNOWN')
                     finish_reason = finish_reason_obj.name if hasattr(finish_reason_obj, 'name') else str(finish_reason_obj)
@@ -4913,7 +4970,7 @@ class TaskSchedulerMonitor:
             
             if task:
                 try:
-                    self._execute_ai_task(task['user_id'], task['chat_id'], task['task_prompt'], task['model_id'], task['metadata'])
+                    self._execute_ai_task(task['id'], task['user_id'], task['chat_id'], task['task_prompt'], task['model_id'], task['metadata'])
                     
                     if task['recurring_minutes'] > 0:
                         db.execute('''
@@ -4937,9 +4994,10 @@ class TaskSchedulerMonitor:
                 
                 db.commit()
 
-    def _execute_ai_task(self, user_id, chat_id, task_prompt, model_id, metadata):
+    def _execute_ai_task(self, task_id, user_id, chat_id, task_prompt, model_id, metadata):
         with self.app_instance.app_context():
             from flask import g
+            from app import get_db
             # Set global context for tools to use in background threads
             g.user_id = user_id
             g.chat_id = chat_id
@@ -4963,7 +5021,15 @@ class TaskSchedulerMonitor:
             )
 
             final_output = ""
+            db = get_db()
             for chunk in generator:
+                # Check if task was cancelled mid-execution
+                cursor = db.execute("SELECT is_active FROM scheduled_tasks WHERE id = ?", (task_id,))
+                row = cursor.fetchone()
+                if row and row['is_active'] == 0:
+                    logger.info(f"Task {task_id} was cancelled during execution. Aborting AI generation.")
+                    return # Exit early, discarding any output
+
                 if 'result' in chunk: final_output += chunk['result']
 
             if final_output:

@@ -7608,8 +7608,8 @@
                         metaNotify.style.marginTop = '4px';
                         metaNotify.style.opacity = '0.8';
                         metaNotify.textContent = "System will notify you when this task is complete.";
-                        statusSpan.appendChild(metaNotify);
                     }
+                    statusSpan.appendChild(metaNotify); // Always append to move it to the bottom
                 } else if (metaNotify) {
                     metaNotify.remove();
                 }
