@@ -3849,6 +3849,56 @@ def change_display_name_route():
         logger.error(f"Error changing display name: {e}")
         return jsonify({"success": False, "message": "Server error."}), 500
 
+@app.route('/api/user/waitlist_info', methods=['GET'])
+def get_waitlist_info():
+    if 'user_id' not in session:
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+    
+    db = get_db()
+    cursor = db.execute('SELECT username, display_name, waitlist_form_submitted FROM users WHERE id = ?', (session['user_id'],))
+    user_data = cursor.fetchone()
+    
+    if user_data:
+        return jsonify({
+            "success": True,
+            "email": user_data['username'],
+            "display_name": user_data['display_name'],
+            "form_submitted": bool(user_data['waitlist_form_submitted'])
+        })
+    return jsonify({"success": False, "message": "User not found"}), 404
+
+@app.route('/api/user/submit_waitlist_form', methods=['POST'])
+def submit_waitlist_form():
+    if 'user_id' not in session:
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+        
+    data = request.get_json()
+    designation = data.get('designation', '')
+    source = data.get('source', '')
+    use_case = data.get('use_case', '')
+    
+    db = get_db()
+    try:
+        db.execute('''
+            UPDATE users 
+            SET designation = ?, source = ?, use_case = ?, waitlist_form_submitted = 1 
+            WHERE id = ?
+        ''', (designation, source, use_case, session['user_id']))
+        db.commit()
+        
+        # Fetch user info for Telegram message
+        cursor = db.execute('SELECT username, display_name FROM users WHERE id = ?', (session['user_id'],))
+        user_data = cursor.fetchone()
+        if user_data:
+            name_str = f"{user_data['display_name']} ({user_data['username']})" if user_data['display_name'] else user_data['username']
+            msg = f"📝 Waitlist Form Submitted\nUser: {name_str}\nDesignation: {designation}\nSource: {source}\nUse Case: {use_case}"
+            telegram_bot.send_message(msg)
+            
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"Error submitting waitlist form: {e}")
+        return jsonify({"success": False, "message": "Server error."}), 500
+
 @app.route('/favicon.ico')
 def favicon():
     return '', 204
