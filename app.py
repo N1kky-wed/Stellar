@@ -3423,28 +3423,59 @@ def clear_history():
         return jsonify({'status': 'Failed', 'message': f"Server error clearing history: {str(e)}"}), 500
 
 @app.route('/image-proxy')
+@require_approval
 def image_proxy():
+    import socket
+    import ipaddress
+    from urllib.parse import urlparse
+    
     image_url = request.args.get('url')
     if not image_url or not image_url.startswith('http://'):
-        return "Invalid URL or not HTTP", 400
+        return "Invalid URL", 400
         
     try:
-        # Fetch the image, stream it back to the client
-        resp = requests.get(image_url, stream=True, timeout=10)
+        # 1. SSRF Protection: Prevent access to internal/private networks
+        parsed = urlparse(image_url)
+        hostname = parsed.hostname
+        if not hostname:
+            return "Invalid hostname", 400
+            
+        ip_addr = socket.gethostbyname(hostname)
+        ip = ipaddress.ip_address(ip_addr)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            logger.warning(f"Blocked SSRF attempt to internal IP: {ip_addr} via {image_url}")
+            return "Access to internal networks is forbidden", 403
+
+        # 2. Fetch the image with a strict timeout
+        resp = requests.get(image_url, stream=True, timeout=5)
         resp.raise_for_status()
+        
+        # 3. MIME Type Validation: Ensure it's actually an image, not a malicious script/HTML
+        content_type = resp.headers.get('Content-Type', '')
+        if not content_type.startswith('image/'):
+            return "Target is not an image", 400
+            
+        # 4. DoS Protection: Prevent downloading massive files (Max 10MB)
+        content_length = resp.headers.get('Content-Length')
+        if content_length and int(content_length) > 10 * 1024 * 1024:
+            return "Image exceeds maximum allowed size (10MB)", 400
+
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
         headers = [(name, value) for (name, value) in resp.raw.headers.items()
                    if name.lower() not in excluded_headers]
-        
-        content_type = resp.headers.get('Content-Type', 'image/jpeg')
         
         return Response(resp.iter_content(chunk_size=10*1024), 
                         status=resp.status_code, 
                         content_type=content_type, 
                         headers=headers)
+    except socket.gaierror:
+        return "Failed to resolve hostname", 400
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Image proxy request failed for {image_url}: {e}")
+        return "Failed to fetch image", 502
     except Exception as e:
-        logger.error(f"Image proxy error for {image_url}: {e}")
-        return "Failed to proxy image", 502
+        logger.error(f"Image proxy unexpected error for {image_url}: {e}")
+        return "Internal server error", 500
 
 @app.route('/download/<path:filename>')
 def download_file(filename):
