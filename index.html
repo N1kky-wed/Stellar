@@ -6501,6 +6501,8 @@
                         const now = Date.now();
                         const lastRefresh = parseInt(img.dataset.lastRefresh || '0', 10);
                         
+                        if (img.dataset.failed === "true") return; // Stop refreshing if it failed
+
                         if (now - lastRefresh >= refreshRate * 1000) {
                             img.dataset.lastRefresh = now;
                             
@@ -6511,6 +6513,9 @@
                             const tempImg = new Image();
                             tempImg.onload = () => {
                                 img.src = urlObj.toString();
+                            };
+                            tempImg.onerror = () => {
+                                img.dataset.failed = "true"; // Mark as failed to prevent further requests
                             };
                             tempImg.src = urlObj.toString();
                         }
@@ -6997,12 +7002,21 @@
 
         async function deleteMessageFromServer(messageId, messageElement) {
             try {
+                // Transient messages (e.g. 'error_...', 'temp_...') won't exist in the database.
+                // Just remove them from the DOM without throwing a 403 error.
+                if (typeof messageId === 'string' && isNaN(parseInt(messageId, 10))) {
+                    messageElement.remove();
+                    return;
+                }
+
                 const response = await fetch('/api/messages/delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message_id: messageId })
                 });
-                if (response.ok) {
+                
+                // If it's 403/404, it's likely already deleted or never saved. Safely remove from UI.
+                if (response.ok || response.status === 403 || response.status === 404) {
                     messageElement.remove();
                 } else {
                     const err = await response.json();
