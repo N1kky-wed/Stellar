@@ -6396,13 +6396,24 @@
 
 
 
-        // --- Configure Marked.js for external links ---
+        // --- Configure Marked.js for external links and HTTP image proxy ---
         const renderer = new marked.Renderer();
         const originalLink = renderer.link.bind(renderer);
         renderer.link = (href, title, text) => {
             const html = originalLink(href, title, text);
             return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
         };
+
+        const originalImage = renderer.image.bind(renderer);
+        renderer.image = (href, title, text) => {
+            let processedHref = href;
+            if (processedHref && processedHref.startsWith('http://')) {
+                // Route insecure HTTP images through our backend proxy to avoid Mixed Content errors
+                processedHref = `/image-proxy?url=${encodeURIComponent(processedHref)}`;
+            }
+            return originalImage(processedHref, title, text);
+        };
+
         marked.setOptions({ 
             renderer: renderer,
             breaks: true,  // This converts single \n characters into <br> tags
@@ -6445,6 +6456,11 @@
             svgBlocks.forEach((block, index) => {
                 const placeholderRegex = new RegExp(`SVGBLOCKPLACEHOLDER${index}SVGBLOCK`, 'g');
                 html = html.replace(placeholderRegex, () => block);
+            });
+
+            // 5. Proxy raw insecure HTTP images that escaped the renderer
+            html = html.replace(/<img[^>]+src=["'](http:\/\/[^"']+)["']/gi, (match, url) => {
+                return match.replace(url, `/image-proxy?url=${encodeURIComponent(url)}`);
             });
 
             return html;

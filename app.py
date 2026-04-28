@@ -3422,6 +3422,30 @@ def clear_history():
         logger.error(f"Server error clearing history: {e}", exc_info=True)
         return jsonify({'status': 'Failed', 'message': f"Server error clearing history: {str(e)}"}), 500
 
+@app.route('/image-proxy')
+def image_proxy():
+    image_url = request.args.get('url')
+    if not image_url or not image_url.startswith('http://'):
+        return "Invalid URL or not HTTP", 400
+        
+    try:
+        # Fetch the image, stream it back to the client
+        resp = requests.get(image_url, stream=True, timeout=10)
+        resp.raise_for_status()
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        headers = [(name, value) for (name, value) in resp.raw.headers.items()
+                   if name.lower() not in excluded_headers]
+        
+        content_type = resp.headers.get('Content-Type', 'image/jpeg')
+        
+        return Response(resp.iter_content(chunk_size=10*1024), 
+                        status=resp.status_code, 
+                        content_type=content_type, 
+                        headers=headers)
+    except Exception as e:
+        logger.error(f"Image proxy error for {image_url}: {e}")
+        return "Failed to proxy image", 502
+
 @app.route('/download/<path:filename>')
 def download_file(filename):
     if '..' in filename or filename.startswith('/'):
