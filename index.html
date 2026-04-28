@@ -6477,6 +6477,48 @@
             return html;
         };
 
+        // --- Live Image Auto-Refresh Protocol ---
+        setInterval(() => {
+            document.querySelectorAll('.message-content img').forEach(img => {
+                try {
+                    // Only refresh if visibly in viewport to save bandwidth
+                    const rect = img.getBoundingClientRect();
+                    if (rect.bottom < 0 || rect.top > window.innerHeight) return;
+
+                    let src = img.getAttribute('src');
+                    if (!src) return;
+                    
+                    let refreshRate = 0;
+                    // Detect `#refresh=X` or `&refresh=X` in both raw and URL-encoded strings
+                    const match = src.match(/(?:%23|#|%26|&|\?)refresh(?:%3D|=)(\d+)/i);
+                    if (match) {
+                        refreshRate = parseInt(match[1], 10);
+                    } else if (src.includes('COUNTER') || src.includes('cgi-bin/viewer/video.jpg') || src.includes('cgi-bin/camera')) {
+                        refreshRate = 5; // Default 5s fallback for known IP camera patterns
+                    }
+
+                    if (refreshRate > 0) {
+                        const now = Date.now();
+                        const lastRefresh = parseInt(img.dataset.lastRefresh || '0', 10);
+                        
+                        if (now - lastRefresh >= refreshRate * 1000) {
+                            img.dataset.lastRefresh = now;
+                            
+                            let urlObj = new URL(img.src, window.location.origin);
+                            urlObj.searchParams.set('_t', now); // Cache buster
+                            
+                            // Flicker-free swap: load frame in background first
+                            const tempImg = new Image();
+                            tempImg.onload = () => {
+                                img.src = urlObj.toString();
+                            };
+                            tempImg.src = urlObj.toString();
+                        }
+                    }
+                } catch(e) {}
+            });
+        }, 1000);
+
         const MAX_TOKEN_LIMIT = 1048576;
         const TOKEN_COUNT_INTERVAL_MS = 600000;
 
