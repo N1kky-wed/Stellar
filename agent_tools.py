@@ -13,39 +13,163 @@ from google.genai import types
 import logging
 logger = logging.getLogger(__name__)
 
-# Pre-compiled regex patterns for SVG markdown stripping
-SVG_START_RE = re.compile(r'^```(?:svg|xml)?\s*', re.IGNORECASE)
-SVG_END_RE = re.compile(r'\s*```$')
+from typing import List, Optional
 
-def web_search(action: str, query: str, status: str, search_depth: str = "advanced", topic: str = "general", days: int = 3, max_results: int = 10, include_answer: bool = True) -> str:
-    """Unified Search Engine. Use 'quick' for Google-speed facts or 'extensive' for deep Tavily research.
+def web_search(
+    action: str,
+    status: str,
+    query: Optional[str] = None,
+    url: Optional[str] = None,
+    urls: Optional[List[str]] = None,
+    topic: str = "general",  # 'general', 'news', 'finance'
+    search_depth: str = "advanced",  # 'ultra-fast', 'fast', 'basic', 'advanced'
+    extract_depth: str = "basic",  # 'basic', 'advanced'
+    auto_parameters: bool = False,
+    exact_match: bool = False,
+    time_range: Optional[str] = None,  # 'd', 'w', 'm', 'y'
+    start_date: Optional[str] = None,  # YYYY-MM-DD
+    end_date: Optional[str] = None,  # YYYY-MM-DD
+    max_results: int = 5,
+    chunks_per_source: int = 3,
+    include_answer: bool = True,
+    include_raw_content: bool = False,
+    include_images: bool = False,
+    include_image_descriptions: bool = False,
+    include_favicon: bool = False,
+    include_usage: bool = False,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    select_domains: Optional[List[str]] = None,
+    select_paths: Optional[List[str]] = None,
+    exclude_paths: Optional[List[str]] = None,
+    country: Optional[str] = None,
+    format: str = "markdown",  # 'markdown', 'text'
+    instructions: Optional[str] = None,
+    max_depth: int = 2,
+    max_breadth: int = 20,
+    limit: int = 50,
+    allow_external: bool = True,
+    timeout: Optional[float] = None
+) -> str:
+    """Unified Web Search, Extraction, Crawling, and Mapping Tool.
+    
     Args:
-        action: 'quick' (Google Search) or 'extensive' (Tavily Deep Search).
-        query: The search terms.
+        action: 'google_quick', 'tavily_search', 'tavily_extract', 'tavily_crawl', 'tavily_map'.
         status: Status update for the user.
-        search_depth: 'basic' or 'advanced' (for extensive).
-        topic: 'general' or 'news'.
-        days: How many days back for news (for extensive).
-        max_results: Number of results (1-20).
-        include_answer: Request a generated AI summary (for extensive).
+        query: Search term or semantic intent.
+        url: Root URL for crawl/map.
+        urls: List of URLs for extraction (max 20).
+        topic: Category of search ('general', 'news', 'finance').
+        search_depth: 'ultra-fast' (instant), 'fast' (quick snippets), 'basic' (high relevance), 'advanced' (deep analysis).
+        extract_depth: 'basic' or 'advanced' (extracts tables/embedded media).
+        auto_parameters: Let Tavily optimize parameters based on intent.
+        exact_match: Ensure exact quoted phrases bypass synonyms.
+        time_range: Relative time ('day', 'week', 'month', 'year' or shorthand 'd', 'w', 'm', 'y').
+        start_date / end_date: Specific dates formatted as YYYY-MM-DD.
+        max_results: Number of search results (0-20).
+        chunks_per_source: Max snippets per source (1-5).
+        include_answer: AI generated summary.
+        include_raw_content: Returns parsed HTML text/markdown.
+        include_images: Extract images from search/URLs/Crawl.
+        include_image_descriptions: Add LLM descriptions to images.
+        include_favicon: Include favicon URL.
+        include_usage: Return API credit usage stats.
+        include_domains / exclude_domains: For Search/Crawl limiting.
+        select_domains / select_paths / exclude_paths: Regex patterns for Map/Crawl limits.
+        country: Boost search results from specific country.
+        format: Extraction output ('markdown' or 'text').
+        instructions: Natural language guidance for crawlers.
+        max_depth: Link click depth for Map/Crawl.
+        max_breadth: Max links to follow per level for Map/Crawl.
+        limit: Max pages to process for Map/Crawl.
+        allow_external: Follow links to external domains during Map/Crawl.
+        timeout: Wait time in seconds before failing.
     """
-    from app import PRIMARY_API_KEY
-    import os
+    try:
+        # 1. Google Quick Search
+        if action == "google_quick":
+            if not query: return json.dumps({"error": "Missing 'query' for google_quick"})
+            from app import PRIMARY_API_KEY
+            client = genai.Client(api_key=PRIMARY_API_KEY)
+            response = client.models.generate_content(
+                model='gemini-2.5-flash-lite',
+                contents=f"Please answer this concisely using Google Search: {query}",
+                config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+            )
+            return json.dumps({"tool": "google_quick", "answer": response.text})
 
-    if action == "quick":
-        client = genai.Client(api_key=PRIMARY_API_KEY)
-        response = client.models.generate_content(
-            model='gemini-2.5-flash-lite',
-            contents=query,
-            config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
-        )
-        return response.text
-
-    elif action == "extensive":
-        from tavily import TavilyClient
+        # Initialize Tavily Client
         t_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-        response = t_client.search(query=query, topic=topic, days=days, max_results=max_results, search_depth=search_depth, include_answer=include_answer)
-        return str(response)
+
+        # Strip None values out of kwargs to prevent SDK validation errors
+        def clean_kwargs(kwargs_dict):
+            return {k: v for k, v in kwargs_dict.items() if v is not None}
+
+        # 2. Tavily Search
+        if action == "tavily_search":
+            if not query: return json.dumps({"error": "Missing 'query' for tavily_search"})
+            kwargs = clean_kwargs({
+                "query": query, "topic": topic, "search_depth": search_depth,
+                "auto_parameters": auto_parameters, "max_results": max_results,
+                "time_range": time_range, "start_date": start_date, "end_date": end_date,
+                "include_answer": include_answer, "include_raw_content": include_raw_content,
+                "include_images": include_images, "include_image_descriptions": include_image_descriptions,
+                "include_domains": include_domains, "exclude_domains": exclude_domains,
+                "country": country, "exact_match": exact_match, 
+                "include_favicon": include_favicon, "include_usage": include_usage,
+                "timeout": timeout
+            })
+            if search_depth in["advanced", "fast"]:
+                kwargs["chunks_per_source"] = chunks_per_source
+            
+            return json.dumps({"tool": "tavily_search", "data": t_client.search(**kwargs)}, indent=2)
+
+        # 3. Tavily Extract
+        elif action == "tavily_extract":
+            if not urls: return json.dumps({"error": "Missing 'urls' list for tavily_extract"})
+            kwargs = clean_kwargs({
+                "urls": urls, "extract_depth": extract_depth, "format": format,
+                "include_images": include_images, "include_favicon": include_favicon,
+                "include_usage": include_usage, "timeout": timeout
+            })
+            if query:
+                kwargs["query"] = query
+                kwargs["chunks_per_source"] = chunks_per_source
+                
+            return json.dumps({"tool": "tavily_extract", "data": t_client.extract(**kwargs)}, indent=2)
+
+        # 4. Tavily Crawl
+        elif action == "tavily_crawl":
+            if not url: return json.dumps({"error": "Missing 'url' for tavily_crawl"})
+            kwargs = clean_kwargs({
+                "url": url, "max_depth": max_depth, "max_breadth": max_breadth, 
+                "limit": limit, "instructions": instructions, "select_paths": select_paths,
+                "select_domains": select_domains, "exclude_paths": exclude_paths, 
+                "exclude_domains": exclude_domains, "allow_external": allow_external,
+                "include_images": include_images, "extract_depth": extract_depth,
+                "format": format, "include_favicon": include_favicon, 
+                "include_usage": include_usage, "timeout": timeout,
+                "chunks_per_source": chunks_per_source
+            })
+            return json.dumps({"tool": "tavily_crawl", "data": t_client.crawl(**kwargs)}, indent=2)
+
+        # 5. Tavily Map
+        elif action == "tavily_map":
+            if not url: return json.dumps({"error": "Missing 'url' for tavily_map"})
+            kwargs = clean_kwargs({
+                "url": url, "max_depth": max_depth, "max_breadth": max_breadth, 
+                "limit": limit, "instructions": instructions, "select_paths": select_paths,
+                "select_domains": select_domains, "exclude_paths": exclude_paths, 
+                "exclude_domains": exclude_domains, "allow_external": allow_external,
+                "include_usage": include_usage, "timeout": timeout
+            })
+            return json.dumps({"tool": "tavily_map", "data": t_client.map(**kwargs)}, indent=2)
+
+        else:
+            return json.dumps({"error": f"Unknown action: '{action}'."})
+
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 def send_self_email(subject: str, body: str, status: str, attachment_path: str = None) -> str:
     """Secure Closed-Loop Mailer. Sends reports/files ONLY to your registered email address.
