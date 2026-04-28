@@ -3447,7 +3447,7 @@ def image_proxy():
             return "Access to internal networks is forbidden", 403
 
         # 2. Fetch the image with a strict timeout
-        resp = requests.get(image_url, stream=True, timeout=5)
+        resp = requests.get(image_url, stream=True, timeout=15)
         resp.raise_for_status()
         
         # 3. MIME Type Validation: Ensure it's actually an image, not a malicious script/HTML
