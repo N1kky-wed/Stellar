@@ -105,6 +105,38 @@ def web_search(
         def clean_kwargs(kwargs_dict):
             return {k: v for k, v in kwargs_dict.items() if v is not None}
 
+        # Deterministic Image Verification Filter
+        def _verify_tavily_images(data):
+            if not include_images: return data
+            import requests
+            from concurrent.futures import ThreadPoolExecutor
+            def _is_online(url):
+                try:
+                    r = requests.get(url, stream=True, timeout=3)
+                    r.close()
+                    return r.status_code == 200
+                except Exception: return False
+            
+            urls = set()
+            for i in data.get('images', []):
+                urls.add(i if isinstance(i, str) else i.get('url'))
+            for r in data.get('results', []):
+                for i in r.get('images', []):
+                    urls.add(i if isinstance(i, str) else i.get('url'))
+            urls.discard(None)
+            
+            if not urls: return data
+            
+            with ThreadPoolExecutor(max_workers=10) as ex:
+                valid_urls = {u for u, ok in zip(urls, ex.map(_is_online, urls)) if ok}
+                
+            if 'images' in data:
+                data['images'] = [i for i in data['images'] if (i if isinstance(i, str) else i.get('url')) in valid_urls]
+            for r in data.get('results', []):
+                if 'images' in r:
+                    r['images'] = [i for i in r['images'] if (i if isinstance(i, str) else i.get('url')) in valid_urls]
+            return data
+
         # 2. Tavily Search
         if action == "tavily_search":
             if not query: return json.dumps({"error": "Missing 'query' for tavily_search"})
@@ -122,7 +154,8 @@ def web_search(
             if search_depth in["advanced", "fast"]:
                 kwargs["chunks_per_source"] = chunks_per_source
             
-            return json.dumps({"tool": "tavily_search", "data": t_client.search(**kwargs)}, indent=2)
+            res = t_client.search(**kwargs)
+            return json.dumps({"tool": "tavily_search", "data": _verify_tavily_images(res)}, indent=2)
 
         # 3. Tavily Extract
         elif action == "tavily_extract":
@@ -136,7 +169,8 @@ def web_search(
                 kwargs["query"] = query
                 kwargs["chunks_per_source"] = chunks_per_source
                 
-            return json.dumps({"tool": "tavily_extract", "data": t_client.extract(**kwargs)}, indent=2)
+            res = t_client.extract(**kwargs)
+            return json.dumps({"tool": "tavily_extract", "data": _verify_tavily_images(res)}, indent=2)
 
         # 4. Tavily Crawl
         elif action == "tavily_crawl":
@@ -151,7 +185,8 @@ def web_search(
                 "include_usage": include_usage, "timeout": timeout,
                 "chunks_per_source": chunks_per_source
             })
-            return json.dumps({"tool": "tavily_crawl", "data": t_client.crawl(**kwargs)}, indent=2)
+            res = t_client.crawl(**kwargs)
+            return json.dumps({"tool": "tavily_crawl", "data": _verify_tavily_images(res)}, indent=2)
 
         # 5. Tavily Map
         elif action == "tavily_map":
@@ -163,7 +198,9 @@ def web_search(
                 "exclude_domains": exclude_domains, "allow_external": allow_external,
                 "include_usage": include_usage, "timeout": timeout
             })
-            return json.dumps({"tool": "tavily_map", "data": t_client.map(**kwargs)}, indent=2)
+            # Map doesn't return images typically, but we wrap it just in case it ever does
+            res = t_client.map(**kwargs)
+            return json.dumps({"tool": "tavily_map", "data": _verify_tavily_images(res)}, indent=2)
 
         else:
             return json.dumps({"error": f"Unknown action: '{action}'."})
