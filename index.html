@@ -3970,56 +3970,7 @@
             background-color: #ff6b6b;
         }
         
-        .stellar-msg .message-content .media-wrapper {
-            position: relative;
-            width: 100%;
-            min-height: 150px;
-            background: rgba(255,255,255,0.03);
-            border-radius: 8px;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 15px 0;
-        }
-
-        .stellar-msg .message-content .media-wrapper.skeleton-loading {
-            background: linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.02) 75%);
-            background-size: 200% 100%;
-            animation: skeleton-loading 1.5s infinite linear;
-        }
-
-        @keyframes skeleton-loading {
-            0% { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
-        }
-
-        .stellar-msg .message-content .media-wrapper .image-fallback {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            color: rgba(255,255,255,0.4);
-            font-size: 0.85rem;
-            gap: 10px;
-            text-align: center;
-            padding: 20px;
-        }
-
-        .stellar-msg .message-content .media-wrapper img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            display: block;
-            margin: 0 auto;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-        
-        .stellar-msg .message-content .media-wrapper.loaded img {
-            opacity: 1;
-        }
-
-        .stellar-msg .message-content > img {
+        .stellar-msg .message-content img {
             max-width: 100%;
             height: auto;
             border-radius: 6px;
