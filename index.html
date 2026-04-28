@@ -6399,19 +6399,30 @@
         // --- Configure Marked.js for external links and HTTP image proxy ---
         const renderer = new marked.Renderer();
         const originalLink = renderer.link.bind(renderer);
-        renderer.link = (href, title, text) => {
-            const html = originalLink(href, title, text);
+        renderer.link = (token) => {
+            // Support both old (href, title, text) and new ({href, title, text}) Marked.js APIs
+            const isObj = typeof token === 'object' && token !== null;
+            let html = isObj ? originalLink(token) : originalLink.apply(renderer, arguments);
             return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
         };
 
         const originalImage = renderer.image.bind(renderer);
-        renderer.image = (href, title, text) => {
-            let processedHref = href;
+        renderer.image = (token) => {
+            const isObj = typeof token === 'object' && token !== null;
+            let processedHref = isObj ? token.href : arguments[0];
+            let title = isObj ? token.title : arguments[1];
+            let text = isObj ? token.text : arguments[2];
+
             if (processedHref && processedHref.startsWith('http://')) {
                 // Route insecure HTTP images through our backend proxy to avoid Mixed Content errors
                 processedHref = `/image-proxy?url=${encodeURIComponent(processedHref)}`;
             }
-            return originalImage(processedHref, title, text);
+            
+            if (isObj) {
+                return originalImage({ ...token, href: processedHref });
+            } else {
+                return originalImage(processedHref, title, text);
+            }
         };
 
         marked.setOptions({ 
