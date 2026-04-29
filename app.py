@@ -3446,8 +3446,10 @@ def image_proxy():
             logger.warning(f"Blocked SSRF attempt to internal IP: {ip_addr} via {image_url}")
             return "Access to internal networks is forbidden", 403
 
-        # 2. Fetch the image with a strict timeout
-        resp = requests.get(image_url, stream=True, timeout=15)
+        # 2. Fetch the image with a strict timeout and prevent redirects (SSRF Protection)
+        resp = requests.get(image_url, stream=True, timeout=15, allow_redirects=False)
+        if resp.status_code in (301, 302, 303, 307, 308):
+            return "Redirects are not allowed for security reasons", 400
         resp.raise_for_status()
         
         # 3. MIME Type Validation: Ensure it's actually an image, not a malicious script/HTML
@@ -3455,16 +3457,26 @@ def image_proxy():
         if not content_type.startswith('image/'):
             return "Target is not an image", 400
             
-        # 4. DoS Protection: Prevent downloading massive files (Max 10MB)
+        # 4. DoS Protection: Prevent downloading massive files (Max 50MB)
         content_length = resp.headers.get('Content-Length')
-        if content_length and int(content_length) > 10 * 1024 * 1024:
-            return "Image exceeds maximum allowed size (10MB)", 400
+        if content_length and int(content_length) > 50 * 1024 * 1024:
+            return "Image exceeds maximum allowed size (50MB)", 400
 
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
         headers = [(name, value) for (name, value) in resp.raw.headers.items()
                    if name.lower() not in excluded_headers]
         
-        return Response(resp.iter_content(chunk_size=10*1024), 
+        def generate():
+            bytes_read = 0
+            max_bytes = 50 * 1024 * 1024
+            for chunk in resp.iter_content(chunk_size=10*1024):
+                bytes_read += len(chunk)
+                if bytes_read > max_bytes:
+                    logger.warning(f"Aborted streaming from {image_url}: exceeded size limit (DoS protection)")
+                    break
+                yield chunk
+
+        return Response(generate(), 
                         status=resp.status_code, 
                         content_type=content_type, 
                         headers=headers)

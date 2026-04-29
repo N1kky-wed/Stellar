@@ -416,6 +416,10 @@ def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_
         return f"Success: Task {task_id} has been updated."
 
     # Default: Schedule
+    cursor = db.execute('SELECT COUNT(*) FROM scheduled_tasks WHERE user_id = ? AND is_active = 1', (u_id,))
+    if cursor.fetchone()[0] >= 10:
+        return "Error: Maximum number of active scheduled tasks (10) reached. Please cancel some tasks before scheduling more."
+
     db.execute('INSERT INTO scheduled_tasks (user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes, metadata) VALUES (?,?,?,?,?,?,?)',
                (u_id, c_id, task_prompt, current_model, execute_at, recurring_minutes, metadata))
     db.commit()
