@@ -8619,6 +8619,15 @@
                     sseEventSource.onerror = (err) => {
                         if (streamEndedCleanly) return;
                         console.error("SSE Error:", err);
+                        
+                        // ✨ FIX: Close the native EventSource immediately!
+                        // This stops the browser from natively auto-reconnecting to the 
+                        // old, already-popped query_id URL (which causes the 404).
+                        if (sseEventSource) {
+                            sseEventSource.close();
+                        }
+
+                        // Your custom retry logic takes over seamlessly
                         if (retryCount < maxRetries) {
                             retryCount++;
                             setTimeout(attemptStreamConnection, 2000 * retryCount);
