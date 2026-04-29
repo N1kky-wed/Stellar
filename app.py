@@ -1424,7 +1424,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
             for tool in called_tools_results:
                 # Do not force-attach raw data from search tools, project history, Lab execution logs, or YouTube analysis, or preference logs
-                if tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences']:
+                if tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'make_presentation', 'regenerate_presentation_slide']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and ("Your Forge Deployment History" in tool['result'] or "Source Code for Project" in tool['result']):
                     continue
