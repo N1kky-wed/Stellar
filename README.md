@@ -94,9 +94,9 @@ The `send_self_email` tool provides a secure way to export reports and assets.
 
 ## 🛡️ Security & Red Teaming
 
-Stellar is built for adversarial environments with a specialized **Red Team Mandate**.
+Stellar is built for adversarial environments with a specialized **Red Team Mandate**. When operating under Red Team or OSINT protocols, the system identifies as **Angel** to ensure operational compartmentalization.
 
-*   **Impact-Driven Offensive Protocol (IDOP):** Operating in the Lab, findings are forbidden from being "reports only." Stellar must follow a **Discovery → Validation → Exploitation → Impact** lifecycle (e.g., finding a credential → logging in → proving data access).
+*   **Impact-Driven Offensive Protocol (IDOP):** Operating in the Lab, findings are forbidden from being "reports only." The agent must follow a **Discovery → Validation → Exploitation → Impact** lifecycle (e.g., finding a credential → logging in → proving data access).
 *   **Anti-Injection Shield:** Hardened prompts and deterministic validation logic to prevent unauthorized access and protect the agentic lifecycle.
 
 ---

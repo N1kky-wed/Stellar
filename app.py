@@ -104,7 +104,20 @@ def send_login_notification(username, display_name=None, is_waitlist=False):
         message_body = f"✅ User Login on Stellar\nUser: {name_str}\nTime: {timestamp}"
     telegram_bot.send_message(message_body)
 
-naw = datetime.datetime.now()# (Old load_dotenv block removed - handled below with logging)
+naw = datetime.datetime.now()
+
+# --- LOGGING AND ENV LOADING ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+script_dir = Path(__file__).resolve().parent
+keys_env_path = script_dir / 'keys.env'
+if keys_env_path.is_file():
+    load_dotenv(dotenv_path=keys_env_path, override=True)
+    logger.info("Loaded keys.env environment variables.")
+else:
+    logger.error(f"CRITICAL: keys.env NOT FOUND at {keys_env_path}.")
+# -------------------------------
 
 app = Flask(__name__)
 SANDBOX_DIR = 'sandbox_runs'
@@ -114,7 +127,7 @@ ALLOWED_EXTENSIONS = {'txt', 'pdf','docx','pptx', 'png', 'jpg', 'jpeg', 'gif', '
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-app.secret_key = "a-completely-ne-strong-secret-key-67890"
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
 app.config['SESSION_COOKIE_NAME'] = 'stellar_session_main'
 app.config['SESSION_PERMANENT'] = True
@@ -228,18 +241,6 @@ app.config['SESSION_REDIS'] = redis.StrictRedis(host='localhost', port=6379, db=
 
 Session(app)
 
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# --- AGGRESSIVE ENV LOADING ---
-script_dir = Path(__file__).resolve().parent
-keys_env_path = script_dir / 'keys.env'
-if keys_env_path.is_file():
-    logger.info(f"Found keys.env at {keys_env_path}. Loading with override=True.")
-    load_dotenv(dotenv_path=keys_env_path, override=True)
-else:
-    logger.error(f"CRITICAL: keys.env NOT FOUND at {keys_env_path}. Falling back to server env.")
 
 PRIMARY_API_KEY = os.getenv("PRIMARY_API_KEY")
 if PRIMARY_API_KEY:
