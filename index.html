@@ -7700,7 +7700,7 @@
             let placeholderId = `placeholder-${Date.now()}`;
             let placeholderText = query ? "Processing query..." : "Processing files...";
             if (serverFileIds.length > 0) {
-                placeholderText = query ? `Analyzing ${serverFileIds.length} files + query...` : `Analyzing ${serverFileIds.length} files...`;
+                placeholderText = `Analyzing ${serverFileIds.length} files...`;
                 
             }
 

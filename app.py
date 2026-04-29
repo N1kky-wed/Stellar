@@ -3431,7 +3431,7 @@ def image_proxy():
     from urllib.parse import urlparse
     
     image_url = request.args.get('url')
-    if not image_url or not image_url.startswith('http://'):
+    if not image_url or not image_url.startswith(('http://', 'https://')):
         return "Invalid URL", 400
         
     try:
