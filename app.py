@@ -2658,8 +2658,14 @@ def refine_stream():
                     effective_conv_hist = conv_hist_list.copy()
                     if partial_work_done:
                         capability_note = ""
-                        if current_model not in elite_models:
-                            capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task based on the progress shown."
+                        # Define model tiers clearly for fallback guidance
+                        full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                        lab_only = ["gemini-3.1-flash-lite-preview"] # Lunarity
+                        
+                        if current_model in lab_only:
+                            capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the task using the Lab or Web Search."
+                        elif current_model not in full_access:
+                            capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task."
                         
                         effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
                     
@@ -2911,9 +2917,13 @@ def search_stream():
                     effective_full_context = full_context
                     if partial_analysis_work:
                         capability_note = ""
-                        elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                        if current_model not in elite_models:
-                             capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Use Web Search/Intelligence to finalize."
+                        full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                        lab_only = ["gemini-3.1-flash-lite-preview"]
+                        
+                        if current_model in lab_only:
+                            capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Continue the research using Lab/Search."
+                        elif current_model not in full_access:
+                            capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. Use Web Search/Intelligence to finalize."
                         
                         effective_full_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-analysis. Here is its partial progress: \n---\n{partial_analysis_work}\n---\nPlease CONTINUE the research analysis immediately where it left off. Do not repeat existing sections.{capability_note}"
 
@@ -2984,8 +2994,12 @@ def search_stream():
                     effective_analysis_result = research_analysis_result
                     if partial_expansion_work:
                          capability_note = ""
-                         elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                         if current_model not in elite_models:
+                         full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                         lab_only = ["gemini-3.1-flash-lite-preview"]
+                         
+                         if current_model in lab_only:
+                             capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Continue the expansion using Lab/Search."
+                         elif current_model not in full_access:
                              capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Use your knowledge to finalize the paper."
                          effective_analysis_result += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-expansion. Here is its partial progress: \n---\n{partial_expansion_work}\n---\nPlease CONTINUE the expansion immediately where it left off.{capability_note}"
 
@@ -3271,9 +3285,14 @@ def cosmos_stream():
                 effective_cosmos_context = full_context
                 if partial_cosmos_work:
                     capability_note = ""
-                    elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                    if current_model not in elite_models:
+                    full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                    lab_only = ["gemini-3.1-flash-lite-preview"]
+                    
+                    if current_model in lab_only:
+                        capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the report using available data and Lab tools."
+                    elif current_model not in full_access:
                         capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Complete the report structure using available data."
+                    
                     effective_cosmos_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-generation. Here is its partial HTML output: \n---\n{partial_cosmos_work}\n---\nPlease CONTINUE the report generation immediately where it left off. Do not repeat existing sections.{capability_note}"
 
                 cosmos_prompt = get_cosmos_report_prompt(user_query, effective_cosmos_context)
