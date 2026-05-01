@@ -2981,7 +2981,8 @@ def search_stream():
                     if 'result' in item:
                         research_analysis_result += item['result']
 
-            if not research_analysis_result:                yield f"data: {json.dumps({'status': f'Research analysis failed after all attempts.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
+            if not research_analysis_result:
+                yield f"data: {json.dumps({'status': f'Research analysis failed after all attempts.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
                 error_occurred = True
                 return
 
@@ -3055,7 +3056,9 @@ def search_stream():
                 if not expansion_failed and final_result:
                     break
                 else:
-                    pass            if not final_result:
+                    pass
+
+            if not final_result:
                 yield f"data: {json.dumps({'status': f'Failed to generate the final research paper after all attempts for query_id {query_id}.', 'error': True, 'phase': 'expansion_llm'})}\n\n"
                 error_occurred = True
                 return
