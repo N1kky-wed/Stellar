@@ -2642,34 +2642,29 @@ def refine_stream():
                     yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
                     return
 
-                if current_model == "gemini-3.1-flash-lite-preview" and last_error_details:
-                    yield f"data: {json.dumps({'status': 'Primary models busy. Lunarity is generating diagnostic report...', 'phase': 'diagnostic'})}\n\n"
-                    from prompts import get_error_explanation_prompt
-                    text_prompt = get_error_explanation_prompt(user_query_from_frontend, last_error_details)
-                else:
-                    if current_model != models_to_try[0]:
-                        yield f"data: {json.dumps({'status': f'Model failed. Falling back to {display_name}...', 'phase': 'refining'})}\n\n"
-                        time.sleep(1)
+                if current_model != models_to_try[0]:
+                    yield f"data: {json.dumps({'status': f'Model failed. Falling back to {display_name}...', 'phase': 'refining'})}\n\n"
+                    time.sleep(1)
+                
+                username = session.get('username')
+                user_id = session.get('user_id')
+                
+                # If we have partial work from a previous failed model, inject it as continuation context
+                effective_conv_hist = conv_hist_list.copy()
+                if partial_work_done:
+                    capability_note = ""
+                    # Define model tiers clearly for fallback guidance
+                    full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                    lab_only = ["gemini-3.1-flash-lite-preview"] # Lunarity
                     
-                    username = session.get('username')
-                    user_id = session.get('user_id')
+                    if current_model in lab_only:
+                        capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the task using the Lab or Web Search."
+                    elif current_model not in full_access:
+                        capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task."
                     
-                    # If we have partial work from a previous failed model, inject it as continuation context
-                    effective_conv_hist = conv_hist_list.copy()
-                    if partial_work_done:
-                        capability_note = ""
-                        # Define model tiers clearly for fallback guidance
-                        full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                        lab_only = ["gemini-3.1-flash-lite-preview"] # Lunarity
-                        
-                        if current_model in lab_only:
-                            capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the task using the Lab or Web Search."
-                        elif current_model not in full_access:
-                            capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task."
-                        
-                        effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
-                    
-                    text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id)                
+                    effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
+                
+                text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id)                
 
                 # Create a copy of multimodal_prompt and add the text_prompt
                 final_prompt = multimodal_prompt.copy()
@@ -2710,6 +2705,24 @@ def refine_stream():
                 else:
                     # If whole loop failed without even partial result, we keep refined_query_result as is for next iteration
                     pass
+
+            # FINAL FAIL-SAFE: If everything failed, have Lunarity generate a diagnostic report
+            if not refined_query_result and last_error_details:
+                yield f"data: {json.dumps({'status': 'All models busy or exhausted. Lunarity is generating diagnostic report...', 'phase': 'diagnostic'})}\n\n"
+                from prompts import get_error_explanation_prompt
+                diag_prompt = get_error_explanation_prompt(user_query_from_frontend, last_error_details)
+                
+                generator_output = gemini_generate(
+                    prompt=diag_prompt,
+                    model_id="gemini-3.1-flash-lite-preview",
+                    key=PRIMARY_API_KEY,
+                    attempts=1,
+                    model_display_name="Lunarity (Diagnostic)",
+                    chat_id=chat_id
+                )
+                for item in generator_output:
+                    if 'result' in item:
+                        refined_query_result += item['result']
 
             if refined_query_result:
                 if check_and_log_stop(query_id, "database insert"): return
@@ -2904,30 +2917,25 @@ def search_stream():
                     yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
                     return
 
-                if current_model == "gemini-3.1-flash-lite-preview" and last_analysis_error:
-                    yield f"data: {json.dumps({'status': 'Analysis failed. Lunarity is generating diagnostic report...', 'phase': 'analysis_diagnostic'})}\n\n"
-                    from prompts import get_error_explanation_prompt
-                    research_prompt = get_error_explanation_prompt(user_query, last_analysis_error)
-                else:
-                    if current_model != analysis_models_to_try[0]:
-                        yield f"data: {json.dumps({'status': f'Analysis model failed. Falling back to {display_name}...', 'phase': 'analysis_llm'})}\n\n"
-                        time.sleep(1)
+                if current_model != analysis_models_to_try[0]:
+                    yield f"data: {json.dumps({'status': f'Analysis model failed. Falling back to {display_name}...', 'phase': 'analysis_llm'})}\n\n"
+                    time.sleep(1)
 
-                    # Inject partial work into the context if available
-                    effective_full_context = full_context
-                    if partial_analysis_work:
-                        capability_note = ""
-                        full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                        lab_only = ["gemini-3.1-flash-lite-preview"]
-                        
-                        if current_model in lab_only:
-                            capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Continue the research using Lab/Search."
-                        elif current_model not in full_access:
-                            capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. Use Web Search/Intelligence to finalize."
-                        
-                        effective_full_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-analysis. Here is its partial progress: \n---\n{partial_analysis_work}\n---\nPlease CONTINUE the research analysis immediately where it left off. Do not repeat existing sections.{capability_note}"
+                # Inject partial work into the context if available
+                effective_full_context = full_context
+                if partial_analysis_work:
+                    capability_note = ""
+                    full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                    lab_only = ["gemini-3.1-flash-lite-preview"]
 
-                    research_prompt = get_research_analysis_prompt(user_query, effective_full_context)
+                    if current_model in lab_only:
+                        capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Continue the research using Lab/Search."
+                    elif current_model not in full_access:
+                        capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. Use Web Search/Intelligence to finalize."
+
+                    effective_full_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-analysis. Here is its partial progress: \n---\n{partial_analysis_work}\n---\nPlease CONTINUE the research analysis immediately where it left off. Do not repeat existing sections.{capability_note}"
+
+                research_prompt = get_research_analysis_prompt(user_query, effective_full_context)
 
                 generator_output_analysis = gemini_generate(
                     prompt=research_prompt, model_id=current_model, key=current_api_key,
@@ -2959,8 +2967,21 @@ def search_stream():
                 else:
                     pass
 
-            if not research_analysis_result:
-                yield f"data: {json.dumps({'status': f'Research analysis failed after all attempts.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
+            # FINAL FAIL-SAFE: If research analysis completely failed, use Lunarity for a diagnostic report
+            if not research_analysis_result and last_analysis_error:
+                yield f"data: {json.dumps({'status': 'Analysis models busy. Lunarity is generating diagnostic report...', 'phase': 'analysis_diagnostic'})}\n\n"
+                from prompts import get_error_explanation_prompt
+                diag_prompt = get_error_explanation_prompt(user_query, last_analysis_error)
+
+                generator_output = gemini_generate(
+                    prompt=diag_prompt, model_id="gemini-3.1-flash-lite-preview", key=PRIMARY_API_KEY,
+                    attempts=1, model_display_name="Lunarity (Diagnostic)", chat_id=chat_id
+                )
+                for item in generator_output:
+                    if 'result' in item:
+                        research_analysis_result += item['result']
+
+            if not research_analysis_result:                yield f"data: {json.dumps({'status': f'Research analysis failed after all attempts.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
                 error_occurred = True
                 return
 
@@ -3312,6 +3333,7 @@ def cosmos_stream():
                     elif 'result' in item:
                         temp_result_html = item['result']
                         if isinstance(temp_result_html, str) and temp_result_html.startswith(ERROR_CODE):
+                            last_analysis_error = temp_result_html # Use this for final diagnostic
                             if current_cosmos_attempt:
                                 partial_cosmos_work += "\n" + current_cosmos_attempt
                             model_failed = True
@@ -3327,6 +3349,20 @@ def cosmos_stream():
                         selected_model = fallback_model
                     else:
                         pass
+
+            # FINAL FAIL-SAFE: If Cosmos generation completely failed, generate diagnostic report
+            if not final_report_html and last_analysis_error:
+                yield f"data: {json.dumps({'status': 'Generation models busy. Lunarity is generating diagnostic report...', 'phase': 'generation_diagnostic'})}\n\n"
+                from prompts import get_error_explanation_prompt
+                diag_prompt = get_error_explanation_prompt(user_query, last_analysis_error)
+                
+                generator_output = gemini_generate(
+                    prompt=diag_prompt, model_id="gemini-3.1-flash-lite-preview", key=PRIMARY_API_KEY,
+                    attempts=1, model_display_name="Lunarity (Diagnostic)", chat_id=chat_id
+                )
+                for item in generator_output:
+                    if 'result' in item:
+                        final_report_html += item['result']
 
             if not final_report_html:
                 error_msg = f"Failed to generate the Cosmos report after all attempts for query_id {query_id}."
