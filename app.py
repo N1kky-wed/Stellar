@@ -2628,9 +2628,10 @@ def refine_stream():
             if tool_hist_context:
                 conv_hist_list.append(tool_hist_context)
 
-            refined_query_result = None
+            refined_query_result = ""
             models_to_try = get_fallback_chain(model_id)
             last_error_details = ""
+            partial_work_done = ""
 
             for current_model in models_to_try:
                 if check_and_log_stop(query_id, f"LLM call {current_model}"): return
@@ -2652,7 +2653,13 @@ def refine_stream():
                     
                     username = session.get('username')
                     user_id = session.get('user_id')
-                    text_prompt = get_refinement_prompt(user_query_from_frontend, conv_hist_list, username=username, disabled_tools=disabled_tools, user_id=user_id)                
+                    
+                    # If we have partial work from a previous failed model, inject it as continuation context
+                    effective_conv_hist = conv_hist_list.copy()
+                    if partial_work_done:
+                        effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.")
+                    
+                    text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id)                
 
                 # Create a copy of multimodal_prompt and add the text_prompt
                 final_prompt = multimodal_prompt.copy()
@@ -2670,8 +2677,8 @@ def refine_stream():
                     gemini_files_data=gemini_files_data
                 )
                 
-                refined_query_result = ""
                 model_failed = False
+                current_attempt_result = ""
                 for item in generator_output:
                     if 'status' in item:
                         yield f"data: {json.dumps({'status': item['status'], 'phase': 'refining'})}\n\n"
@@ -2679,17 +2686,22 @@ def refine_stream():
                         temp_result = item['result']
                         if isinstance(temp_result, str) and temp_result.startswith(ERROR_CODE):
                             last_error_details = temp_result
+                            # Store partial work so next model can pick up
+                            if current_attempt_result:
+                                partial_work_done += "\n" + current_attempt_result
                             model_failed = True
                             break
                         else:
+                            current_attempt_result += temp_result
                             refined_query_result += temp_result
                 
                 if not model_failed and refined_query_result:
                     break
                 else:
-                    refined_query_result = None
+                    # If whole loop failed without even partial result, we keep refined_query_result as is for next iteration
+                    pass
 
-            if refined_query_result is not None:
+            if refined_query_result:
                 if check_and_log_stop(query_id, "database insert"): return
                 stellar_message_id = insert_message(
                     chat_id,
@@ -2868,15 +2880,16 @@ def search_stream():
             yield f"data: {json.dumps({'status': 'Starting research analysis...', 'phase': 'analysis_llm'})}\n\n"
             if check_and_log_stop(query_id, "research LLM call"): return
             
-            research_analysis_result = None
+            research_analysis_result = ""
             analysis_models_to_try = get_fallback_chain(model_id)
             last_analysis_error = ""
+            partial_analysis_work = ""
 
             for current_model in analysis_models_to_try:
                 if check_and_log_stop(query_id, f"research LLM call {current_model}"): return
                 display_name = MODEL_NAMES.get(current_model, current_model)
                 current_api_key = PRIMARY_API_KEY
-                
+
                 if not current_api_key:
                     yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
                     return
@@ -2889,8 +2902,13 @@ def search_stream():
                     if current_model != analysis_models_to_try[0]:
                         yield f"data: {json.dumps({'status': f'Analysis model failed. Falling back to {display_name}...', 'phase': 'analysis_llm'})}\n\n"
                         time.sleep(1)
-                    
-                    research_prompt = get_research_analysis_prompt(user_query, full_context)
+
+                    # Inject partial work into the context if available
+                    effective_full_context = full_context
+                    if partial_analysis_work:
+                        effective_full_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-analysis. Here is its partial progress: \n---\n{partial_analysis_work}\n---\nPlease CONTINUE the research analysis immediately where it left off. Do not repeat existing sections."
+
+                    research_prompt = get_research_analysis_prompt(user_query, effective_full_context)
 
                 generator_output_analysis = gemini_generate(
                     prompt=research_prompt, model_id=current_model, key=current_api_key,
@@ -2899,9 +2917,9 @@ def search_stream():
                     chat_id=chat_id,
                     gemini_files_data=gemini_files_data
                 )
-                
-                research_analysis_result = ""
+
                 analysis_failed = False
+                current_analysis_attempt = ""
                 for item in generator_output_analysis:
                     if 'status' in item:
                         yield f"data: {json.dumps({'status': item['status'], 'phase': 'analysis_llm'})}\n\n"
@@ -2909,27 +2927,31 @@ def search_stream():
                         temp_result_analysis = item['result']
                         if isinstance(temp_result_analysis, str) and temp_result_analysis.startswith(ERROR_CODE):
                             last_analysis_error = temp_result_analysis
+                            if current_analysis_attempt:
+                                partial_analysis_work += "\n" + current_analysis_attempt
                             analysis_failed = True
                             break
                         else:
+                            current_analysis_attempt += temp_result_analysis
                             research_analysis_result += temp_result_analysis
-                
+
                 if not analysis_failed and research_analysis_result:
                     break
                 else:
-                    research_analysis_result = None
+                    pass
 
             if not research_analysis_result:
-                yield f"data: {json.dumps({'status': f'Research analysis failed after all attempts for query_id {query_id}.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
+                yield f"data: {json.dumps({'status': f'Research analysis failed after all attempts.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
                 error_occurred = True
                 return
 
             yield f"data: {json.dumps({'status': 'Expanding analysis into full research paper...', 'phase': 'expansion_llm'})}\n\n"
             if check_and_log_stop(query_id, "expansion LLM call"): return
-            
-            final_result = None
+
+            final_result = ""
             expansion_models_to_try = get_fallback_chain(model_id)
             last_expansion_error = ""
+            partial_expansion_work = ""
 
             for current_model in expansion_models_to_try:
                 if check_and_log_stop(query_id, f"expansion LLM call {current_model}"): return
@@ -2948,8 +2970,13 @@ def search_stream():
                     if current_model != expansion_models_to_try[0]:
                         yield f"data: {json.dumps({'status': f'Expansion model failed. Falling back to {display_name}...', 'phase': 'expansion_llm'})}\n\n"
                         time.sleep(1)
-                    
-                    final_prompt = get_final_expansion_prompt(user_query, research_analysis_result, full_context)
+
+                    # Inject partial work for expansion
+                    effective_analysis_result = research_analysis_result
+                    if partial_expansion_work:
+                         effective_analysis_result += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-expansion. Here is its partial progress: \n---\n{partial_expansion_work}\n---\nPlease CONTINUE the expansion immediately where it left off."
+
+                    final_prompt = get_final_expansion_prompt(user_query, effective_analysis_result, full_context)
 
                 generator_output_expansion = gemini_generate(
                     prompt=final_prompt, model_id=current_model, key=current_api_key,
@@ -2960,8 +2987,8 @@ def search_stream():
                     gemini_files_data=gemini_files_data
                 )
 
-                final_result = ""
                 expansion_failed = False
+                current_expansion_attempt = ""
                 for item in generator_output_expansion:
                     if 'status' in item:
                          yield f"data: {json.dumps({'status': item['status'], 'phase': 'expansion_llm'})}\n\n"
@@ -2969,16 +2996,18 @@ def search_stream():
                         temp_result_expansion = item['result']
                         if isinstance(temp_result_expansion, str) and temp_result_expansion.startswith(ERROR_CODE):
                             last_expansion_error = temp_result_expansion
+                            if current_expansion_attempt:
+                                partial_expansion_work += "\n" + current_expansion_attempt
                             expansion_failed = True
                             break
                         else:
+                            current_expansion_attempt += temp_result_expansion
                             final_result += temp_result_expansion
 
                 if not expansion_failed and final_result:
                     break
                 else:
-                    final_result = None
-            if not final_result:
+                    pass            if not final_result:
                 yield f"data: {json.dumps({'status': f'Failed to generate the final research paper after all attempts for query_id {query_id}.', 'error': True, 'phase': 'expansion_llm'})}\n\n"
                 error_occurred = True
                 return
@@ -3208,7 +3237,10 @@ def cosmos_stream():
             yield f"data: {json.dumps({'status': 'Generating Cosmos report and infographics...', 'phase': 'generation_llm'})}\n\n"
             if check_and_log_stop(query_id, "cosmos report generation"): return
 
+            final_report_html = ""
             selected_model = model_id
+            partial_cosmos_work = ""
+
             for model_attempt in range(max_model_attempts):
                 current_model = selected_model
                 display_name = MODEL_NAMES.get(current_model, current_model)
@@ -3222,7 +3254,12 @@ def cosmos_stream():
                     yield f"data: {json.dumps({'status': fallback_status, 'phase': 'generation_llm'})}\n\n"
                     time.sleep(1)
                 
-                cosmos_prompt = get_cosmos_report_prompt(user_query, full_context)
+                # Inject partial work if available
+                effective_cosmos_context = full_context
+                if partial_cosmos_work:
+                    effective_cosmos_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-generation. Here is its partial HTML output: \n---\n{partial_cosmos_work}\n---\nPlease CONTINUE the report generation immediately where it left off. Do not repeat existing sections."
+
+                cosmos_prompt = get_cosmos_report_prompt(user_query, effective_cosmos_context)
                 generator_output = gemini_generate(
                     prompt=cosmos_prompt, model_id=current_model, key=current_api_key,
                     attempts=1,
@@ -3230,18 +3267,24 @@ def cosmos_stream():
                     chat_id=chat_id,
                     gemini_files_data=gemini_files_data
                 )
-                temp_result_html = None
+                
+                model_failed = False
+                current_cosmos_attempt = ""
                 for item in generator_output:
                     if 'status' in item:
                         yield f"data: {json.dumps({'status': item['status'], 'phase': 'generation_llm'})}\n\n"
                     elif 'result' in item:
                         temp_result_html = item['result']
                         if isinstance(temp_result_html, str) and temp_result_html.startswith(ERROR_CODE):
-                            temp_result_html = None
+                            if current_cosmos_attempt:
+                                partial_cosmos_work += "\n" + current_cosmos_attempt
+                            model_failed = True
+                            break
                         else:
-                            final_report_html = temp_result_html
-                        break
-                if final_report_html is not None:
+                            current_cosmos_attempt += temp_result_html
+                            final_report_html += temp_result_html
+                
+                if not model_failed and final_report_html:
                     break
                 else:
                     if model_attempt == 0 and fallback_model and fallback_model != model_id:
