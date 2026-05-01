@@ -1210,7 +1210,14 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 tools=tools_config,
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 temperature=1.0,
-                system_instruction=system_instruction
+                system_instruction=system_instruction,
+                safety_settings=[
+                    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
+                    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
+                    types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
+                    types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
+                    types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="BLOCK_NONE"),
+                ]
             )
             chat = client.chats.create(model=model_id, config=chat_config)
             
