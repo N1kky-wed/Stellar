@@ -1223,57 +1223,59 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     r = chat.send_message(message_to_send)
                 except Exception as loop_e:
                     error_string = str(loop_e).lower()
-                    if '429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string):
-                        if (current_key_index + 1) < len(keys_to_try):
-                            current_key_index += 1
-                            current_key = keys_to_try[current_key_index]
-                            yield {'status': f'Quota exceeded. Switching to backup key...'}
-                            
-                            client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
-                            
-                            if gemini_files_data:
-                                session_id = get_current_session_id()
-                                if session_id:
-                                    filenames = [gf['display_name'] for gf in gemini_files_data if not gf.get('fallback_to_lab')]
-                                    if filenames:
-                                        new_files_data = upload_files_to_gemini(session_id, filenames, api_key=current_key)
-                                        uri_map = {}
-                                        for old_f in gemini_files_data:
-                                            for new_f in new_files_data:
-                                                if old_f.get('display_name') == new_f.get('display_name') and old_f.get('uri') and new_f.get('uri'):
-                                                    uri_map[old_f['uri']] = new_f['uri']
-                                                    old_f['uri'] = new_f['uri']
-                                        
-                                        def update_part_uri(part):
-                                            if hasattr(part, 'file_data') and part.file_data and hasattr(part.file_data, 'file_uri'):
-                                                old_uri = part.file_data.file_uri
-                                                if old_uri in uri_map:
-                                                    return types.Part.from_uri(file_uri=uri_map[old_uri], mime_type=part.file_data.mime_type)
-                                            return part
-                                        
-                                        if isinstance(message_to_send, list):
-                                            message_to_send = [update_part_uri(p) for p in message_to_send]
-                                        
-                                        if isinstance(current_effective_prompt, list):
-                                            for i in range(len(current_effective_prompt)):
-                                                current_effective_prompt[i] = update_part_uri(current_effective_prompt[i])
-
-                            old_history = chat.get_history() if hasattr(chat, 'get_history') else []
-                            new_history = []
-                            for h_msg in old_history:
-                                new_parts = []
-                                for p in getattr(h_msg, 'parts', []):
-                                    if gemini_files_data and 'update_part_uri' in locals():
-                                        p = update_part_uri(p)
-                                    new_parts.append(p)
-                                new_history.append(types.Content(role=h_msg.role, parts=new_parts))
+                    # Any transient error (Quota, Network, 500s) should trigger a key rotation IF we have keys left
+                    is_transient = any(x in error_string for x in ['429', 'resource_exhausted', 'quota', 'rate limit', '500', '503', 'connection', 'timeout', 'deadline'])
+                    
+                    if is_transient and (current_key_index + 1) < len(keys_to_try):
+                        current_key_index += 1
+                        current_key = keys_to_try[current_key_index]
+                        
+                        friendly_error = "Quota exceeded" if '429' in error_string or 'quota' in error_string else "Connection issue"
+                        yield {'status': f'{friendly_error}. Switching to backup key...'}
+                        
+                        client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
+                        
+                        if gemini_files_data:
+                            session_id = get_current_session_id()
+                            if session_id:
+                                filenames = [gf['display_name'] for gf in gemini_files_data if not gf.get('fallback_to_lab')]
+                                if filenames:
+                                    new_files_data = upload_files_to_gemini(session_id, filenames, api_key=current_key)
+                                    uri_map = {}
+                                    for old_f in gemini_files_data:
+                                        for new_f in new_files_data:
+                                            if old_f.get('display_name') == new_f.get('display_name') and old_f.get('uri') and new_f.get('uri'):
+                                                uri_map[old_f['uri']] = new_f['uri']
+                                                old_f['uri'] = new_f['uri']
                                     
-                            chat = client.chats.create(model=model_id, config=chat_config, history=new_history)
-                            continue
-                        else:
-                            yield {'status': 'Quota exceeded on all keys. Cannot proceed.'}
-                            raise loop_e
+                                    def update_part_uri(part):
+                                        if hasattr(part, 'file_data') and part.file_data and hasattr(part.file_data, 'file_uri'):
+                                            old_uri = part.file_data.file_uri
+                                            if old_uri in uri_map:
+                                                return types.Part.from_uri(file_uri=uri_map[old_uri], mime_type=part.file_data.mime_type)
+                                        return part
+                                    
+                                    if isinstance(message_to_send, list):
+                                        message_to_send = [update_part_uri(p) for p in message_to_send]
+                                    
+                                    if isinstance(current_effective_prompt, list):
+                                        for i in range(len(current_effective_prompt)):
+                                            current_effective_prompt[i] = update_part_uri(current_effective_prompt[i])
+
+                        old_history = chat.get_history() if hasattr(chat, 'get_history') else []
+                        new_history = []
+                        for h_msg in old_history:
+                            new_parts = []
+                            for p in getattr(h_msg, 'parts', []):
+                                if gemini_files_data and 'update_part_uri' in locals():
+                                    p = update_part_uri(p)
+                                new_parts.append(p)
+                            new_history.append(types.Content(role=h_msg.role, parts=new_parts))
+                                
+                        chat = client.chats.create(model=model_id, config=chat_config, history=new_history)
+                        continue # Retry immediately with new session context
                     else:
+                        # Hard failure or no keys left
                         raise loop_e
 
                 if not r.candidates:
