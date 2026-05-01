@@ -2657,7 +2657,11 @@ def refine_stream():
                     # If we have partial work from a previous failed model, inject it as continuation context
                     effective_conv_hist = conv_hist_list.copy()
                     if partial_work_done:
-                        effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.")
+                        capability_note = ""
+                        if current_model not in elite_models:
+                            capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task based on the progress shown."
+                        
+                        effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
                     
                     text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id)                
 
@@ -2906,7 +2910,12 @@ def search_stream():
                     # Inject partial work into the context if available
                     effective_full_context = full_context
                     if partial_analysis_work:
-                        effective_full_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-analysis. Here is its partial progress: \n---\n{partial_analysis_work}\n---\nPlease CONTINUE the research analysis immediately where it left off. Do not repeat existing sections."
+                        capability_note = ""
+                        elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                        if current_model not in elite_models:
+                             capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Use Web Search/Intelligence to finalize."
+                        
+                        effective_full_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-analysis. Here is its partial progress: \n---\n{partial_analysis_work}\n---\nPlease CONTINUE the research analysis immediately where it left off. Do not repeat existing sections.{capability_note}"
 
                     research_prompt = get_research_analysis_prompt(user_query, effective_full_context)
 
@@ -2974,7 +2983,11 @@ def search_stream():
                     # Inject partial work for expansion
                     effective_analysis_result = research_analysis_result
                     if partial_expansion_work:
-                         effective_analysis_result += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-expansion. Here is its partial progress: \n---\n{partial_expansion_work}\n---\nPlease CONTINUE the expansion immediately where it left off."
+                         capability_note = ""
+                         elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                         if current_model not in elite_models:
+                             capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Use your knowledge to finalize the paper."
+                         effective_analysis_result += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-expansion. Here is its partial progress: \n---\n{partial_expansion_work}\n---\nPlease CONTINUE the expansion immediately where it left off.{capability_note}"
 
                     final_prompt = get_final_expansion_prompt(user_query, effective_analysis_result, full_context)
 
@@ -3257,7 +3270,11 @@ def cosmos_stream():
                 # Inject partial work if available
                 effective_cosmos_context = full_context
                 if partial_cosmos_work:
-                    effective_cosmos_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-generation. Here is its partial HTML output: \n---\n{partial_cosmos_work}\n---\nPlease CONTINUE the report generation immediately where it left off. Do not repeat existing sections."
+                    capability_note = ""
+                    elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                    if current_model not in elite_models:
+                        capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Complete the report structure using available data."
+                    effective_cosmos_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-generation. Here is its partial HTML output: \n---\n{partial_cosmos_work}\n---\nPlease CONTINUE the report generation immediately where it left off. Do not repeat existing sections.{capability_note}"
 
                 cosmos_prompt = get_cosmos_report_prompt(user_query, effective_cosmos_context)
                 generator_output = gemini_generate(
