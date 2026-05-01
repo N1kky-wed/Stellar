@@ -1218,20 +1218,20 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             
             import agent_tools
             
+            consecutive_network_errors = 0
             while True:
                 try:
                     r = chat.send_message(message_to_send)
+                    consecutive_network_errors = 0 # Reset on success
                 except Exception as loop_e:
                     error_string = str(loop_e).lower()
-                    # Any transient error (Quota, Network, 500s) should trigger a key rotation IF we have keys left
-                    is_transient = any(x in error_string for x in ['429', 'resource_exhausted', 'quota', 'rate limit', '500', '503', 'connection', 'timeout', 'deadline'])
+                    is_quota = any(x in error_string for x in ['429', 'resource_exhausted', 'quota', 'rate limit'])
+                    is_network = any(x in error_string for x in ['500', '503', 'connection', 'timeout', 'deadline'])
                     
-                    if is_transient and (current_key_index + 1) < len(keys_to_try):
+                    if is_quota and (current_key_index + 1) < len(keys_to_try):
                         current_key_index += 1
                         current_key = keys_to_try[current_key_index]
-                        
-                        friendly_error = "Quota exceeded" if '429' in error_string or 'quota' in error_string else "Connection issue"
-                        yield {'status': f'{friendly_error}. Switching to backup key...'}
+                        yield {'status': 'Quota exceeded. Switching to backup key...'}
                         
                         client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
                         
@@ -1257,7 +1257,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                     
                                     if isinstance(message_to_send, list):
                                         message_to_send = [update_part_uri(p) for p in message_to_send]
-                                    
                                     if isinstance(current_effective_prompt, list):
                                         for i in range(len(current_effective_prompt)):
                                             current_effective_prompt[i] = update_part_uri(current_effective_prompt[i])
@@ -1273,9 +1272,17 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             new_history.append(types.Content(role=h_msg.role, parts=new_parts))
                                 
                         chat = client.chats.create(model=model_id, config=chat_config, history=new_history)
-                        continue # Retry immediately with new session context
+                        continue 
+                    elif is_network and consecutive_network_errors < 3:
+                        consecutive_network_errors += 1
+                        yield {'status': f'Connection issue. Retrying in-place ({consecutive_network_errors}/3)...'}
+                        time.sleep(2 * consecutive_network_errors)
+                        # Re-init chat with SAME key to refresh connection state
+                        client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
+                        old_history = chat.get_history() if hasattr(chat, 'get_history') else []
+                        chat = client.chats.create(model=model_id, config=chat_config, history=old_history)
+                        continue
                     else:
-                        # Hard failure or no keys left
                         raise loop_e
 
                 if not r.candidates:
