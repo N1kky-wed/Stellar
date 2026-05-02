@@ -2581,6 +2581,12 @@ def refine_stream():
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=404)
 
     query_data = json.loads(query_data_str)
+    
+    # Ownership Check
+    if str(query_data.get('user_id')) != str(session.get('user_id')):
+        def error_stream(): yield f"data: {json.dumps({'status': 'Unauthorized: Query ownership mismatch.', 'error': True})}\n\n"
+        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=403)
+
     user_query_from_frontend = query_data.get('query', '')
     model_id = query_data.get('model_id')
     pending_files = query_data.get('pending_files',[])
@@ -2786,6 +2792,12 @@ def search_stream():
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=404)
 
     query_data = json.loads(query_data_str)
+    
+    # Ownership Check
+    if str(query_data.get('user_id')) != str(session.get('user_id')):
+        def error_stream(): yield f"data: {json.dumps({'status': 'Unauthorized: Query ownership mismatch.', 'error': True})}\n\n"
+        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=403)
+
     user_query_from_frontend = query_data.get('query', '')
     user_query = query_data.get('query', '') # For search/cosmos
     model_id = query_data.get('model_id')
@@ -3146,6 +3158,12 @@ def cosmos_stream():
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=404)
 
     query_data = json.loads(query_data_str)
+    
+    # Ownership Check
+    if str(query_data.get('user_id')) != str(session.get('user_id')):
+        def error_stream(): yield f"data: {json.dumps({'status': 'Unauthorized: Query ownership mismatch.', 'error': True})}\n\n"
+        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=403)
+
     user_query_from_frontend = query_data.get('query', '')
     user_query = query_data.get('query', '') # For search/cosmos
     model_id = query_data.get('model_id')
