@@ -9098,11 +9098,11 @@
 
         function formatMsgTime(tsString) {
             if (!tsString) {
-                return new Date().toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                return new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
             }
             // Handle SQLite UTC dates safely
             const d = new Date(tsString.includes('Z') ? tsString : tsString.replace(' ', 'T') + 'Z');
-            return isNaN(d) ? tsString : d.toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            return isNaN(d) ? tsString : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         }
         function formatTokens(tokens) {
             if (!tokens) return '0';
