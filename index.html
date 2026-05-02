@@ -422,99 +422,24 @@
         }
 
         .pres-feedback-input:focus {
-            border-color: #00E5FF;
-            box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
+            border-color: var(--model-color-start);
+            box-shadow: 0 0 10px var(--model-color-shadow);
         }
-
-        .pres-feedback-actions {
-            display: flex;
-            gap: 10px;
-            width: 100%;
-            justify-content: flex-end;
-        }
-
-        .pres-feedback-btn {
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 0.8em;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .pres-btn-cancel {
-            background: transparent;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: #ccc;
-        }
-
         .pres-btn-confirm {
-            background: #00E5FF;
-            border: 1px solid #00E5FF;
-            color: #000;
+            background: var(--model-color-start);
+            border: 1px solid var(--model-color-start);
+            color: #fff;
         }
-
         .pres-btn-confirm:hover {
-            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
-            transform: translateY(-1px);
+            box-shadow: 0 0 15px var(--model-hover-color-shadow);
         }
-
-        .pres-regen-loader {
-            position: absolute;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.85);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 10;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease;
-            backdrop-filter: blur(4px);
-        }
-
-        .pres-regen-loader.active {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .wave-dots {
-            display: flex;
-            gap: 10px;
-        }
-
         .wave-dot {
-            width: 14px;
-            height: 14px;
-            background: #00E5FF;
-            border-radius: 50%;
-            box-shadow: 0 0 15px #00E5FF;
-            animation: wave-dot-anim 1.2s infinite ease-in-out;
+            background: var(--model-color-start);
+            box-shadow: 0 0 15px var(--model-color-shadow);
         }
-
-        .wave-dot:nth-child(2) {
-            animation-delay: 0.2s;
-        }
-
-        .wave-dot:nth-child(3) {
-            animation-delay: 0.4s;
-        }
-
-        @keyframes wave-dot-anim {
-            0%, 80%, 100% { transform: scale(0.8) translateY(0); opacity: 0.5; }
-            40% { transform: scale(1.2) translateY(-15px); opacity: 1; }
-        }
-
         .pres-regen-text {
-            margin-top: 25px;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.75em;
-            color: #00E5FF;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-            font-weight: 900;
-            text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+            color: var(--model-color-start);
+            text-shadow: 0 0 10px var(--model-color-shadow);
         }
         .pres-slide-img {
             max-width: 100%;
@@ -7075,7 +7000,7 @@
             }
         }
 
-        function appendUserMessage(text, id, attachedFiles = [], isLocalFiles = false) {
+        function appendUserMessage(text, id, attachedFiles = [], isLocalFiles = false, timestamp = null) {
             const lastEditIcon = document.querySelector('.user-msg:last-of-type .edit-prompt-wrapper');
             if (lastEditIcon) {
                 lastEditIcon.remove();
@@ -7190,8 +7115,17 @@
                     editContainer.appendChild(buttonContainer);
 
                     originalPromptBubble.appendChild(editContainer);
-                    editTextarea.focus();
+                    
+                    // Save scroll position
+                    const scrollTarget = messagesDiv;
+                    const currentScroll = scrollTarget.scrollTop;
+                    
+                    // Prevent browser from snapping to top
+                    editTextarea.focus({ preventScroll: true });
                     adjustHeight();
+                    
+                    // Force restore scroll position
+                    scrollTarget.scrollTop = currentScroll;
 
                     const cleanupAndExitEditMode = () => {
                         editContainer.remove();
@@ -7270,7 +7204,7 @@
                 }, 500); // Duration matches the animation
             }
         }
-        function appendResearchOutput(markdownText, id) {
+        function appendResearchOutput(markdownText, id, timestamp = null) {
             const msg = document.createElement("div"); msg.classList.add("message", "stellar-msg", "research-output"); msg.dataset.id = id;
             const contentDiv = document.createElement("div"); contentDiv.classList.add("message-content");
             try {
@@ -7279,6 +7213,10 @@
                 addOutputCopyButton(msg);
                 setTimeout(scrollToBottom, 50);
             } catch (e) { contentDiv.textContent = "Error."; scrollToBottom(); }
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "message-timestamp";
+            timeDiv.textContent = formatMsgTime(timestamp);
+            msg.appendChild(timeDiv);
             if (messagesDiv) messagesDiv.appendChild(msg); updateTokenCount();
             createAndAppendResearchButtons(msg, id, markdownText);
         }
@@ -7808,7 +7746,7 @@
             }
         }
 
-        function appendStellarMessage(markdownText, id) {
+        function appendStellarMessage(markdownText, id, timestamp = null) {
             const msg = document.createElement("div");
             msg.classList.add("message", "stellar-msg");
             msg.dataset.id = id;
@@ -7820,6 +7758,10 @@
                 contentDiv.innerHTML = htmlContent;
                 msg.appendChild(contentDiv);
                 unwrapVisuals(contentDiv);
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "message-timestamp";
+            timeDiv.textContent = formatMsgTime(timestamp);
+            placeholderDiv.appendChild(timeDiv);
                 processCodeBlocks(contentDiv);
                 renderMath(contentDiv);
                 addOutputCopyButton(msg);
@@ -7828,6 +7770,10 @@
                 contentDiv.textContent = "Error rendering message content.";
             }
             if (messagesDiv) {
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "message-timestamp";
+            timeDiv.textContent = formatMsgTime(timestamp);
+            msg.appendChild(timeDiv);
                 messagesDiv.appendChild(msg);
                 scrollToBottom();
             }
@@ -8300,9 +8246,9 @@
             });
         }
 
-        function finalizeStellarMessage(placeholderId, finalContent, messageDbId, analysisContextUsed = null) {
+        function finalizeStellarMessage(placeholderId, finalContent, messageDbId, analysisContextUsed = null, timestamp = null) {
             const placeholderDiv = messagesDiv.querySelector(`.message[data-id="${placeholderId}"]`);
-            if (!placeholderDiv) { if (analysisContextUsed) { appendStellarMessageWithAnalysis(finalContent, messageDbId, analysisContextUsed); } else { appendStellarMessage(finalContent, messageDbId); } return; }
+            if (!placeholderDiv) { if (analysisContextUsed) { appendStellarMessageWithAnalysis(finalContent, messageDbId, analysisContextUsed, timestamp); } else { appendStellarMessage(finalContent, messageDbId, timestamp); } return; }
 
             const isResearch = placeholderDiv.classList.contains('research-output');
 
@@ -8339,6 +8285,10 @@
                     }
                 }
                 unwrapVisuals(contentDiv);
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "message-timestamp";
+            timeDiv.textContent = formatMsgTime(timestamp);
+            placeholderDiv.appendChild(timeDiv);
                 processCodeBlocks(contentDiv);
                 if (analysisContextUsed) { addAnalysisIndicator(placeholderDiv, analysisContextUsed); }
 
@@ -8353,7 +8303,7 @@
         }
         function addAnalysisIndicator(messageDiv, analysisContext) { if (!messageDiv || !analysisContext) return; const contentDiv = messageDiv.querySelector('.message-content'); if (!contentDiv) return; contentDiv.querySelectorAll('.analysis-indicator, .analysis-content').forEach(el => el.remove()); const ind = document.createElement("span"); ind.className = "analysis-indicator clickable"; ind.textContent = " Analyzed files"; ind.style.marginLeft = '10px'; const det = document.createElement("div"); det.className = "analysis-content"; det.style.display = "none"; det.style.marginTop = "10px"; det.style.paddingTop = "10px"; det.style.borderTop = "1px dashed var(--stellar-msg-border)"; det.innerHTML = `<small><i>Context:</i></small><div class="formatted-analysis-context">${formatAnalysisContextForDisplay(analysisContext)}</div>`; contentDiv.appendChild(ind); contentDiv.appendChild(det); }
         function formatAnalysisContextForDisplay(rawContext) { if (!rawContext || typeof rawContext !== 'string') return "<p>No context.</p>"; try { let html = ''; try { html = marked.parse(rawContext || ""); } catch (e) { return `<pre>Parse err: ${escapeHtml(e.message)}\n\n${escapeHtml(rawContext)}</pre>`; } const p = new DOMParser(); const d = p.parseFromString(`<div id="ctx-wrap">${html}</div>`, 'text/html'); const w = d.getElementById('ctx-wrap'); if (!w) return `<pre>${escapeHtml(rawContext)}</pre>`; w.querySelectorAll('details').forEach(det => { let s = det.querySelector('summary'); if (!s) { s = d.createElement('summary'); s.textContent = 'Details'; det.insertBefore(s, det.firstChild); } s.style.cursor = 'pointer'; s.style.fontWeight = 'bold'; s.style.color = 'var(--primary-text-color)'; s.style.padding = '8px'; s.style.display = 'block'; s.style.backgroundColor = 'rgba(255, 255, 255, 0.03)'; s.style.borderRadius = '4px 4px 0 0'; let cw = s.nextElementSibling; if (cw && (cw.tagName === 'DIV' || cw.tagName === 'PRE')) { cw.style.padding = '10px'; cw.style.borderTop = '1px dashed rgba(255, 255, 255, 0.1)'; cw.style.marginTop = '0'; cw.style.backgroundColor = 'rgba(0,0,0,0.1)'; } else { const nw = d.createElement('div'); nw.style.padding = '10px'; nw.style.borderTop = '1px dashed rgba(255, 255, 255, 0.1)'; nw.style.marginTop = '0'; nw.style.backgroundColor = 'rgba(0,0,0,0.1)'; while (s.nextSibling) { nw.appendChild(s.nextSibling); } det.appendChild(nw); } det.style.border = '1px solid rgba(255, 255, 255, 0.1)'; det.style.borderRadius = '4px'; det.style.marginBottom = '10px'; det.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'; }); w.querySelectorAll(':scope > pre').forEach(pre => { if (pre.closest('details')) return; pre.style.marginTop = '10px'; pre.style.marginBottom = '10px'; pre.style.padding = '12px'; pre.style.fontSize = '0.9em'; pre.style.backgroundColor = 'rgba(0,0,0,0.25)'; pre.style.border = '1px solid rgba(255,255,255,0.15)'; pre.style.borderRadius = '4px'; pre.style.whiteSpace = 'pre-wrap'; pre.style.wordWrap = 'break-word'; }); let finalHtml = w.innerHTML; finalHtml = finalHtml.replace(/##\s*(.*?)\s*(<br\s*\/?>)?/g, '<h3>$1</h3>'); finalHtml = finalHtml.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'); finalHtml = finalHtml.replace(/__(.*?)__/g, '<strong>$1</strong>'); finalHtml = finalHtml.replace(/\*(.*?)\*/g, '<em>$1</em>'); finalHtml = finalHtml.replace(/_(.*?)_/g, '<em>$1</em>'); finalHtml = finalHtml.replace(/`([^`]+)`/g, '<code>$1</code>'); return finalHtml; } catch (e) { return `<pre>${escapeHtml(rawContext)}</pre>`; } }
-        function appendStellarMessageWithAnalysis(markdownText, id, analysisContext) {
+        function appendStellarMessageWithAnalysis(markdownText, id, analysisContext, timestamp = null) {
             const msg = document.createElement("div");
             msg.classList.add("message", "stellar-msg");
             msg.dataset.id = id;
@@ -8364,6 +8314,10 @@
                 htmlContent = wrapTables(htmlContent);
                 contentDiv.innerHTML = htmlContent;
                 unwrapVisuals(contentDiv);
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "message-timestamp";
+            timeDiv.textContent = formatMsgTime(timestamp);
+            placeholderDiv.appendChild(timeDiv);
                 processCodeBlocks(contentDiv);
                 addAnalysisIndicator(msg, analysisContext);
                 addOutputCopyButton(msg);
@@ -8380,6 +8334,10 @@
                 scrollToBottom();
             }
             msg.appendChild(contentDiv);
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "message-timestamp";
+            timeDiv.textContent = formatMsgTime(timestamp);
+            msg.appendChild(timeDiv);
             if (messagesDiv) messagesDiv.appendChild(msg);
         }
 
@@ -8463,7 +8421,7 @@
                                     placeholderDiv.classList.add('research-output');
                                 }
 
-                                finalizeStellarMessage(placeholderId, fullResponseContent, messageDbId, analysisContextReceived);
+                                finalizeStellarMessage(placeholderId, fullResponseContent, messageDbId, analysisContextReceived, data.timestamp);
 
                                 if (data.status === 'display_result' && data.file_url) {
                                     const finalMsgDiv = messagesDiv.querySelector(`.message[data-id="${messageDbId}"]`);
@@ -8678,7 +8636,7 @@
 
                         try {
                             if (messageType === "user") {
-                                appendUserMessage(content, msgId, msg.attached_files || [], false);
+                                appendUserMessage(content, msgId, msg.attached_files || [], false, msg.timestamp);
                             } else {
                                 const isResearch = msg.is_research_output;
                                 const msgDiv = document.createElement("div");
@@ -8720,6 +8678,10 @@
 
                                 msgDiv.appendChild(contentDiv);
                                 unwrapVisuals(contentDiv);
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "message-timestamp";
+            timeDiv.textContent = formatMsgTime(timestamp);
+            placeholderDiv.appendChild(timeDiv);
                                 processCodeBlocks(contentDiv);
                                 if (analysisContext) { addAnalysisIndicator(msgDiv, analysisContext); }
                                 addOutputCopyButton(msgDiv);
@@ -8738,7 +8700,13 @@
                                         }
                                     }
                                 }
-                                if (messagesDiv) messagesDiv.appendChild(msgDiv);
+                                if (messagesDiv) {
+                                    const timeDiv = document.createElement("div");
+                                    timeDiv.className = "message-timestamp";
+                                    timeDiv.textContent = formatMsgTime(msg.timestamp);
+                                    msgDiv.appendChild(timeDiv);
+                                    messagesDiv.appendChild(msgDiv);
+                                }
                                 setTimeout(() => { renderMath(contentDiv); const analysisEl = msgDiv.querySelector('.analysis-content .formatted-analysis-context'); if (analysisEl) renderMath(analysisEl); }, 150);
                             }
                         } catch (error) {
@@ -9117,6 +9085,14 @@
             loadWaitlist();
         }
 
+        function formatMsgTime(tsString) {
+            if (!tsString) {
+                return new Date().toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            }
+            // Handle SQLite UTC dates safely
+            const d = new Date(tsString.includes('Z') ? tsString : tsString.replace(' ', 'T') + 'Z');
+            return isNaN(d) ? tsString : d.toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
         function formatTokens(tokens) {
             if (!tokens) return '0';
             if (tokens < 1000) return tokens;
