@@ -1556,7 +1556,7 @@
             margin-bottom: 20px;
             line-height: 1.6;
             word-wrap: break-word;
-            padding: 18px 22px;
+            padding: 18px 22px 28px 22px;
             border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             backdrop-filter: blur(20px);
@@ -1573,6 +1573,23 @@
         .message:hover {
             transform: translateY(-2px);
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+        }
+
+        .message:hover .message-timestamp {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .message-timestamp {
+            font-size: 0.65rem;
+            color: var(--secondary-text-color);
+            position: absolute;
+            bottom: 6px;
+            right: 12px;
+            opacity: 0.6;
+            font-family: 'JetBrains Mono', monospace;
+            transition: opacity 0.2s ease;
+            pointer-events: none;
         }
 
         @keyframes messageIn {
