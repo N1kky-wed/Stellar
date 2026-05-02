@@ -5588,6 +5588,49 @@
         let scrapingQueue = [];
         let scrapingTimerId = null;
         const SCRAPING_DISPLAY_DELAY = 15000;
+        const CLIENT_ID = Math.random().toString(36).substring(2, 15);
+        let globalEventSource = null;
+        
+        function initGlobalEventStream() {
+            if (globalEventSource) globalEventSource.close();
+            
+            globalEventSource = new EventSource('/api/user/events');
+            
+            globalEventSource.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                
+                // Ignore events triggered by this exact browser tab
+                if (data.client_id === CLIENT_ID) return;
+
+                if (data.type === 'new_message') {
+                    // If the message belongs to the current chat, render it immediately!
+                    if (data.chat_id === currentChatId && !data.message.hidden) {
+                        if (data.message.type === 'user') {
+                            appendUserMessage(data.message.content, data.message.id);
+                        } else if (!data.message.is_research) {
+                            // Only append standalone backend messages (like background tasks).
+                            // Live streams are handled by the SSE stream, not this event.
+                            appendStellarMessage(data.message.content, data.message.id);
+                        }
+                    }
+                }
+                
+                if (data.type === 'query_started') {
+                    // Someone started generating on another device!
+                    if (data.chat_id === currentChatId) {
+                        // Hook into the exact same stream instantly
+                        console.log("Remote device started a query. Reconnecting stream locally...");
+                        reconnectToStream(data.query_id, data.mode, data.chat_id);
+                    }
+                }
+            };
+            
+            globalEventSource.onerror = () => {
+                globalEventSource.close();
+                setTimeout(initGlobalEventStream, 5000); // Reconnect loop if dropped
+            };
+        }
+
         let currentMode = 'stellar';
         let useSpectrumSearch = true;
         let currentStreamQueryId = null;
@@ -8496,7 +8539,8 @@
                     pending_files: pendingFiles,
                     chat_id: chatId,
                     hidden: silent,
-                    disabled_tools: Object.keys(agentSettings).filter(t => !agentSettings[t])
+                    disabled_tools: Object.keys(agentSettings).filter(t => !agentSettings[t]),
+                    client_id: CLIENT_ID
                 };
 
                 const registerResponse = await fetch('/register_query', {
@@ -9018,6 +9062,9 @@
                     if (!historyLoaded) {
                         loadChatList();
                     }
+                    
+                    // Start listening to the background user state
+                    initGlobalEventStream();
                 } else {
                     window.location.href = '/';
                 }

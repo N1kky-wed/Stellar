@@ -563,7 +563,7 @@ def get_current_chat_id(user_id):
 def insert_message(chat_id, message_type, message_content,
                    is_research_output=False, html_file=None,
                    attached_files=None, user_query_for_name=None,
-                   hidden=False):
+                   hidden=False, client_id=None):
     """Insert a new message into the messages table."""
     if not chat_id:
         return None
@@ -607,6 +607,29 @@ def insert_message(chat_id, message_type, message_content,
                         logger.error(f"Error in token_update_thread: {e}")
 
             threading.Thread(target=token_update_thread, args=(current_app._get_current_object(), chat_id), daemon=True).start()
+
+            # Broadcast to other devices syncing this user's state
+            try:
+                cursor = db.execute('SELECT user_id FROM chats WHERE id = ?', (chat_id,))
+                chat_owner = cursor.fetchone()
+                if chat_owner:
+                    owner_id = chat_owner['user_id']
+                    event_payload = {
+                        "type": "new_message",
+                        "client_id": client_id,
+                        "chat_id": chat_id,
+                        "message": {
+                            "id": last_id,
+                            "type": message_type,
+                            "content": message_content,
+                            "is_research": is_research_output,
+                            "html_file": html_file,
+                            "hidden": hidden
+                        }
+                    }
+                    redis_client.publish(f"user_events:{owner_id}", json.dumps(event_payload))
+            except Exception as e:
+                logger.error(f"Failed to broadcast new message: {e}")
 
             return last_id
         except sqlite3.OperationalError as e:
@@ -2538,7 +2561,17 @@ def register_query():
         if not isinstance(pending_files, list):
              pending_files =[]
 
+        client_id = data.get('client_id')
         query_id = str(uuid.uuid4())
+
+        # Notify other devices that a stream is starting in this chat
+        redis_client.publish(f"user_events:{session['user_id']}", json.dumps({
+            "type": "query_started",
+            "client_id": client_id,
+            "chat_id": chat_id,
+            "query_id": query_id,
+            "mode": mode
+        }))
 
         query_data = {
             'query': query,
@@ -3983,6 +4016,28 @@ def check_auth_status():
             return jsonify({"logged_in": False}), 200
     else:
         return jsonify({"logged_in": False}), 200
+@app.route('/api/user/events', methods=['GET'])
+@require_approval
+def user_global_events():
+    user_id = session['user_id']
+    
+    def event_stream():
+        pubsub = redis_client.pubsub()
+        pubsub.subscribe(f"user_events:{user_id}")
+        
+        try:
+            for message in pubsub.listen():
+                if message['type'] == 'message':
+                    data = message['data']
+                    if isinstance(data, bytes):
+                        data = data.decode('utf-8')
+                    yield f"data: {data}\n\n"
+        finally:
+            pubsub.close()
+
+    return Response(stream_with_context(event_stream()), mimetype='text/event-stream')
+
+
 @app.route('/api/chats', methods=['GET'])
 @require_approval
 def get_user_chats():
