@@ -2584,7 +2584,8 @@ def register_query():
             'disabled_tools': disabled_tools,
             'user_id': session.get('user_id'),
             'username': session.get('username'),
-            'session_id': get_current_session_id()
+            'session_id': get_current_session_id(),
+            'client_id': client_id
         }
 
         # Make Query Parameters fully durable using Redis!
@@ -2629,6 +2630,7 @@ def refine_stream():
     session_id = query_data.get('session_id')
     user_id = query_data.get('user_id')
     username = query_data.get('username')
+    client_id = query_data.get('client_id')
 
     is_running = redis_client.exists(f"stream_started:{query_id}")
 
@@ -2645,7 +2647,7 @@ def refine_stream():
             if pending_files:
                 gemini_files_data = upload_files_to_gemini(session_id, pending_files)
 
-            user_message_id = insert_message(chat_id, "user", user_query_from_frontend, attached_files=gemini_files_data, user_query_for_name=user_query_from_frontend, hidden=hidden)
+            user_message_id = insert_message(chat_id, "user", user_query_from_frontend, attached_files=gemini_files_data, user_query_for_name=user_query_from_frontend, hidden=hidden, client_id=client_id)
 
             final_stellar_message_id = None
             llm_error_occurred = False
@@ -2777,7 +2779,8 @@ def refine_stream():
                         chat_id,
                         "stellar",
                         refined_query_result,
-                        hidden=hidden
+                        hidden=hidden,
+                        client_id=client_id
                     )
                     if stellar_message_id:
                          final_stellar_message_id = stellar_message_id
@@ -2842,6 +2845,7 @@ def search_stream():
     session_id = query_data.get('session_id')
     user_id = query_data.get('user_id')
     username = query_data.get('username')
+    client_id = query_data.get('client_id')
 
     is_running = redis_client.exists(f"stream_started:{query_id}")
 
@@ -2860,7 +2864,7 @@ def search_stream():
                 gemini_files_data = upload_files_to_gemini(session_id, pending_files)
                 yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
 
-            user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query)
+            user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query, client_id=client_id)
             full_context = ""
             web_search_context = ""
             research_analysis_result = None
@@ -3146,7 +3150,8 @@ def search_stream():
                     message_content=final_result,
                     is_research_output=True,
                     html_file=html_filepath_rel,
-                    attached_files=gemini_files_data
+                    attached_files=gemini_files_data,
+                    client_id=client_id
                 )
 
                 if not research_message_id:
@@ -3208,6 +3213,7 @@ def cosmos_stream():
     session_id = query_data.get('session_id')
     user_id = query_data.get('user_id')
     username = query_data.get('username')
+    client_id = query_data.get('client_id')
 
     is_running = redis_client.exists(f"stream_started:{query_id}")
 
@@ -3229,7 +3235,7 @@ def cosmos_stream():
                 gemini_files_data = upload_files_to_gemini(session_id, pending_files)
                 yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
 
-            user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query)
+            user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query, client_id=client_id)
             web_search_context = ""
             final_report_html = None
             html_filepath_rel = None
@@ -3442,7 +3448,8 @@ def cosmos_stream():
                     message_content=final_report_html,
                     is_research_output=True,
                     html_file=html_filepath_rel,
-                    attached_files=gemini_files_data
+                    attached_files=gemini_files_data,
+                    client_id=client_id
                 )
 
                 if not cosmos_message_id:

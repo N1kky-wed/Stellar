@@ -5603,22 +5603,27 @@
                 if (data.client_id === CLIENT_ID) return;
 
                 if (data.type === 'new_message') {
-                    // If the message belongs to the current chat, render it immediately!
                     if (data.chat_id === currentChatId && !data.message.hidden) {
+                        // Absolute deduplication: If message ID is already in the DOM, skip it entirely.
+                        if (document.querySelector(`.message[data-id="${data.message.id}"]`)) return;
+
                         if (data.message.type === 'user') {
                             appendUserMessage(data.message.content, data.message.id);
-                        } else if (!data.message.is_research) {
-                            // Only append standalone backend messages (like background tasks).
-                            // Live streams are handled by the SSE stream, not this event.
-                            appendStellarMessage(data.message.content, data.message.id);
+                        } else {
+                            // If a stream is actively rendering, it handles AI output via SSE. Skip global injection.
+                            if (!isProcessing) {
+                                if (data.message.is_research) {
+                                    appendResearchOutput(data.message.content, data.message.id);
+                                } else {
+                                    appendStellarMessage(data.message.content, data.message.id);
+                                }
+                            }
                         }
                     }
                 }
                 
                 if (data.type === 'query_started') {
-                    // Someone started generating on another device!
                     if (data.chat_id === currentChatId) {
-                        // Hook into the exact same stream instantly
                         console.log("Remote device started a query. Reconnecting stream locally...");
                         reconnectToStream(data.query_id, data.mode, data.chat_id);
                     }
@@ -5627,7 +5632,7 @@
             
             globalEventSource.onerror = () => {
                 globalEventSource.close();
-                setTimeout(initGlobalEventStream, 5000); // Reconnect loop if dropped
+                setTimeout(initGlobalEventStream, 5000); 
             };
         }
 
@@ -7249,7 +7254,12 @@
             });
 
             if (messagesDiv) {
-                messagesDiv.appendChild(msg);
+                const placeholder = messagesDiv.querySelector('.placeholder-message');
+                if (placeholder) {
+                    messagesDiv.insertBefore(msg, placeholder);
+                } else {
+                    messagesDiv.appendChild(msg);
+                }
             }
             scrollToBottom();
         } function flashVisualFeedback() {
