@@ -7186,6 +7186,11 @@
                 });
             });
 
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "message-timestamp";
+            timeDiv.textContent = formatMsgTime(timestamp);
+            msg.appendChild(timeDiv);
+
             if (messagesDiv) {
                 const placeholder = messagesDiv.querySelector('.placeholder-message');
                 if (placeholder) {
@@ -7758,10 +7763,6 @@
                 contentDiv.innerHTML = htmlContent;
                 msg.appendChild(contentDiv);
                 unwrapVisuals(contentDiv);
-            const timeDiv = document.createElement("div");
-            timeDiv.className = "message-timestamp";
-            timeDiv.textContent = formatMsgTime(timestamp);
-            placeholderDiv.appendChild(timeDiv);
                 processCodeBlocks(contentDiv);
                 renderMath(contentDiv);
                 addOutputCopyButton(msg);
@@ -7769,11 +7770,11 @@
             } catch (e) {
                 contentDiv.textContent = "Error rendering message content.";
             }
-            if (messagesDiv) {
             const timeDiv = document.createElement("div");
             timeDiv.className = "message-timestamp";
             timeDiv.textContent = formatMsgTime(timestamp);
             msg.appendChild(timeDiv);
+            if (messagesDiv) {
                 messagesDiv.appendChild(msg);
                 scrollToBottom();
             }
@@ -8285,10 +8286,6 @@
                     }
                 }
                 unwrapVisuals(contentDiv);
-            const timeDiv = document.createElement("div");
-            timeDiv.className = "message-timestamp";
-            timeDiv.textContent = formatMsgTime(timestamp);
-            placeholderDiv.appendChild(timeDiv);
                 processCodeBlocks(contentDiv);
                 if (analysisContextUsed) { addAnalysisIndicator(placeholderDiv, analysisContextUsed); }
 
@@ -8296,6 +8293,11 @@
                     createAndAppendResearchButtons(placeholderDiv, messageDbId, contentDiv.innerHTML);
                 }
                 addOutputCopyButton(placeholderDiv);
+                
+                const timeDiv = document.createElement("div");
+                timeDiv.className = "message-timestamp";
+                timeDiv.textContent = formatMsgTime(timestamp);
+                placeholderDiv.appendChild(timeDiv);
 
                 setTimeout(() => { renderMath(contentDiv); scrollToBottom(); }, 150);
             } catch (e) { contentDiv.textContent = "Error."; if (analysisContextUsed) { addAnalysisIndicator(placeholderDiv, analysisContextUsed); } if (isResearch) { createAndAppendResearchButtons(placeholderDiv, messageDbId, "<p>Error</p>"); } addOutputCopyButton(placeholderDiv); scrollToBottom(); }
@@ -8314,10 +8316,6 @@
                 htmlContent = wrapTables(htmlContent);
                 contentDiv.innerHTML = htmlContent;
                 unwrapVisuals(contentDiv);
-            const timeDiv = document.createElement("div");
-            timeDiv.className = "message-timestamp";
-            timeDiv.textContent = formatMsgTime(timestamp);
-            placeholderDiv.appendChild(timeDiv);
                 processCodeBlocks(contentDiv);
                 addAnalysisIndicator(msg, analysisContext);
                 addOutputCopyButton(msg);
@@ -8678,10 +8676,6 @@
 
                                 msgDiv.appendChild(contentDiv);
                                 unwrapVisuals(contentDiv);
-            const timeDiv = document.createElement("div");
-            timeDiv.className = "message-timestamp";
-            timeDiv.textContent = formatMsgTime(timestamp);
-            placeholderDiv.appendChild(timeDiv);
                                 processCodeBlocks(contentDiv);
                                 if (analysisContext) { addAnalysisIndicator(msgDiv, analysisContext); }
                                 addOutputCopyButton(msgDiv);
