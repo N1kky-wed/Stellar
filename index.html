@@ -8331,55 +8331,18 @@
             if (messagesDiv) messagesDiv.appendChild(msg);
         }
 
-        async function initAndStartStreaming(userQuery, modelId, modeForBackend, pendingFiles, chatId, placeholderId, userMessageId, isResearchOutputExpected, silent = false) {
-            if (currentStreamQueryId) {
-                currentStreamQueryId = null;
-            }
-
+        function startSseConnection(queryId, modeForBackend, chatId, placeholderId, userMessageId, isResearchOutputExpected, silent) {
             const maxRetries = 3;
             let retryCount = 0;
 
             const attemptStreamConnection = async () => {
                 try {
-                    const registerPayload = {
-                        query: userQuery || " ",
-                        model_id: modelId,
-                        mode: modeForBackend,
-                        pending_files: pendingFiles,
-                        chat_id: chatId,
-                        hidden: silent,
-                        disabled_tools: Object.keys(agentSettings).filter(t => !agentSettings[t])
-                    };
-
-                    const registerResponse = await fetch('/register_query', {
-                        method: 'POST',
-                        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-                        body: JSON.stringify(registerPayload)
-                    });
-
-                    if (!registerResponse.ok) {
-                        const errData = await registerResponse.json().catch(() => ({}));
-                        throw new Error(errData.error || `Register fail HTTP ${registerResponse.status}`);
-                    }
-                    const registerData = await registerResponse.json();
-                    if (!registerData.query_id) {
-                        throw new Error("No query_id received from registration.");
-                    }
-                    currentStreamQueryId = registerData.query_id;
-
-                    lastRefinedQuery = userQuery;
-
                     let streamUrl = '/refine_stream';
-                    if (modeForBackend.startsWith('search')) {
-                        streamUrl = '/search_stream';
-                    } else if (modeForBackend === 'cosmos') {
-                        streamUrl = '/cosmos_stream';
-                    }
+                    if (modeForBackend.startsWith('search')) streamUrl = '/search_stream';
+                    else if (modeForBackend === 'cosmos') streamUrl = '/cosmos_stream';
 
-                    const params = new URLSearchParams({ query_id: currentStreamQueryId, chat_id: chatId });
-                    if (modeForBackend.startsWith('search')) {
-                        params.append('useTavily', useSpectrumSearch.toString());
-                    }
+                    const params = new URLSearchParams({ query_id: queryId, chat_id: chatId });
+                    if (modeForBackend.startsWith('search')) params.append('useTavily', useSpectrumSearch.toString());
 
                     if (sseEventSource && sseEventSource.readyState !== EventSource.CLOSED) {
                         sseEventSource.close();
@@ -8436,7 +8399,7 @@
                                 const messageDbId = data.message_id || placeholderId;
                                 const userMessageDbId = data.user_message_id;
 
-                                if (userMessageDbId) {
+                                if (userMessageId && userMessageDbId) {
                                     const lastUserMsg = document.querySelector(`.message.user-msg[data-id="${userMessageId}"]`);
                                     if (lastUserMsg) {
                                         lastUserMsg.dataset.id = userMessageDbId;
@@ -8453,10 +8416,9 @@
                                 if (data.status === 'display_result' && data.file_url) {
                                     const finalMsgDiv = messagesDiv.querySelector(`.message[data-id="${messageDbId}"]`);
                                     if (finalMsgDiv && finalMsgDiv.classList.contains('research-output')) {
-                                        const buttonsDiv = finalMsgDiv.querySelector('.message-buttons');
+                                        const buttonsDiv = finalMsgDiv.querySelector(' .message-buttons');
                                         if (buttonsDiv) {
-                                            // 1. View Paper Button
-                                            let viewBtn = buttonsDiv.querySelector('.view-html-btn');
+                                            let viewBtn = buttonsDiv.querySelector(' .view-html-btn');
                                             if (!viewBtn) {
                                                 viewBtn = document.createElement("a");
                                                 viewBtn.classList.add("download-btn", "view-html-btn");
@@ -8465,131 +8427,6 @@
                                             }
                                             viewBtn.textContent = "View Paper";
                                             viewBtn.href = data.file_url;
-
-                                            // 2. Visualize Button
-                                            let vizBtn = buttonsDiv.querySelector('.visualize-btn');
-                                            if (!vizBtn) {
-                                                vizBtn = document.createElement("button");
-                                                vizBtn.classList.add("download-btn", "visualize-btn");
-                                                vizBtn.innerHTML = `<svg style="width:16px;height:16px;margin-right:6px;" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>Visualize`;
-                                                vizBtn.style.marginLeft = "10px";
-                                                vizBtn.style.cursor = "pointer";
-
-                                                // Check for persisted visualization
-                                                if (data.visualization_html) {
-                                                    finalMsgDiv.dataset.vizHtml = data.visualization_html;
-                                                }
-
-                                                vizBtn.addEventListener('click', async () => {
-                                                    const contentDiv = finalMsgDiv.querySelector('.message-content');
-                                                    let vizContainer = finalMsgDiv.querySelector('.viz-container');
-
-                                                    // If we are currently showing visualization, switch back to text
-                                                    if (finalMsgDiv.classList.contains('showing-viz')) {
-                                                        finalMsgDiv.classList.remove('showing-viz');
-                                                        contentDiv.style.display = 'block';
-                                                        if (vizContainer) vizContainer.style.display = 'none';
-                                                        vizBtn.innerHTML = `<svg style="width:16px;height:16px;margin-right:6px;" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>Visualize`;
-                                                        return;
-                                                    }
-
-                                                    // Function to create/show container
-                                                    const showContainer = (htmlContent) => {
-                                                        if (!vizContainer) {
-                                                            vizContainer = document.createElement('div');
-                                                            vizContainer.className = 'viz-container';
-                                                            vizContainer.style.width = '100%';
-                                                            vizContainer.style.height = '600px';
-                                                            vizContainer.style.border = '1px solid var(--model-color-border)';
-                                                            vizContainer.style.borderRadius = '8px';
-                                                            vizContainer.style.marginTop = '15px';
-                                                            vizContainer.style.overflow = 'hidden';
-                                                            vizContainer.style.position = 'relative'; // For absolute positioning of fullscreen btn
-
-                                                            const iframe = document.createElement('iframe');
-                                                            iframe.style.width = '100%';
-                                                            iframe.style.height = '100%';
-                                                            iframe.style.border = 'none';
-                                                            iframe.srcdoc = htmlContent;
-                                                            vizContainer.appendChild(iframe);
-
-                                                            // Fullscreen Button
-                                                            const fsBtn = document.createElement('button');
-                                                            fsBtn.innerHTML = `<svg style="width:20px;height:20px;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
-                                                            fsBtn.style.position = 'absolute';
-                                                            fsBtn.style.top = '10px';
-                                                            fsBtn.style.right = '10px';
-                                                            fsBtn.style.background = 'rgba(0,0,0,0.6)';
-                                                            fsBtn.style.color = 'white';
-                                                            fsBtn.style.border = 'none';
-                                                            fsBtn.style.borderRadius = '4px';
-                                                            fsBtn.style.padding = '5px';
-                                                            fsBtn.style.cursor = 'pointer';
-                                                            fsBtn.style.zIndex = '10';
-                                                            fsBtn.title = "Fullscreen";
-
-                                                            fsBtn.addEventListener('click', () => {
-                                                                if (vizContainer.requestFullscreen) {
-                                                                    vizContainer.requestFullscreen();
-                                                                } else if (vizContainer.webkitRequestFullscreen) { /* Safari */
-                                                                    vizContainer.webkitRequestFullscreen();
-                                                                } else if (vizContainer.msRequestFullscreen) { /* IE11 */
-                                                                    vizContainer.msRequestFullscreen();
-                                                                }
-                                                            });
-                                                            vizContainer.appendChild(fsBtn);
-
-                                                            contentDiv.parentNode.insertBefore(vizContainer, contentDiv.nextSibling);
-                                                        } else {
-                                                            vizContainer.style.display = 'block';
-                                                        }
-
-                                                        finalMsgDiv.classList.add('showing-viz');
-                                                        contentDiv.style.display = 'none';
-                                                        vizBtn.textContent = "Show Paper";
-                                                    };
-
-                                                    // Use persisted HTML if available
-                                                    if (finalMsgDiv.dataset.vizHtml) {
-                                                        showContainer(finalMsgDiv.dataset.vizHtml);
-                                                        return;
-                                                    }
-
-                                                    // Otherwise, generate it
-                                                    vizBtn.disabled = true;
-                                                    vizBtn.innerHTML = "Generating...";
-
-                                                    try {
-                                                        const res = await fetch('/api/visualize', {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({
-                                                                content: fullResponseContent || finalMsgDiv.dataset.originalContent,
-                                                                message_id: messageDbId
-                                                            })
-                                                        });
-                                                        const result = await res.json();
-
-                                                        if (result.success && result.html) {
-                                                            // Cache it
-                                                            finalMsgDiv.dataset.vizHtml = result.html;
-                                                            showContainer(result.html);
-                                                        } else {
-                                                            alert("Failed to generate visualization: " + (result.error || "Unknown error"));
-                                                        }
-                                                    } catch (e) {
-                                                        console.error("Viz error:", e);
-                                                        alert("Error requesting visualization.");
-                                                    } finally {
-                                                        vizBtn.disabled = false;
-                                                        if (!finalMsgDiv.classList.contains('showing-viz')) {
-                                                            vizBtn.innerHTML = `<svg style="width:16px;height:16px;margin-right:6px;" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>Visualize`;
-                                                        }
-                                                    }
-                                                });
-
-                                                buttonsDiv.appendChild(vizBtn);
-                                            }
                                         }
                                     }
                                 }
@@ -8597,15 +8434,17 @@
                                 cleanupStream(false, null, placeholderId);
 
                                 const numMessagesInChat = Array.from(messagesDiv.children).filter(child => child.classList.contains('user-msg') || child.classList.contains('stellar-msg')).length;
-                                if (currentChatId && (numMessagesInChat === 2 || (numMessagesInChat > 2 && (numMessagesInChat - 2) % 10 === 1))) {
-                                    const chatNameResponse = await fetch(`/api/chats/${currentChatId}/name`, {
+                                if (chatId && (numMessagesInChat === 2 || (numMessagesInChat > 2 && (numMessagesInChat - 2) % 10 === 1))) {
+                                    const userQueryNode = document.querySelector(`.message.user-msg[data-id="${userMessageDbId || userMessageId}"] .message-content`);
+                                    const userQueryText = userQueryNode ? userQueryNode.textContent : "New Chat";
+                                    const chatNameResponse = await fetch(`/api/chats/${chatId}/name`, {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ first_message_content: userQuery })
+                                        body: JSON.stringify({ first_message_content: userQueryText })
                                     });
                                     const chatNameData = await chatNameResponse.json();
                                     if (chatNameData.success) {
-                                        updateChatNameInList(currentChatId, chatNameData.name);
+                                        updateChatNameInList(chatId, chatNameData.name);
                                     }
                                 }
                             }
@@ -8618,16 +8457,8 @@
 
                     sseEventSource.onerror = (err) => {
                         if (streamEndedCleanly) return;
-                        console.error("SSE Error:", err);
-                        
-                        // ✨ FIX: Close the native EventSource immediately!
-                        // This stops the browser from natively auto-reconnecting to the 
-                        // old, already-popped query_id URL (which causes the 404).
-                        if (sseEventSource) {
-                            sseEventSource.close();
-                        }
+                        if (sseEventSource) sseEventSource.close();
 
-                        // Your custom retry logic takes over seamlessly
                         if (retryCount < maxRetries) {
                             retryCount++;
                             setTimeout(attemptStreamConnection, 2000 * retryCount);
@@ -8642,23 +8473,85 @@
                             cleanupStream(true, "Stream connection unexpectedly closed.", placeholderId);
                         }
                     };
-
                 } catch (err) {
-                    console.error(`Error in attemptStreamConnection: ${err.message}`);
                     if (retryCount < maxRetries) {
                         retryCount++;
                         setTimeout(attemptStreamConnection, 2000 * retryCount);
                     } else {
-                        let streamErr = err.message || "Unknown error";
-                        if (streamErr.toLowerCase().includes("failed to fetch") || streamErr.toLowerCase().includes("networkerror")) {
-                            streamErr = "Network Connection Error";
-                        }
-                        cleanupStream(true, `Failed to establish stream after retries: ${streamErr}`, placeholderId);
+                        cleanupStream(true, `Failed to establish stream: ${err.message}`, placeholderId);
                     }
                 }
             };
-
             attemptStreamConnection();
+        }
+
+        async function initAndStartStreaming(userQuery, modelId, modeForBackend, pendingFiles, chatId, placeholderId, userMessageId, isResearchOutputExpected, silent = false) {
+            if (currentStreamQueryId) currentStreamQueryId = null;
+
+            try {
+                const registerPayload = {
+                    query: userQuery || " ",
+                    model_id: modelId,
+                    mode: modeForBackend,
+                    pending_files: pendingFiles,
+                    chat_id: chatId,
+                    hidden: silent,
+                    disabled_tools: Object.keys(agentSettings).filter(t => !agentSettings[t])
+                };
+
+                const registerResponse = await fetch('/register_query', {
+                    method: 'POST',
+                    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                    body: JSON.stringify(registerPayload)
+                });
+
+                if (!registerResponse.ok) {
+                    const errData = await registerResponse.json().catch(() => ({}));
+                    throw new Error(errData.error || `Register fail HTTP ${registerResponse.status}`);
+                }
+                const registerData = await registerResponse.json();
+                if (!registerData.query_id) throw new Error("No query_id received from registration.");
+                
+                currentStreamQueryId = registerData.query_id;
+                lastRefinedQuery = userQuery;
+
+                startSseConnection(currentStreamQueryId, modeForBackend, chatId, placeholderId, userMessageId, isResearchOutputExpected, silent);
+            } catch (err) {
+                let displayErr = err.message || "Unknown error";
+                updateStellarMessagePlaceholder(placeholderId, `Error: ${displayErr}`, true);
+                setStatus(`Error: ${displayErr}`, true);
+                cleanupStream(true, displayErr, placeholderId);
+            }
+        }
+
+        function reconnectToStream(queryId, mode, chatId) {
+            currentStreamQueryId = queryId;
+            isProcessing = true;
+            sendBtn.disabled = true;
+            toggleSendStopButtons(true);
+            setStatus("Reconnecting...", false);
+
+            let placeholderMsg = document.querySelector('.placeholder-message');
+            let placeholderId = placeholderMsg ? placeholderMsg.dataset.id : `placeholder-${Date.now()}`;
+            let isResearchOutputExpected = mode.startsWith('search') || mode === 'cosmos';
+
+            if (!placeholderMsg) {
+                placeholderMsg = document.createElement("div");
+                placeholderMsg.classList.add("message", "stellar-msg", "placeholder-message");
+                if (isResearchOutputExpected) {
+                    placeholderMsg.classList.add("research-output");
+                }
+                placeholderMsg.dataset.id = placeholderId;
+                const contentDiv = document.createElement("div"); contentDiv.classList.add("message-content");
+                const statusSpan = document.createElement("span"); statusSpan.className = "placeholder-status"; 
+                statusSpan.textContent = "Reconnecting to stream..."; 
+                contentDiv.appendChild(statusSpan);
+                placeholderMsg.appendChild(contentDiv);
+                if (messagesDiv) messagesDiv.appendChild(placeholderMsg);
+                scrollToBottom();
+            }
+
+            startSseConnection(queryId, mode, chatId, placeholderId, null, isResearchOutputExpected, false);
         }
         function cleanupStream(showErrorStatus = false, errorMsg = null, placeholderId) {
             stopLongTaskMonitor();
@@ -8925,20 +8818,18 @@
 
 
         async function selectChat(chatId) {
-            if (isProcessing) {
-                setStatus("Cannot switch chat while processing.", true);
-                setTimeout(() => setStatus(currentStatusText, false), 3000);
-                return;
-            }
-
             if (currentChatId === chatId) {
                 sidebar.classList.remove('open');
                 return;
             }
 
+            if (isProcessing && sseEventSource) {
+                sseEventSource.close();
+                sseEventSource = null;
+            }
+            cleanupStream(false, null, null);
 
             currentChatId = chatId;
-
 
             try {
                 const response = await fetch('/api/set_active_chat', {
@@ -8947,13 +8838,11 @@
                     body: JSON.stringify({ chat_id: chatId })
                 });
                 if (!response.ok) {
-                    console.error("Failed to set active chat on backend. History clearing might be affected.");
+                    console.error("Failed to set active chat on backend.");
                 }
             } catch (error) {
                 console.error("Error setting active chat on backend:", error);
             }
-
-
 
             messagesDiv.innerHTML = '';
             historyLoaded = false;
@@ -8961,10 +8850,7 @@
 
             document.querySelectorAll('.chat-item').forEach(item => item.classList.remove('active'));
             const selectedItem = chatList.querySelector(`.chat-item[data-chat-id="${chatId}"]`);
-            if (selectedItem) {
-                selectedItem.classList.add('active');
-            }
-
+            if (selectedItem) selectedItem.classList.add('active');
 
             const targetMessageId = selectedItem?.dataset.messageId || null;
             const highlightTerm = selectedItem?.dataset.searchTerm || null;
@@ -8974,11 +8860,28 @@
 
             sidebar.classList.remove('open');
             setStatus(`Switched to chat.`, false);
-            setTimeout(() => setStatus("Idle"), 2000);
 
             if (selectedItem) {
                 delete selectedItem.dataset.messageId;
                 delete selectedItem.dataset.searchTerm;
+            }
+
+            checkActiveStream(chatId);
+        }
+
+        async function checkActiveStream(chatId) {
+            try {
+                const res = await fetch(`/api/chats/${chatId}/active_stream`);
+                const data = await res.json();
+                if (data.query_id && data.mode) {
+                    console.log("Reconnecting to active stream:", data.query_id);
+                    reconnectToStream(data.query_id, data.mode, chatId);
+                } else if (!isProcessing) {
+                    setStatus("Idle");
+                }
+            } catch (e) { 
+                console.error("Error checking active stream:", e); 
+                if (!isProcessing) setStatus("Idle");
             }
         }
 

@@ -89,14 +89,28 @@ def web_search(
         # 1. Google Quick Search
         if action == "google_quick":
             if not query: return json.dumps({"error": "Missing 'query' for google_quick"})
-            from app import PRIMARY_API_KEY
-            client = genai.Client(api_key=PRIMARY_API_KEY)
-            response = client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=f"Please answer this concisely using Google Search: {query}",
-                config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
-            )
-            return json.dumps({"tool": "google_quick", "answer": response.text})
+            from app import PRIMARY_API_KEY, BACKUP_API_KEYS
+            raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+            keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+            
+            last_error = None
+            for current_key in keys_to_try:
+                try:
+                    client = genai.Client(api_key=current_key)
+                    response = client.models.generate_content(
+                        model='gemini-2.5-flash-lite',
+                        contents=f"Please answer this concisely using Google Search: {query}",
+                        config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+                    )
+                    return json.dumps({"tool": "google_quick", "answer": response.text})
+                except Exception as e:
+                    error_string = str(e).lower()
+                    if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+                        last_error = e
+                        continue
+                    return json.dumps({"error": f"Error: {str(e)}"})
+            
+            return json.dumps({"error": f"All API keys exhausted. Last error: {str(last_error)}"})
 
         # Initialize Tavily Client
         t_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
@@ -435,13 +449,14 @@ def generate_image(model: str, prompt: str, status: str, quality: str = "1K", as
         aspect_ratio: Supported ratios: '1:1', '3:4', '4:3', '9:16', '16:9'.
         reference_images: List of filenames from the chat context to use as reference/conditioning (up to 14).
     """
-    from app import PRIMARY_API_KEY, UPLOAD_FOLDER
+    from app import PRIMARY_API_KEY, UPLOAD_FOLDER, BACKUP_API_KEYS
     from flask import session
     import os
     import mimetypes
     import uuid
     
-    client = genai.Client(api_key=PRIMARY_API_KEY)
+    raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+    keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
     
     # Ensure aspect_ratio is one of the strictly supported API values
     valid_ratios = ["1:1", "3:4", "4:3", "9:16", "16:9"]
@@ -477,38 +492,47 @@ def generate_image(model: str, prompt: str, status: str, quality: str = "1K", as
         except Exception as e:
             logger.error(f"Error loading reference images: {e}")
 
-    try:
-        response = client.models.generate_content(
-            model=model,
-            contents=parts,
-            config=types.GenerateContentConfig(
-                image_config=types.ImageConfig(**image_config_args),
-                response_modalities=["IMAGE"]
+    last_error = None
+    for current_key in keys_to_try:
+        try:
+            client = genai.Client(api_key=current_key)
+            response = client.models.generate_content(
+                model=model,
+                contents=parts,
+                config=types.GenerateContentConfig(
+                    image_config=types.ImageConfig(**image_config_args),
+                    response_modalities=["IMAGE"]
+                )
             )
-        )
-        
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, 'inline_data') and part.inline_data:
-                img_data = part.inline_data.data
-                
-                output_dir = "outputs"
-                os.makedirs(output_dir, exist_ok=True)
-                
-                mime_type = getattr(part.inline_data, 'mime_type', 'image/png')
-                ext = "png"
-                if "jpeg" in mime_type: ext = "jpg"
-                elif "webp" in mime_type: ext = "webp"
-                
-                filename = f"gen_{uuid.uuid4().hex[:8]}.{ext}"
-                file_path = os.path.join(output_dir, filename)
-                
-                with open(file_path, "wb") as f:
-                    f.write(img_data)
-                
-                return f"![Generated Image](https://stellarai.live/view/{filename})"
-        return "Image model returned no visual data."
-    except Exception as e:
-        return f"Error generating image: {str(e)}"
+            
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    img_data = part.inline_data.data
+                    
+                    output_dir = "outputs"
+                    os.makedirs(output_dir, exist_ok=True)
+                    
+                    mime_type = getattr(part.inline_data, 'mime_type', 'image/png')
+                    ext = "png"
+                    if "jpeg" in mime_type: ext = "jpg"
+                    elif "webp" in mime_type: ext = "webp"
+                    
+                    filename = f"gen_{uuid.uuid4().hex[:8]}.{ext}"
+                    file_path = os.path.join(output_dir, filename)
+                    
+                    with open(file_path, "wb") as f:
+                        f.write(img_data)
+                    
+                    return f"![Generated Image](https://stellarai.live/view/{filename})"
+            return "Image model returned no visual data."
+        except Exception as e:
+            error_string = str(e).lower()
+            if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+                last_error = e
+                continue
+            return f"Error generating image: {str(e)}"
+    
+    return f"Error: All API keys exhausted. Last error: {str(last_error)}"
 
 
 
@@ -571,8 +595,11 @@ def make_presentation(topic: str, status: str, num_slides: int = 10, style: str 
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from io import BytesIO
-    from app import PRIMARY_API_KEY
+    from app import PRIMARY_API_KEY, BACKUP_API_KEYS
     from pydantic import BaseModel, Field
+    
+    raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+    keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
 
     class Slide(BaseModel):
         title: str = Field(description="Main title for the slide.")
@@ -582,7 +609,6 @@ def make_presentation(topic: str, status: str, num_slides: int = 10, style: str 
     class PresentationPlan(BaseModel):
         slides: list[Slide]
 
-    client = genai.Client(api_key=PRIMARY_API_KEY)
     slide_plan_prompt = (
         f"Plan {num_slides} professional infographic-style slides for a presentation on '{topic}'.\n"
         f"Style: {style}.\n"
@@ -590,19 +616,32 @@ def make_presentation(topic: str, status: str, num_slides: int = 10, style: str 
         "Each slide should be designed as a complete visual experience. Include specific sections, diagrams, or icons in the background description."
     )
     
-    try:
-        resp = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=slide_plan_prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=PresentationPlan
+    plan = None
+    last_error = None
+    for current_key in keys_to_try:
+        try:
+            client = genai.Client(api_key=current_key)
+            resp = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=slide_plan_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=PresentationPlan
+                )
             )
-        )
-        plan = json.loads(resp.text)
-        slides_data = plan.get('slides', [])
-    except Exception as e:
-        return f"Failed to plan presentation: {str(e)}"
+            plan = json.loads(resp.text)
+            break
+        except Exception as e:
+            error_string = str(e).lower()
+            if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+                last_error = e
+                continue
+            return f"Failed to plan presentation: {str(e)}"
+            
+    if not plan:
+        return f"Error: All API keys exhausted. Last error: {str(last_error)}"
+        
+    slides_data = plan.get('slides', [])
     
     async def fetch_image(slide_data):
         try:
@@ -709,87 +748,79 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
     from app import PRIMARY_API_KEY
     from pydantic import BaseModel, Field
 
-    client = genai.Client(api_key=PRIMARY_API_KEY)
+    from app import PRIMARY_API_KEY, BACKUP_API_KEYS
+    raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+    keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
     
-    # Load existing slide image for reference if it exists
-    existing_image_part = None
-    try:
-        pres_dir = os.path.join("outputs", f"pres_{presentation_id}")
-        slide_path = os.path.join(pres_dir, f"slide_{slide_index + 1}.png")
-        if os.path.exists(slide_path):
-            with open(slide_path, "rb") as f:
-                img_data = f.read()
-                existing_image_part = {
-                    'mime_type': 'image/png',
-                    'data': img_data
-                }
-    except:
-        pass
+    slide_data = None
+    img_bytes = None
+    last_error = None
+    
+    for current_key in keys_to_try:
+        try:
+            client = genai.Client(api_key=current_key)
+            
+            # Load existing slide image for reference if it exists
+            existing_image_part = None
+            pres_dir = os.path.join("outputs", f"pres_{presentation_id}")
+            slide_path = os.path.join(pres_dir, f"slide_{slide_index + 1}.png")
+            if os.path.exists(slide_path):
+                with open(slide_path, "rb") as f:
+                    img_data = f.read()
+                    existing_image_part = {
+                        'mime_type': 'image/png',
+                        'data': img_data
+                    }
+            
+            contents = [slide_plan_prompt]
+            if existing_image_part:
+                contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
 
-    # Re-plan only this slide
-    slide_plan_prompt = (
-        f"Analyze the attached image (Slide {slide_index + 1} of presentation {presentation_id}) and re-plan it based on this feedback: '{feedback}'.\n"
-        f"Original Topic: {topic}.\n"
-        f"Target Style: {style}.\n"
-        "Instructions:\n"
-        "1. Identify what is currently on the slide.\n"
-        "2. Apply the user feedback to create a NEW plan.\n"
-        "3. Ensure the new design is a complete visual experience. Include specific sections, diagrams, or 3D elements in the background description as requested."
-    )
-
-    class Slide(BaseModel):
-        title: str = Field(description="Main title for the slide.")
-        summary: str = Field(description="A comprehensive, detailed summary for the slide.")
-        background_description: str = Field(description="Detailed description of the visual layout.")
-
-    try:
-        contents = [slide_plan_prompt]
-        if existing_image_part:
-            contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
-
-        resp = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=Slide
+            resp = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=Slide
+                )
             )
-        )
-        slide_data = json.loads(resp.text)
-    except Exception as e:
-        return f"Failed to re-plan slide: {str(e)}"
+            slide_data = json.loads(resp.text)
+            
+            full_image_prompt = (
+                f"Using the attached image as a reference, modify it based on this feedback: '{feedback}'.\n"
+                f"Target Infographic Layout: {slide_data.get('background_description')}.\n"
+                f"CONTENT TO RENDER:\n"
+                f"Main Header: '{slide_data.get('title')}'\n"
+                f"Body Text: '{slide_data.get('summary')}'\n"
+                "INSTRUCTIONS:\n"
+                "- Maintain the professional style: '{style}'.\n"
+                "- Ensure high-resolution, clean typography, and 3D infographics if requested.\n"
+                "- The result must be a single, complete, polished slide design."
+            )
+            
+            image_contents = [full_image_prompt]
+            if existing_image_part:
+                image_contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
 
-    # Generate image for this slide
-    full_image_prompt = (
-        f"Using the attached image as a reference, modify it based on this feedback: '{feedback}'.\n"
-        f"Target Infographic Layout: {slide_data.get('background_description')}.\n"
-        f"CONTENT TO RENDER:\n"
-        f"Main Header: '{slide_data.get('title')}'\n"
-        f"Body Text: '{slide_data.get('summary')}'\n"
-        "INSTRUCTIONS:\n"
-        "- Maintain the professional style: '{style}'.\n"
-        "- Ensure high-resolution, clean typography, and 3D infographics if requested.\n"
-        "- The result must be a single, complete, polished slide design."
-    )
-
-    try:
-        image_contents = [full_image_prompt]
-        if existing_image_part:
-            image_contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
-
-        result = client.models.generate_content(
-            model='gemini-3.1-flash-image-preview',
-            contents=image_contents,
-        )
-        img_bytes = None
-        if result.candidates and result.candidates[0].content.parts:
-            for part in result.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    img_bytes = part.inline_data.data
-                    break
-    except Exception as e:
-        return f"Failed to generate slide image: {str(e)}"
-
+            result = client.models.generate_content(
+                model='gemini-3.1-flash-image-preview',
+                contents=image_contents,
+            )
+            
+            if result.candidates and result.candidates[0].content.parts:
+                for part in result.candidates[0].content.parts:
+                    if hasattr(part, 'inline_data') and part.inline_data:
+                        img_bytes = part.inline_data.data
+                        break
+            
+            break # Success!
+            
+        except Exception as e:
+            error_string = str(e).lower()
+            if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+                last_error = e
+                continue
+            return f"Failed to re-plan or generate slide: {str(e)}"
     if not img_bytes:
         return "Failed to generate image bytes."
 
@@ -1679,7 +1710,9 @@ def analyze_youtube_video(query: str, status: str, action: str = "analyze", vide
     if not video_url:
         return "Error: 'video_url' is required for the 'analyze' action."
 
-    client = genai.Client(api_key=PRIMARY_API_KEY, http_options={'api_version': 'v1beta'})
+    from app import PRIMARY_API_KEY, BACKUP_API_KEYS
+    raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+    keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
     
     part = types.Part(
         file_data=types.FileData(
@@ -1703,14 +1736,23 @@ def analyze_youtube_video(query: str, status: str, action: str = "analyze", vide
         )
     ]
     
-    try:
-        response = client.models.generate_content(
-            model=model_id,
-            contents=contents
-        )
-        return response.text if response.text else "The model returned an empty response for the video analysis."
-    except Exception as e:
-        return f"Error analyzing YouTube video: {str(e)}"
+    last_error = None
+    for current_key in keys_to_try:
+        try:
+            client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
+            response = client.models.generate_content(
+                model=model_id,
+                contents=contents
+            )
+            return response.text if response.text else "The model returned an empty response for the video analysis."
+        except Exception as e:
+            error_string = str(e).lower()
+            if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+                last_error = e
+                continue
+            return f"Error analyzing YouTube video: {str(e)}"
+
+    return f"Error: All API keys exhausted. Last error: {str(last_error)}"
 
 def manage_files(action: str, status: str, file_name: str = None, target_env: str = "lab", source_env: str = "chat") -> str:
     """

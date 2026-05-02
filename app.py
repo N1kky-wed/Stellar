@@ -2502,6 +2502,20 @@ def api_logs_preferences():
             return jsonify({'success': True})
         return jsonify({'error': 'Index out of bounds'}), 400
 
+@app.route('/api/chats/<int:chat_id>/active_stream', methods=['GET'])
+@require_approval
+def get_active_stream(chat_id):
+    """Allows UI to detect if a specific chat has an active stream it should reconnect to."""
+    db = get_db()
+    cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, session['user_id']))
+    if not cursor.fetchone():
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    active_query_str = redis_client.get(f"chat_active_query:{chat_id}")
+    if active_query_str:
+        return Response(active_query_str, mimetype='application/json')
+    return jsonify({})
+
 @app.route('/register_query', methods=['POST'])
 @require_approval
 def register_query():
@@ -2513,23 +2527,20 @@ def register_query():
         query = data.get('query')
         model_id = data.get('model_id')
         mode = data.get('mode')
-        pending_files = data.get('pending_files', [])
+        pending_files = data.get('pending_files',[])
         chat_id = data.get('chat_id')
         hidden = data.get('hidden', False)
-        disabled_tools = data.get('disabled_tools', [])
+        disabled_tools = data.get('disabled_tools',[])
 
         if not query or not model_id or not mode or not chat_id:
             return jsonify({'error': 'Missing required data: query, model_id, mode, chat_id'}), 400
 
         if not isinstance(pending_files, list):
-             pending_files = []
+             pending_files =[]
 
         query_id = str(uuid.uuid4())
 
-        if 'pending_queries' not in session:
-            session['pending_queries'] = {}
-
-        session['pending_queries'][query_id] = {
+        query_data = {
             'query': query,
             'model_id': model_id,
             'mode': mode,
@@ -2537,9 +2548,15 @@ def register_query():
             'timestamp': time.time(),
             'chat_id': chat_id,
             'hidden': hidden,
-            'disabled_tools': disabled_tools
+            'disabled_tools': disabled_tools,
+            'user_id': session.get('user_id'),
+            'username': session.get('username'),
+            'session_id': get_current_session_id()
         }
-        session.modified = True
+
+        # Make Query Parameters fully durable using Redis!
+        redis_client.setex(f"query_args:{query_id}", 3600 * 24, json.dumps(query_data))
+        redis_client.setex(f"chat_active_query:{chat_id}", 3600 * 24, json.dumps({'query_id': query_id, 'mode': mode}))
 
         return jsonify({'query_id': query_id}), 200
 
@@ -2552,876 +2569,856 @@ def register_query():
 @app.route('/refine_stream', methods=['GET'])
 @require_approval
 def refine_stream():
-    start_time = time.time()
     query_id = request.args.get('query_id')
-
-    session_id = get_current_session_id()
-    if not session_id:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Session error. Please refresh.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
 
     if not query_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Missing query identifier.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=400)
 
-    query_data = None
-    if 'pending_queries' in session and query_id in session['pending_queries']:
-        pending_queries = session['pending_queries']
-        query_data = pending_queries.pop(query_id)
-        session.modified = True
-        if not pending_queries:
-            session.pop('pending_queries', None)
-    if not query_data:
+    query_data_str = redis_client.get(f"query_args:{query_id}")
+    if not query_data_str:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Query session expired or invalid.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=404)
 
+    query_data = json.loads(query_data_str)
     user_query_from_frontend = query_data.get('query', '')
     model_id = query_data.get('model_id')
-    pending_files = query_data.get('pending_files', [])
+    pending_files = query_data.get('pending_files',[])
     chat_id = query_data.get('chat_id')
     hidden = query_data.get('hidden', False)
-    disabled_tools = query_data.get('disabled_tools', [])
+    disabled_tools = query_data.get('disabled_tools',[])
+    session_id = query_data.get('session_id')
+    user_id = query_data.get('user_id')
+    username = query_data.get('username')
 
-    if not user_query_from_frontend or not model_id or not chat_id:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
+    is_running = redis_client.exists(f"stream_started:{query_id}")
 
-    fallback_model="gemini-2.5-flash-lite"
-    max_model_attempts = 2
-    gemini_files_data =[]
-    if pending_files:
-        gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+    if not is_running:
+        redis_client.setex(f"stream_started:{query_id}", 3600 * 24, "1")
 
-    user_message_id = insert_message(chat_id, "user", user_query_from_frontend, attached_files=gemini_files_data, user_query_for_name=user_query_from_frontend, hidden=hidden)
-    if not user_message_id:
-         pass
+        def generator_task():
+            from flask import g
+            g.user_id = user_id
+            g.chat_id = chat_id
+            g.username = username
 
-    def generate_refinement_stream_with_analysis():
-        final_stellar_message_id = None
-        llm_error_occurred = False
+            gemini_files_data =[]
+            if pending_files:
+                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
 
-        try:
-            # Construct multimodal prompt array
-            multimodal_prompt =[]
-            for gf in gemini_files_data:
-                if gf.get('uri'):
-                    multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
-                elif gf.get('fallback_to_lab'):
-                    fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
-                    multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
+            user_message_id = insert_message(chat_id, "user", user_query_from_frontend, attached_files=gemini_files_data, user_query_for_name=user_query_from_frontend, hidden=hidden)
 
-            if check_and_log_stop(query_id, "history retrieval"): return
-            conversation_history = get_conversation_history(chat_id)
-            conv_hist_list = []
-            if conversation_history:
-                for msg in conversation_history:
-                    if str(msg.get('id')) == str(user_message_id):
-                        continue
-                    role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
-                    content = msg.get('message_content', '')
-                    # Strip base64 before passing to LLM context
-                    clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
-                    conv_hist_list.append(f"{role}: {clean_content}")
+            final_stellar_message_id = None
+            llm_error_occurred = False
+
+            try:
+                # Construct multimodal prompt array
+                multimodal_prompt =[]
+                for gf in gemini_files_data:
+                    if gf.get('uri'):
+                        multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+                    elif gf.get('fallback_to_lab'):
+                        fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
+                        multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
+
+                if check_and_log_stop(query_id, "history retrieval"): return
+                conversation_history = get_conversation_history(chat_id)
+                conv_hist_list = []
+                if conversation_history:
+                    for msg in conversation_history:
+                        if str(msg.get('id')) == str(user_message_id):
+                            continue
+                        role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
+                        content = msg.get('message_content', '')
+                        # Strip base64 before passing to LLM context
+                        clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
+                        conv_hist_list.append(f"{role}: {clean_content}")
             
-            # Dynamically add tool execution history to context
-            tool_hist_context = get_tool_history(chat_id)
-            if tool_hist_context:
-                conv_hist_list.append(tool_hist_context)
+                # Dynamically add tool execution history to context
+                tool_hist_context = get_tool_history(chat_id)
+                if tool_hist_context:
+                    conv_hist_list.append(tool_hist_context)
 
-            refined_query_result = ""
-            models_to_try = get_fallback_chain(model_id)
-            last_error_details = ""
-            partial_work_done = ""
+                refined_query_result = ""
+                models_to_try = get_fallback_chain(model_id)
+                last_error_details = ""
+                partial_work_done = ""
 
-            for current_model in models_to_try:
-                if check_and_log_stop(query_id, f"LLM call {current_model}"): return
-                display_name = MODEL_NAMES.get(current_model, current_model)
-                current_api_key = PRIMARY_API_KEY
+                for current_model in models_to_try:
+                    if check_and_log_stop(query_id, f"LLM call {current_model}"): return
+                    display_name = MODEL_NAMES.get(current_model, current_model)
+                    current_api_key = PRIMARY_API_KEY
                 
-                if not current_api_key:
-                    yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
-                    return
+                    if not current_api_key:
+                        yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
+                        return
 
-                if current_model != models_to_try[0]:
-                    yield f"data: {json.dumps({'status': f'Model failed. Falling back to {display_name}...', 'phase': 'refining'})}\n\n"
-                    time.sleep(1)
+                    if current_model != models_to_try[0]:
+                        yield f"data: {json.dumps({'status': f'Model failed. Falling back to {display_name}...', 'phase': 'refining'})}\n\n"
+                        time.sleep(1)
                 
-                username = session.get('username')
-                user_id = session.get('user_id')
-                
-                # If we have partial work from a previous failed model, inject it as continuation context
-                effective_conv_hist = conv_hist_list.copy()
-                if partial_work_done:
-                    capability_note = ""
-                    # Define model tiers clearly for fallback guidance
-                    full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                    lab_only = ["gemini-3.1-flash-lite-preview"] # Lunarity
+                    # If we have partial work from a previous failed model, inject it as continuation context
+                    effective_conv_hist = conv_hist_list.copy()
+                    if partial_work_done:
+                        capability_note = ""
+                        # Define model tiers clearly for fallback guidance
+                        full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                        lab_only = ["gemini-3.1-flash-lite-preview"] # Lunarity
                     
-                    if current_model in lab_only:
-                        capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the task using the Lab or Web Search."
-                    elif current_model not in full_access:
-                        capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task."
+                        if current_model in lab_only:
+                            capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the task using the Lab or Web Search."
+                        elif current_model not in full_access:
+                            capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task."
                     
-                    effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
+                        effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
                 
-                text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id)                
+                    text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id)                
 
-                # Create a copy of multimodal_prompt and add the text_prompt
-                final_prompt = multimodal_prompt.copy()
-                final_prompt.append(types.Part.from_text(text=text_prompt))
+                    # Create a copy of multimodal_prompt and add the text_prompt
+                    final_prompt = multimodal_prompt.copy()
+                    final_prompt.append(types.Part.from_text(text=text_prompt))
 
-                generator_output = gemini_generate(
-                    prompt=final_prompt,
-                    model_id=current_model,
-                    key=current_api_key,
-                    attempts=len(BACKUP_API_KEYS),
-                    model_display_name=f"{display_name}",
-                    username=username,
-                    chat_id=chat_id,
-                    disabled_tools=disabled_tools,
-                    gemini_files_data=gemini_files_data
-                )
+                    generator_output = gemini_generate(
+                        prompt=final_prompt,
+                        model_id=current_model,
+                        key=current_api_key,
+                        attempts=len(BACKUP_API_KEYS),
+                        model_display_name=f"{display_name}",
+                        username=username,
+                        chat_id=chat_id,
+                        disabled_tools=disabled_tools,
+                        gemini_files_data=gemini_files_data
+                    )
                 
-                model_failed = False
-                current_attempt_result = ""
-                for item in generator_output:
-                    if 'status' in item:
-                        yield f"data: {json.dumps({'status': item['status'], 'phase': 'refining'})}\n\n"
-                    elif 'result' in item:
-                        temp_result = item['result']
-                        if isinstance(temp_result, str) and temp_result.startswith(ERROR_CODE):
-                            last_error_details = temp_result
-                            # Store partial work so next model can pick up
-                            if current_attempt_result:
-                                partial_work_done += "\n" + current_attempt_result
-                            model_failed = True
-                            break
-                        else:
-                            current_attempt_result += temp_result
-                            refined_query_result += temp_result
+                    model_failed = False
+                    current_attempt_result = ""
+                    for item in generator_output:
+                        if 'status' in item:
+                            yield f"data: {json.dumps({'status': item['status'], 'phase': 'refining'})}\n\n"
+                        elif 'result' in item:
+                            temp_result = item['result']
+                            if isinstance(temp_result, str) and temp_result.startswith(ERROR_CODE):
+                                last_error_details = temp_result
+                                # Store partial work so next model can pick up
+                                if current_attempt_result:
+                                    partial_work_done += "\n" + current_attempt_result
+                                model_failed = True
+                                break
+                            else:
+                                current_attempt_result += temp_result
+                                refined_query_result += temp_result
                 
-                if not model_failed and refined_query_result:
-                    break
+                    if not model_failed and refined_query_result:
+                        break
+                    else:
+                        # If whole loop failed without even partial result, we keep refined_query_result as is for next iteration
+                        pass
+
+                # FINAL FAIL-SAFE: If everything failed, have Lunarity generate a diagnostic report
+                if not refined_query_result and last_error_details:
+                    yield f"data: {json.dumps({'status': 'All models busy or exhausted. Lunarity is generating diagnostic report...', 'phase': 'diagnostic'})}\n\n"
+                    from prompts import get_error_explanation_prompt
+                    diag_prompt = get_error_explanation_prompt(user_query_from_frontend, last_error_details)
+                
+                    generator_output = gemini_generate(
+                        prompt=diag_prompt,
+                        model_id="gemini-3.1-flash-lite-preview",
+                        key=PRIMARY_API_KEY,
+                        attempts=1,
+                        model_display_name="Lunarity (Diagnostic)",
+                        chat_id=chat_id
+                    )
+                    for item in generator_output:
+                        if 'result' in item:
+                            refined_query_result += item['result']
+
+                if refined_query_result:
+                    if check_and_log_stop(query_id, "database insert"): return
+                    stellar_message_id = insert_message(
+                        chat_id,
+                        "stellar",
+                        refined_query_result,
+                        hidden=hidden
+                    )
+                    if stellar_message_id:
+                         final_stellar_message_id = stellar_message_id
+                         final_data = {
+                             'status': 'refined_ready',
+                             'session_id': session_id,
+                             'message_id': str(final_stellar_message_id),
+                             'user_message_id': str(user_message_id) if user_message_id else None,
+                             'refined_query': refined_query_result
+                         }
+                         yield f"data: {json.dumps(final_data)}\n\n"
+                    else:
+                          error_msg = "Refinement generated but failed to save AI response to database."
+                          yield f"data: {json.dumps({'status': error_msg, 'error': True})}\n\n"
+                          llm_error_occurred = True
                 else:
-                    # If whole loop failed without even partial result, we keep refined_query_result as is for next iteration
-                    pass
+                     error_msg = "Encountered an error: Unable to refine query after all attempts."
+                     yield f"data: {json.dumps({'status': error_msg, 'error': True})}\n\n"
+                     llm_error_occurred = True
 
-            # FINAL FAIL-SAFE: If everything failed, have Lunarity generate a diagnostic report
-            if not refined_query_result and last_error_details:
-                yield f"data: {json.dumps({'status': 'All models busy or exhausted. Lunarity is generating diagnostic report...', 'phase': 'diagnostic'})}\n\n"
-                from prompts import get_error_explanation_prompt
-                diag_prompt = get_error_explanation_prompt(user_query_from_frontend, last_error_details)
-                
-                generator_output = gemini_generate(
-                    prompt=diag_prompt,
-                    model_id="gemini-3.1-flash-lite-preview",
-                    key=PRIMARY_API_KEY,
-                    attempts=1,
-                    model_display_name="Lunarity (Diagnostic)",
-                    chat_id=chat_id
-                )
-                for item in generator_output:
-                    if 'result' in item:
-                        refined_query_result += item['result']
+            except Exception as e:
+                logger.error(f"Error in generate_refinement_stream_with_analysis: {e}", exc_info=True)
+                yield f"data: {json.dumps({'status': 'Severe error during refinement stream processing.', 'error': True})}\n\n"
+                llm_error_occurred = True
 
-            if refined_query_result:
-                if check_and_log_stop(query_id, "database insert"): return
-                stellar_message_id = insert_message(
-                    chat_id,
-                    "stellar",
-                    refined_query_result,
-                    hidden=hidden
-                )
-                if stellar_message_id:
-                     final_stellar_message_id = stellar_message_id
-                     final_data = {
-                         'status': 'refined_ready',
-                         'session_id': session_id,
-                         'message_id': str(final_stellar_message_id),
-                         'user_message_id': str(user_message_id) if user_message_id else None,
-                         'refined_query': refined_query_result
-                     }
-                     yield f"data: {json.dumps(final_data)}\n\n"
-                else:
-                      error_msg = "Refinement generated but failed to save AI response to database."
-                      yield f"data: {json.dumps({'status': error_msg, 'error': True})}\n\n"
-                      llm_error_occurred = True
-            else:
-                 error_msg = "Encountered an error: Unable to refine query after all attempts."
-                 yield f"data: {json.dumps({'status': error_msg, 'error': True})}\n\n"
-                 llm_error_occurred = True
+        background_thread_runner(current_app._get_current_object(), query_id, chat_id, generator_task)
 
-        except Exception as e:
-            logger.error(f"Error in generate_refinement_stream_with_analysis: {e}", exc_info=True)
-            yield f"data: {json.dumps({'status': 'Severe error during refinement stream processing.', 'error': True})}\n\n"
-            llm_error_occurred = True
-        finally:
-            with stop_flags_lock:
-                stop_flags.pop(query_id, None)
-
-    return Response(stream_with_context(generate_refinement_stream_with_analysis()), mimetype='text/event-stream')
+    return Response(stream_with_context(stream_consumer(query_id)), mimetype='text/event-stream')
 
 
 
 @app.route('/search_stream', methods=['GET'])
 @require_approval
 def search_stream():
-    start_time = time.time()
     query_id = request.args.get('query_id')
-
-    session_id = get_current_session_id()
-    if not session_id:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Session error. Please refresh.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
 
     if not query_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Missing query identifier.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=400)
 
-    query_data = None
-    if 'pending_queries' in session and query_id in session['pending_queries']:
-        pending_queries = session['pending_queries']
-        query_data = pending_queries.pop(query_id)
-        session.modified = True
-        if not pending_queries:
-            session.pop('pending_queries', None)
-    else:
+    import json
+    query_data_str = redis_client.get(f"query_args:{query_id}")
+    if not query_data_str:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Query session expired or invalid.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=404)
 
-    user_query = query_data.get('query', '')
+    query_data = json.loads(query_data_str)
+    user_query_from_frontend = query_data.get('query', '')
+    user_query = query_data.get('query', '') # For search/cosmos
     model_id = query_data.get('model_id')
     mode = query_data.get('mode')
-    pending_files = query_data.get('pending_files', [])
+    pending_files = query_data.get('pending_files',[])
     chat_id = query_data.get('chat_id')
-    disabled_tools = query_data.get('disabled_tools', [])
+    hidden = query_data.get('hidden', False)
+    disabled_tools = query_data.get('disabled_tools',[])
+    session_id = query_data.get('session_id')
+    user_id = query_data.get('user_id')
+    username = query_data.get('username')
 
-    if not user_query or not model_id or not chat_id:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
+    is_running = redis_client.exists(f"stream_started:{query_id}")
 
-    fallback_model="gemini-2.5-flash-lite"
-    max_model_attempts = 2
+    if not is_running:
+        redis_client.setex(f"stream_started:{query_id}", 3600 * 24, "1")
 
-    gemini_files_data =[]
-    if pending_files:
-        yield f"data: {json.dumps({'status': f'Uploading {len(pending_files)} file(s) to Native Context...', 'phase': 'upload'})}\n\n"
-        gemini_files_data = upload_files_to_gemini(session_id, pending_files)
-        yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
+        def generator_task():
+            from flask import g
+            g.user_id = user_id
+            g.chat_id = chat_id
+            g.username = username
 
-    user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query)
-    if not user_message_id:
-        pass
+            gemini_files_data =[]
+            if pending_files:
+                yield f"data: {json.dumps({'status': f'Uploading {len(pending_files)} file(s) to Native Context...', 'phase': 'upload'})}\n\n"
+                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+                yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
 
-    def generate_research_stream_with_id():
-        full_context = ""
-        web_search_context = ""
-        research_analysis_result = None
-        final_result = None
-        html_filepath_rel = None
-        research_message_id = None
-        error_occurred = False
+            user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query)
+            full_context = ""
+            web_search_context = ""
+            research_analysis_result = None
+            final_result = None
+            html_filepath_rel = None
+            research_message_id = None
+            error_occurred = False
 
-        try:
-            # Construct multimodal prompt array
-            multimodal_prompt =[]
-            for gf in gemini_files_data:
-                if gf.get('uri'):
-                    multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
-                elif gf.get('fallback_to_lab'):
-                    fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
-                    multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
+            try:
+                # Construct multimodal prompt array
+                multimodal_prompt =[]
+                for gf in gemini_files_data:
+                    if gf.get('uri'):
+                        multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+                    elif gf.get('fallback_to_lab'):
+                        fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
+                        multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
             
-            if check_and_log_stop(query_id, "history retrieval"): return
-            conversation_history = get_conversation_history(chat_id)
-            conv_hist_list = []
-            if conversation_history:
-                for msg in conversation_history:
-                    if str(msg.get('id')) == str(user_message_id): continue
-                    role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
-                    content = msg.get('message_content', '')
-                    # Strip base64 before passing to LLM context
-                    clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
-                    conv_hist_list.append(f"{role}: {clean_content}")
-            conv_hist_str = "\n".join(conv_hist_list) if conv_hist_list else "No previous conversation."
-            history_context = f"**Conversation History:**\n{conv_hist_str}\n\n---\n"
+                if check_and_log_stop(query_id, "history retrieval"): return
+                conversation_history = get_conversation_history(chat_id)
+                conv_hist_list = []
+                if conversation_history:
+                    for msg in conversation_history:
+                        if str(msg.get('id')) == str(user_message_id): continue
+                        role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
+                        content = msg.get('message_content', '')
+                        # Strip base64 before passing to LLM context
+                        clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
+                        conv_hist_list.append(f"{role}: {clean_content}")
+                conv_hist_str = "\n".join(conv_hist_list) if conv_hist_list else "No previous conversation."
+                history_context = f"**Conversation History:**\n{conv_hist_str}\n\n---\n"
 
-            if mode == 'search_tavily':
-                yield f"data: {json.dumps({'status': 'Performing Spectral Search...', 'phase': 'context_gathering'})}\n\n"
-                tavily_success = False
-                for attempt in range(2):
-                    try:
-                        if check_and_log_stop(query_id, f"tavily search attempt {attempt+1}"): return
-                        status_msg = 'Performing Spectral Search...' if attempt == 0 else f'Retrying Spectral Search... (Attempt {attempt + 1})'
-                        yield f"data: {json.dumps({'status': status_msg, 'phase': 'context_gathering'})}\n\n"
-                        tavily_response = tavily_search(user_query)
-                        if isinstance(tavily_response, dict) and "error" in tavily_response:
-                            raise ValueError(f"Tavily API Error: {tavily_response['error']}")
-                        if not isinstance(tavily_response, dict) or "results" not in tavily_response:
-                             raise TypeError(f"Tavily returned unexpected/invalid response format: {type(tavily_response)}")
-                        tavily_answer = tavily_response.get("answer", "")
-                        results = tavily_response.get("results", [])
-                        current_web_context = f"**Spectral Search Summary:**\n{tavily_answer if tavily_answer else 'No summary provided.'}\n\n**Scraped Content Details:**\n"
-                        scraped_contents = []
-                        urls_to_scrape = [r.get("url") for r in results if r.get("url")]
-                        urls_scraped_count = 0
-                        for url in urls_to_scrape:
-                            if not url or not isinstance(url, str) or not (url.startswith('http://') or url.startswith('https://')):
-                                continue
-                            if check_and_log_stop(query_id, f"scraping {url}"): return
-                            yield f"data: {json.dumps({'type': 'scraping_url', 'url': url})}\n\n"
-                            yield f"data: {json.dumps({'status': f'Scraping {url}...', 'phase': 'context_gathering'})}\n\n"
-                            content = scrape_url(url)
-                            if content and isinstance(content, str) and not content.startswith("Error scraping"):
-                                scraped_contents.append(f"<details><summary>Content from: {url}</summary>\n\n```text\n{content}\n```\n\n</details>\n")
-                                urls_scraped_count += 1
-                            elif content and content.startswith("Error scraping"):
-                                scraped_contents.append(f"*   Content from {url}: [Scraping Error: {content}]*\n")
-                            else:
-                                scraped_contents.append(f"*   Content from {url}: [No Content Scraped]*\n")
-                        current_web_context += "\n".join(scraped_contents) if scraped_contents else "No content could be scraped from search results.\n"
-                        current_web_context += "\n---\n"
-                        web_search_context = current_web_context
-                        tavily_success = True
-                        yield f"data: {json.dumps({'status': f'Spectral Search completed ({urls_scraped_count} sources scraped).', 'phase': 'context_gathering'})}\n\n"
-                        break
-                    except Exception as e:
-                        logger.error(f"Tavily search or scraping failed in search_stream: {e}", exc_info=True)
-                        if attempt < 1:
-                             yield f"data: {json.dumps({'status': f'Spectral Search failed (Attempt {attempt+1}). Retrying...', 'error': True, 'phase': 'context_gathering'})}\n\n"
-                             time.sleep(1.5)
-                        else:
-                             yield f"data: {json.dumps({'status': 'Spectral Search failed after retries. Proceeding without web context.', 'error': True, 'phase': 'context_gathering'})}\n\n"
-                             web_search_context = "**Spectral Search Attempted:** Failed after retries.\n\n---\n"
-                             break
-            else:
-                 yield f"data: {json.dumps({'status': 'Proceeding without Spectral Search (disabled)...', 'phase': 'context_gathering'})}\n\n"
-                 web_search_context = "**Spectral Search Attempted:** Skipped by user/mode.\n\n---\n"
-
-            full_context = web_search_context
-
-            yield f"data: {json.dumps({'status': 'Starting research analysis...', 'phase': 'analysis_llm'})}\n\n"
-            if check_and_log_stop(query_id, "research LLM call"): return
-            
-            research_analysis_result = ""
-            analysis_models_to_try = get_fallback_chain(model_id)
-            last_analysis_error = ""
-            partial_analysis_work = ""
-
-            for current_model in analysis_models_to_try:
-                if check_and_log_stop(query_id, f"research LLM call {current_model}"): return
-                display_name = MODEL_NAMES.get(current_model, current_model)
-                current_api_key = PRIMARY_API_KEY
-
-                if not current_api_key:
-                    yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
-                    return
-
-                if current_model != analysis_models_to_try[0]:
-                    yield f"data: {json.dumps({'status': f'Analysis model failed. Falling back to {display_name}...', 'phase': 'analysis_llm'})}\n\n"
-                    time.sleep(1)
-
-                # Inject partial work into the context if available
-                effective_full_context = full_context
-                if partial_analysis_work:
-                    capability_note = ""
-                    full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                    lab_only = ["gemini-3.1-flash-lite-preview"]
-
-                    if current_model in lab_only:
-                        capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Continue the research using Lab/Search."
-                    elif current_model not in full_access:
-                        capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. Use Web Search/Intelligence to finalize."
-
-                    effective_full_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-analysis. Here is its partial progress: \n---\n{partial_analysis_work}\n---\nPlease CONTINUE the research analysis immediately where it left off. Do not repeat existing sections.{capability_note}"
-
-                research_prompt = get_research_analysis_prompt(user_query, effective_full_context)
-
-                generator_output_analysis = gemini_generate(
-                    prompt=research_prompt, model_id=current_model, key=current_api_key,
-                    attempts=len(BACKUP_API_KEYS),
-                    model_display_name=f"{display_name} (Analysis)",
-                    chat_id=chat_id,
-                    gemini_files_data=gemini_files_data
-                )
-
-                analysis_failed = False
-                current_analysis_attempt = ""
-                for item in generator_output_analysis:
-                    if 'status' in item:
-                        yield f"data: {json.dumps({'status': item['status'], 'phase': 'analysis_llm'})}\n\n"
-                    elif 'result' in item:
-                        temp_result_analysis = item['result']
-                        if isinstance(temp_result_analysis, str) and temp_result_analysis.startswith(ERROR_CODE):
-                            last_analysis_error = temp_result_analysis
-                            if current_analysis_attempt:
-                                partial_analysis_work += "\n" + current_analysis_attempt
-                            analysis_failed = True
+                if mode == 'search_tavily':
+                    yield f"data: {json.dumps({'status': 'Performing Spectral Search...', 'phase': 'context_gathering'})}\n\n"
+                    tavily_success = False
+                    for attempt in range(2):
+                        try:
+                            if check_and_log_stop(query_id, f"tavily search attempt {attempt+1}"): return
+                            status_msg = 'Performing Spectral Search...' if attempt == 0 else f'Retrying Spectral Search... (Attempt {attempt + 1})'
+                            yield f"data: {json.dumps({'status': status_msg, 'phase': 'context_gathering'})}\n\n"
+                            tavily_response = tavily_search(user_query)
+                            if isinstance(tavily_response, dict) and "error" in tavily_response:
+                                raise ValueError(f"Tavily API Error: {tavily_response['error']}")
+                            if not isinstance(tavily_response, dict) or "results" not in tavily_response:
+                                 raise TypeError(f"Tavily returned unexpected/invalid response format: {type(tavily_response)}")
+                            tavily_answer = tavily_response.get("answer", "")
+                            results = tavily_response.get("results", [])
+                            current_web_context = f"**Spectral Search Summary:**\n{tavily_answer if tavily_answer else 'No summary provided.'}\n\n**Scraped Content Details:**\n"
+                            scraped_contents = []
+                            urls_to_scrape = [r.get("url") for r in results if r.get("url")]
+                            urls_scraped_count = 0
+                            for url in urls_to_scrape:
+                                if not url or not isinstance(url, str) or not (url.startswith('http://') or url.startswith('https://')):
+                                    continue
+                                if check_and_log_stop(query_id, f"scraping {url}"): return
+                                yield f"data: {json.dumps({'type': 'scraping_url', 'url': url})}\n\n"
+                                yield f"data: {json.dumps({'status': f'Scraping {url}...', 'phase': 'context_gathering'})}\n\n"
+                                content = scrape_url(url)
+                                if content and isinstance(content, str) and not content.startswith("Error scraping"):
+                                    scraped_contents.append(f"<details><summary>Content from: {url}</summary>\n\n```text\n{content}\n```\n\n</details>\n")
+                                    urls_scraped_count += 1
+                                elif content and content.startswith("Error scraping"):
+                                    scraped_contents.append(f"*   Content from {url}: [Scraping Error: {content}]*\n")
+                                else:
+                                    scraped_contents.append(f"*   Content from {url}: [No Content Scraped]*\n")
+                            current_web_context += "\n".join(scraped_contents) if scraped_contents else "No content could be scraped from search results.\n"
+                            current_web_context += "\n---\n"
+                            web_search_context = current_web_context
+                            tavily_success = True
+                            yield f"data: {json.dumps({'status': f'Spectral Search completed ({urls_scraped_count} sources scraped).', 'phase': 'context_gathering'})}\n\n"
                             break
-                        else:
-                            current_analysis_attempt += temp_result_analysis
-                            research_analysis_result += temp_result_analysis
-
-                if not analysis_failed and research_analysis_result:
-                    break
+                        except Exception as e:
+                            logger.error(f"Tavily search or scraping failed in search_stream: {e}", exc_info=True)
+                            if attempt < 1:
+                                 yield f"data: {json.dumps({'status': f'Spectral Search failed (Attempt {attempt+1}). Retrying...', 'error': True, 'phase': 'context_gathering'})}\n\n"
+                                 time.sleep(1.5)
+                            else:
+                                 yield f"data: {json.dumps({'status': 'Spectral Search failed after retries. Proceeding without web context.', 'error': True, 'phase': 'context_gathering'})}\n\n"
+                                 web_search_context = "**Spectral Search Attempted:** Failed after retries.\n\n---\n"
+                                 break
                 else:
-                    pass
+                     yield f"data: {json.dumps({'status': 'Proceeding without Spectral Search (disabled)...', 'phase': 'context_gathering'})}\n\n"
+                     web_search_context = "**Spectral Search Attempted:** Skipped by user/mode.\n\n---\n"
 
-            # FINAL FAIL-SAFE: If research analysis completely failed, use Lunarity for a diagnostic report
-            if not research_analysis_result and last_analysis_error:
-                yield f"data: {json.dumps({'status': 'Analysis models busy. Lunarity is generating diagnostic report...', 'phase': 'analysis_diagnostic'})}\n\n"
-                from prompts import get_error_explanation_prompt
-                diag_prompt = get_error_explanation_prompt(user_query, last_analysis_error)
+                full_context = web_search_context
 
-                generator_output = gemini_generate(
-                    prompt=diag_prompt, model_id="gemini-3.1-flash-lite-preview", key=PRIMARY_API_KEY,
-                    attempts=1, model_display_name="Lunarity (Diagnostic)", chat_id=chat_id
-                )
-                for item in generator_output:
-                    if 'result' in item:
-                        research_analysis_result += item['result']
+                yield f"data: {json.dumps({'status': 'Starting research analysis...', 'phase': 'analysis_llm'})}\n\n"
+                if check_and_log_stop(query_id, "research LLM call"): return
+            
+                research_analysis_result = ""
+                analysis_models_to_try = get_fallback_chain(model_id)
+                last_analysis_error = ""
+                partial_analysis_work = ""
 
-            if not research_analysis_result:
-                yield f"data: {json.dumps({'status': f'Research analysis failed after all attempts.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
-                error_occurred = True
-                return
+                for current_model in analysis_models_to_try:
+                    if check_and_log_stop(query_id, f"research LLM call {current_model}"): return
+                    display_name = MODEL_NAMES.get(current_model, current_model)
+                    current_api_key = PRIMARY_API_KEY
 
-            yield f"data: {json.dumps({'status': 'Expanding analysis into full research paper...', 'phase': 'expansion_llm'})}\n\n"
-            if check_and_log_stop(query_id, "expansion LLM call"): return
+                    if not current_api_key:
+                        yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
+                        return
 
-            final_result = ""
-            expansion_models_to_try = get_fallback_chain(model_id)
-            last_expansion_error = ""
-            partial_expansion_work = ""
-
-            for current_model in expansion_models_to_try:
-                if check_and_log_stop(query_id, f"expansion LLM call {current_model}"): return
-                display_name = MODEL_NAMES.get(current_model, current_model)
-                current_api_key = PRIMARY_API_KEY
-
-                if not current_api_key:
-                    yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
-                    return
-
-                if current_model == "gemini-3.1-flash-lite-preview" and last_expansion_error:
-                    yield f"data: {json.dumps({'status': 'Expansion failed. Lunarity is generating diagnostic report...', 'phase': 'expansion_diagnostic'})}\n\n"
-                    from prompts import get_error_explanation_prompt
-                    final_prompt = get_error_explanation_prompt(user_query, last_expansion_error)
-                else:
-                    if current_model != expansion_models_to_try[0]:
-                        yield f"data: {json.dumps({'status': f'Expansion model failed. Falling back to {display_name}...', 'phase': 'expansion_llm'})}\n\n"
+                    if current_model != analysis_models_to_try[0]:
+                        yield f"data: {json.dumps({'status': f'Analysis model failed. Falling back to {display_name}...', 'phase': 'analysis_llm'})}\n\n"
                         time.sleep(1)
 
-                    # Inject partial work for expansion
-                    effective_analysis_result = research_analysis_result
-                    if partial_expansion_work:
-                         capability_note = ""
-                         full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                         lab_only = ["gemini-3.1-flash-lite-preview"]
+                    # Inject partial work into the context if available
+                    effective_full_context = full_context
+                    if partial_analysis_work:
+                        capability_note = ""
+                        full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                        lab_only = ["gemini-3.1-flash-lite-preview"]
+
+                        if current_model in lab_only:
+                            capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Continue the research using Lab/Search."
+                        elif current_model not in full_access:
+                            capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. Use Web Search/Intelligence to finalize."
+
+                        effective_full_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-analysis. Here is its partial progress: \n---\n{partial_analysis_work}\n---\nPlease CONTINUE the research analysis immediately where it left off. Do not repeat existing sections.{capability_note}"
+
+                    research_prompt = get_research_analysis_prompt(user_query, effective_full_context)
+
+                    generator_output_analysis = gemini_generate(
+                        prompt=research_prompt, model_id=current_model, key=current_api_key,
+                        attempts=len(BACKUP_API_KEYS),
+                        model_display_name=f"{display_name} (Analysis)",
+                        chat_id=chat_id,
+                        gemini_files_data=gemini_files_data
+                    )
+
+                    analysis_failed = False
+                    current_analysis_attempt = ""
+                    for item in generator_output_analysis:
+                        if 'status' in item:
+                            yield f"data: {json.dumps({'status': item['status'], 'phase': 'analysis_llm'})}\n\n"
+                        elif 'result' in item:
+                            temp_result_analysis = item['result']
+                            if isinstance(temp_result_analysis, str) and temp_result_analysis.startswith(ERROR_CODE):
+                                last_analysis_error = temp_result_analysis
+                                if current_analysis_attempt:
+                                    partial_analysis_work += "\n" + current_analysis_attempt
+                                analysis_failed = True
+                                break
+                            else:
+                                current_analysis_attempt += temp_result_analysis
+                                research_analysis_result += temp_result_analysis
+
+                    if not analysis_failed and research_analysis_result:
+                        break
+                    else:
+                        pass
+
+                # FINAL FAIL-SAFE: If research analysis completely failed, use Lunarity for a diagnostic report
+                if not research_analysis_result and last_analysis_error:
+                    yield f"data: {json.dumps({'status': 'Analysis models busy. Lunarity is generating diagnostic report...', 'phase': 'analysis_diagnostic'})}\n\n"
+                    from prompts import get_error_explanation_prompt
+                    diag_prompt = get_error_explanation_prompt(user_query, last_analysis_error)
+
+                    generator_output = gemini_generate(
+                        prompt=diag_prompt, model_id="gemini-3.1-flash-lite-preview", key=PRIMARY_API_KEY,
+                        attempts=1, model_display_name="Lunarity (Diagnostic)", chat_id=chat_id
+                    )
+                    for item in generator_output:
+                        if 'result' in item:
+                            research_analysis_result += item['result']
+
+                if not research_analysis_result:
+                    yield f"data: {json.dumps({'status': f'Research analysis failed after all attempts.', 'error': True, 'phase': 'analysis_llm'})}\n\n"
+                    error_occurred = True
+                    return
+
+                yield f"data: {json.dumps({'status': 'Expanding analysis into full research paper...', 'phase': 'expansion_llm'})}\n\n"
+                if check_and_log_stop(query_id, "expansion LLM call"): return
+
+                final_result = ""
+                expansion_models_to_try = get_fallback_chain(model_id)
+                last_expansion_error = ""
+                partial_expansion_work = ""
+
+                for current_model in expansion_models_to_try:
+                    if check_and_log_stop(query_id, f"expansion LLM call {current_model}"): return
+                    display_name = MODEL_NAMES.get(current_model, current_model)
+                    current_api_key = PRIMARY_API_KEY
+
+                    if not current_api_key:
+                        yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
+                        return
+
+                    if current_model == "gemini-3.1-flash-lite-preview" and last_expansion_error:
+                        yield f"data: {json.dumps({'status': 'Expansion failed. Lunarity is generating diagnostic report...', 'phase': 'expansion_diagnostic'})}\n\n"
+                        from prompts import get_error_explanation_prompt
+                        final_prompt = get_error_explanation_prompt(user_query, last_expansion_error)
+                    else:
+                        if current_model != expansion_models_to_try[0]:
+                            yield f"data: {json.dumps({'status': f'Expansion model failed. Falling back to {display_name}...', 'phase': 'expansion_llm'})}\n\n"
+                            time.sleep(1)
+
+                        # Inject partial work for expansion
+                        effective_analysis_result = research_analysis_result
+                        if partial_expansion_work:
+                             capability_note = ""
+                             full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                             lab_only = ["gemini-3.1-flash-lite-preview"]
                          
-                         if current_model in lab_only:
-                             capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Continue the expansion using Lab/Search."
-                         elif current_model not in full_access:
-                             capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Use your knowledge to finalize the paper."
-                         effective_analysis_result += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-expansion. Here is its partial progress: \n---\n{partial_expansion_work}\n---\nPlease CONTINUE the expansion immediately where it left off.{capability_note}"
+                             if current_model in lab_only:
+                                 capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Continue the expansion using Lab/Search."
+                             elif current_model not in full_access:
+                                 capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Use your knowledge to finalize the paper."
+                             effective_analysis_result += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-expansion. Here is its partial progress: \n---\n{partial_expansion_work}\n---\nPlease CONTINUE the expansion immediately where it left off.{capability_note}"
 
-                    final_prompt = get_final_expansion_prompt(user_query, effective_analysis_result, full_context)
+                        final_prompt = get_final_expansion_prompt(user_query, effective_analysis_result, full_context)
 
-                generator_output_expansion = gemini_generate(
-                    prompt=final_prompt, model_id=current_model, key=current_api_key,
-                    attempts=len(BACKUP_API_KEYS),
-                    model_display_name=f"{display_name} (Expansion)",
+                    generator_output_expansion = gemini_generate(
+                        prompt=final_prompt, model_id=current_model, key=current_api_key,
+                        attempts=len(BACKUP_API_KEYS),
+                        model_display_name=f"{display_name} (Expansion)",
+                        chat_id=chat_id,
+                        disabled_tools=disabled_tools,
+                        gemini_files_data=gemini_files_data
+                    )
+
+                    expansion_failed = False
+                    current_expansion_attempt = ""
+                    for item in generator_output_expansion:
+                        if 'status' in item:
+                             yield f"data: {json.dumps({'status': item['status'], 'phase': 'expansion_llm'})}\n\n"
+                        elif 'result' in item:
+                            temp_result_expansion = item['result']
+                            if isinstance(temp_result_expansion, str) and temp_result_expansion.startswith(ERROR_CODE):
+                                last_expansion_error = temp_result_expansion
+                                if current_expansion_attempt:
+                                    partial_expansion_work += "\n" + current_expansion_attempt
+                                expansion_failed = True
+                                break
+                            else:
+                                current_expansion_attempt += temp_result_expansion
+                                final_result += temp_result_expansion
+
+                    if not expansion_failed and final_result:
+                        break
+                    else:
+                        pass
+
+                if not final_result:
+                    yield f"data: {json.dumps({'status': f'Failed to generate the final research paper after all attempts for query_id {query_id}.', 'error': True, 'phase': 'expansion_llm'})}\n\n"
+                    error_occurred = True
+                    return
+
+                yield f"data: {json.dumps({'status': 'Formatting paper (HTML)...', 'phase': 'formatting'})}\n\n"
+                if check_and_log_stop(query_id, "file formatting"): return
+            
+                html_content_for_db = None
+                try:
+                    html_filepath_rel = create_output_file(user_query, final_result, extension="md")
+                    if html_filepath_rel:
+                         html_output_path = html_filepath_rel.replace(".md", ".html")
+                         try:
+                             pypandoc.convert_file(
+                                 source_file=html_filepath_rel,
+                                 to='html5',
+                                 format='markdown_strict+pipe_tables+implicit_figures+footnotes-native_divs-native_spans',
+                                 outputfile=html_output_path,
+                                 extra_args=['--standalone', '--toc', '--mathjax', '--css=default.min.css', '--highlight-style=pygments', '--wrap=none', '--columns=1000'],
+                                 encoding='utf-8'
+                             )
+                             html_filepath_rel = html_output_path
+                         except Exception as pandoc_e:
+                             logger.warning(f"Pandoc conversion failed: {pandoc_e}", exc_info=True)
+                             yield f"data: {json.dumps({'status': 'Warning: Failed to convert paper to HTML. Providing Markdown link.', 'error': False, 'phase': 'formatting'})}\n\n"
+                             html_filepath_rel = html_filepath_rel.replace(".html", ".md")
+                    else:
+                         yield f"data: {json.dumps({'status': 'Error: Failed to save raw Markdown output file.', 'error': True, 'phase': 'formatting'})}\n\n"
+                except Exception as e:
+                    logger.error(f"Error during output file saving/formatting in search_stream: {e}", exc_info=True)
+                    yield f"data: {json.dumps({'status': 'Error during output file saving/formatting.', 'error': True, 'phase': 'formatting'})}\n\n"
+                    html_filepath_rel = None
+
+                if check_and_log_stop(query_id, "database insert"): return
+                research_message_id = insert_message(
                     chat_id=chat_id,
-                    disabled_tools=disabled_tools,
-                    gemini_files_data=gemini_files_data
+                    message_type="stellar",
+                    message_content=final_result,
+                    is_research_output=True,
+                    html_file=html_filepath_rel,
+                    attached_files=gemini_files_data
                 )
 
-                expansion_failed = False
-                current_expansion_attempt = ""
-                for item in generator_output_expansion:
-                    if 'status' in item:
-                         yield f"data: {json.dumps({'status': item['status'], 'phase': 'expansion_llm'})}\n\n"
-                    elif 'result' in item:
-                        temp_result_expansion = item['result']
-                        if isinstance(temp_result_expansion, str) and temp_result_expansion.startswith(ERROR_CODE):
-                            last_expansion_error = temp_result_expansion
-                            if current_expansion_attempt:
-                                partial_expansion_work += "\n" + current_expansion_attempt
-                            expansion_failed = True
-                            break
-                        else:
-                            current_expansion_attempt += temp_result_expansion
-                            final_result += temp_result_expansion
-
-                if not expansion_failed and final_result:
-                    break
+                if not research_message_id:
+                    yield f"data: {json.dumps({'status': 'Error: Failed to save research paper result to database!', 'error': True, 'phase': 'saving'})}\n\n"
+                    error_occurred = True
                 else:
-                    pass
+                     final_data = {
+                         'status': 'display_result',
+                         'session_id': session_id,
+                         'message_id': str(research_message_id),
+                         'user_message_id': str(user_message_id) if user_message_id else None,
+                         'result': final_result,
+                         'file_url': f'/view/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
+                         'download_url': f'/download/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
+                         'file_type': os.path.splitext(html_filepath_rel)[1].lower() if html_filepath_rel else None,
+                         'is_research_output': True
+                     }
+                     yield f"data: {json.dumps(final_data)}\n\n"
 
-            if not final_result:
-                yield f"data: {json.dumps({'status': f'Failed to generate the final research paper after all attempts for query_id {query_id}.', 'error': True, 'phase': 'expansion_llm'})}\n\n"
-                error_occurred = True
-                return
-
-            yield f"data: {json.dumps({'status': 'Formatting paper (HTML)...', 'phase': 'formatting'})}\n\n"
-            if check_and_log_stop(query_id, "file formatting"): return
-            
-            html_content_for_db = None
-            try:
-                html_filepath_rel = create_output_file(user_query, final_result, extension="md")
-                if html_filepath_rel:
-                     html_output_path = html_filepath_rel.replace(".md", ".html")
-                     try:
-                         pypandoc.convert_file(
-                             source_file=html_filepath_rel,
-                             to='html5',
-                             format='markdown_strict+pipe_tables+implicit_figures+footnotes-native_divs-native_spans',
-                             outputfile=html_output_path,
-                             extra_args=['--standalone', '--toc', '--mathjax', '--css=default.min.css', '--highlight-style=pygments', '--wrap=none', '--columns=1000'],
-                             encoding='utf-8'
-                         )
-                         html_filepath_rel = html_output_path
-                     except Exception as pandoc_e:
-                         logger.warning(f"Pandoc conversion failed: {pandoc_e}", exc_info=True)
-                         yield f"data: {json.dumps({'status': 'Warning: Failed to convert paper to HTML. Providing Markdown link.', 'error': False, 'phase': 'formatting'})}\n\n"
-                         html_filepath_rel = html_filepath_rel.replace(".html", ".md")
-                else:
-                     yield f"data: {json.dumps({'status': 'Error: Failed to save raw Markdown output file.', 'error': True, 'phase': 'formatting'})}\n\n"
             except Exception as e:
-                logger.error(f"Error during output file saving/formatting in search_stream: {e}", exc_info=True)
-                yield f"data: {json.dumps({'status': 'Error during output file saving/formatting.', 'error': True, 'phase': 'formatting'})}\n\n"
-                html_filepath_rel = None
-
-            if check_and_log_stop(query_id, "database insert"): return
-            research_message_id = insert_message(
-                chat_id=chat_id,
-                message_type="stellar",
-                message_content=final_result,
-                is_research_output=True,
-                html_file=html_filepath_rel,
-                attached_files=gemini_files_data
-            )
-
-            if not research_message_id:
-                yield f"data: {json.dumps({'status': 'Error: Failed to save research paper result to database!', 'error': True, 'phase': 'saving'})}\n\n"
+                logger.error(f"Severe error during research generation in search_stream: {e}", exc_info=True)
+                yield f"data: {json.dumps({'status': 'Severe error during research generation.', 'error': True})}\n\n"
                 error_occurred = True
-            else:
-                 final_data = {
-                     'status': 'display_result',
-                     'session_id': session_id,
-                     'message_id': str(research_message_id),
-                     'user_message_id': str(user_message_id) if user_message_id else None,
-                     'result': final_result,
-                     'file_url': f'/view/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
-                     'download_url': f'/download/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
-                     'file_type': os.path.splitext(html_filepath_rel)[1].lower() if html_filepath_rel else None,
-                     'is_research_output': True
-                 }
-                 yield f"data: {json.dumps(final_data)}\n\n"
 
-        except Exception as e:
-            logger.error(f"Severe error during research generation in search_stream: {e}", exc_info=True)
-            yield f"data: {json.dumps({'status': 'Severe error during research generation.', 'error': True})}\n\n"
-            error_occurred = True
-        finally:
-            with stop_flags_lock:
-                stop_flags.pop(query_id, None)
-    return Response(stream_with_context(generate_research_stream_with_id()), mimetype='text/event-stream')
+        background_thread_runner(current_app._get_current_object(), query_id, chat_id, generator_task)
+
+    return Response(stream_with_context(stream_consumer(query_id)), mimetype='text/event-stream')
 
 @app.route('/cosmos_stream', methods=['GET'])
 @require_approval
 def cosmos_stream():
-    start_time = time.time()
     query_id = request.args.get('query_id')
-
-    session_id = get_current_session_id()
-    if not session_id:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Session error. Please refresh.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
 
     if not query_id:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Missing query identifier.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=400)
 
-    query_data = None
-    if 'pending_queries' in session and query_id in session['pending_queries']:
-        pending_queries = session['pending_queries']
-        query_data = pending_queries.pop(query_id)
-        session.modified = True
-        if not pending_queries:
-            session.pop('pending_queries', None)
-    else:
+    import json
+    query_data_str = redis_client.get(f"query_args:{query_id}")
+    if not query_data_str:
         def error_stream(): yield f"data: {json.dumps({'status': 'Error: Query session expired or invalid.', 'error': True})}\n\n"
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=404)
 
-    user_query = query_data.get('query', '')
+    query_data = json.loads(query_data_str)
+    user_query_from_frontend = query_data.get('query', '')
+    user_query = query_data.get('query', '') # For search/cosmos
     model_id = query_data.get('model_id')
     mode = query_data.get('mode')
-    pending_files = query_data.get('pending_files', [])
+    pending_files = query_data.get('pending_files',[])
     chat_id = query_data.get('chat_id')
-    disabled_tools = query_data.get('disabled_tools', [])
+    hidden = query_data.get('hidden', False)
+    disabled_tools = query_data.get('disabled_tools',[])
+    session_id = query_data.get('session_id')
+    user_id = query_data.get('user_id')
+    username = query_data.get('username')
 
-    if not user_query or not model_id or not chat_id:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Error: Invalid query data retrieved.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=500)
+    is_running = redis_client.exists(f"stream_started:{query_id}")
 
-    fallback_model="gemini-2.5-flash-lite"
-    max_model_attempts = len(BACKUP_API_KEYS)
+    if not is_running:
+        redis_client.setex(f"stream_started:{query_id}", 3600 * 24, "1")
 
-    gemini_files_data =[]
-    if pending_files:
-        yield f"data: {json.dumps({'status': f'Uploading {len(pending_files)} file(s) to Native Context...', 'phase': 'upload'})}\n\n"
-        gemini_files_data = upload_files_to_gemini(session_id, pending_files)
-        yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
+        def generator_task():
+            from flask import g
+            g.user_id = user_id
+            g.chat_id = chat_id
+            g.username = username
 
-    user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query)
-    if not user_message_id:
-        pass
+            max_model_attempts = len(BACKUP_API_KEYS)
+            fallback_model="gemini-2.5-flash-lite"
 
-    def generate_cosmos_report_stream():
-        web_search_context = ""
-        final_report_html = None
-        html_filepath_rel = None
-        cosmos_message_id = None
-        error_occurred = False
-
-        try:
-            # Construct multimodal prompt array
-            multimodal_prompt =[]
-            for gf in gemini_files_data:
-                if gf.get('uri'):
-                    multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
-                elif gf.get('fallback_to_lab'):
-                    fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
-                    multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
-            
+            gemini_files_data =[]
             if pending_files:
-                # Skip web search when files are uploaded to avoid "query too long" errors
-                yield f"data: {json.dumps({'status': 'Skipping web search (file upload detected).', 'phase': 'context_gathering'})}\n\n"
-                web_search_context = ""
-            else:
-                yield f"data: {json.dumps({'status': 'Performing Web Search...', 'phase': 'context_gathering'})}\n\n"
-                if check_and_log_stop(query_id, "cosmos search query generation"): return
-                try:
-                    if gemini_files_data:
-                        instruction_prompt = """\nAnalyze the uploaded files provided in context. Identify key themes, entities, unresolved questions, or areas that would benefit from current external information. Generate concise instructions for another AI on how to formulate up to 5 effective Tavily search queries to gather relevant external context based on this analysis."""
-                        inst_prompt_parts = multimodal_prompt.copy()
-                        inst_prompt_parts.append(types.Part.from_text(text=instruction_prompt))
-                        instruction_gen = gemini_generate(prompt=inst_prompt_parts, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id)
-                        instruction = ""
-                        for item in instruction_gen:
-                             if 'result' in item:
-                                 instruction += item['result']
-                        if not instruction: instruction = None
+                yield f"data: {json.dumps({'status': f'Uploading {len(pending_files)} file(s) to Native Context...', 'phase': 'upload'})}\n\n"
+                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+                yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
 
-                        generated_query = None
-                        if instruction and not instruction.startswith(ERROR_CODE):
-                            query_gen_prompt = instruction + f"\nBased on the instruction derived from the file analysis, create a specific Tavily search query (or up to 5 separate queries, comma-separated if multiple distinct areas are identified) for:\nOriginal User Query: {user_query}\nReturn *only ONE SMALL* the search query string(s)."
-                            query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id, disabled_tools=disabled_tools)
-                            generated_query = ""
-                            for item in query_gen:
-                                if 'result' in item:
-                                    generated_query += item['result']
-                            if not generated_query: generated_query = None
-                            if generated_query and not generated_query.startswith(ERROR_CODE):
-                                search_query = generated_query.strip().strip('"')
+            user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query)
+            web_search_context = ""
+            final_report_html = None
+            html_filepath_rel = None
+            cosmos_message_id = None
+            error_occurred = False
+
+            try:
+                # Construct multimodal prompt array
+                multimodal_prompt =[]
+                for gf in gemini_files_data:
+                    if gf.get('uri'):
+                        multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
+                    elif gf.get('fallback_to_lab'):
+                        fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
+                        multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
+            
+                if pending_files:
+                    # Skip web search when files are uploaded to avoid "query too long" errors
+                    yield f"data: {json.dumps({'status': 'Skipping web search (file upload detected).', 'phase': 'context_gathering'})}\n\n"
+                    web_search_context = ""
+                else:
+                    yield f"data: {json.dumps({'status': 'Performing Web Search...', 'phase': 'context_gathering'})}\n\n"
+                    if check_and_log_stop(query_id, "cosmos search query generation"): return
+                    try:
+                        if gemini_files_data:
+                            instruction_prompt = """\nAnalyze the uploaded files provided in context. Identify key themes, entities, unresolved questions, or areas that would benefit from current external information. Generate concise instructions for another AI on how to formulate up to 5 effective Tavily search queries to gather relevant external context based on this analysis."""
+                            inst_prompt_parts = multimodal_prompt.copy()
+                            inst_prompt_parts.append(types.Part.from_text(text=instruction_prompt))
+                            instruction_gen = gemini_generate(prompt=inst_prompt_parts, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id)
+                            instruction = ""
+                            for item in instruction_gen:
+                                 if 'result' in item:
+                                     instruction += item['result']
+                            if not instruction: instruction = None
+
+                            generated_query = None
+                            if instruction and not instruction.startswith(ERROR_CODE):
+                                query_gen_prompt = instruction + f"\nBased on the instruction derived from the file analysis, create a specific Tavily search query (or up to 5 separate queries, comma-separated if multiple distinct areas are identified) for:\nOriginal User Query: {user_query}\nReturn *only ONE SMALL* the search query string(s)."
+                                query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id, disabled_tools=disabled_tools)
+                                generated_query = ""
+                                for item in query_gen:
+                                    if 'result' in item:
+                                        generated_query += item['result']
+                                if not generated_query: generated_query = None
+                                if generated_query and not generated_query.startswith(ERROR_CODE):
+                                    search_query = generated_query.strip().strip('"')
+                                else:
+                                    search_query = user_query
                             else:
                                 search_query = user_query
                         else:
                             search_query = user_query
-                    else:
-                        search_query = user_query
-                except Exception as e:
-                    logger.error(f"Error in generating search query for Cosmos: {e}", exc_info=True)
-                    search_query = user_query
-
-                tavily_success = False
-                for attempt in range(2):
-                    try:
-                        if check_and_log_stop(query_id, f"cosmos search attempt {attempt+1}"): return
-                        status_msg = 'Performing Web Search...' if attempt == 0 else f'Retrying Web Search... (Attempt {attempt + 1})'
-                        yield f"data: {json.dumps({'status': status_msg, 'phase': 'context_gathering'})}\n\n"
-                        tavily_response = tavily_search(search_query, max_results=10)
-                        if isinstance(tavily_response, dict) and "error" in tavily_response:
-                            raise ValueError(f"Tavily API Error: {tavily_response['error']}")
-                        if not isinstance(tavily_response, dict) or "results" not in tavily_response:
-                            raise TypeError(f"Tavily returned unexpected/invalid response format: {type(tavily_response)}")
-                        
-                        tavily_answer = tavily_response.get("answer", "")
-                        results = tavily_response.get("results", [])
-                        current_web_context = f"**Web Search Summary:**\n{tavily_answer if tavily_answer else 'No summary provided.'}\n\n**Scraped Content Details:**\n"
-                        scraped_contents = []
-                        urls_to_scrape = [r.get("url") for r in results if r.get("url")]
-                        urls_scraped_count = 0
-
-                        for url in urls_to_scrape:
-                            if not url or not isinstance(url, str) or not (url.startswith('http://') or url.startswith('https://')): continue
-                            if check_and_log_stop(query_id, f"scraping {url}"): return
-                            yield f"data: {json.dumps({'status': f'Scraping {url}...', 'phase': 'context_gathering'})}\n\n"
-                            content = scrape_url(url)
-                            if content and isinstance(content, str) and not content.startswith("Error scraping"):
-                                scraped_contents.append(f"<details><summary>Content from: {url}</summary>\n\n```text\n{content}\n```\n\n</details>\n")
-                                urls_scraped_count += 1
-                            elif content and content.startswith("Error scraping"):
-                                scraped_contents.append(f"*   Content from {url}: [Scraping Error: {content}]*\n")
-                            else:
-                                scraped_contents.append(f"*   Content from {url}: [No Content Scraped]*\n")
-                        
-                        current_web_context += "\n".join(scraped_contents) if scraped_contents else "No content could be scraped from search results.\n"
-                        current_web_context += "\n---\n"
-                        web_search_context = current_web_context
-                        tavily_success = True
-                        yield f"data: {json.dumps({'status': f'Web Search completed ({urls_scraped_count} sources scraped).', 'phase': 'context_gathering'})}\n\n"
-                        break
                     except Exception as e:
-                        logger.error(f"Tavily search or scraping failed in cosmos_stream: {e}", exc_info=True)
-                        if attempt < 1:
-                            yield f"data: {json.dumps({'status': f'Web Search failed (Attempt {attempt+1}). Retrying...', 'error': True, 'phase': 'context_gathering'})}\n\n"
-                            time.sleep(1.5)
-                        else:
-                            yield f"data: {json.dumps({'status': 'Web Search failed after retries. Proceeding without web context.', 'error': True, 'phase': 'context_gathering'})}\n\n"
-                            web_search_context = "**Web Search Attempted:** Failed after retries.\n\n---\n"
+                        logger.error(f"Error in generating search query for Cosmos: {e}", exc_info=True)
+                        search_query = user_query
+
+                    tavily_success = False
+                    for attempt in range(2):
+                        try:
+                            if check_and_log_stop(query_id, f"cosmos search attempt {attempt+1}"): return
+                            status_msg = 'Performing Web Search...' if attempt == 0 else f'Retrying Web Search... (Attempt {attempt + 1})'
+                            yield f"data: {json.dumps({'status': status_msg, 'phase': 'context_gathering'})}\n\n"
+                            tavily_response = tavily_search(search_query, max_results=10)
+                            if isinstance(tavily_response, dict) and "error" in tavily_response:
+                                raise ValueError(f"Tavily API Error: {tavily_response['error']}")
+                            if not isinstance(tavily_response, dict) or "results" not in tavily_response:
+                                raise TypeError(f"Tavily returned unexpected/invalid response format: {type(tavily_response)}")
+                        
+                            tavily_answer = tavily_response.get("answer", "")
+                            results = tavily_response.get("results", [])
+                            current_web_context = f"**Web Search Summary:**\n{tavily_answer if tavily_answer else 'No summary provided.'}\n\n**Scraped Content Details:**\n"
+                            scraped_contents = []
+                            urls_to_scrape = [r.get("url") for r in results if r.get("url")]
+                            urls_scraped_count = 0
+
+                            for url in urls_to_scrape:
+                                if not url or not isinstance(url, str) or not (url.startswith('http://') or url.startswith('https://')): continue
+                                if check_and_log_stop(query_id, f"scraping {url}"): return
+                                yield f"data: {json.dumps({'status': f'Scraping {url}...', 'phase': 'context_gathering'})}\n\n"
+                                content = scrape_url(url)
+                                if content and isinstance(content, str) and not content.startswith("Error scraping"):
+                                    scraped_contents.append(f"<details><summary>Content from: {url}</summary>\n\n```text\n{content}\n```\n\n</details>\n")
+                                    urls_scraped_count += 1
+                                elif content and content.startswith("Error scraping"):
+                                    scraped_contents.append(f"*   Content from {url}: [Scraping Error: {content}]*\n")
+                                else:
+                                    scraped_contents.append(f"*   Content from {url}: [No Content Scraped]*\n")
+                        
+                            current_web_context += "\n".join(scraped_contents) if scraped_contents else "No content could be scraped from search results.\n"
+                            current_web_context += "\n---\n"
+                            web_search_context = current_web_context
+                            tavily_success = True
+                            yield f"data: {json.dumps({'status': f'Web Search completed ({urls_scraped_count} sources scraped).', 'phase': 'context_gathering'})}\n\n"
                             break
+                        except Exception as e:
+                            logger.error(f"Tavily search or scraping failed in cosmos_stream: {e}", exc_info=True)
+                            if attempt < 1:
+                                yield f"data: {json.dumps({'status': f'Web Search failed (Attempt {attempt+1}). Retrying...', 'error': True, 'phase': 'context_gathering'})}\n\n"
+                                time.sleep(1.5)
+                            else:
+                                yield f"data: {json.dumps({'status': 'Web Search failed after retries. Proceeding without web context.', 'error': True, 'phase': 'context_gathering'})}\n\n"
+                                web_search_context = "**Web Search Attempted:** Failed after retries.\n\n---\n"
+                                break
 
-            full_context = web_search_context
+                full_context = web_search_context
 
-            yield f"data: {json.dumps({'status': 'Generating Cosmos report and infographics...', 'phase': 'generation_llm'})}\n\n"
-            if check_and_log_stop(query_id, "cosmos report generation"): return
+                yield f"data: {json.dumps({'status': 'Generating Cosmos report and infographics...', 'phase': 'generation_llm'})}\n\n"
+                if check_and_log_stop(query_id, "cosmos report generation"): return
 
-            final_report_html = ""
-            selected_model = model_id
-            partial_cosmos_work = ""
+                final_report_html = ""
+                selected_model = model_id
+                partial_cosmos_work = ""
 
-            for model_attempt in range(max_model_attempts):
-                current_model = selected_model
-                display_name = MODEL_NAMES.get(current_model, current_model)
-                current_api_key = PRIMARY_API_KEY
-                if not current_api_key:
-                    yield f"data: {json.dumps({'status': 'Error: API Key for Cosmos generation is missing.', 'error': True, 'phase': 'generation_llm'})}\n\n"
+                for model_attempt in range(max_model_attempts):
+                    current_model = selected_model
+                    display_name = MODEL_NAMES.get(current_model, current_model)
+                    current_api_key = PRIMARY_API_KEY
+                    if not current_api_key:
+                        yield f"data: {json.dumps({'status': 'Error: API Key for Cosmos generation is missing.', 'error': True, 'phase': 'generation_llm'})}\n\n"
+                        error_occurred = True
+                        return
+                    if model_attempt > 0:
+                        fallback_status = f'Generation model failed. Falling back to {display_name}...'
+                        yield f"data: {json.dumps({'status': fallback_status, 'phase': 'generation_llm'})}\n\n"
+                        time.sleep(1)
+                
+                    # Inject partial work if available
+                    effective_cosmos_context = full_context
+                    if partial_cosmos_work:
+                        capability_note = ""
+                        full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                        lab_only = ["gemini-3.1-flash-lite-preview"]
+                    
+                        if current_model in lab_only:
+                            capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the report using available data and Lab tools."
+                        elif current_model not in full_access:
+                            capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Complete the report structure using available data."
+                    
+                        effective_cosmos_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-generation. Here is its partial HTML output: \n---\n{partial_cosmos_work}\n---\nPlease CONTINUE the report generation immediately where it left off. Do not repeat existing sections.{capability_note}"
+
+                    cosmos_prompt = get_cosmos_report_prompt(user_query, effective_cosmos_context)
+                    generator_output = gemini_generate(
+                        prompt=cosmos_prompt, model_id=current_model, key=current_api_key,
+                        attempts=1,
+                        model_display_name=f"{display_name} (Cosmos)",
+                        chat_id=chat_id,
+                        gemini_files_data=gemini_files_data
+                    )
+                
+                    model_failed = False
+                    current_cosmos_attempt = ""
+                    for item in generator_output:
+                        if 'status' in item:
+                            yield f"data: {json.dumps({'status': item['status'], 'phase': 'generation_llm'})}\n\n"
+                        elif 'result' in item:
+                            temp_result_html = item['result']
+                            if isinstance(temp_result_html, str) and temp_result_html.startswith(ERROR_CODE):
+                                last_analysis_error = temp_result_html # Use this for final diagnostic
+                                if current_cosmos_attempt:
+                                    partial_cosmos_work += "\n" + current_cosmos_attempt
+                                model_failed = True
+                                break
+                            else:
+                                current_cosmos_attempt += temp_result_html
+                                final_report_html += temp_result_html
+                
+                    if not model_failed and final_report_html:
+                        break
+                    else:
+                        if model_attempt == 0 and fallback_model and fallback_model != model_id:
+                            selected_model = fallback_model
+                        else:
+                            pass
+
+                # FINAL FAIL-SAFE: If Cosmos generation completely failed, generate diagnostic report
+                if not final_report_html and last_analysis_error:
+                    yield f"data: {json.dumps({'status': 'Generation models busy. Lunarity is generating diagnostic report...', 'phase': 'generation_diagnostic'})}\n\n"
+                    from prompts import get_error_explanation_prompt
+                    diag_prompt = get_error_explanation_prompt(user_query, last_analysis_error)
+                
+                    generator_output = gemini_generate(
+                        prompt=diag_prompt, model_id="gemini-3.1-flash-lite-preview", key=PRIMARY_API_KEY,
+                        attempts=1, model_display_name="Lunarity (Diagnostic)", chat_id=chat_id
+                    )
+                    for item in generator_output:
+                        if 'result' in item:
+                            final_report_html += item['result']
+
+                if not final_report_html:
+                    error_msg = f"Failed to generate the Cosmos report after all attempts for query_id {query_id}."
+                    yield f"data: {json.dumps({'status': error_msg, 'error': True, 'phase': 'generation_llm'})}\n\n"
                     error_occurred = True
                     return
-                if model_attempt > 0:
-                    fallback_status = f'Generation model failed. Falling back to {display_name}...'
-                    yield f"data: {json.dumps({'status': fallback_status, 'phase': 'generation_llm'})}\n\n"
-                    time.sleep(1)
-                
-                # Inject partial work if available
-                effective_cosmos_context = full_context
-                if partial_cosmos_work:
-                    capability_note = ""
-                    full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                    lab_only = ["gemini-3.1-flash-lite-preview"]
-                    
-                    if current_model in lab_only:
-                        capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the report using available data and Lab tools."
-                    elif current_model not in full_access:
-                        capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Complete the report structure using available data."
-                    
-                    effective_cosmos_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-generation. Here is its partial HTML output: \n---\n{partial_cosmos_work}\n---\nPlease CONTINUE the report generation immediately where it left off. Do not repeat existing sections.{capability_note}"
 
-                cosmos_prompt = get_cosmos_report_prompt(user_query, effective_cosmos_context)
-                generator_output = gemini_generate(
-                    prompt=cosmos_prompt, model_id=current_model, key=current_api_key,
-                    attempts=1,
-                    model_display_name=f"{display_name} (Cosmos)",
-                    chat_id=chat_id,
-                    gemini_files_data=gemini_files_data
-                )
-                
-                model_failed = False
-                current_cosmos_attempt = ""
-                for item in generator_output:
-                    if 'status' in item:
-                        yield f"data: {json.dumps({'status': item['status'], 'phase': 'generation_llm'})}\n\n"
-                    elif 'result' in item:
-                        temp_result_html = item['result']
-                        if isinstance(temp_result_html, str) and temp_result_html.startswith(ERROR_CODE):
-                            last_analysis_error = temp_result_html # Use this for final diagnostic
-                            if current_cosmos_attempt:
-                                partial_cosmos_work += "\n" + current_cosmos_attempt
-                            model_failed = True
-                            break
-                        else:
-                            current_cosmos_attempt += temp_result_html
-                            final_report_html += temp_result_html
-                
-                if not model_failed and final_report_html:
-                    break
-                else:
-                    if model_attempt == 0 and fallback_model and fallback_model != model_id:
-                        selected_model = fallback_model
-                    else:
-                        pass
-
-            # FINAL FAIL-SAFE: If Cosmos generation completely failed, generate diagnostic report
-            if not final_report_html and last_analysis_error:
-                yield f"data: {json.dumps({'status': 'Generation models busy. Lunarity is generating diagnostic report...', 'phase': 'generation_diagnostic'})}\n\n"
-                from prompts import get_error_explanation_prompt
-                diag_prompt = get_error_explanation_prompt(user_query, last_analysis_error)
-                
-                generator_output = gemini_generate(
-                    prompt=diag_prompt, model_id="gemini-3.1-flash-lite-preview", key=PRIMARY_API_KEY,
-                    attempts=1, model_display_name="Lunarity (Diagnostic)", chat_id=chat_id
-                )
-                for item in generator_output:
-                    if 'result' in item:
-                        final_report_html += item['result']
-
-            if not final_report_html:
-                error_msg = f"Failed to generate the Cosmos report after all attempts for query_id {query_id}."
-                yield f"data: {json.dumps({'status': error_msg, 'error': True, 'phase': 'generation_llm'})}\n\n"
-                error_occurred = True
-                return
-
-            yield f"data: {json.dumps({'status': 'Saving report...', 'phase': 'formatting'})}\n\n"
-            if check_and_log_stop(query_id, "report saving"): return
-            try:
-                html_filepath_rel = create_output_file(user_query, final_report_html, extension="html")
-                if not html_filepath_rel:
-                    yield f"data: {json.dumps({'status': 'Error: Failed to save output file.', 'error': True, 'phase': 'formatting'})}\n\n"
-            except Exception as e:
-                logger.error(f"Error during output file saving in cosmos_stream: {e}", exc_info=True)
-                yield f"data: {json.dumps({'status': 'Error during output file saving.', 'error': True, 'phase': 'formatting'})}\n\n"
-                html_filepath_rel = None
+                yield f"data: {json.dumps({'status': 'Saving report...', 'phase': 'formatting'})}\n\n"
+                if check_and_log_stop(query_id, "report saving"): return
+                try:
+                    html_filepath_rel = create_output_file(user_query, final_report_html, extension="html")
+                    if not html_filepath_rel:
+                        yield f"data: {json.dumps({'status': 'Error: Failed to save output file.', 'error': True, 'phase': 'formatting'})}\n\n"
+                except Exception as e:
+                    logger.error(f"Error during output file saving in cosmos_stream: {e}", exc_info=True)
+                    yield f"data: {json.dumps({'status': 'Error during output file saving.', 'error': True, 'phase': 'formatting'})}\n\n"
+                    html_filepath_rel = None
             
-            if check_and_log_stop(query_id, "database insert"): return
-            cosmos_message_id = insert_message(
-                chat_id=chat_id,
-                message_type="stellar",
-                message_content=final_report_html,
-                is_research_output=True,
-                html_file=html_filepath_rel,
-                attached_files=gemini_files_data
-            )
+                if check_and_log_stop(query_id, "database insert"): return
+                cosmos_message_id = insert_message(
+                    chat_id=chat_id,
+                    message_type="stellar",
+                    message_content=final_report_html,
+                    is_research_output=True,
+                    html_file=html_filepath_rel,
+                    attached_files=gemini_files_data
+                )
 
-            if not cosmos_message_id:
-                yield f"data: {json.dumps({'status': 'Error: Failed to save Cosmos report result to database!', 'error': True, 'phase': 'saving'})}\n\n"
+                if not cosmos_message_id:
+                    yield f"data: {json.dumps({'status': 'Error: Failed to save Cosmos report result to database!', 'error': True, 'phase': 'saving'})}\n\n"
+                    error_occurred = True
+                else:
+                     final_data = {
+                         'status': 'display_result',
+                         'session_id': session_id,
+                         'message_id': str(cosmos_message_id),
+                         'user_message_id': str(user_message_id) if user_message_id else None,
+                         'result': final_report_html,
+                         'file_url': f'/view/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
+                         'download_url': f'/download/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
+                         'file_type': '.html' if html_filepath_rel else None,
+                         'is_research_output': True
+                     }
+                     yield f"data: {json.dumps(final_data)}\n\n"
+
+            except Exception as e:
+                logger.error(f"Severe error during Cosmos report generation: {e}", exc_info=True)
+                yield f"data: {json.dumps({'status': 'Severe error during Cosmos report generation.', 'error': True})}\n\n"
                 error_occurred = True
-            else:
-                 final_data = {
-                     'status': 'display_result',
-                     'session_id': session_id,
-                     'message_id': str(cosmos_message_id),
-                     'user_message_id': str(user_message_id) if user_message_id else None,
-                     'result': final_report_html,
-                     'file_url': f'/view/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
-                     'download_url': f'/download/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
-                     'file_type': '.html' if html_filepath_rel else None,
-                     'is_research_output': True
-                 }
-                 yield f"data: {json.dumps(final_data)}\n\n"
 
-        except Exception as e:
-            logger.error(f"Severe error during Cosmos report generation: {e}", exc_info=True)
-            yield f"data: {json.dumps({'status': 'Severe error during Cosmos report generation.', 'error': True})}\n\n"
-            error_occurred = True
-        finally:
-            with stop_flags_lock:
-                stop_flags.pop(query_id, None)
-    return Response(stream_with_context(generate_cosmos_report_stream()), mimetype='text/event-stream')
+        background_thread_runner(current_app._get_current_object(), query_id, chat_id, generator_task)
 
-stop_flags = {}
-stop_flags_lock = threading.Lock()
+    return Response(stream_with_context(stream_consumer(query_id)), mimetype='text/event-stream')
 
 @app.route('/api/stop_generation', methods=['POST'])
 @require_approval
@@ -3432,18 +3429,60 @@ def stop_generation():
     if not query_id:
         return jsonify({'error': 'Missing query_id.'}), 400
 
-    with stop_flags_lock:
-        stop_flags[query_id] = True
-    
-    logging.info(f"Stop flag set for query_id: {query_id}")
+    redis_client.setex(f"stop_flag:{query_id}", 3600, "1")
+    logging.info(f"Stop flag set in Redis for query_id: {query_id}")
     return jsonify({'success': True, 'message': 'Stop signal received.'})
 
 def check_and_log_stop(query_id, stage=""):
-    with stop_flags_lock:
-        if stop_flags.get(query_id):
-            logging.info(f"Stop signal detected for query_id: {query_id} at stage: {stage}")
-            return True
+    if redis_client.exists(f"stop_flag:{query_id}"):
+        logging.info(f"Stop signal detected for query_id: {query_id} at stage: {stage}")
+        return True
     return False
+
+def stream_consumer(query_id):
+    """Consumer for replaying historical events and subscribing to live events."""
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe(f"stream:{query_id}")
+
+    # Replay historical state so page reloads rebuild perfectly
+    history = redis_client.lrange(f"stream_history:{query_id}", 0, -1)
+    for item in history:
+        if isinstance(item, bytes):
+            item = item.decode('utf-8')
+        if item == "__STREAM_END__":
+            pubsub.close()
+            return
+        yield item
+
+    # Listen to live updates
+    for message in pubsub.listen():
+        if message['type'] == 'message':
+            data = message['data']
+            if isinstance(data, bytes):
+                data = data.decode('utf-8')
+            if data == "__STREAM_END__":
+                break
+            yield data
+    pubsub.close()
+
+def background_thread_runner(app_obj, query_id, chat_id, task_func, *args):
+    """Wrapper that runs generation streams in the background to decouple from HTTP requests."""
+    def run():
+        with app_obj.app_context():
+            try:
+                for chunk in task_func(*args):
+                    redis_client.rpush(f"stream_history:{query_id}", chunk)
+                    redis_client.publish(f"stream:{query_id}", chunk)
+            except Exception as e:
+                logger.error(f"Stream background task error for {query_id}: {e}", exc_info=True)
+                err_str = f"data: {json.dumps({'status': f'Internal Background Error: {str(e)}', 'error': True})}\n\n"
+                redis_client.rpush(f"stream_history:{query_id}", err_str)
+                redis_client.publish(f"stream:{query_id}", err_str)
+            finally:
+                redis_client.rpush(f"stream_history:{query_id}", "__STREAM_END__")
+                redis_client.publish(f"stream:{query_id}", "__STREAM_END__")
+                redis_client.delete(f"chat_active_query:{chat_id}")
+    threading.Thread(target=run, daemon=True).start()
 
 @app.route('/api/messages/delete', methods=['POST'])
 @require_approval
