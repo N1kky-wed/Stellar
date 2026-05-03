@@ -12,6 +12,7 @@ from google.genai import types
 
 import logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 from typing import List, Optional
 from flask import g, has_request_context
@@ -125,7 +126,7 @@ def web_search(
                 except Exception as e:
                     logger.error(f"Error in google_quick tool: {e}", exc_info=True)
                     error_string = str(e).lower()
-                    if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+                    if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
                         last_error = e
                         continue
                     return json.dumps({"error": f"Error: {str(e)}"})
@@ -549,7 +550,7 @@ def generate_image(model: str, prompt: str, status: str, quality: str = "1K", as
         except Exception as e:
             logger.error(f"Error in generate_image tool: {e}", exc_info=True)
             error_string = str(e).lower()
-            if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+            if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
                 last_error = e
                 continue
             return f"Error generating image: {str(e)}"
@@ -656,7 +657,7 @@ def make_presentation(topic: str, status: str, num_slides: int = 10, style: str 
         except Exception as e:
             logger.error(f"Error in make_presentation tool: {e}", exc_info=True)
             error_string = str(e).lower()
-            if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+            if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
                 last_error = e
                 continue
             return f"Failed to plan presentation: {str(e)}"
@@ -841,7 +842,7 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
         except Exception as e:
             logger.error(f"Error in regenerate_presentation_slide tool: {e}", exc_info=True)
             error_string = str(e).lower()
-            if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+            if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
                 last_error = e
                 continue
             return f"Failed to re-plan or generate slide: {str(e)}"
@@ -1774,7 +1775,7 @@ def analyze_youtube_video(query: str, status: str, action: str = "analyze", vide
         except Exception as e:
             logger.error(f"Error in analyze_youtube_video tool: {e}", exc_info=True)
             error_string = str(e).lower()
-            if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+            if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
                 last_error = e
                 continue
             return f"Error analyzing YouTube video: {str(e)}"
