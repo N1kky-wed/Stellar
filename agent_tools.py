@@ -18,7 +18,7 @@ from flask import g, has_request_context
 
 def _get_effective_session():
     """Helper to get session data safely in both request and background thread contexts."""
-    session = _get_effective_session()
+    from flask import session
     if has_request_context():
         return session
     

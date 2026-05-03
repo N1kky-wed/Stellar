@@ -5,7 +5,7 @@ from google.auth.transport import requests as google_requests
 import threading
 from werkzeug.utils import secure_filename
 import queue
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, g, session, current_app, make_response
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, g, session, current_app, make_response, has_request_context
 from flask_session import Session
 import os
 import re
@@ -532,13 +532,18 @@ def initialize_database():
 initialize_database()
 
 def get_current_session_id():
+    if not has_request_context():
+        return getattr(g, 'session_id', None)
     if 'initialized' not in session:
         session['initialized'] = True
-    return session.sid
+    return getattr(session, 'sid', None)
 
 def get_current_chat_id(user_id):
     db = get_db()
-    chat_id = session.get('current_chat_id')
+    if has_request_context():
+        chat_id = session.get('current_chat_id')
+    else:
+        chat_id = getattr(g, 'chat_id', None)
 
     if chat_id:
         cursor = db.execute('SELECT id FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))
@@ -549,16 +554,21 @@ def get_current_chat_id(user_id):
     last_chat = cursor.fetchone()
 
     if last_chat:
-        session['current_chat_id'] = last_chat['id']
+        if has_request_context():
+            session['current_chat_id'] = last_chat['id']
     else:
         cursor = db.execute('INSERT INTO chats (user_id, name) VALUES (?, ?)', (user_id, 'New Chat'))
         db.commit()
-        session['current_chat_id'] = cursor.lastrowid
+        new_chat_id = cursor.lastrowid
+        if has_request_context():
+            session['current_chat_id'] = new_chat_id
         welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, full-stack application development via Stellar Forge, and data analysis reports using Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
-        insert_message(session['current_chat_id'], "stellar", welcome_message)
+        insert_message(new_chat_id, "stellar", welcome_message)
 
-    session.modified = True
-    return session['current_chat_id']
+    if has_request_context():
+        session.modified = True
+        return session['current_chat_id']
+    return chat_id or last_chat['id'] if last_chat else None
 
 def insert_message(chat_id, message_type, message_content,
                    is_research_output=False, html_file=None,
@@ -2642,6 +2652,7 @@ def refine_stream():
             g.user_id = user_id
             g.chat_id = chat_id
             g.username = username
+            g.session_id = session_id
 
             gemini_files_data =[]
             if pending_files:
@@ -2857,6 +2868,7 @@ def search_stream():
             g.user_id = user_id
             g.chat_id = chat_id
             g.username = username
+            g.session_id = session_id
 
             gemini_files_data =[]
             if pending_files:
@@ -3225,6 +3237,7 @@ def cosmos_stream():
             g.user_id = user_id
             g.chat_id = chat_id
             g.username = username
+            g.session_id = session_id
 
             max_model_attempts = len(BACKUP_API_KEYS)
             fallback_model="gemini-2.5-flash-lite"
