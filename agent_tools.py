@@ -1578,6 +1578,17 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
             pass
     # ----------------------------------------
 
+    # --- GAME DEVELOPMENT MANDATE INJECTION ---
+    game_dev_mandate_path = os.path.join(lab_workspace, "GAME_DEVELOPMENT_MANDATE.md")
+    if not os.path.exists(game_dev_mandate_path):
+        try:
+            host_game_dev_mandate_path = os.path.join(os.path.dirname(__file__), "GAME_DEVELOPMENT_MANDATE.md")
+            if os.path.exists(host_game_dev_mandate_path):
+                shutil.copy2(host_game_dev_mandate_path, game_dev_mandate_path)
+        except Exception:
+            pass
+    # ----------------------------------------
+
     # Ensure sandbox container is running
     container = None
     try:

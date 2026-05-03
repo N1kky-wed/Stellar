@@ -109,6 +109,7 @@ naw = datetime.datetime.now()
 # --- LOGGING AND ENV LOADING ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 script_dir = Path(__file__).resolve().parent
 keys_env_path = script_dir / 'keys.env'
@@ -1266,7 +1267,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     consecutive_network_errors = 0 # Reset on success
                 except Exception as loop_e:
                     error_string = str(loop_e).lower()
-                    is_quota = any(x in error_string for x in ['429', 'resource_exhausted', 'quota', 'rate limit'])
+                    is_quota = any(x in error_string for x in ['429', '403', 'permission_denied', 'resource_exhausted', 'quota', 'rate limit'])
                     is_network = any(x in error_string for x in ['500', '503', 'connection', 'timeout', 'deadline'])
                     
                     if is_quota and (current_key_index + 1) < len(keys_to_try):
@@ -1565,7 +1566,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             last_exception = e
             is_429_error = False
             error_string = str(e).lower()
-            if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
+            if ('429' in error_string or '403' in error_string or 'permission_denied' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string):
                  is_429_error = True
 
             if is_429_error and (current_key_index + 1) < len(keys_to_try):
@@ -4241,6 +4242,20 @@ def api_count_tokens():
     except Exception as e:
         logger.error(f"Error in api_count_tokens: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/utils/check_url', methods=['GET'])
+@require_approval
+def api_check_url():
+    url = request.args.get('url')
+    if not url:
+        return jsonify({'error': 'Missing url parameter'}), 400
+    try:
+        # Use a short timeout and don't verify SSL if we expect local dev certs (but regular requests is fine here)
+        response = requests.get(url, timeout=3, allow_redirects=True)
+        return jsonify({'status': response.status_code}), 200
+    except Exception as e:
+        return jsonify({'status': 500, 'error': str(e)}), 200
+
 @app.route('/api/user/profile', methods=['GET'])
 @require_approval
 def get_user_profile():

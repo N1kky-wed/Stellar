@@ -6948,7 +6948,19 @@
 
             button.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const textToCopy = contentDiv.textContent || contentDiv.innerText || '';
+                let textToCopy = '';
+                if (typeof turndownService !== 'undefined') {
+                    // Clone the node to clean up any UI-only elements before converting
+                    const clone = contentDiv.cloneNode(true);
+                    
+                    // Remove UI elements that shouldn't be in the markdown
+                    clone.querySelectorAll('.yt-player-container, .app-iframe-container, .analysis-indicator, .analysis-content, .code-controls').forEach(el => el.remove());
+                    
+                    textToCopy = turndownService.turndown(clone.innerHTML);
+                } else {
+                    textToCopy = contentDiv.textContent || contentDiv.innerText || '';
+                }
+                
                 if (!textToCopy) { return; }
 
                 navigator.clipboard.writeText(textToCopy).then(() => {
@@ -8184,6 +8196,32 @@
                     
                     // Hide the original raw text link so it looks cleaner
                     link.style.display = 'none';
+                } else if (url.includes('stellarai.live')) {
+                    // Check if the application is online before rendering the iframe
+                    fetch('/api/utils/check_url?url=' + encodeURIComponent(url))
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.status === 200) {
+                                const iframeContainer = document.createElement('div');
+                                iframeContainer.className = 'app-iframe-container';
+                                iframeContainer.style.width = '100%';
+                                iframeContainer.style.maxWidth = '1000px';
+                                iframeContainer.style.height = '600px'; // Give it a fixed height or aspect ratio
+                                iframeContainer.style.margin = '15px auto';
+                                iframeContainer.style.borderRadius = '12px';
+                                iframeContainer.style.overflow = 'hidden';
+                                iframeContainer.style.border = '1px solid rgba(255,255,255,0.2)';
+                                iframeContainer.style.boxShadow = '0 10px 30px rgba(0,0,0,0.3)';
+
+                                iframeContainer.innerHTML = `<iframe width="100%" height="100%" src="${url}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+
+                                // Place the iframe after the link
+                                link.parentNode.insertBefore(iframeContainer, link.nextSibling);
+                            }
+                        })
+                        .catch(err => console.error("Error checking URL status:", err));
+                    
+                    // We keep the original link visible as requested by the user
                 }
             });
 
