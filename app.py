@@ -1175,6 +1175,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     from flask import g
     g.model_id = model_id # Set ground-truth model for tools
     display_name = model_display_name or MODEL_NAMES.get(model_id)
+    logger.info(f"Initiating gemini_generate with model: {model_id} ({display_name})")
 
     def record_tool_call(t_name, t_input, t_result):
         if not chat_id: return
@@ -1269,6 +1270,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     is_network = any(x in error_string for x in ['500', '503', 'connection', 'timeout', 'deadline'])
                     
                     if is_quota and (current_key_index + 1) < len(keys_to_try):
+                        logger.warning(f"Quota exceeded for key index {current_key_index}. Switching to backup key...")
                         current_key_index += 1
                         current_key = keys_to_try[current_key_index]
                         yield {'status': 'Quota exceeded. Switching to backup key...'}
@@ -1559,6 +1561,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             return
 
         except Exception as e:
+            logger.error(f"Error in gemini_generate (Attempt {attempt}/{attempts}) using model {model_id}: {e}", exc_info=True)
             last_exception = e
             is_429_error = False
             error_string = str(e).lower()

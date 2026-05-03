@@ -123,6 +123,7 @@ def web_search(
                     )
                     return json.dumps({"tool": "google_quick", "answer": response.text})
                 except Exception as e:
+                    logger.error(f"Error in google_quick tool: {e}", exc_info=True)
                     error_string = str(e).lower()
                     if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
                         last_error = e
@@ -546,6 +547,7 @@ def generate_image(model: str, prompt: str, status: str, quality: str = "1K", as
                     return f"![Generated Image](https://stellarai.live/view/{filename})"
             return "Image model returned no visual data."
         except Exception as e:
+            logger.error(f"Error in generate_image tool: {e}", exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
                 last_error = e
@@ -652,6 +654,7 @@ def make_presentation(topic: str, status: str, num_slides: int = 10, style: str 
             plan = json.loads(resp.text)
             break
         except Exception as e:
+            logger.error(f"Error in make_presentation tool: {e}", exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
                 last_error = e
@@ -836,6 +839,7 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
             break # Success!
             
         except Exception as e:
+            logger.error(f"Error in regenerate_presentation_slide tool: {e}", exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
                 last_error = e
@@ -1768,6 +1772,7 @@ def analyze_youtube_video(query: str, status: str, action: str = "analyze", vide
             )
             return response.text if response.text else "The model returned an empty response for the video analysis."
         except Exception as e:
+            logger.error(f"Error in analyze_youtube_video tool: {e}", exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)):
                 last_error = e
