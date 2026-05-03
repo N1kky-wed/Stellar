@@ -14,6 +14,25 @@ import logging
 logger = logging.getLogger(__name__)
 
 from typing import List, Optional
+from flask import g, has_request_context
+
+def _get_effective_session():
+    """Helper to get session data safely in both request and background thread contexts."""
+    session = _get_effective_session()
+    if has_request_context():
+        return session
+    
+    class SafeSession(dict):
+        def __init__(self):
+            super().__init__()
+            # Pre-populate from g which is set in background_thread_runner
+            self['user_id'] = getattr(g, 'user_id', None)
+            self['username'] = getattr(g, 'username', None)
+            self['current_chat_id'] = getattr(g, 'chat_id', None)
+            # Compatibility for session.sid and session.modified
+            self.sid = getattr(g, 'session_id', 'no_session')
+            self.modified = False
+    return SafeSession()
 
 def web_search(
     action: str,
@@ -230,7 +249,7 @@ def send_self_email(subject: str, body: str, status: str, attachment_path: str =
         status: Status update for the user.
         attachment_path: Optional path to a file in /outputs or /uploads to attach.
     """
-    from flask import session, g, has_request_context
+    session = _get_effective_session()
     import smtplib, mimetypes, os, sqlite3, markdown
     from email.message import EmailMessage
 
@@ -362,7 +381,8 @@ def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_
         recurring_minutes: Minutes between executions for repeating tasks.
         metadata: Optional scratchpad for task-specific state (retry counts, transient notes).
     """
-    from flask import session, request, has_request_context, g
+    from flask import request
+    session = _get_effective_session()
     from app import get_db
     import sqlite3
 
@@ -450,7 +470,7 @@ def generate_image(model: str, prompt: str, status: str, quality: str = "1K", as
         reference_images: List of filenames from the chat context to use as reference/conditioning (up to 14).
     """
     from app import PRIMARY_API_KEY, UPLOAD_FOLDER, BACKUP_API_KEYS
-    from flask import session
+    session = _get_effective_session()
     import os
     import mimetypes
     import uuid
@@ -868,7 +888,8 @@ def forge_control(action: str, status: str, app_id: str = None, changes: dict = 
     """
     from app import get_current_session_id, get_db, ERROR_CODE, gemini_generate, _extract_json_from_response, generate_forge_title, _redis_forge_key
     from prompts import get_forge_initial_build_prompt, get_forge_iteration_prompt
-    from flask import session, current_app
+    from flask import current_app
+    session = _get_effective_session()
     import os
     import json
     import uuid
@@ -1096,7 +1117,8 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
         status message, history list, or command output
     """
     from app import get_db, generate_unique_subdomain, stop_and_cleanup_app_by_process_id, _redis_forge_key, redis_client, active_apps, active_apps_lock
-    from flask import session, current_app
+    from flask import current_app
+    session = _get_effective_session()
     import json
     import docker
     import time
@@ -1443,7 +1465,7 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
     import os
     import re
     import shutil
-    from flask import session, g, has_request_context
+    session = _get_effective_session()
 
     # Deterministic Context Detection
     u_id = None
@@ -1764,7 +1786,7 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
         target_env: 'lab' or process_id for repo.
         source_env: 'chat' (uploads), 'lab', or process_id for repo.
     """
-    from flask import session
+    session = _get_effective_session()
     from app import app, UPLOAD_FOLDER, get_db
     import os
     import docker

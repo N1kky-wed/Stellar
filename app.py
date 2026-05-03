@@ -1422,7 +1422,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                         args_dict['model_id'] = model_id
 
                                 if func_name == "logs_and_preferences":
-                                    args_dict['user_id'] = str(session.get('user_id', 'global'))
+                                    args_dict['user_id'] = str(getattr(g, 'user_id', 'global'))
 
                                 res = func_to_call(**args_dict)
                             
