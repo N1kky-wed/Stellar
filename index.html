@@ -8196,7 +8196,7 @@
                     
                     // Hide the original raw text link so it looks cleaner
                     link.style.display = 'none';
-                } else if (url.includes('stellarai.live')) {
+                } else if (url.endsWith('stellarai.live') || url.endsWith('stellarai.live/')) {
                     // Check if the application is online before rendering the iframe
                     fetch('/api/utils/check_url?url=' + encodeURIComponent(url))
                         .then(response => response.json())

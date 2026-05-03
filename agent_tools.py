@@ -1107,7 +1107,7 @@ def forge_control(action: str, status: str, app_id: str = None, changes: dict = 
     except Exception as e:
         return f"Error in forge_control: {str(e)}"
 
-def repo_control(action: str, status: str, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 3000, command: str = None) -> str:
+def repo_control(action: str, status: str, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 5000, command: str = None, env_type: str = "web") -> str:
     """Control and manage repository-based or custom-stack deployments.
     Args:
         action: "deploy", "execute", "list_history", "rename", "stop", "restart", or "snapshot"
@@ -1116,8 +1116,9 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
         project_name: Custom name for the project (used for unique subdomain in 'deploy' and 'rename')
         files: List of file paths to save into the database (required for 'snapshot')
         repo_url: URL to a git repository (optional for 'deploy')
-        port: Internal port the app will listen on (default 3000, used in 'deploy')
+        port: Internal port the app will listen on (default 5000, used in 'deploy')
         command: Bash command to run (required for 'execute')
+        env_type: "web" or "mobile". "mobile" provisions an Android/React Native build environment.
     Returns:
         status message, history list, or command output
     """
@@ -1134,14 +1135,14 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
 
     try:
         db = get_db()
-        
+
         if action == "deploy":
             if 'user_id' not in session: return "Error: Authentication required to host repos."
             process_id = str(uuid.uuid4())
             if project_name: project_title = project_name
             elif repo_url: project_title = f"Repo: {repo_url.split('/')[-1].replace('.git', '')}"
             else: project_title = "Custom Stack Project"
-            
+
             subdomain = generate_unique_subdomain(project_title)
             db.execute('INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain) VALUES (?, ?, ?, ?, ?, ?)',
                        (session['user_id'], project_title, process_id, 'created', json.dumps({"repo": repo_url, "port": port} if repo_url else {"port": port}), subdomain))
@@ -1152,11 +1153,14 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
                 from app import ensure_user_network
                 user_network = ensure_user_network(client, session['user_id'])
                 r_key = _redis_forge_key(process_id)
+
+                # Determine image based on env_type
+                target_image = 'reactnativecommunity/react-native-android:latest' if env_type == "mobile" else 'stellar-repo-host:latest'
+
                 container = client.containers.run(
-                    image='stellar-repo-host:latest',
+                    image=target_image,
                     command='sleep infinity',
-                    ports={f"{port}/tcp": ('0.0.0.0', 0)},
-                    name=f"stellar-repo-{process_id}",
+                    ports={f"{port}/tcp": ('0.0.0.0', 0)},                    name=f"stellar-repo-{process_id}",
                     remove=False,
                     detach=True,
                     init=True,
@@ -1197,7 +1201,7 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
             if not row: return f"Error: Deployment '{app_id}' not found."
             p_id = row['process_id']
             snapshot = json.loads(row['files_snapshot'])
-            port = snapshot.get('port', 3000)
+            port = snapshot.get('port', 5000)
             
             try:
                 client = docker.from_env()
@@ -1338,7 +1342,7 @@ def repo_control(action: str, status: str, app_id: str = None, project_name: str
             snapshot = json.loads(row['files_snapshot'])
             
             repo_url = snapshot.get('repo')
-            port = snapshot.get('port', 3000)
+            port = snapshot.get('port', 5000)
             
             # Check if it's a Forge project
             is_forge = 'app.py' in snapshot and 'index.html' in snapshot and not repo_url
@@ -1585,6 +1589,17 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
             host_game_dev_mandate_path = os.path.join(os.path.dirname(__file__), "GAME_DEVELOPMENT_MANDATE.md")
             if os.path.exists(host_game_dev_mandate_path):
                 shutil.copy2(host_game_dev_mandate_path, game_dev_mandate_path)
+        except Exception:
+            pass
+    # ----------------------------------------
+
+    # --- MOBILE DEVELOPMENT MANDATE INJECTION ---
+    mobile_dev_mandate_path = os.path.join(lab_workspace, "MOBILE_DEVELOPMENT_MANDATE.md")
+    if not os.path.exists(mobile_dev_mandate_path):
+        try:
+            host_mobile_dev_mandate_path = os.path.join(os.path.dirname(__file__), "MOBILE_DEVELOPMENT_MANDATE.md")
+            if os.path.exists(host_mobile_dev_mandate_path):
+                shutil.copy2(host_mobile_dev_mandate_path, mobile_dev_mandate_path)
         except Exception:
             pass
     # ----------------------------------------
