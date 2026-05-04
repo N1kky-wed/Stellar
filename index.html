@@ -4588,6 +4588,35 @@
                 margin-top: 5vh;
             }
         }
+
+        /* Unify all iframe containers for a seamless look */
+        .yt-player-container,
+        .app-iframe-container,
+        .viz-container,
+        .code-preview-container {
+            border: none !important;
+            background: rgba(0, 0, 0, 0.2);
+            box-shadow: inset 0 4px 15px rgba(0, 0, 0, 0.5), 0 4px 10px rgba(0, 0, 0, 0.2) !important;
+            border-radius: 12px !important;
+            overflow: hidden;
+            position: relative;
+            animation: fadeInFrame 0.5s ease-out;
+        }
+
+        /* Remove default iframe borders and backgrounds */
+        .yt-player-container iframe,
+        .app-iframe-container iframe,
+        .viz-container iframe,
+        .code-preview-iframe {
+            border: none !important;
+            background: transparent !important; 
+            border-radius: 12px;
+        }
+
+        @keyframes fadeInFrame {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
     <link rel="stylesheet" href="/custom_select.css">
     <script src="/custom_select.js"></script>
@@ -6656,7 +6685,11 @@
                     iframe.className = 'code-preview-iframe';
                     iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
                     try {
-                        iframe.srcdoc = rawCode;
+                        const transparentCode = rawCode.includes('<head>') 
+                            ? rawCode.replace('</head>', '<style>body{background:transparent!important; color:#eceff1!important; color-scheme:dark; margin:0;}</style></head>')
+                            : `<style>body{background:transparent!important; color:#eceff1!important; color-scheme:dark; margin:0;}</style>${rawCode}`;
+
+                        iframe.srcdoc = transparentCode;
                     } catch (e) {
                         iframe.srcdoc = `<html><body><p style='color:red;'>Error: ${escapeHtml(e.message)}</p></body></html>`;
                     }
@@ -7300,7 +7333,15 @@
                         iframe.style.width = '100%';
                         iframe.style.height = '100%';
                         iframe.style.border = 'none';
-                        iframe.srcdoc = htmlContent;
+                        const injectedStyles = `<style>
+                            body, html { 
+                                background: transparent !important; 
+                                color: #f0f0f0 !important; 
+                                color-scheme: dark; 
+                                margin: 0; 
+                            }
+                        </style>`;
+                        iframe.srcdoc = htmlContent.replace('</head>', `${injectedStyles}</head>`);
                         vizContainer.appendChild(iframe);
 
                         const fsBtn = document.createElement('button');

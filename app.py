@@ -779,12 +779,10 @@ def generate_chat_name(chat_id, first_message_content):
                     logger.info(f"Chat name updated in DB for chat_id {chat_id} to '{generated_name}'")
                     return # Success
                 except Exception as e:
-                    error_string = str(e).lower()
-                    if '429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string):
-                        logger.warning(f"Quota exceeded during chat name generation. Trying next key...")
-                        continue
-                    else:
-                        raise e
+                    logger.warning(f"API error during chat name generation: {e}. Trying next key...")
+                    continue
+            
+            logger.error(f"All keys failed for chat name generation (chat {chat_id}).")
             
         except Exception as e:
             logger.error(f"Error in generate_chat_name (chat {chat_id}): {e}")
@@ -815,13 +813,10 @@ def generate_forge_title(user_prompt):
                 
                 return generated_name
             except Exception as e:
-                error_string = str(e).lower()
-                if '429' in error_string and ('resource_exhausted' in error_string or 'quota' in error_string):
-                    logger.warning(f"Quota exceeded during forge title generation. Trying next key...")
-                    continue
-                else:
-                    raise e
+                logger.warning(f"API error during forge title generation: {e}. Trying next key...")
+                continue
         
+        logger.error("All keys failed for forge title generation.")
         return "Forge Project"
     except Exception as e:
         logger.error(f"Error generating forge title: {e}")
