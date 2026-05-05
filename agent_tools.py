@@ -1461,7 +1461,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
 
 
 
-def lab_execute(command: str, status: str, timeout: int = 60) -> str:
+def lab_execute(command: str, status: str, timeout: int) -> str:
     """Executes a bash command in a persistent, isolated Docker sandbox.
     Args:
         command: The bash command to run.
@@ -1648,14 +1648,16 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
     except Exception as e:
         return f"Error executing command in Lab: {str(e)}"
 
-def read_tool_output(output_id: int, status: str, start_line: int = 0, max_lines: int = 100) -> str:
+def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = None, start_line: int = 0, max_lines: int = 100) -> str:
     """Reads a specific slice of a past tool's output from the database.
-    Use this when a tool's history says [Output truncated] to retrieve the full text without polluting your context window.
+    Can also search for a keyword and return matching lines.
     Args:
         output_id: The ID of the tool execution to read.
         status: Status update for the user.
-        start_line: The line number to start reading from (0-indexed). Default is 0.
-        max_lines: The maximum number of lines to return. Default is 100.
+        timeout: Execution timeout in seconds.
+        keyword: Optional keyword to search for in the output.
+        start_line: The line number to start reading from (0-indexed).
+        max_lines: The maximum number of lines to return.
     """
     import sqlite3
     try:
@@ -1671,8 +1673,28 @@ def read_tool_output(output_id: int, status: str, start_line: int = 0, max_lines
 
         res_str = str(row['result'])
         lines = res_str.split('\n')
-        total_lines = len(lines)
+        
+        if keyword:
+            # Filter lines by keyword and return them with line numbers
+            matching_lines = []
+            for i, line in enumerate(lines):
+                if keyword.lower() in line.lower():
+                    matching_lines.append(f"Line {i}: {line}")
+            
+            if not matching_lines:
+                return f"No occurrences of '{keyword}' found in tool output {output_id}."
+            
+            total_matches = len(matching_lines)
+            end_line = min(start_line + max_lines, total_matches)
+            sliced_matches = matching_lines[start_line:end_line]
+            
+            output = f"--- Tool Output ID: {output_id} (Keyword: '{keyword}', matches {start_line} to {end_line-1} of {total_matches}) ---\n"
+            output += '\n'.join(sliced_matches)
+            if end_line < total_matches:
+                output += f"\n--- (Too many matches. {total_matches - end_line} more lines containing '{keyword}'. Read from line {end_line} to see more) ---"
+            return output
 
+        total_lines = len(lines)
         if start_line >= total_lines:
             return f"Error: start_line {start_line} is beyond the total lines ({total_lines})."
 
@@ -2020,4 +2042,6 @@ available_tools = [
     lab_execute,
     read_tool_output,
     logs_and_preferences
+]
+_and_preferences
 ]
