@@ -2048,5 +2048,3 @@ available_tools = [
     read_tool_output,
     logs_and_preferences
 ]
-_and_preferences
-]
