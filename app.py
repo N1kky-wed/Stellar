@@ -267,27 +267,20 @@ def get_fallback_chain(start_model):
     return [start_model, "gemini-3.1-flash-lite-preview"]
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-adminpass=os.getenv("Admin")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
-REFINE_API_KEY = os.getenv("RTP_API_KEY")
-SEARCH_API_KEY = os.getenv("SEARCH_API_KEY")
-RTP_API_KEY = os.getenv("RTP_API_KEY")
-COSMOS_API_KEY = PRIMARY_API_KEY
 # (PRIMARY_API_KEY already assigned in aggressive loading block)
 
-BACKUP_API_KEYS = [
-    os.getenv("BACKUP_API_KEY_1"),
-    os.getenv("BACKUP_API_KEY_2"),
-    os.getenv("BACKUP_API_KEY_3"),
-    os.getenv("BACKUP_API_KEY_4"),
-    os.getenv("BACKUP_API_KEY_5"),
-    os.getenv("BACKUP_API_KEY_6"),
-    os.getenv("BACKUP_API_KEY_7"),
-    os.getenv("BACKUP_API_KEY_8"),
-    os.getenv("BACKUP_API_KEY_9")
-]
+backup_env_pattern = re.compile(r'^BACKUP_API_KEY_(\d+)$')
 
-BACKUP_API_KEYS = [key for key in BACKUP_API_KEYS if key]
+# 2. Extract into a sorted dictionary to maintain numerical order
+backup_vars = {
+    int(match.group(1)): os.environ[key]
+    for key in os.environ
+    if (match := backup_env_pattern.match(key))
+}
+
+# 3. Final list of functional backup keys (automatically scales)
+BACKUP_API_KEYS = [backup_vars[i] for i in sorted(backup_vars.keys())]
 
 DATABASE_NAME = 'stellar_local.db'
 
