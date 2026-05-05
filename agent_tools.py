@@ -1650,13 +1650,18 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
 
 def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = None, start_line: int = 0, max_lines: int = 100) -> str:
     """Reads a specific slice of a past tool's output from the database.
-    Can also search for a keyword and return matching lines.
+    Use this when history says [Output truncated] to retrieve data without context overflow.
+    
+    Keyword Search: If a 'keyword' is provided, the tool returns only lines containing that keyword.
+    Pagination: 'start_line' acts as an offset (either for raw lines or for keyword matches).
+    'max_lines' limits the number of lines returned in one call.
+    
     Args:
         output_id: The ID of the tool execution to read.
         status: Status update for the user.
         timeout: Execution timeout in seconds.
-        keyword: Optional keyword to search for in the output.
-        start_line: The line number to start reading from (0-indexed).
+        keyword: Optional string to search for.
+        start_line: The line number (or match index) to start from (0-indexed).
         max_lines: The maximum number of lines to return.
     """
     import sqlite3
