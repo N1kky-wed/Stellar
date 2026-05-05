@@ -3495,11 +3495,15 @@ def cosmos_stream():
 def stop_generation():
     data = request.get_json()
     query_id = data.get('query_id')
+    chat_id = data.get('chat_id')
 
     if not query_id:
         return jsonify({'error': 'Missing query_id.'}), 400
 
     redis_client.setex(f"stop_flag:{query_id}", 3600, "1")
+    if chat_id:
+        redis_client.delete(f"chat_active_query:{chat_id}")
+        
     logging.info(f"Stop flag set in Redis for query_id: {query_id}")
     return jsonify({'success': True, 'message': 'Stop signal received.'})
 
@@ -3521,6 +3525,7 @@ def stream_consumer(query_id):
             item = item.decode('utf-8')
         if item == "__STREAM_END__":
             pubsub.close()
+            yield f"data: {json.dumps({'status': 'Stream ended.', 'error': True, 'stopped': True})}\n\n"
             return
         yield item
 
@@ -3531,6 +3536,7 @@ def stream_consumer(query_id):
             if isinstance(data, bytes):
                 data = data.decode('utf-8')
             if data == "__STREAM_END__":
+                yield f"data: {json.dumps({'status': 'Stream ended.', 'error': True, 'stopped': True})}\n\n"
                 break
             yield data
     pubsub.close()
@@ -3649,6 +3655,16 @@ def clear_history():
         cleared_pending = session.pop('pending_queries', None)
         if cleared_pending is not None:
             session.modified = True
+            
+        active_query_str = redis_client.get(f"chat_active_query:{chat_id}")
+        if active_query_str:
+            try:
+                active_query = json.loads(active_query_str)
+                q_id = active_query.get('query_id')
+                if q_id:
+                    redis_client.setex(f"stop_flag:{q_id}", 3600, "1")
+            except: pass
+            redis_client.delete(f"chat_active_query:{chat_id}")
         
         cursor = db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
         deleted_count = cursor.rowcount
@@ -4156,6 +4172,16 @@ def delete_chat_route(chat_id):
         chat_ownership = cursor.fetchone()
         if not chat_ownership:
             return jsonify({'error': 'Unauthorized to delete this chat.'}), 403
+
+        active_query_str = redis_client.get(f"chat_active_query:{chat_id}")
+        if active_query_str:
+            try:
+                active_query = json.loads(active_query_str)
+                q_id = active_query.get('query_id')
+                if q_id:
+                    redis_client.setex(f"stop_flag:{q_id}", 3600, "1")
+            except: pass
+            redis_client.delete(f"chat_active_query:{chat_id}")
         
         db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
         db.execute('DELETE FROM tool_calls WHERE chat_id = ?', (chat_id,))

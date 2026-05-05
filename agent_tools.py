@@ -1486,9 +1486,9 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
         c_id = session.get('current_chat_id', 'default')
         s_id = getattr(session, 'sid', 'no_session')
 
-    # Fallback to background context
     if not u_id: u_id = getattr(g, 'user_id', None)
     if c_id == 'default': c_id = getattr(g, 'chat_id', 'default')
+    if s_id == 'no_session': s_id = getattr(g, 'session_id', 'no_session')
 
     # Sanitize for Docker/FS safety
     clean_uid = re.sub(r'[^a-zA-Z0-9]', '', str(u_id)) if u_id else "anon"
@@ -1845,12 +1845,26 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
 
     if not u_id: u_id = getattr(g, 'user_id', None)
     if c_id == 'default': c_id = getattr(g, 'chat_id', 'default')
+    if s_id == 'no_session': s_id = getattr(g, 'session_id', 'no_session')
 
     clean_uid = re.sub(r'[^a-zA-Z0-9]', '', str(u_id)) if u_id else "anon"
     clean_cid = re.sub(r'[^a-zA-Z0-9]', '', str(c_id))
     
     dynamic_lab_container = f"stellar-lab-u{clean_uid}-c{clean_cid}"
     session_id = str(s_id)
+
+    def resolve_env_id(env_id):
+        if not env_id or env_id in ("lab", "chat"): return env_id
+        try:
+            db = get_db()
+            cursor = db.execute('SELECT process_id FROM forge_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (env_id, env_id, env_id, u_id))
+            row = cursor.fetchone()
+            if row: return row[0]
+        except: pass
+        return env_id
+
+    target_env = resolve_env_id(target_env)
+    source_env = resolve_env_id(source_env)
 
     def validate_env_ownership(env_id):
         if env_id in ("lab", "chat"): return True
@@ -1868,6 +1882,12 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
         return f"Error: Unauthorized access to target environment '{target_env}'."
     if not validate_env_ownership(source_env):
         return f"Error: Unauthorized access to source environment '{source_env}'."
+
+    if target_env == "lab" or source_env == "lab":
+        try:
+            client.containers.get(dynamic_lab_container)
+        except Exception:
+            lab_execute("echo 'init'", "Initializing Lab...")
 
     def get_container_name(env_id):
         if env_id == "lab": return dynamic_lab_container

@@ -8890,11 +8890,6 @@
         }
 
         async function createNewChat(selectNew = true) {
-            if (isProcessing) {
-                setStatus("Cannot create new chat while processing.", true);
-                setTimeout(() => setStatus(currentStatusText, false), 3000);
-                return;
-            }
             setStatus("Creating new chat...");
             try {
                 const response = await fetch('/api/chats/new', { method: 'POST' });
@@ -8994,10 +8989,10 @@
 
         async function deleteChat(chatId, chatName) {
 
-            if (isProcessing) {
-                setStatus("Cannot delete chat while processing.", true);
-                setTimeout(() => setStatus(currentStatusText, false), 3000);
-                return;
+            if (isProcessing && currentChatId === chatId && sseEventSource) {
+                sseEventSource.close();
+                sseEventSource = null;
+                cleanupStream(false, null, null);
             }
 
             setStatus(`Deleting chat "${chatName}"...`);
@@ -9521,11 +9516,12 @@
         // REPLACE the old clearHistoryBtn block with this one
         if (clearHistoryBtn) {
             clearHistoryBtn.addEventListener("click", async () => {
-                if (isProcessing) {
-                    setStatus("Wait...", true);
-                    setTimeout(() => setStatus(currentStatusText, false), 2000);
-                    return;
+                if (isProcessing && sseEventSource) {
+                    sseEventSource.close();
+                    sseEventSource = null;
                 }
+                cleanupStream(false, null, null);
+
                 setStatus("Clearing...");
                 try {
                     const r = await fetch("/clear_history", { method: "POST" });
@@ -9581,14 +9577,13 @@
         const headerTempChatBtn = document.getElementById('headerTempChatBtn');
         if (headerTempChatBtn) {
             headerTempChatBtn.addEventListener('click', async () => {
-                if (isProcessing) {
-                    setStatus("Cannot switch chat while processing.", true);
-                    setTimeout(() => setStatus(currentStatusText, false), 3000);
-                    return;
+                if (isProcessing && sseEventSource) {
+                    sseEventSource.close();
+                    sseEventSource = null;
                 }
-                
-                setStatus("Starting Incognito Session...");
-                try {
+                cleanupStream(false, null, null);
+
+                setStatus("Starting Incognito Session...");                try {
                     const response = await fetch('/api/chats/new_temp', { method: 'POST' });
                     if (!response.ok) throw new Error("Failed to create temporary chat");
                     const data = await response.json();
@@ -10181,7 +10176,7 @@
                 await fetch('/api/stop_generation', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query_id: idToStop })
+                    body: JSON.stringify({ query_id: idToStop, chat_id: currentChatId })
                 });
                 console.log(`Sent stop signal for ID: ${idToStop}`);
             } catch (err) {
