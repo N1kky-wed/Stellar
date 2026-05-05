@@ -1107,7 +1107,7 @@ def forge_control(action: str, status: str, app_id: str = None, changes: dict = 
     except Exception as e:
         return f"Error in forge_control: {str(e)}"
 
-def repo_control(action: str, status: str, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 5000, command: str = None, env_type: str = "web") -> str:
+def repo_control(action: str, status: str, timeout: int, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 5000, command: str = None, env_type: str = "web") -> str:
     """Control and manage repository-based or custom-stack deployments.
     Args:
         action: "deploy", "execute", "list_history", "rename", "stop", "restart", or "snapshot"
