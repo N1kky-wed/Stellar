@@ -1441,11 +1441,24 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             res = f"Error: {str(e)}"
 
                         # Create response part
-                        # Truncate base64 image data to prevent blowing up the LLM's input token limit
+                        # Truncate base64 image data and massive text outputs to prevent blowing up the LLM's input token limit
                         # during the immediate next function_response turn!
                         llm_safe_res = res
-                        if isinstance(llm_safe_res, str) and 'data:image' in llm_safe_res:
-                            llm_safe_res = "Image successfully generated and rendered to the user's UI. Do not attempt to output the image markdown yourself."
+                        if isinstance(llm_safe_res, str):
+                            if 'data:image' in llm_safe_res:
+                                llm_safe_res = "Image successfully generated and rendered to the user's UI. Do not attempt to output the image markdown yourself."
+                            elif len(llm_safe_res) > 10000 or len(llm_safe_res.split('\n')) > 100:
+                                # Get the ID of the record we JUST inserted
+                                last_tool_id = "unknown"
+                                try:
+                                    db = get_db()
+                                    cursor = db.execute('SELECT id FROM tool_calls WHERE chat_id = ? ORDER BY id DESC LIMIT 1', (chat_id,))
+                                    row = cursor.fetchone()
+                                    if row: last_tool_id = row[0]
+                                except: pass
+                                
+                                num_lines = len(llm_safe_res.split('\n'))
+                                llm_safe_res = f"[Output truncated for context efficiency. ID: {last_tool_id}, Lines: {num_lines}, Length: {len(llm_safe_res)} chars. Use read_tool_output(output_id={last_tool_id}) to view the full text if necessary.]"
 
                         function_responses.append(
                             types.Part(function_response=types.FunctionResponse(
