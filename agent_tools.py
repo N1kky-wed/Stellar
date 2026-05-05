@@ -1206,7 +1206,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             try:
                 client = docker.from_env()
                 container = client.containers.get(f"stellar-repo-{p_id}")
-                wrapped_cmd = f"bash -c {subprocess.list2cmdline([command])}"
+                wrapped_cmd = f"timeout {timeout} bash -c {subprocess.list2cmdline([command])}"
                 exec_result = container.exec_run(wrapped_cmd, demux=False, workdir="/app")
                 output = exec_result.output.decode('utf-8', 'replace')
                 
