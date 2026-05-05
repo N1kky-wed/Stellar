@@ -1269,7 +1269,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         logger.warning(f"Quota exceeded for key index {current_key_index}. Switching to backup key...")
                         current_key_index += 1
                         current_key = keys_to_try[current_key_index]
-                        yield {'status': 'Quota exceeded. Switching to backup key...'}
+                        
                         
                         client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
                         
