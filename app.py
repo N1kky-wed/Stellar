@@ -1306,6 +1306,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         continue 
                     elif is_network and consecutive_network_errors < 3:
                         consecutive_network_errors += 1
+                        logger.warning(f"Connection issue detected (Attempt {consecutive_network_errors}/3) with model {model_id} using key index {current_key_index}. Error: {loop_e}")
                         yield {'status': f'Connection issue. Retrying in-place ({consecutive_network_errors}/3)...'}
                         time.sleep(2 * consecutive_network_errors)
                         
