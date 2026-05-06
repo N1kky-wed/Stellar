@@ -5090,15 +5090,12 @@ def intercept_subdomains():
         except requests.exceptions.RequestException as e:
             logger.error(f"Dynamic proxy error for app {process_id}: {e}")
             
-            # Passive Health Check: If connection is refused/reset, mark as failed immediately
+            # Passive Health Check: If connection is refused/reset, invalidate local cache
+            # The port might be stale. Removing it forces a Redis re-fetch on the next request.
             if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
                 with active_apps_lock:
                     if process_id in active_apps:
-                        active_apps[process_id]['status'] = 'failed'
-                try:
-                    redis_client.hset(_redis_forge_key(process_id), "status", "failed")
-                except:
-                    pass
+                        del active_apps[process_id]
 
             if app_info.get("status") == "exited":
                  return "Application not found or has been stopped.", 404
