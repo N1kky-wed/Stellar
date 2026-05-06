@@ -1395,7 +1395,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             for fname, content in snapshot.items():
                 if fname in ['repo', 'port'] or not isinstance(content, str): continue
                 b64_content = base64.b64encode(content.encode()).decode()
-                container.exec_run(f"python3 -c \"import base64; import os; os.makedirs(os.path.dirname('{fname}'), exist_ok=True); open('{fname}', 'wb').write(base64.b64decode('{b64_content}'))\"", workdir="/app")
+                container.exec_run(f"python3 -c \"import base64; import os; d=os.path.dirname('{fname}'); d and os.makedirs(d, exist_ok=True); open('{fname}', 'wb').write(base64.b64decode('{b64_content}'))\"", workdir="/app")
 
             public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
             
