@@ -1,0 +1,14 @@
+[Unit]
+Description=Gunicorn instance to serve the Stellar application
+After=network.target
+
+[Service]
+Environment=PYTHONUNBUFFERED=1
+User=stellaradmin
+Group=www-data
+WorkingDirectory=/home/stellaradmin/my_app
+EnvironmentFile=/home/stellaradmin/my_app/keys.env
+ExecStart=/home/stellaradmin/my_app/venv/bin/gunicorn -k gthread --workers 4 --threads 25 --timeout 3600 --bind unix:stellar.sock -m 007 --access-logfile - --error-logfile - app:app
+
+[Install]
+WantedBy=multi-user.target

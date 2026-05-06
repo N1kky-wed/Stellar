@@ -1308,7 +1308,15 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         consecutive_network_errors += 1
                         yield {'status': f'Connection issue. Retrying in-place ({consecutive_network_errors}/3)...'}
                         time.sleep(2 * consecutive_network_errors)
-                        # Re-init chat with SAME key to refresh connection state
+                        
+                        # If we hit 3 network errors, try switching keys before giving up on this attempt
+                        if consecutive_network_errors == 3 and (current_key_index + 1) < len(keys_to_try):
+                             logger.warning(f"Persistent network issues with key {current_key_index}. Switching to backup key...")
+                             current_key_index += 1
+                             current_key = keys_to_try[current_key_index]
+                             consecutive_network_errors = 0 # Reset for the new key
+                        
+                        # Re-init chat with (potentially new) key
                         client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
                         old_history = chat.get_history() if hasattr(chat, 'get_history') else []
                         chat = client.chats.create(model=model_id, config=chat_config, history=old_history)
@@ -4063,17 +4071,27 @@ def user_global_events():
     user_id = session['user_id']
     
     def event_stream():
-        pubsub = redis_client.pubsub()
+        pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
         pubsub.subscribe(f"user_events:{user_id}")
         
         try:
-            for message in pubsub.listen():
-                if message['type'] == 'message':
-                    data = message['data']
-                    if isinstance(data, bytes):
-                        data = data.decode('utf-8')
-                    yield f"data: {data}\n\n"
+            while True:
+                message = pubsub.get_message(timeout=15)
+                if message:
+                    if message['type'] == 'message':
+                        data = message['data']
+                        if isinstance(data, bytes):
+                            data = data.decode('utf-8')
+                        yield f"data: {data}\n\n"
+                else:
+                    # Heartbeat to keep Nginx connection alive
+                    yield ": heartbeat\n\n"
+        except GeneratorExit:
+            logger.info(f"User {user_id} disconnected from events stream.")
+        except Exception as e:
+            logger.error(f"Error in event_stream for user {user_id}: {e}")
         finally:
+            pubsub.unsubscribe()
             pubsub.close()
 
     return Response(stream_with_context(event_stream()), mimetype='text/event-stream')
