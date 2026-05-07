@@ -1494,10 +1494,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             accumulated_full_output = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', accumulated_full_output, flags=re.IGNORECASE)
 
             for tool in called_tools_results:
-                # Do not force-attach raw data from search tools, project history, Lab execution logs, or YouTube analysis, or preference logs
-                if tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'subagent_tool']:
-                    continue
-                if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and ("Your Forge Deployment History" in tool['result'] or "Source Code for Project" in tool['result']):
+                if tool['name'] == 'subagent_tool':
+                    if not tool.get('args', {}).get('pass_to_user', True):
+                        continue
+                elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'forge_control']:
                     continue
 
                 if not isinstance(tool['result'], str): continue
@@ -5494,3 +5494,4 @@ if __name__ == '__main__':    # Ensure Docker images are ready before starting t
         logger.error(f"Failed to run dockersetup.py: {e}")
 
     port = int(os.environ.get('PORT', 5013))
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

@@ -2037,6 +2037,7 @@ def subagent_tool(
     status: str,
     model_tier: str = "capable",
     container_id: str = None,
+    pass_to_user: bool = True,
     **kwargs
 ) -> str:
     """
@@ -2047,6 +2048,7 @@ def subagent_tool(
         status: Status update for the user.
         model_tier: 'capable' (gemini-3.1-pro-preview) or 'fast' (gemini-3-flash-preview).
         container_id: Optional. Target a specific container ID or name.
+        pass_to_user: If True, output is forcibly appended to chat. If False, output is hidden from chat for background processing.
     """
     current_effective_prompt = kwargs.get('current_effective_prompt', '')
     import os
@@ -2152,6 +2154,12 @@ exit 1
     exec_result = container.exec_run("/tmp/run_gemini.sh", environment={"TERM": "xterm-256color"})
     output = exec_result.output.decode('utf-8', 'replace')
     
+    # Strip Gemini CLI verbose warnings
+    output = re.sub(r'Warning: True color \(24-bit\) support not detected\..*\n?', '', output)
+    output = re.sub(r'YOLO mode is enabled\. All tool calls will be automatically approved\.\n?', '', output)
+    output = re.sub(r'Ripgrep is not available\. Falling back to GrepTool\.\n?', '', output)
+    output = output.strip()
+
     if exec_result.exit_code != 0:
         return f"Gemini Offload Error:\\n{output}"
 

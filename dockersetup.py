@@ -60,6 +60,7 @@ RUN apt-get update && apt-get install -y \\
     build-essential \\
     procps \\
     iputils-ping \\
+    ripgrep \\
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
     && apt-get install -y nodejs \\
     && npm install -g @google/gemini-cli \\
@@ -77,6 +78,7 @@ RUN apt-get update && apt-get install -y \\
     build-essential \\
     procps \\
     iputils-ping \\
+    ripgrep \\
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
     && apt-get install -y nodejs \\
     && rm -rf /var/lib/apt/lists/*
