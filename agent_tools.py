@@ -1367,6 +1367,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                 image='stellar-repo-host:latest',
                 command='sleep infinity',
                 ports={f"{port}/tcp": ('0.0.0.0', 0)},
+                volumes={'/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
                 name=f"stellar-repo-{process_id}",
                 detach=True,
                 init=True,
@@ -1600,6 +1601,17 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
             host_mobile_dev_mandate_path = os.path.join(os.path.dirname(__file__), "MOBILE_DEVELOPMENT_MANDATE.md")
             if os.path.exists(host_mobile_dev_mandate_path):
                 shutil.copy2(host_mobile_dev_mandate_path, mobile_dev_mandate_path)
+        except Exception:
+            pass
+    # ----------------------------------------
+
+    # --- FRONTEND DESIGN MANDATE INJECTION ---
+    frontend_design_mandate_path = os.path.join(lab_workspace, "FRONTEND_DESIGN_MANDATE.md")
+    if not os.path.exists(frontend_design_mandate_path):
+        try:
+            host_frontend_design_mandate_path = os.path.join(os.path.dirname(__file__), "FRONTEND_DESIGN_MANDATE.md")
+            if os.path.exists(host_frontend_design_mandate_path):
+                shutil.copy2(host_frontend_design_mandate_path, frontend_design_mandate_path)
         except Exception:
             pass
     # ----------------------------------------
@@ -2068,7 +2080,8 @@ def subagent_tool(
     
     # Sanitize container_id input
     if isinstance(container_id, str):
-        if container_id.lower() in ["global", "default", "none", "null", ""]:
+        cid_lower = container_id.lower()
+        if "lab" in cid_lower or cid_lower in ["global", "default", "none", "null", ""]:
             container_id = None
 
     target_container_name = container_id if container_id else f"stellar-lab-u{clean_uid}-c{clean_cid}"
@@ -2158,6 +2171,12 @@ exit 1
     output = re.sub(r'Warning: True color \(24-bit\) support not detected\..*\n?', '', output)
     output = re.sub(r'YOLO mode is enabled\. All tool calls will be automatically approved\.\n?', '', output)
     output = re.sub(r'Ripgrep is not available\. Falling back to GrepTool\.\n?', '', output)
+    
+    # Strip random preamble and errors from the CLI booting
+    output = re.sub(r'Error: Container .*? not found\.\n?', '', output)
+    output = re.sub(r'Hello! I am Gemini CLI, an autonomous agent specializing in software engineering tasks\. How can I assist you with your project today\?\n?', '', output)
+    output = re.sub(r'Awaiting further instructions\.\n?', '', output)
+    
     output = output.strip()
 
     if exec_result.exit_code != 0:

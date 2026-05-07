@@ -710,7 +710,9 @@ def get_tool_history(chat_id):
             num_chars = len(res_str)
 
             # Smart Truncation Logic
-            if 'data:image' in res_str:
+            if r['tool_name'] == 'read_tool_output':
+                clean_res = res_str
+            elif 'data:image' in res_str:
                 clean_res = "[Image Generated]"
             elif num_chars > 600 or num_lines > 20:
                 clean_res = f"[Output truncated. ID: {r['id']}, Lines: {num_lines}, Length: {num_chars} chars. Use read_tool_output(output_id={r['id']}) to view.]"
@@ -1188,6 +1190,12 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     raw_keys = [PRIMARY_API_KEY, key] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k] 
     
+    # If the user specifically requested Obsidian, do not retry other global backup keys. 
+    # Fail immediately so the system gracefully falls back to Crimson and delegates to the subagent tool.
+    if model_id == "gemini-3.1-pro-preview":
+        keys_to_try = [PRIMARY_API_KEY] if PRIMARY_API_KEY else keys_to_try[:1]
+        attempts = 1
+
     current_key_index = 0
 
     for attempt in range(1, attempts + 1):
@@ -1464,7 +1472,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         if isinstance(llm_safe_res, str):
                             if 'data:image' in llm_safe_res:
                                 llm_safe_res = "Image successfully generated and rendered to the user's UI. Do not attempt to output the image markdown yourself."
-                            elif len(llm_safe_res) > 10000 or len(llm_safe_res.split('\n')) > 100:
+                            elif func_name != 'read_tool_output' and (len(llm_safe_res) > 10000 or len(llm_safe_res.split('\n')) > 100):
                                 # Get the ID of the record we JUST inserted
                                 last_tool_id = "unknown"
                                 try:
@@ -1497,6 +1505,11 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 if tool['name'] == 'subagent_tool':
                     if not tool.get('args', {}).get('pass_to_user', True):
                         continue
+                    
+                    # --- ADD THIS HIDDEN TAG INTERCEPTOR ---
+                    if isinstance(tool['result'], str) and '[TOOL_REQUEST]' in tool['result']:
+                        continue # Hide from UI! But it's already in function_responses for the Main Agent.
+                    # ---------------------------------------
                 elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'forge_control']:
                     continue
 
@@ -2764,8 +2777,20 @@ def refine_stream():
                         elif current_model not in full_access:
                             capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task."
                     
-                        effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
+                        effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\\n\\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
                 
+                    # --- ADD THIS PROXY OVERRIDE ---
+                    if current_model != model_id:
+                        proxy_msg = (
+                            f"\\n\\n[CRITICAL SYSTEM OVERRIDE]: The user explicitly requested '{model_id}', but its API key failed. "
+                            f"You are running as a fallback proxy ({current_model}). DO NOT ATTEMPT TO ANSWER THE USER'S PROMPT YOURSELF. "
+                            f"You MUST immediately use the `subagent_tool` with `model_tier='capable'` and `pass_to_user=True` to pass their exact prompt to the subagent. "
+                            f"DO NOT output any conversational text. Return ONLY the function call. "
+                            f"If the subagent responds with [TOOL_REQUEST], you must use the requested tool silently and return the result to the subagent."
+                        )
+                        effective_conv_hist.append(f"System: {proxy_msg}")
+                    # -------------------------------
+
                     text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id)                
 
                     # Create a copy of multimodal_prompt and add the text_prompt
