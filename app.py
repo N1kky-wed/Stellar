@@ -1433,6 +1433,14 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
                                 if func_name == "logs_and_preferences":
                                     args_dict['user_id'] = str(getattr(g, 'user_id', 'global'))
+                                    
+                                if func_name == "subagent_tool":
+                                    prompt_text = ""
+                                    if isinstance(current_effective_prompt, list):
+                                        prompt_text = "\\n".join([p.text for p in current_effective_prompt if hasattr(p, 'text')])
+                                    elif isinstance(current_effective_prompt, str):
+                                        prompt_text = current_effective_prompt
+                                    args_dict['current_effective_prompt'] = prompt_text
 
                                 res = func_to_call(**args_dict)
                             
@@ -1487,7 +1495,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
             for tool in called_tools_results:
                 # Do not force-attach raw data from search tools, project history, Lab execution logs, or YouTube analysis, or preference logs
-                if tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image']:
+                if tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'subagent_tool']:
                     continue
                 if tool['name'] == 'forge_control' and isinstance(tool['result'], str) and ("Your Forge Deployment History" in tool['result'] or "Source Code for Project" in tool['result']):
                     continue
@@ -2704,6 +2712,26 @@ def refine_stream():
                 tool_hist_context = get_tool_history(chat_id)
                 if tool_hist_context:
                     conv_hist_list.append(tool_hist_context)
+
+                # --- Context Compression ---
+                full_history_text = "\\n".join(conv_hist_list)
+                current_chat_tokens = count_chat_tokens(chat_id)
+                if current_chat_tokens > 200000:
+                    try:
+                        from agent_tools import subagent_tool
+                        yield f"data: {{json.dumps({'status': 'Compressing context...'})}}\\n\\n"
+                        summary = subagent_tool(
+                            task_description="Summarize the chat and tool history to free up context window.",
+                            mode="summarization",
+                            status="Compressing Context...",
+                            current_effective_prompt=full_history_text,
+                            model_tier="fast"
+                        )
+                        if not summary.startswith("Gemini Offload Error"):
+                            conv_hist_list = [f"Stellar: [Context Compressed] {summary}"]
+                    except Exception as e:
+                        logger.error(f"Context compression failed: {e}")
+                # ---------------------------
 
                 refined_query_result = ""
                 models_to_try = get_fallback_chain(model_id)
@@ -4573,7 +4601,7 @@ def run_code():
 
             container = client.containers.run(
                 image=config['image'], command=config['command'](main_code_filename_with_ext),
-                working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
+                working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}, '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
                 ports=ports_to_publish, mem_limit='1024m',
                 name=f"stellar-sandbox-{run_id}", remove=False, detach=True,
                 init=True, network=user_network,
@@ -5453,7 +5481,7 @@ class TaskSchedulerMonitor:
             if final_output:
                 from app import MODEL_NAMES
                 display_name = MODEL_NAMES.get(model_id, model_id)
-                insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\n\n{final_output}")
+                insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\\n\\n{final_output}")
 
 task_scheduler = TaskSchedulerMonitor(app)
 task_scheduler.start()
@@ -5466,4 +5494,3 @@ if __name__ == '__main__':    # Ensure Docker images are ready before starting t
         logger.error(f"Failed to run dockersetup.py: {e}")
 
     port = int(os.environ.get('PORT', 5013))
-    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

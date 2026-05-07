@@ -1619,7 +1619,7 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
                 tty=True,
                 init=True,
                 working_dir='/lab',
-                volumes={lab_workspace: {'bind': '/lab', 'mode': 'rw'}},
+                volumes={lab_workspace: {'bind': '/lab', 'mode': 'rw'}, '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
                 restart_policy={"Name": "unless-stopped"},
                 network=user_network
             )
@@ -2031,6 +2031,132 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
             
     return "Error: Invalid action. Use 'read', 'move', or 'project'."
 
+def subagent_tool(
+    task_description: str,
+    mode: str,
+    status: str,
+    model_tier: str = "capable",
+    container_id: str = None,
+    **kwargs
+) -> str:
+    """
+    Offloads a subtask or summarizes context using the Gemini CLI.
+    Args:
+        task_description: The description of the task or summarization goal.
+        mode: 'summarization' or 'delegation'.
+        status: Status update for the user.
+        model_tier: 'capable' (gemini-3.1-pro-preview) or 'fast' (gemini-3-flash-preview).
+        container_id: Optional. Target a specific container ID or name.
+    """
+    current_effective_prompt = kwargs.get('current_effective_prompt', '')
+    import os
+    import base64
+    import docker
+    from flask import g
+    session = _get_effective_session()
+
+    u_id = getattr(g, 'user_id', session.get('user_id'))
+    c_id = getattr(g, 'chat_id', session.get('current_chat_id', 'default'))
+    if not u_id:
+        return "Error: Could not determine User ID."
+
+    import re
+    clean_uid = re.sub(r'[^a-zA-Z0-9]', '', str(u_id))
+    clean_cid = re.sub(r'[^a-zA-Z0-9]', '', str(c_id))
+    
+    # Sanitize container_id input
+    if isinstance(container_id, str):
+        if container_id.lower() in ["global", "default", "none", "null", ""]:
+            container_id = None
+
+    target_container_name = container_id if container_id else f"stellar-lab-u{clean_uid}-c{clean_cid}"
+
+    try:
+        client = docker.from_env()
+        try:
+            container = client.containers.get(target_container_name)
+            if container.status != 'running':
+                container.start()
+        except docker.errors.NotFound:
+            if container_id:
+                return f"Error: Container {container_id} not found."
+            # Fallback if lab container doesn't exist
+            lab_execute("echo 'Init'", "Initializing Lab for offload", timeout=10)
+            container = client.containers.get(target_container_name)
+    except Exception as e:
+        return f"Gemini Offload Error: Docker unavailable - {e}"
+
+    model = "gemini-3.1-pro-preview" if model_tier == "capable" else "gemini-3-flash-preview"
+
+    full_prompt = "You are a subagent working on behalf of the main agent Stellar. You have your own separate internal tools (which may not exactly match the main agent's tools but are equivalent capabilities like lab_execute, web_search, etc.). If you need more information or specific context about something that isn't provided here, ask the main agent for it.\\n\\n"
+    full_prompt += f"Task: {task_description}\\n\\n"
+    if mode == "summarization":
+        full_prompt += "Please summarize the following context concisely but preserving all facts:\\n"
+    else:
+        full_prompt += "Please execute the following task given the context:\\n"
+
+    full_prompt += f"\\nContext:\\n{current_effective_prompt}\\n"
+
+    b64_prompt = base64.b64encode(full_prompt.encode('utf-8')).decode('utf-8')
+    container.exec_run(["bash", "-c", f"echo '{b64_prompt}' | base64 -d > /tmp/gemini_prompt.txt"])
+
+    script = f'''#!/bin/bash
+CONFIG_DIR="/root/.gemini"
+mkdir -p "$CONFIG_DIR"
+
+ACTIVE_ACC=0
+if [ -f /tmp/active_gemini_account ]; then
+    ACTIVE_ACC=$(cat /tmp/active_gemini_account)
+fi
+
+MAX_RETRIES=5
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if [ -d "/cred_store/account_$ACTIVE_ACC" ]; then
+        cp /cred_store/account_$ACTIVE_ACC/*.json "$CONFIG_DIR/" 2>/dev/null
+    fi
+
+    # Run Gemini CLI non-interactively
+    # --skip-trust handles the "folder not trusted" warning
+    # --yolo automatically accepts all tool calls
+    OUTPUT=$(cat /tmp/gemini_prompt.txt | gemini --model {model} --yolo --skip-trust --prompt "" 2>&1)
+    EXIT_CODE=$?
+
+    if echo "$OUTPUT" | grep -iqE "quota|429|exhausted|rate limit"; then
+        ACTIVE_ACC=$((ACTIVE_ACC + 1))
+        if [ ! -d "/cred_store/account_$ACTIVE_ACC" ]; then
+            ACTIVE_ACC=0
+        fi
+        echo $ACTIVE_ACC > /tmp/active_gemini_account
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        sleep 2
+        continue
+    fi
+
+    if [ $EXIT_CODE -eq 0 ]; then
+        echo "$OUTPUT"
+        exit 0
+    else
+        echo "Gemini CLI failed: $OUTPUT" >&2
+        exit $EXIT_CODE
+    fi
+done
+
+echo "Error: All accounts exhausted quota or failed." >&2
+exit 1
+'''
+    b64_script = base64.b64encode(script.encode('utf-8')).decode('utf-8')
+    container.exec_run(["bash", "-c", f"echo '{b64_script}' | base64 -d > /tmp/run_gemini.sh && chmod +x /tmp/run_gemini.sh"])
+
+    exec_result = container.exec_run("/tmp/run_gemini.sh", environment={"TERM": "xterm-256color"})
+    output = exec_result.output.decode('utf-8', 'replace')
+    
+    if exec_result.exit_code != 0:
+        return f"Gemini Offload Error:\\n{output}"
+
+    return output
+
 # Define the tools list for Gemini
 
 available_tools = [
@@ -2046,5 +2172,6 @@ available_tools = [
     repo_control,
     lab_execute,
     read_tool_output,
-    logs_and_preferences
+    logs_and_preferences,
+    subagent_tool
 ]
