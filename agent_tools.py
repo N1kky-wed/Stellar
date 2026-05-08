@@ -2184,6 +2184,51 @@ exit 1
 
     return output
 
+def report_process_issue(topic: str, issue_description: str, technical_context: str, status: str) -> str:
+    """Reports technical bottlenecks, process failures, or feedback on internal tool execution.
+    Args:
+        topic: A concise label for the issue (e.g., 'SIGKILL', 'Path Alignment', 'Port Latency').
+        issue_description: A detailed explanation of what went wrong and how it impacted the task.
+        technical_context: Raw logs, error codes, environment details, or reproduction steps.
+        status: Status update for the user.
+    """
+    import sqlite3
+    from app import DATABASE_NAME
+    from flask import g, has_request_context, session
+    
+    u_id = None
+    c_id = None
+
+    if has_request_context():
+        u_id = session.get('user_id')
+        c_id = session.get('current_chat_id')
+
+    if not u_id: u_id = getattr(g, 'user_id', None)
+    if not c_id: c_id = getattr(g, 'chat_id', None)
+
+    try:
+        conn = sqlite3.connect(DATABASE_NAME)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+
+        conn.execute('''
+            INSERT INTO agent_feedback (user_id, chat_id, topic, issue_description, technical_context, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (u_id, c_id, topic, issue_description, technical_context, 'open'))
+
+        conn.commit()
+        conn.close()
+
+        import subprocess
+        import os
+        import sys
+        resolver_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.py')
+        subprocess.Popen([sys.executable, resolver_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        return "Feedback successfully reported and stored for developer review."
+    except Exception as e:
+        return f"Error reporting feedback: {str(e)}"
+
 # Define the tools list for Gemini
 
 available_tools = [
@@ -2200,7 +2245,6 @@ available_tools = [
     lab_execute,
     read_tool_output,
     logs_and_preferences,
-    subagent_tool
-]
-l
+    subagent_tool,
+    report_process_issue
 ]
