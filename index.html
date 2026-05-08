@@ -7031,9 +7031,9 @@
 
         async function deleteMessageFromServer(messageId, messageElement) {
             try {
-                // Transient messages (e.g. 'error_...', 'temp_...') won't exist in the database.
+                // Transient messages (e.g. '123_user', 'error_...') won't exist in the database.
                 // Just remove them from the DOM without throwing a 403 error.
-                if (typeof messageId === 'string' && isNaN(parseInt(messageId, 10))) {
+                if (typeof messageId === 'string' && !/^\d+$/.test(messageId)) {
                     messageElement.remove();
                     return;
                 }
