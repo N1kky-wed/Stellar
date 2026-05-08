@@ -521,6 +521,22 @@ def initialize_database():
                 except Exception as e:
                     print(f"Error adding 'metadata' column to scheduled_tasks: {e}")
 
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_feedback'")
+        if cursor.fetchone() is None:
+            cursor.execute('''CREATE TABLE agent_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                chat_id INTEGER,
+                topic TEXT,
+                issue_description TEXT,
+                technical_context TEXT,
+                status TEXT DEFAULT 'open',
+                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+                FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE SET NULL
+            )''')
+            print("Created 'agent_feedback' table.")
+
         db.commit()
 
 initialize_database()
@@ -531,6 +547,14 @@ def get_current_session_id():
     if 'initialized' not in session:
         session['initialized'] = True
     return getattr(session, 'sid', None)
+
+def get_file_context_id():
+    """Returns chat_id if available, otherwise session_id, to isolate files."""
+    if not has_request_context():
+        cid = getattr(g, 'chat_id', None)
+        return str(cid) if cid else getattr(g, 'session_id', None)
+    chat_id = session.get('current_chat_id')
+    return str(chat_id) if chat_id else get_current_session_id()
 
 def get_current_chat_id(user_id):
     db = get_db()
@@ -950,13 +974,13 @@ def change_user_password(user_id, current_password, new_password):
         return False, f"Server error: {str(e)}"
 
 
-def upload_files_to_gemini(session_id, filenames, api_key=None):
+def upload_files_to_gemini(context_id, filenames, api_key=None):
     """Uploads local files to Gemini File API and waits for them to become ACTIVE."""
     from google import genai
     import mimetypes
     api_key = api_key or PRIMARY_API_KEY
     client = genai.Client(api_key=api_key)
-    session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session_id)
+    session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(context_id))
     
     # Whitelist of extensions and MIME types supported by Gemini Native File API
     SUPPORTED_EXTENSIONS = {
@@ -1025,15 +1049,15 @@ def upload_files_to_gemini(session_id, filenames, api_key=None):
 @app.route('/upload_files', methods=['POST'])
 @require_approval
 def upload_files():
-    session_id = get_current_session_id()
-    if not session_id:
+    context_id = get_file_context_id()
+    if not context_id:
         return jsonify({'error': 'Session initialization failed.'}), 500
 
     uploaded_files = request.files.getlist("file")
     if not uploaded_files or all(f.filename == '' for f in uploaded_files):
         return jsonify({'error': 'No files selected'}), 400
 
-    session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], session_id)
+    session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], context_id)
     os.makedirs(session_upload_folder, exist_ok=True)
 
     successful_uploads =[]
@@ -1275,11 +1299,11 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
                         
                         if gemini_files_data:
-                            session_id = get_current_session_id()
-                            if session_id:
+                            context_id = get_file_context_id()
+                            if context_id:
                                 filenames = [gf['display_name'] for gf in gemini_files_data if not gf.get('fallback_to_lab')]
                                 if filenames:
-                                    new_files_data = upload_files_to_gemini(session_id, filenames, api_key=current_key)
+                                    new_files_data = upload_files_to_gemini(context_id, filenames, api_key=current_key)
                                     uri_map = {}
                                     for old_f in gemini_files_data:
                                         for new_f in new_files_data:
@@ -1726,9 +1750,9 @@ def forge_start():
         # Upload files natively
         gemini_files_data = []
         if pending_files:
-            session_id = get_current_session_id()
-            if session_id:
-                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+            context_id = get_file_context_id()
+            if context_id:
+                gemini_files_data = upload_files_to_gemini(context_id, pending_files)
         
         # Construct multimodal prompt array
         multimodal_prompt =[]
@@ -1869,9 +1893,9 @@ def forge_iterate():
         # Upload files natively
         gemini_files_data = []
         if pending_files:
-            session_id = get_current_session_id()
-            if session_id:
-                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+            context_id = get_file_context_id()
+            if context_id:
+                gemini_files_data = upload_files_to_gemini(context_id, pending_files)
         
         # Construct multimodal prompt array
         multimodal_prompt =[]
@@ -2691,7 +2715,8 @@ def refine_stream():
 
             gemini_files_data =[]
             if pending_files:
-                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+                context_id = str(chat_id) if chat_id else session_id
+                gemini_files_data = upload_files_to_gemini(context_id, pending_files)
 
             user_message_id = insert_message(chat_id, "user", user_query_from_frontend, attached_files=gemini_files_data, user_query_for_name=user_query_from_frontend, hidden=hidden, client_id=client_id)
 
@@ -2940,7 +2965,8 @@ def search_stream():
             gemini_files_data =[]
             if pending_files:
                 yield f"data: {json.dumps({'status': f'Uploading {len(pending_files)} file(s) to Native Context...', 'phase': 'upload'})}\n\n"
-                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+                context_id = str(chat_id) if chat_id else session_id
+                gemini_files_data = upload_files_to_gemini(context_id, pending_files)
                 yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
 
             user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query, client_id=client_id)
@@ -3312,7 +3338,8 @@ def cosmos_stream():
             gemini_files_data =[]
             if pending_files:
                 yield f"data: {json.dumps({'status': f'Uploading {len(pending_files)} file(s) to Native Context...', 'phase': 'upload'})}\n\n"
-                gemini_files_data = upload_files_to_gemini(session_id, pending_files)
+                context_id = str(chat_id) if chat_id else session_id
+                gemini_files_data = upload_files_to_gemini(context_id, pending_files)
                 yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
 
             user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query, client_id=client_id)

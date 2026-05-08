@@ -503,8 +503,9 @@ def generate_image(model: str, prompt: str, status: str, quality: str = "1K", as
     parts = [types.Part.from_text(text=prompt)]
     if reference_images:
         try:
-            session_id = session.sid
-            local_dir = os.path.join(UPLOAD_FOLDER, session_id)
+            chat_id = session.get('current_chat_id')
+            context_id = str(chat_id) if chat_id else getattr(session, 'sid', 'no_session')
+            local_dir = os.path.join(UPLOAD_FOLDER, context_id)
             for img_name in reference_images[:14]:
                 img_path = os.path.join(local_dir, img_name)
                 if os.path.exists(img_path):
@@ -1462,7 +1463,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
 
 
 
-def lab_execute(command: str, status: str, timeout: int) -> str:
+def lab_execute(command: str, status: str, timeout: int = 60) -> str:
     """Executes a bash command in a persistent, isolated Docker sandbox.
     Args:
         command: The bash command to run.
@@ -1513,8 +1514,8 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
 
     # --- DETERMINISTIC FIX: Auto-sync uploaded files to the lab workspace ---
     try:
-        if s_id != 'no_session':
-            local_dir = os.path.join(UPLOAD_FOLDER, str(s_id))
+        if c_id and c_id != 'no_session':
+            local_dir = os.path.join(UPLOAD_FOLDER, str(c_id))
             if os.path.exists(local_dir):
                 for f in os.listdir(local_dir):
                     src = os.path.join(local_dir, f)
@@ -1890,7 +1891,7 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
     clean_cid = re.sub(r'[^a-zA-Z0-9]', '', str(c_id))
     
     dynamic_lab_container = f"stellar-lab-u{clean_uid}-c{clean_cid}"
-    session_id = str(s_id)
+    context_id = str(c_id) if c_id and c_id != 'default' else str(s_id)
 
     def resolve_env_id(env_id):
         if not env_id or env_id in ("lab", "chat"): return env_id
@@ -1926,7 +1927,7 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
         try:
             client.containers.get(dynamic_lab_container)
         except Exception:
-            lab_execute("echo 'init'", "Initializing Lab...")
+            lab_execute("echo 'init'", "Initializing Lab...", 60)
 
     def get_container_name(env_id):
         if env_id == "lab": return dynamic_lab_container
@@ -1939,7 +1940,7 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
             # Fallback to forge prefix
             return f"stellar-forge-{env_id}"
 
-    local_uploads = os.path.join(UPLOAD_FOLDER, session_id)
+    local_uploads = os.path.join(UPLOAD_FOLDER, context_id)
 
     if action == "read":
         if not os.path.exists(local_uploads): return "No uploads found."
@@ -2223,7 +2224,9 @@ def report_process_issue(topic: str, issue_description: str, technical_context: 
         import os
         import sys
         resolver_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.py')
-        subprocess.Popen([sys.executable, resolver_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.log')
+        with open(log_path, 'a') as log_file:
+            subprocess.Popen([sys.executable, resolver_path], stdout=log_file, stderr=log_file)
 
         return "Feedback successfully reported and stored for developer review."
     except Exception as e:

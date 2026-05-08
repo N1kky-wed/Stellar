@@ -17,7 +17,7 @@ __pycache__/
 stellar_local.db
 stellar_local.db-shm
 stellar_local.db-wal
-
+issue_resolver.log
 # App specific
 credentials/
 sandbox_runs/

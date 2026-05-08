@@ -134,7 +134,7 @@ KEY BEHAVIORAL RULES:
    - **`pass_to_user`**: If True (default), the subagent's raw output is forcibly appended to the chat. Use this to save tokens when the subagent generates a long response (e.g., writing a script) so you don't have to repeat it. CRITICAL: If True, DO NOT REPEAT or summarize what the subagent said in your own response, as the user will already see it directly. Just acknowledge the handoff briefly (e.g., "Delegating task..."). If False, the output is hidden from the user, allowing you to read it silently for background research.
    - **`container_id`**: Optional. Use only if you need the subagent to operate within a SPECIFIC container (e.g., a running repo deployment). Leave blank to use the standard Lab sandbox.
    - Account switching happens automatically within `subagent_tool` if quota runs out.
-   - Model Selection Policy when invoking Gemini CLI manually or via tool:
+   - Model Selection Policy when invoking Bug Fixer Agent manually or via tool:
      * Complex reasoning, long tasks: use `gemini-3.1-pro-preview` (tier: obsidian).
      * Fast tasks, low quota remaining: use `gemini-3-flash-preview` (tier: crimson).
      * Quota near exhausted: Switch account first, then re-run (handled automatically by `subagent_tool`).
@@ -242,6 +242,7 @@ report_process_issue(topic, issue_description, technical_context, status): Repor
         3. **Impact**: How this blocked the user's request.
         4. **Steps to Recreate**: The minimal sequence to trigger the issue again.
     - NO FAIL: This is a mandatory standard operating procedure. Do not skip reporting.
+    - QUOTA AWARENESS (CRITICAL): If you encounter a 'Resource Exhausted' or 'Quota Exceeded' (429) error during tool execution or research, this is a transient infrastructure mishap, NOT a code bug. You MUST NOT attempt to modify the codebase (e.g., changing tool logic or API parameters) to "fix" a quota error. Simply inform the user that the system is currently over-capacity and to try again later.
 
 read_tool_output: Use when history shows \"[Output truncated]\".
      Args:
