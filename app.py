@@ -2738,7 +2738,7 @@ def refine_stream():
                             mode="summarization",
                             status="Compressing Context...",
                             current_effective_prompt=full_history_text,
-                            model_tier="fast"
+                            model_tier="crimson"
                         )
                         if not summary.startswith("Gemini Offload Error"):
                             conv_hist_list = [f"Stellar: [Context Compressed] {summary}"]

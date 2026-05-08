@@ -2101,7 +2101,7 @@ def subagent_tool(
     except Exception as e:
         return f"Gemini Offload Error: Docker unavailable - {e}"
 
-    model = "gemini-3.1-pro-preview" if model_tier == "capable" else "gemini-3-flash-preview"
+    model = "gemini-3.1-pro-preview" if model_tier == "obsidian" else "gemini-3-flash-preview"
 
     full_prompt = "You are a subagent working on behalf of the main agent Stellar. You have your own separate internal tools (which may not exactly match the main agent's tools but are equivalent capabilities like lab_execute, web_search, etc.). If you need more information or specific context about something that isn't provided here, ask the main agent for it.\\n\\n"
     full_prompt += f"Task: {task_description}\\n\\n"
@@ -2201,4 +2201,6 @@ available_tools = [
     read_tool_output,
     logs_and_preferences,
     subagent_tool
+]
+l
 ]

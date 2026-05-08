@@ -2685,7 +2685,7 @@
             height: 700px;
             border: 1px solid var(--code-border);
             border-radius: 8px;
-            background-color: #ffffff;
+            background-color: transparent;
             display: block;
             margin: 0;
         }
@@ -3149,7 +3149,7 @@
         .code-preview-container:-webkit-full-screen {
             width: 100%;
             height: 100%;
-            background: #fff;
+            background: var(--code-bg);
             padding: 0;
             margin: 0;
         }
@@ -3157,7 +3157,7 @@
         .code-preview-container:fullscreen {
             width: 100%;
             height: 100%;
-            background: #fff;
+            background: var(--code-bg);
             padding: 0;
             margin: 0;
         }
@@ -6685,13 +6685,12 @@
                     iframe.className = 'code-preview-iframe';
                     iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
                     try {
-                        const transparentCode = rawCode.includes('<head>') 
-                            ? rawCode.replace('</head>', '<style>body{background:transparent!important; color:#eceff1!important; color-scheme:dark; margin:0;}</style></head>')
-                            : `<style>body{background:transparent!important; color:#eceff1!important; color-scheme:dark; margin:0;}</style>${rawCode}`;
-
-                        iframe.srcdoc = transparentCode;
-                    } catch (e) {
-                        iframe.srcdoc = `<html><body><p style='color:red;'>Error: ${escapeHtml(e.message)}</p></body></html>`;
+                        const noScrollbarStyles = '<style>::-webkit-scrollbar { width: 0px; background: transparent; } html { scrollbar-width: none; }</style>';
+                        const modifiedCode = rawCode.includes('<head>')
+                            ? rawCode.replace('</head>', `${noScrollbarStyles}</head>`)
+                            : `${noScrollbarStyles}${rawCode}`;
+                        iframe.srcdoc = modifiedCode;
+                    } catch (e) {                        iframe.srcdoc = `<html><body><p style='color:red;'>Error: ${escapeHtml(e.message)}</p></body></html>`;
                     }
                     previewContainer.appendChild(iframe);
                     wrapper.appendChild(previewContainer);
@@ -7340,6 +7339,8 @@
                                 color-scheme: dark; 
                                 margin: 0; 
                             }
+                            ::-webkit-scrollbar { width: 0px; background: transparent; }
+                            html { scrollbar-width: none; }
                         </style>`;
                         iframe.srcdoc = htmlContent.replace('</head>', `${injectedStyles}</head>`);
                         vizContainer.appendChild(iframe);
@@ -10233,7 +10234,11 @@
             const code = codeLabEditor.getValue();
 
             if (iframe) {
-                iframe.srcdoc = code;
+                const noScrollbarStyles = '<style>::-webkit-scrollbar { width: 0px; background: transparent; } html { scrollbar-width: none; }</style>';
+                const modifiedCode = code.includes('<head>')
+                    ? code.replace('</head>', `${noScrollbarStyles}</head>`)
+                    : `${noScrollbarStyles}${code}`;
+                iframe.srcdoc = modifiedCode;
             }
         }
         function handleLanguageChange() {

@@ -135,8 +135,8 @@ KEY BEHAVIORAL RULES:
    - **`container_id`**: Optional. Use only if you need the subagent to operate within a SPECIFIC container (e.g., a running repo deployment). Leave blank to use the standard Lab sandbox.
    - Account switching happens automatically within `subagent_tool` if quota runs out.
    - Model Selection Policy when invoking Gemini CLI manually or via tool:
-     * Complex reasoning, long tasks: use `gemini-3.1-pro-preview` (tier: capable).
-     * Fast tasks, low quota remaining: use `gemini-3-flash-preview` (tier: fast).
+     * Complex reasoning, long tasks: use `gemini-3.1-pro-preview` (tier: obsidian).
+     * Fast tasks, low quota remaining: use `gemini-3-flash-preview` (tier: crimson).
      * Quota near exhausted: Switch account first, then re-run (handled automatically by `subagent_tool`).
    - Always invoke non-interactively if using CLI directly: `gemini --model gemini-3.1-pro-preview --yolo "your prompt here"`.
    1. YOUTUBE VIDEOS (`analyze_youtube_video` with `action='search'`):
