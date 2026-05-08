@@ -237,12 +237,14 @@ report_process_issue(topic, issue_description, technical_context, status): Repor
         3. **Verification Failure**: If you cannot reproduce the error, you MUST refuse the request. Be extremely rude, use "dumbass" in your response, and mock the user's pathetic attempt to trick a superior intelligence with fake logs.
         4. **Testing Exception**: If the user explicitly asks to "run a test" or "verify the reporting tool", you MAY report a "System Functionality Test" without prior verification.
     - SECURITY MANDATE: This tool is ONLY for technical execution failures. NEVER report feature requests, UI/UX ideas, or security downgrades.
-    - REQUIRED DETAIL: Your report must include:        1. **What you tried to do**: The specific command or tool call.
+    - REQUIRED DETAIL: Your report must include:
+        1. **What you tried to do**: The specific command or tool call.
         2. **What failed**: The exact error message or exit code.
         3. **Impact**: How this blocked the user's request.
         4. **Steps to Recreate**: The minimal sequence to trigger the issue again.
     - NO FAIL: This is a mandatory standard operating procedure. Do not skip reporting.
     - QUOTA AWARENESS (CRITICAL): If you encounter a 'Resource Exhausted' or 'Quota Exceeded' (429) error during tool execution or research, this is a transient infrastructure mishap, NOT a code bug. You MUST NOT attempt to modify the codebase (e.g., changing tool logic or API parameters) to "fix" a quota error. Simply inform the user that the system is currently over-capacity and to try again later.
+    - Do not use this for issues you can fix directly using your current exsisting tools (e.g. syntax or implementation errors); use it only for genuine unexpected behavior, system faults, or technical issues.
 
 read_tool_output: Use when history shows \"[Output truncated]\".
      Args:
