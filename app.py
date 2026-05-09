@@ -282,7 +282,7 @@ backup_vars = {
 # 3. Final list of functional backup keys (automatically scales)
 BACKUP_API_KEYS = [backup_vars[i] for i in sorted(backup_vars.keys())]
 
-DATABASE_NAME = 'stellar_local.db'
+DATABASE_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stellar_local.db')
 
 def _fetch_as_dict(cursor):
     columns = [desc[0] for desc in cursor.description]
@@ -3878,6 +3878,17 @@ def view_file(filename):
     elif safe_filename.lower().endswith('.css'): mimetype = 'text/css'
     elif safe_filename.lower().endswith('.js'): mimetype = 'application/javascript'
     elif safe_filename.lower().endswith(('.png', '.jpg', '.jpeg')): mimetype = 'image/png'
+    elif safe_filename.lower().endswith(('.mp4', '.m4v')): mimetype = 'video/mp4'
+    elif safe_filename.lower().endswith('.webm'): mimetype = 'video/webm'
+    elif safe_filename.lower().endswith('.ogg'): mimetype = 'video/ogg'
+    elif safe_filename.lower().endswith('.mov'): mimetype = 'video/quicktime'
+    elif safe_filename.lower().endswith('.mkv'): mimetype = 'video/x-matroska'
+    elif safe_filename.lower().endswith('.mp3'): mimetype = 'audio/mpeg'
+    elif safe_filename.lower().endswith('.wav'): mimetype = 'audio/wav'
+    elif safe_filename.lower().endswith('.pdf'): mimetype = 'application/pdf'
+    elif safe_filename.lower().endswith(('.zip', '.tar', '.gz', '.7z', '.rar')): mimetype = 'application/octet-stream'
+    elif safe_filename.lower().endswith(('.json', '.jsonl')): mimetype = 'application/json'
+    elif safe_filename.lower().endswith(('.csv', '.tsv')): mimetype = 'text/csv'
     
     subdir = os.path.dirname(filename)
     basename = os.path.basename(filename)

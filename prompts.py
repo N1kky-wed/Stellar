@@ -200,6 +200,7 @@ lab_execute(command, status, timeout): Persistent root bash Docker sandbox for c
 manage_files(action, status, timeout, file_name, target_env, source_env): Transfer/project files.
    - ENV RULES: Files auto-sync to `/lab`. Use `action='move'` ONLY to transfer to custom `repo_control` containers.
    - PRE-FLIGHT: `action='read'` to confirm filenames before analyzing data.
+   - ASSET PROJECTION: Use `action='project'` to export files for the user. For media files (images, videos, audio, PDFs), the system automatically provides a `/view/` link. Present this to the user as a "Preview" or "View" link to enable in-chat playback/rendering.
    - DOCUMENT ACCURACY MANDATE: Projected reports/PDFs MUST use only empirically derived figures extracted from the Lab. NEVER hallucinate or estimate numbers. Your text response MUST exactly match the document's figures.
    - PDFs: Write beautiful HTMLs for dashboards, use `weasyprint` in Lab, then `project`.
 forge_control(action, status, timeout, app_id, changes, prompt, project_name): Hosts apps at unique subdomains for python html css js only.

@@ -19,7 +19,7 @@ from flask import g, has_request_context
 
 def _get_effective_session():
     """Helper to get session data safely in both request and background thread contexts."""
-    from flask import session
+    from flask import session, has_app_context
     if has_request_context():
         return session
     
@@ -27,11 +27,15 @@ def _get_effective_session():
         def __init__(self):
             super().__init__()
             # Pre-populate from g which is set in background_thread_runner
-            self['user_id'] = getattr(g, 'user_id', None)
-            self['username'] = getattr(g, 'username', None)
-            self['current_chat_id'] = getattr(g, 'chat_id', None)
-            # Compatibility for session.sid and session.modified
-            self.sid = getattr(g, 'session_id', 'no_session')
+            # Only access g if we have an app context
+            if has_app_context():
+                self['user_id'] = getattr(g, 'user_id', None)
+                self['username'] = getattr(g, 'username', None)
+                self['current_chat_id'] = getattr(g, 'chat_id', None)
+                # Compatibility for session.sid and session.modified
+                self.sid = getattr(g, 'session_id', 'no_session')
+            else:
+                self.sid = 'no_session'
             self.modified = False
     return SafeSession()
 
@@ -257,10 +261,11 @@ def send_self_email(subject: str, body: str, status: str, attachment_path: str =
 
     # Handle background context where session is unavailable
     user_email = None
+    from flask import has_app_context
     if has_request_context():
         user_email = session.get('username')
         
-    if not user_email and hasattr(g, 'user_id'):
+    if not user_email and has_app_context() and hasattr(g, 'user_id'):
         try:
             from app import DATABASE_NAME
             conn = sqlite3.connect(DATABASE_NAME)
@@ -421,12 +426,19 @@ def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_
 
     elif action == "cancel":
         if not task_id: return "Error: 'task_id' is required to cancel a task."
-        db.execute('UPDATE scheduled_tasks SET is_active = 0 WHERE id = ? AND user_id = ?', (task_id, u_id))
+        cursor = db.execute('UPDATE scheduled_tasks SET is_active = 0 WHERE id = ? AND user_id = ? AND status != "running"', (task_id, u_id))
         db.commit()
+        if cursor.rowcount == 0:
+            # Check if it was because it's running
+            check = db.execute('SELECT status FROM scheduled_tasks WHERE id = ?', (task_id,)).fetchone()
+            if check and check[0] == 'running':
+                return f"Error: Task {task_id} is currently running and cannot be cancelled. Wait for it to complete or fail."
+            return f"Error: Task {task_id} not found or already inactive."
         return f"Success: Task {task_id} has been cancelled."
 
     elif action == "edit":
         if not task_id: return "Error: 'task_id' is required to edit a task."
+        # ... existing edit logic ...
         updates = []
         params = []
         if task_prompt:
@@ -447,8 +459,10 @@ def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_
         
         params.append(task_id)
         params.append(u_id)
-        db.execute(f'UPDATE scheduled_tasks SET {", ".join(updates)} WHERE id = ? AND user_id = ?', tuple(params))
+        cursor = db.execute(f'UPDATE scheduled_tasks SET {", ".join(updates)} WHERE id = ? AND user_id = ? AND status != "running"', tuple(params))
         db.commit()
+        if cursor.rowcount == 0:
+            return f"Error: Task {task_id} not found, already inactive, or currently running."
         return f"Success: Task {task_id} has been updated."
 
     # Default: Schedule
@@ -456,10 +470,11 @@ def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_
     if cursor.fetchone()[0] >= 10:
         return "Error: Maximum number of active scheduled tasks (10) reached. Please cancel some tasks before scheduling more."
 
-    db.execute('INSERT INTO scheduled_tasks (user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes, metadata) VALUES (?,?,?,?,?,?,?)',
+    cursor = db.execute('INSERT INTO scheduled_tasks (user_id, chat_id, task_prompt, model_id, execute_at, recurring_minutes, metadata) VALUES (?,?,?,?,?,?,?)',
                (u_id, c_id, task_prompt, current_model, execute_at, recurring_minutes, metadata))
+    new_id = cursor.lastrowid
     db.commit()
-    return f"Task scheduled! {current_model} is locked for this persistent automation."
+    return f"Task scheduled (ID: {new_id})! {current_model} is locked for this persistent automation."
 
 def generate_image(model: str, prompt: str, status: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None) -> str:
     """Generates an image using Gemini's Imagen model.
@@ -2035,7 +2050,7 @@ def manage_files(action: str, status: str, file_name: str = None, target_env: st
             with open(os.path.join(output_dir, unique_name), "wb") as f:
                 f.write(file_bytes)
                 
-            return f"Projected successfully: [Download {final_file_name}](/download/{unique_name})"
+            return f"Projected successfully: [View {final_file_name}](/view/{unique_name})"
             
         except Exception as e:
             return f"Projection failed: {str(e)}"

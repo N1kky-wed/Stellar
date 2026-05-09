@@ -5300,7 +5300,7 @@
             <button id="live-preview-close-btn" title="Close Preview">×</button>
         </div>
         <div id="live-preview-content">
-            <iframe id="live-preview-iframe" sandbox="allow-scripts allow-forms"></iframe>
+            <iframe id="live-preview-iframe" sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-presentation" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share; camera; microphone"></iframe>
             <div id="live-preview-fallback" style="display: none;">
                 <p>This site does not allow being displayed here due to its security policy.</p>
                 <a href="#" target="_blank" rel="noopener noreferrer">Open in New Tab</a>
@@ -6417,6 +6417,40 @@
         renderer.link = (token) => {
             // Support both old (href, title, text) and new ({href, title, text}) Marked.js APIs
             const isObj = typeof token === 'object' && token !== null;
+            let href = isObj ? token.href : token; // token is href in old API if called with apply
+            // If old API, arguments might be used, but let's try to be safe
+            if (!isObj) {
+                href = arguments[0];
+            }
+
+            const videoExts = ['.mp4', '.webm', '.ogg', '.mov', '.mkv', '.m4v'];
+            const isVideo = videoExts.some(ext => href.toLowerCase().split('?')[0].endsWith(ext));
+            const isAudio = ['.mp3', '.wav', '.ogg'].some(ext => href.toLowerCase().split('?')[0].endsWith(ext));
+
+            if (isVideo) {
+                return `<div class="video-preview-wrapper" style="margin: 10px 0;">
+                            <video controls playsinline style="max-width: 100%; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+                                <source src="${href}">
+                                Your browser does not support the video tag.
+                            </video>
+                            <div style="margin-top: 5px;">
+                                <a href="${href}" target="_blank" rel="noopener noreferrer" style="font-size: 0.85em; opacity: 0.8;">[Open Video in New Tab]</a>
+                            </div>
+                        </div>`;
+            }
+
+            if (isAudio) {
+                return `<div class="audio-preview-wrapper" style="margin: 10px 0;">
+                            <audio controls style="width: 100%;">
+                                <source src="${href}">
+                                Your browser does not support the audio element.
+                            </audio>
+                            <div style="margin-top: 5px;">
+                                <a href="${href}" target="_blank" rel="noopener noreferrer" style="font-size: 0.85em; opacity: 0.8;">[Open Audio in New Tab]</a>
+                            </div>
+                        </div>`;
+            }
+
             let html = isObj ? originalLink(token) : originalLink.apply(renderer, arguments);
             return html.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
         };
@@ -6683,7 +6717,8 @@
                     previewContainer.className = 'code-preview-container';
                     const iframe = document.createElement('iframe');
                     iframe.className = 'code-preview-iframe';
-                    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+                    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups');
+                    iframe.setAttribute('allow', 'autoplay; clipboard-write; encrypted-media; picture-in-picture');
                     try {
                         const noScrollbarStyles = '<style>::-webkit-scrollbar { width: 0px; background: transparent; } html { scrollbar-width: none; }</style>';
                         const modifiedCode = rawCode.includes('<head>')
