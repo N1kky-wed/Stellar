@@ -19,7 +19,7 @@ if os.path.exists(keys_env_path):
 from agent_tools import send_self_email
 from telegram_bot import TelegramBot
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "stellar_local.db")
@@ -82,6 +82,10 @@ def main():
                     break
 
                 issue_id = issue['id']
+                
+                conn.execute("UPDATE agent_feedback SET status = 'in_progress' WHERE id = ?", (issue_id,))
+                conn.commit()
+
                 target_user_id = issue['user_id']
                 topic = issue['topic']
                 desc = issue['issue_description']
@@ -91,7 +95,7 @@ def main():
                 from flask import g
                 g.user_id = target_user_id
 
-                bot.send_message(f"🚨 Issue Reported: {topic}\nAutonomous Bug Fixer Agent is investigating...")
+                bot.send_message(f"🚨 Issue Reported: {topic}\nDescription: {desc}\nContext: {context}\n\nAutonomous Bug Fixer Agent is investigating...")
 
                 prompt = f"""You are an autonomous resolution agent fixing issue #{issue_id}.
 
@@ -157,6 +161,7 @@ Make sure your response ends with one of these statuses."""
                         output += "\nSTATUS: ESCALATED"
                         break
                     except Exception as e:
+                        logger.exception("Error caught: %s", e)
                         output = f"Error running Bug Fixer Agent: {str(e)}\nSTATUS: ESCALATED"
                         break
 

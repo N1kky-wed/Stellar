@@ -36,8 +36,7 @@ from twilio.base.exceptions import TwilioRestException
 import redis
 from prompts import (
     rtp, crtp, get_refinement_prompt, get_research_analysis_prompt,
-    get_final_expansion_prompt, get_cosmos_report_prompt,
-    get_forge_initial_build_prompt, get_forge_iteration_prompt
+    get_final_expansion_prompt
 )
 
 redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
@@ -54,6 +53,7 @@ try:
         logging.info("Creating 'stellar_isolated' network with ICC disabled.")
         client.networks.create("stellar_isolated", driver="bridge", options={"com.docker.network.bridge.enable_icc": "false"})
 except Exception as e:
+    logger.exception("Error caught: %s", e)
     logging.error(f"Could not connect to Docker daemon on startup. Please ensure Docker is running. Code execution will fail. Error: {e}")
 
 from functools import wraps
@@ -107,7 +107,7 @@ def send_login_notification(username, display_name=None, is_waitlist=False):
 naw = datetime.datetime.now()
 
 # --- LOGGING AND ENV LOADING ---
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -379,6 +379,7 @@ def initialize_database():
                 cursor.execute("ALTER TABLE messages ADD COLUMN visualization_html TEXT")
                 print("Added 'visualization_html' column to 'messages' table.")
             except Exception as e:
+                logger.exception("Error caught: %s", e)
                 print(f"Error adding 'visualization_html' column: {e}")
 
         # Migration: Add hidden column if it doesn't exist
@@ -387,6 +388,7 @@ def initialize_database():
                 cursor.execute("ALTER TABLE messages ADD COLUMN hidden BOOLEAN DEFAULT 0")
                 print("Added 'hidden' column to 'messages' table.")
             except Exception as e:
+                logger.exception("Error caught: %s", e)
                 print(f"Error adding 'hidden' column: {e}")
 
         # Migration: Add attached_files column for Native Gemini File URIs
@@ -395,6 +397,7 @@ def initialize_database():
                 cursor.execute("ALTER TABLE messages ADD COLUMN attached_files TEXT")
                 print("Added 'attached_files' column to 'messages' table.")
             except Exception as e:
+                logger.exception("Error caught: %s", e)
                 print(f"Error adding 'attached_files' column: {e}")
 
         # Add user_logs_prefs table
@@ -415,6 +418,7 @@ def initialize_database():
                 cursor.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
                 print("Added 'display_name' column to 'users' table.")
             except Exception as e:
+                logger.exception("Error caught: %s", e)
                 print(f"Error adding 'display_name' column: {e}")
 
         if 'last_active' not in users_columns:
@@ -422,6 +426,7 @@ def initialize_database():
                 cursor.execute("ALTER TABLE users ADD COLUMN last_active DATETIME")
                 print("Added 'last_active' column to 'users' table.")
             except Exception as e:
+                logger.exception("Error caught: %s", e)
                 print(f"Error adding 'last_active' column: {e}")
 
         cursor.execute("PRAGMA table_info(chats)")
@@ -431,6 +436,7 @@ def initialize_database():
                 cursor.execute("ALTER TABLE chats ADD COLUMN token_count INTEGER DEFAULT 0")
                 print("Added 'token_count' column to 'chats' table.")
             except Exception as e:
+                logger.exception("Error caught: %s", e)
                 print(f"Error adding 'token_count' column: {e}")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_api_keys'")
@@ -444,10 +450,10 @@ def initialize_database():
                 UNIQUE(user_id, key_name) ON CONFLICT REPLACE
             )''')
 
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='forge_history'")
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='repo_history'")
         if cursor.fetchone() is None:
             cursor.execute('''
-                CREATE TABLE forge_history (
+                CREATE TABLE repo_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     project_name TEXT DEFAULT 'Untitled Project',
@@ -464,14 +470,15 @@ def initialize_database():
                 )
             ''')
             
-        cursor.execute("PRAGMA table_info(forge_history)")
+        cursor.execute("PRAGMA table_info(repo_history)")
         columns = [info[1] for info in cursor.fetchall()]
         if 'subdomain' not in columns:
             try:
-                cursor.execute("ALTER TABLE forge_history ADD COLUMN subdomain TEXT")
-                cursor.execute("CREATE INDEX idx_subdomain ON forge_history(subdomain)")
-                print("Added 'subdomain' column to 'forge_history' table.")
+                cursor.execute("ALTER TABLE repo_history ADD COLUMN subdomain TEXT")
+                cursor.execute("CREATE INDEX idx_subdomain ON repo_history(subdomain)")
+                print("Added 'subdomain' column to 'repo_history' table.")
             except Exception as e:
+                logger.exception("Error caught: %s", e)
                 print(f"Error adding 'subdomain' column: {e}")
 
         cursor.execute('''CREATE TABLE IF NOT EXISTS tool_calls (
@@ -492,6 +499,7 @@ def initialize_database():
                 cursor.execute("ALTER TABLE chats ADD COLUMN is_temp BOOLEAN DEFAULT 0")
                 print("Added 'is_temp' column to 'chats' table.")
             except Exception as e:
+                logger.exception("Error caught: %s", e)
                 print(f"Error adding 'is_temp' column: {e}")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='scheduled_tasks'")
@@ -519,6 +527,7 @@ def initialize_database():
                     cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN metadata TEXT")
                     print("Added 'metadata' column to 'scheduled_tasks' table.")
                 except Exception as e:
+                    logger.exception("Error caught: %s", e)
                     print(f"Error adding 'metadata' column to scheduled_tasks: {e}")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_feedback'")
@@ -580,7 +589,7 @@ def get_current_chat_id(user_id):
         new_chat_id = cursor.lastrowid
         if has_request_context():
             session['current_chat_id'] = new_chat_id
-        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, full-stack application development via Stellar Forge, and data analysis reports using Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
+        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with full-stack application development via Repo Control. My capabilities include real-time web search and code execution. How may I assist you today?"
         insert_message(new_chat_id, "stellar", welcome_message)
 
     if has_request_context():
@@ -798,6 +807,7 @@ def generate_chat_name(chat_id, first_message_content):
                     logger.info(f"Chat name updated in DB for chat_id {chat_id} to '{generated_name}'")
                     return # Success
                 except Exception as e:
+                    logger.exception("Error caught: %s", e)
                     logger.warning(f"API error during chat name generation: {e}. Trying next key...")
                     continue
             
@@ -805,42 +815,6 @@ def generate_chat_name(chat_id, first_message_content):
             
         except Exception as e:
             logger.error(f"Error in generate_chat_name (chat {chat_id}): {e}")
-
-def generate_forge_title(user_prompt):
-    try:
-        if not user_prompt:
-            return "Untitled Project"
-            
-        prompt = f"Given the following user prompt for creating a web application, generate a very short, catchy, and descriptive title (max 5 words) for the project. Respond only with the title. Do not use quotes.\n\nUser Prompt: {user_prompt}"
-        model_name = "gemini-2.5-flash-lite"
-        
-        raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
-        keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
-
-        for current_key in keys_to_try:
-            try:
-                client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
-                chat = client.chats.create(model=model_name, config={'tools': []})
-                r = chat.send_message(prompt)
-                
-                generated_name = "Forge Project"
-                if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
-                    response_text = r.candidates[0].content.parts[0].text.strip()
-                    generated_name = response_text.replace('"', '').replace("'", '').strip()
-                    if len(generated_name.split()) > 6:
-                        generated_name = ' '.join(generated_name.split()[:6])
-                
-                return generated_name
-            except Exception as e:
-                logger.warning(f"API error during forge title generation: {e}. Trying next key...")
-                continue
-        
-        logger.error("All keys failed for forge title generation.")
-        return "Forge Project"
-    except Exception as e:
-        logger.error(f"Error generating forge title: {e}")
-        return "Forge Project"
-
 
 def generate_unique_subdomain(project_name):
     # Convert "My Cool App!" to "my-cool-app"
@@ -852,7 +826,7 @@ def generate_unique_subdomain(project_name):
     slug = base_slug
     counter = 1
     while True:
-        cursor = db.execute("SELECT 1 FROM forge_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (slug,))
+        cursor = db.execute("SELECT 1 FROM repo_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (slug,))
         if not cursor.fetchone():
             return slug
         slug = f"{base_slug}-{counter}"
@@ -971,6 +945,7 @@ def change_user_password(user_id, current_password, new_password):
     except sqlite3.Error as e:
         return False, f"Database error: {str(e)}"
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         return False, f"Server error: {str(e)}"
 
 
@@ -1094,6 +1069,7 @@ def tavily_search(query, search_depth="advanced", topic="general", time_range=No
         )
         return response
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         return {"error": f"Tavily search failed: {str(e)}"}
 
 def scrape_url(url: str) -> str:
@@ -1104,6 +1080,7 @@ def scrape_url(url: str) -> str:
         print(apron)
         return apron
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         return f"Error scraping {url}: {str(e)}"
 
 stop_sequence="8919018818"
@@ -1139,6 +1116,7 @@ def classify_real_time_needed(query: str, key: str = None) -> str:
         client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
         chat = client.chats.create(model=model_name, config={'tools': []})
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         return "no"
     prompt = crtp(query)
     try:
@@ -1154,6 +1132,7 @@ def classify_real_time_needed(query: str, key: str = None) -> str:
         else:
             return "no"
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         return "no"
 def is_output_cut_off(text: str, key: str) -> bool:
     if not key:
@@ -1183,6 +1162,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
         else:
             return False
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         return False
 
 
@@ -1286,6 +1266,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     r = chat.send_message(message_to_send)
                     consecutive_network_errors = 0 # Reset on success
                 except Exception as loop_e:
+                    logger.exception("Error caught: %s", loop_e)
                     error_string = str(loop_e).lower()
                     is_quota = any(x in error_string for x in ['429', '403', 'permission_denied', 'resource_exhausted', 'quota', 'rate limit'])
                     is_network = any(x in error_string for x in ['500', '503', 'connection', 'timeout', 'deadline'])
@@ -1429,8 +1410,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             yield {'status': 'Analyzing YouTube video content...'}
                         elif func_name == "manage_files":
                             yield {'status': 'Managing files...'}
-                        elif func_name == "forge_control":
-                            yield {'status': 'Controlling project environment...'}
                         elif func_name == "lab_execute":
                             yield {'status': 'Using Lab...'}
                         elif func_name == "read_tool_output":
@@ -1487,6 +1466,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             # and rely on the model to include the information naturally in its final text turn.
                             # This prevents the "double output" issue where the system yielded it and then the model repeated it.
                         except Exception as e:
+                            logger.exception("Error caught: %s", e)
                             res = f"Error: {str(e)}"
 
                         # Create response part
@@ -1534,7 +1514,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     if isinstance(tool['result'], str) and '[TOOL_REQUEST]' in tool['result']:
                         continue # Hide from UI! But it's already in function_responses for the Main Agent.
                     # ---------------------------------------
-                elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'forge_control']:
+                elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image']:
                     continue
 
                 if not isinstance(tool['result'], str): continue
@@ -1680,7 +1660,8 @@ def create_output_file(query_or_base_name: str, content: str, extension: str = "
                 else:
                     return None
             except Exception as e:
-                 pass
+                logger.exception("Error caught: %s", e)
+                pass
             if os.path.exists(full_path):
                 try:
                     os.remove(full_path)
@@ -1688,20 +1669,21 @@ def create_output_file(query_or_base_name: str, content: str, extension: str = "
                     pass
             return None
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         return None
     return None
 
 GRACE_PERIOD_SECONDS = 30
 
-def _redis_forge_key(pid): 
-    return f"forge:process:{pid}"
+def _redis_repo_key(pid): 
+    return f"repo:process:{pid}"
 
 def _redis_runcode_key(pid):
     return f"runcode:process:{pid}"
 
-def _get_process_key_prefix(process_id, app_type='forge'):
-    if app_type == 'forge':
-        return _redis_forge_key(process_id)
+def _get_process_key_prefix(process_id, app_type='repo'):
+    if app_type == 'repo':
+        return _redis_repo_key(process_id)
     return _redis_runcode_key(process_id)
 
 
@@ -1729,282 +1711,15 @@ def _extract_json_from_response(response_text):
         
     return None
 
-@app.route('/codelab/forge/start', methods=['POST'])
 @require_approval
-def forge_start():
-    if not client:
-        return jsonify({'error': 'Docker client not available. Is Docker running?'}), 503
-
-    data = request.get_json(silent=True) or {}
-    user_prompt = data.get('prompt')
-    pending_files = data.get('pending_files', [])
-    disabled_tools = data.get('disabled_tools', [])
-    if not user_prompt:
-        return jsonify({'error': 'Initial prompt is required.'}), 400
-
-    old_process_id = session.get('forge_project', {}).get('process_id')
-    if 'forge_project' in session:
-        stop_and_cleanup_app_by_process_id(old_process_id, app_type='forge')
-
-    try:
-        # Upload files natively
-        gemini_files_data = []
-        if pending_files:
-            context_id = get_file_context_id()
-            if context_id:
-                gemini_files_data = upload_files_to_gemini(context_id, pending_files)
-        
-        # Construct multimodal prompt array
-        multimodal_prompt =[]
-        for gf in gemini_files_data:
-            if gf.get('uri'):
-                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
-            elif gf.get('fallback_to_lab'):
-                fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
-                multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
-            
-        text_prompt = get_forge_initial_build_prompt(user_prompt)
-        
-        final_prompt = multimodal_prompt.copy()
-        final_prompt.append(types.Part.from_text(text=text_prompt))
-        
-        model_id = "gemini-3.1-pro-preview"
-        api_key = PRIMARY_API_KEY
-        if not api_key:
-            raise ValueError("Primary API key for Forge is not configured.")
-
-        chat_id = session.get('current_chat_id')
-        generator = gemini_generate(prompt=final_prompt, model_id=model_id, key=api_key, chat_id=chat_id, disabled_tools=disabled_tools, gemini_files_data=gemini_files_data)
-        
-        # --- FIX: Consume the generator fully to allow retries/status messages to run ---
-        raw_response = ""
-        for item in generator:
-            if 'result' in item:
-                raw_response += item['result']
-        
-        if not raw_response or raw_response.startswith(ERROR_CODE):
-            error_detail = raw_response if raw_response else "Unknown failure: Generator finished without result."
-            raise ValueError(f"AI failed to generate initial code. Details: {error_detail}")
-        # --------------------------------------------------------------------------------
-
-        clean_json_string = _extract_json_from_response(raw_response)
-        if not clean_json_string:
-            raise ValueError("AI response did not contain a valid JSON object.")
-
-        project_files = json.loads(clean_json_string)
-        if 'index.html' not in project_files or 'app.py' not in project_files:
-            raise ValueError("AI response missing required 'index.html' and 'app.py' keys.")
-
-        process_id = old_process_id if old_process_id else str(uuid.uuid4())
-        
-        project_title = generate_forge_title(user_prompt)
-        subdomain = generate_unique_subdomain(project_title)
-
-        session['forge_project'] = {
-            'files': project_files,
-            'container_id': None,
-            'process_id': process_id,
-            'project_name': project_title,
-            'subdomain': subdomain,
-            'disabled_tools': disabled_tools
-        }
-        session.modified = True
-
-        # Notify via Telegram
-        try:
-            db = get_db()
-            cursor = db.execute('SELECT username FROM users WHERE id = ?', (session['user_id'],))
-            user_row = cursor.fetchone()
-            if user_row:
-                current_username = user_row['username']
-                telegram_bot.send_message(f"🛠️ {current_username} is using forge session {project_title}")
-        except Exception as e:
-            logger.error(f"Failed to send Forge Telegram notification: {e}")
-
-        # Record in history
-        try:
-            db = get_db()
-            db.execute('''
-                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(project_files), subdomain))
-            db.commit()
-        except Exception as e:
-            logger.error(f"Failed to record forge history start: {e}")
-
-        try:
-            redis_client.hset(_redis_forge_key(process_id), mapping={
-                "status": "starting",
-                "files": json.dumps(project_files)
-            })
-        except Exception:
-            logger.exception("Failed to persist initial forge state for %s", process_id)
-
-        app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, project_files, process_id, None, 'forge', subdomain))
-        thread.daemon = True
-        thread.start()
-
-        return jsonify({'success': True, 'process_id': process_id})
-
-    except Exception as e:
-        logger.error(f"Error in forge_start: {e}", exc_info=True)
-        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
-
-
-@app.route('/codelab/forge/iterate', methods=['POST'])
 @require_approval
-def forge_iterate():
-    if 'forge_project' not in session:
-        return jsonify({'error': 'No active session.'}), 400
-    if not client:
-        return jsonify({'error': 'Docker client not available. Is Docker running?'}), 503
-
-    data = request.get_json(silent=True) or {}
-    user_prompt = data.get('prompt')
-    pending_files = data.get('pending_files', [])
-    
-    disabled_tools = data.get('disabled_tools')
-    if disabled_tools is None:
-        disabled_tools = session['forge_project'].get('disabled_tools', [])
-    else:
-        session['forge_project']['disabled_tools'] = disabled_tools
-        session.modified = True
-
-    if not user_prompt:
-        return jsonify({'error': 'Follow-up prompt is required.'}), 400
-
-    old_process_id = session['forge_project'].get('process_id')
-    old_container_id = None
-    
-    if old_process_id:
-        redis_key = _get_process_key_prefix(old_process_id, 'forge')
-        try:
-            cached_data = redis_client.hgetall(redis_key)
-            if cached_data:
-                old_container_id = cached_data.get('container_id')
-        except Exception:
-            pass
-            
-        with active_apps_lock:
-            active_apps.pop(old_process_id, None)
-
-    try:
-        # Upload files natively
-        gemini_files_data = []
-        if pending_files:
-            context_id = get_file_context_id()
-            if context_id:
-                gemini_files_data = upload_files_to_gemini(context_id, pending_files)
-        
-        # Construct multimodal prompt array
-        multimodal_prompt =[]
-        for gf in gemini_files_data:
-            if gf.get('uri'):
-                multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
-            elif gf.get('fallback_to_lab'):
-                fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
-                multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
-            
-        current_files = session['forge_project']['files']
-        text_prompt = get_forge_iteration_prompt(user_prompt, json.dumps(current_files))
-        
-        final_prompt = multimodal_prompt.copy()
-        final_prompt.append(types.Part.from_text(text=text_prompt))
-        
-        model_id = "gemini-3.1-pro-preview"
-        api_key = PRIMARY_API_KEY
-        if not api_key:
-            raise ValueError("Primary API key for Forge is not configured.")
-
-        chat_id = session.get('current_chat_id')
-        generator = gemini_generate(prompt=final_prompt, model_id=model_id, key=api_key, chat_id=chat_id, disabled_tools=disabled_tools, gemini_files_data=gemini_files_data)
-        
-        # --- FIX: Consume the generator fully to allow retries/status messages to run ---
-        raw_response = ""
-        for item in generator:
-            if 'result' in item:
-                raw_response += item['result']
-        
-        if not raw_response or raw_response.startswith(ERROR_CODE):
-            error_detail = raw_response if raw_response else "Unknown failure: Generator finished without result."
-            raise ValueError(f"AI failed to generate iteration code. Details: {error_detail}")
-        # --------------------------------------------------------------------------------
-
-        clean_json_string = _extract_json_from_response(raw_response)
-        if not clean_json_string:
-            raise ValueError("AI response did not contain a valid JSON object for iteration.")
-
-        updated_files_partial = json.loads(clean_json_string)
-        current_files.update(updated_files_partial)
-
-        process_id = old_process_id if old_process_id else str(uuid.uuid4())
-        
-        # Preserve existing project title or generate one if missing
-        project_title = session['forge_project'].get('project_name')
-        if not project_title:
-            project_title = generate_forge_title(user_prompt)
-        
-        # Get existing subdomain or generate a new one if it somehow got lost
-        subdomain = session['forge_project'].get('subdomain')
-        if not subdomain:
-            subdomain = generate_unique_subdomain(project_title)
-
-        session['forge_project']['files'] = current_files
-        session['forge_project']['process_id'] = process_id
-        session['forge_project']['project_name'] = project_title
-        session['forge_project']['subdomain'] = subdomain
-        session.modified = True
-
-        # Notify via Telegram
-        try:
-            db = get_db()
-            cursor = db.execute('SELECT username FROM users WHERE id = ?', (session['user_id'],))
-            user_row = cursor.fetchone()
-            if user_row:
-                current_username = user_row['username']
-                telegram_bot.send_message(f"🛠️ {current_username} is iterating on forge session {project_title}")
-        except Exception as e:
-            logger.error(f"Failed to send Forge Telegram notification: {e}")
-
-        # Record in history
-        try:
-            db = get_db()
-            db.execute('''
-                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(current_files), subdomain))
-            db.commit()
-        except Exception as e:
-            logger.error(f"Failed to record forge history iteration: {e}")
-
-        try:
-            redis_client.hset(_redis_forge_key(process_id), mapping={
-                "status": "starting",
-                "files": json.dumps(current_files)
-            })
-        except Exception:
-            logger.exception("Failed to persist iteration forge state for %s", process_id)
-
-        app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, current_files, process_id, old_container_id, 'forge', subdomain))
-        thread.daemon = True
-        thread.start()
-
-        return jsonify({'success': True, 'process_id': process_id})
-
-    except Exception as e:
-        logger.error(f"Error in forge_iterate: {e}", exc_info=True)
-        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
-
-
-def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='forge', subdomain=None):
+def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='repo', subdomain=None):
     logs_buffer = []
 
     user_id = None
     with app_obj.app_context():
         db = get_db()
-        cursor = db.execute('SELECT user_id FROM forge_history WHERE process_id = ?', (process_id,))
+        cursor = db.execute('SELECT user_id FROM repo_history WHERE process_id = ?', (process_id,))
         row = cursor.fetchone()
         if row: user_id = row['user_id']
     
@@ -2020,7 +1735,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             logger.exception("Failed to publish event to redis for %s", process_id)
 
     def update_history(status=None, container_id=None, url=None, final_logs=None):
-        if app_type != 'forge': return
+        if app_type != 'repo': return
         try:
             with app_obj.app_context():
                 db = get_db()
@@ -2042,11 +1757,11 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 if updates:
                     updates.append("last_updated = CURRENT_TIMESTAMP")
                     params.append(process_id)
-                    sql = f"UPDATE forge_history SET {', '.join(updates)} WHERE process_id = ?"
+                    sql = f"UPDATE repo_history SET {', '.join(updates)} WHERE process_id = ?"
                     db.execute(sql, tuple(params))
                     db.commit()
         except Exception as e:
-            logger.error(f"Failed to update forge history for {process_id}: {e}")
+            logger.error(f"Failed to update repo history for {process_id}: {e}")
 
     container = None
     temp_dir_path = None
@@ -2070,6 +1785,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     if res.exit_code == 0:
                         old_reqs = res.output.decode('utf-8')
                 except Exception:
+                    logger.exception("Error caught.")
                     pass
                 
                 new_reqs = project_files.get('requirements.txt', '')
@@ -2092,6 +1808,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                             if res.exit_code != 0 or res.output.decode().strip() == '000':
                                 break
                         except Exception:
+                            logger.exception("Error caught.")
                             break
                     
                     # Find mount path to update files
@@ -2106,6 +1823,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             except docker.errors.NotFound:
                 pass
             except Exception as e:
+                logger.exception("Error caught: %s", e)
                 _put_event({'type': 'log', 'content': f'Note: Could not inspect/remove previous instance: {e}'})
 
         if not reuse_container:
@@ -2134,9 +1852,9 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 image='stellar-python-sandbox:3.12',
                 command='sleep infinity',
                 working_dir='/app',
-                volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
+                volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}, '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
                 ports={'5000/tcp': ('0.0.0.0', 0)},
-                name=f"stellar-{app_type}-{run_id}",
+                name=f"stellar-{app_type}-{process_id}",
                 remove=False,
                 detach=True,
                 init=True,
@@ -2147,7 +1865,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     "stellar_type": app_type,
                     "stellar_process_id": process_id,
                     "created_at_ts": str(time.time()),
-                    "forge_app_id": process_id
+                    "repo_app_id": process_id
                 }
             )
 
@@ -2236,6 +1954,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             try:
                 redis_client.hset(redis_key, mapping={"host_port": str(host_port)})
             except Exception:
+                logger.exception("Error caught.")
                 pass
 
             _put_event({'type': 'log', 'content': f'Container is running on port {host_port}. Verifying server readiness...'})
@@ -2260,6 +1979,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                         except ValueError:
                             pass
                 except Exception as exec_err:
+                    logger.exception("Error caught: %s", exec_err)
                     logger.warning(f"Health check exec error for {container.short_id}: {exec_err}")
                     break
             
@@ -2292,6 +2012,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                      else:
                          _put_event({'type': 'error', 'content': 'Could not read app.log inside container.'})
                  except Exception as e:
+                     logger.exception("Error caught: %s", e)
                      _put_event({'type': 'error', 'content': f'Error retrieving app.log: {e}'})
 
                  update_history(status='failed', final_logs="\n".join(logs_buffer))
@@ -2307,6 +2028,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 crashed_logs = container.logs().decode('utf-8', 'replace') if container else "No container"
                 _put_event({'type': 'log', 'content': f'--- CRASH LOGS ---\n{crashed_logs}\n--- END LOGS ---'})
             except Exception as log_err:
+                logger.exception("Error caught: %s", log_err)
                 _put_event({'type': 'log', 'content': f'Could not retrieve crash logs: {log_err}'})
 
         if container:
@@ -2381,74 +2103,9 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         cleanup_thread = threading.Thread(target=_delayed_cleanup, args=(process_id, redis_key,), daemon=True)
         cleanup_thread.start()
 
-@app.route('/codelab/forge/stream')
 @require_approval
-def forge_stream():
-    process_id = request.args.get('process_id')
-    if not process_id:
-        return Response("process_id required", status=400)
-
-    db = get_db()
-    cursor = db.execute('SELECT 1 FROM forge_history WHERE process_id = ? AND user_id = ?', (process_id, session['user_id']))
-    if not cursor.fetchone() and process_id != session.get('forge_project', {}).get('process_id'):
-        return Response("unauthorized", status=403)
-
-    def generate():
-        pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
-        pubsub.subscribe(process_id)
-        yield f"data: {json.dumps({'type': 'log', 'content': 'Build stream connected...'})}\n\n"
-        try:
-            for message in pubsub.listen():
-                if not message:
-                    continue
-                data = message.get('data')
-                if isinstance(data, (bytes, bytearray)):
-                    try:
-                        data_text = data.decode('utf-8')
-                    except Exception:
-                        data_text = str(data)
-                else:
-                    data_text = str(data)
-                if data_text == '__STREAM_END__':
-                    break
-                yield f"data: {data_text}\n\n"
-        finally:
-            try:
-                pubsub.unsubscribe(process_id)
-                pubsub.close()
-            except Exception:
-                pass
-
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
-
-
-@app.route('/codelab/forge/stop', methods=['POST'])
 @require_approval
-def forge_stop():
-    data = request.get_json(silent=True) or {}
-    process_id = data.get('process_id') or session.get('forge_project', {}).get('process_id')
-    if not process_id:
-        return jsonify({'error': 'process_id required'}), 400
-
-    db = get_db()
-    cursor = db.execute('SELECT 1 FROM forge_history WHERE process_id = ? AND user_id = ?', (process_id, session['user_id']))
-    if not cursor.fetchone() and process_id != session.get('forge_project', {}).get('process_id'):
-        return jsonify({'error': 'Forbidden. You do not own this process.'}), 403
-
-    try:
-        stop_and_cleanup_app_by_process_id(process_id, app_type='forge')
-    except Exception as e:
-        logger.exception("Error stopping forge by process_id %s", process_id)
-        return jsonify({'error': f'Failed to stop process: {e}'}), 500
-
-    if 'forge_project' in session and session['forge_project'].get('process_id') == process_id:
-        session.pop('forge_project', None)
-        session.modified = True
-
-    return jsonify({'success': True, 'message': 'Forge session stopped.'})
-
-
-def stop_and_cleanup_app_by_process_id(process_id, app_type='forge'):
+def stop_and_cleanup_app_by_process_id(process_id, app_type='repo'):
     if not process_id:
         return
 
@@ -2475,6 +2132,7 @@ def stop_and_cleanup_app_by_process_id(process_id, app_type='forge'):
         except docker.errors.NotFound:
             pass
         except Exception as e:
+            logger.exception("Error caught: %s", e)
             logger.warning(f"Warning during cleanup for container {container_id}: {e}")
 
     with active_apps_lock:
@@ -2487,7 +2145,7 @@ def stop_and_cleanup_app_by_process_id(process_id, app_type='forge'):
     # Update database status to stopped
     try:
         db = get_db()
-        db.execute("UPDATE forge_history SET status = 'stopped' WHERE process_id = ?", (process_id,))
+        db.execute("UPDATE repo_history SET status = 'stopped' WHERE process_id = ?", (process_id,))
         db.commit()
     except Exception as e:
         logger.error(f"Failed to update database status to stopped for {process_id}: {e}")
@@ -2938,7 +2596,7 @@ def search_stream():
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=403)
 
     user_query_from_frontend = query_data.get('query', '')
-    user_query = query_data.get('query', '') # For search/cosmos
+    user_query = query_data.get('query', '') # For Repo Control
     model_id = query_data.get('model_id')
     mode = query_data.get('mode')
     pending_files = query_data.get('pending_files',[])
@@ -3238,6 +2896,7 @@ def search_stream():
                              )
                              html_filepath_rel = html_output_path
                          except Exception as pandoc_e:
+                             logger.exception("Error caught: %s", pandoc_e)
                              logger.warning(f"Pandoc conversion failed: {pandoc_e}", exc_info=True)
                              yield f"data: {json.dumps({'status': 'Warning: Failed to convert paper to HTML. Providing Markdown link.', 'error': False, 'phase': 'formatting'})}\n\n"
                              html_filepath_rel = html_filepath_rel.replace(".html", ".md")
@@ -3285,306 +2944,7 @@ def search_stream():
 
     return Response(stream_with_context(stream_consumer(query_id)), mimetype='text/event-stream')
 
-@app.route('/cosmos_stream', methods=['GET'])
 @require_approval
-def cosmos_stream():
-    query_id = request.args.get('query_id')
-
-    if not query_id:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Error: Missing query identifier.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=400)
-
-    import json
-    query_data_str = redis_client.get(f"query_args:{query_id}")
-    if not query_data_str:
-        def error_stream(): yield f"data: {json.dumps({'status': 'Error: Query session expired or invalid.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=404)
-
-    query_data = json.loads(query_data_str)
-    
-    # Ownership Check
-    if str(query_data.get('user_id')) != str(session.get('user_id')):
-        def error_stream(): yield f"data: {json.dumps({'status': 'Unauthorized: Query ownership mismatch.', 'error': True})}\n\n"
-        return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=403)
-
-    user_query_from_frontend = query_data.get('query', '')
-    user_query = query_data.get('query', '') # For search/cosmos
-    model_id = query_data.get('model_id')
-    mode = query_data.get('mode')
-    pending_files = query_data.get('pending_files',[])
-    chat_id = query_data.get('chat_id')
-    hidden = query_data.get('hidden', False)
-    disabled_tools = query_data.get('disabled_tools',[])
-    session_id = query_data.get('session_id')
-    user_id = query_data.get('user_id')
-    username = query_data.get('username')
-    client_id = query_data.get('client_id')
-
-    is_running = redis_client.exists(f"stream_started:{query_id}")
-
-    if not is_running:
-        redis_client.setex(f"stream_started:{query_id}", 3600 * 24, "1")
-
-        def generator_task():
-            from flask import g
-            g.user_id = user_id
-            g.chat_id = chat_id
-            g.username = username
-            g.session_id = session_id
-
-            max_model_attempts = len(BACKUP_API_KEYS)
-            fallback_model="gemini-2.5-flash-lite"
-
-            gemini_files_data =[]
-            if pending_files:
-                yield f"data: {json.dumps({'status': f'Uploading {len(pending_files)} file(s) to Native Context...', 'phase': 'upload'})}\n\n"
-                context_id = str(chat_id) if chat_id else session_id
-                gemini_files_data = upload_files_to_gemini(context_id, pending_files)
-                yield f"data: {json.dumps({'status': 'Files synced natively.', 'phase': 'context_gathering'})}\n\n"
-
-            user_message_id = insert_message(chat_id, "user", user_query, attached_files=gemini_files_data, user_query_for_name=user_query, client_id=client_id)
-            web_search_context = ""
-            final_report_html = None
-            html_filepath_rel = None
-            cosmos_message_id = None
-            error_occurred = False
-
-            try:
-                # Construct multimodal prompt array
-                multimodal_prompt =[]
-                for gf in gemini_files_data:
-                    if gf.get('uri'):
-                        multimodal_prompt.append(types.Part.from_uri(file_uri=gf['uri'], mime_type=gf['mime_type']))
-                    elif gf.get('fallback_to_lab'):
-                        fallback_instr = f"\n[SYSTEM NOTICE: The file '{gf['display_name']}' has an unsupported MIME type for native vision. It has been automatically synced to the Lab environment at '/lab/{gf['display_name']}'. You MUST use lab_execute to analyze this file.]\n"
-                        multimodal_prompt.append(types.Part.from_text(text=fallback_instr))
-            
-                if pending_files:
-                    # Skip web search when files are uploaded to avoid "query too long" errors
-                    yield f"data: {json.dumps({'status': 'Skipping web search (file upload detected).', 'phase': 'context_gathering'})}\n\n"
-                    web_search_context = ""
-                else:
-                    yield f"data: {json.dumps({'status': 'Performing Web Search...', 'phase': 'context_gathering'})}\n\n"
-                    if check_and_log_stop(query_id, "cosmos search query generation"): return
-                    try:
-                        if gemini_files_data:
-                            instruction_prompt = """\nAnalyze the uploaded files provided in context. Identify key themes, entities, unresolved questions, or areas that would benefit from current external information. Generate concise instructions for another AI on how to formulate up to 5 effective Tavily search queries to gather relevant external context based on this analysis."""
-                            inst_prompt_parts = multimodal_prompt.copy()
-                            inst_prompt_parts.append(types.Part.from_text(text=instruction_prompt))
-                            instruction_gen = gemini_generate(prompt=inst_prompt_parts, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id)
-                            instruction = ""
-                            for item in instruction_gen:
-                                 if 'result' in item:
-                                     instruction += item['result']
-                            if not instruction: instruction = None
-
-                            generated_query = None
-                            if instruction and not instruction.startswith(ERROR_CODE):
-                                query_gen_prompt = instruction + f"\nBased on the instruction derived from the file analysis, create a specific Tavily search query (or up to 5 separate queries, comma-separated if multiple distinct areas are identified) for:\nOriginal User Query: {user_query}\nReturn *only ONE SMALL* the search query string(s)."
-                                query_gen = gemini_generate(prompt=query_gen_prompt, model_id="gemini-2.5-flash-lite", key=PRIMARY_API_KEY, attempts=1, chat_id=chat_id, disabled_tools=disabled_tools)
-                                generated_query = ""
-                                for item in query_gen:
-                                    if 'result' in item:
-                                        generated_query += item['result']
-                                if not generated_query: generated_query = None
-                                if generated_query and not generated_query.startswith(ERROR_CODE):
-                                    search_query = generated_query.strip().strip('"')
-                                else:
-                                    search_query = user_query
-                            else:
-                                search_query = user_query
-                        else:
-                            search_query = user_query
-                    except Exception as e:
-                        logger.error(f"Error in generating search query for Cosmos: {e}", exc_info=True)
-                        search_query = user_query
-
-                    tavily_success = False
-                    for attempt in range(2):
-                        try:
-                            if check_and_log_stop(query_id, f"cosmos search attempt {attempt+1}"): return
-                            status_msg = 'Performing Web Search...' if attempt == 0 else f'Retrying Web Search... (Attempt {attempt + 1})'
-                            yield f"data: {json.dumps({'status': status_msg, 'phase': 'context_gathering'})}\n\n"
-                            tavily_response = tavily_search(search_query, max_results=10)
-                            if isinstance(tavily_response, dict) and "error" in tavily_response:
-                                raise ValueError(f"Tavily API Error: {tavily_response['error']}")
-                            if not isinstance(tavily_response, dict) or "results" not in tavily_response:
-                                raise TypeError(f"Tavily returned unexpected/invalid response format: {type(tavily_response)}")
-                        
-                            tavily_answer = tavily_response.get("answer", "")
-                            results = tavily_response.get("results", [])
-                            current_web_context = f"**Web Search Summary:**\n{tavily_answer if tavily_answer else 'No summary provided.'}\n\n**Scraped Content Details:**\n"
-                            scraped_contents = []
-                            urls_to_scrape = [r.get("url") for r in results if r.get("url")]
-                            urls_scraped_count = 0
-
-                            for url in urls_to_scrape:
-                                if not url or not isinstance(url, str) or not (url.startswith('http://') or url.startswith('https://')): continue
-                                if check_and_log_stop(query_id, f"scraping {url}"): return
-                                yield f"data: {json.dumps({'status': f'Scraping {url}...', 'phase': 'context_gathering'})}\n\n"
-                                content = scrape_url(url)
-                                if content and isinstance(content, str) and not content.startswith("Error scraping"):
-                                    scraped_contents.append(f"<details><summary>Content from: {url}</summary>\n\n```text\n{content}\n```\n\n</details>\n")
-                                    urls_scraped_count += 1
-                                elif content and content.startswith("Error scraping"):
-                                    scraped_contents.append(f"*   Content from {url}: [Scraping Error: {content}]*\n")
-                                else:
-                                    scraped_contents.append(f"*   Content from {url}: [No Content Scraped]*\n")
-                        
-                            current_web_context += "\n".join(scraped_contents) if scraped_contents else "No content could be scraped from search results.\n"
-                            current_web_context += "\n---\n"
-                            web_search_context = current_web_context
-                            tavily_success = True
-                            yield f"data: {json.dumps({'status': f'Web Search completed ({urls_scraped_count} sources scraped).', 'phase': 'context_gathering'})}\n\n"
-                            break
-                        except Exception as e:
-                            logger.error(f"Tavily search or scraping failed in cosmos_stream: {e}", exc_info=True)
-                            if attempt < 1:
-                                yield f"data: {json.dumps({'status': f'Web Search failed (Attempt {attempt+1}). Retrying...', 'error': True, 'phase': 'context_gathering'})}\n\n"
-                                time.sleep(1.5)
-                            else:
-                                yield f"data: {json.dumps({'status': 'Web Search failed after retries. Proceeding without web context.', 'error': True, 'phase': 'context_gathering'})}\n\n"
-                                web_search_context = "**Web Search Attempted:** Failed after retries.\n\n---\n"
-                                break
-
-                full_context = web_search_context
-
-                yield f"data: {json.dumps({'status': 'Generating Cosmos report and infographics...', 'phase': 'generation_llm'})}\n\n"
-                if check_and_log_stop(query_id, "cosmos report generation"): return
-
-                final_report_html = ""
-                selected_model = model_id
-                partial_cosmos_work = ""
-
-                for model_attempt in range(max_model_attempts):
-                    current_model = selected_model
-                    display_name = MODEL_NAMES.get(current_model, current_model)
-                    current_api_key = PRIMARY_API_KEY
-                    if not current_api_key:
-                        yield f"data: {json.dumps({'status': 'Error: API Key for Cosmos generation is missing.', 'error': True, 'phase': 'generation_llm'})}\n\n"
-                        error_occurred = True
-                        return
-                    if model_attempt > 0:
-                        fallback_status = f'Generation model failed. Falling back to {display_name}...'
-                        yield f"data: {json.dumps({'status': fallback_status, 'phase': 'generation_llm'})}\n\n"
-                        time.sleep(1)
-                
-                    # Inject partial work if available
-                    effective_cosmos_context = full_context
-                    if partial_cosmos_work:
-                        capability_note = ""
-                        full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
-                        lab_only = ["gemini-3.1-flash-lite-preview"]
-                    
-                        if current_model in lab_only:
-                            capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the report using available data and Lab tools."
-                        elif current_model not in full_access:
-                            capability_note = " NOTE: You do not have access to 'lab_execute' or 'repo_control'. Complete the report structure using available data."
-                    
-                        effective_cosmos_context += f"\n\n[SYSTEM INSTRUCTION]: A previous model failed mid-generation. Here is its partial HTML output: \n---\n{partial_cosmos_work}\n---\nPlease CONTINUE the report generation immediately where it left off. Do not repeat existing sections.{capability_note}"
-
-                    cosmos_prompt = get_cosmos_report_prompt(user_query, effective_cosmos_context)
-                    generator_output = gemini_generate(
-                        prompt=cosmos_prompt, model_id=current_model, key=current_api_key,
-                        attempts=1,
-                        model_display_name=f"{display_name} (Cosmos)",
-                        chat_id=chat_id,
-                        gemini_files_data=gemini_files_data
-                    )
-                
-                    model_failed = False
-                    current_cosmos_attempt = ""
-                    for item in generator_output:
-                        if 'status' in item:
-                            yield f"data: {json.dumps({'status': item['status'], 'phase': 'generation_llm'})}\n\n"
-                        elif 'result' in item:
-                            temp_result_html = item['result']
-                            if isinstance(temp_result_html, str) and temp_result_html.startswith(ERROR_CODE):
-                                last_analysis_error = temp_result_html # Use this for final diagnostic
-                                if current_cosmos_attempt:
-                                    partial_cosmos_work += "\n" + current_cosmos_attempt
-                                model_failed = True
-                                break
-                            else:
-                                current_cosmos_attempt += temp_result_html
-                                final_report_html += temp_result_html
-                
-                    if not model_failed and final_report_html:
-                        break
-                    else:
-                        if model_attempt == 0 and fallback_model and fallback_model != model_id:
-                            selected_model = fallback_model
-                        else:
-                            pass
-
-                # FINAL FAIL-SAFE: If Cosmos generation completely failed, generate diagnostic report
-                if not final_report_html and last_analysis_error:
-                    yield f"data: {json.dumps({'status': 'Generation models busy. Lunarity is generating diagnostic report...', 'phase': 'generation_diagnostic'})}\n\n"
-                    from prompts import get_error_explanation_prompt
-                    diag_prompt = get_error_explanation_prompt(user_query, last_analysis_error)
-                
-                    generator_output = gemini_generate(
-                        prompt=diag_prompt, model_id="gemini-3.1-flash-lite-preview", key=PRIMARY_API_KEY,
-                        attempts=1, model_display_name="Lunarity (Diagnostic)", chat_id=chat_id
-                    )
-                    for item in generator_output:
-                        if 'result' in item:
-                            final_report_html += item['result']
-
-                if not final_report_html:
-                    error_msg = f"Failed to generate the Cosmos report after all attempts for query_id {query_id}."
-                    yield f"data: {json.dumps({'status': error_msg, 'error': True, 'phase': 'generation_llm'})}\n\n"
-                    error_occurred = True
-                    return
-
-                yield f"data: {json.dumps({'status': 'Saving report...', 'phase': 'formatting'})}\n\n"
-                if check_and_log_stop(query_id, "report saving"): return
-                try:
-                    html_filepath_rel = create_output_file(user_query, final_report_html, extension="html")
-                    if not html_filepath_rel:
-                        yield f"data: {json.dumps({'status': 'Error: Failed to save output file.', 'error': True, 'phase': 'formatting'})}\n\n"
-                except Exception as e:
-                    logger.error(f"Error during output file saving in cosmos_stream: {e}", exc_info=True)
-                    yield f"data: {json.dumps({'status': 'Error during output file saving.', 'error': True, 'phase': 'formatting'})}\n\n"
-                    html_filepath_rel = None
-            
-                if check_and_log_stop(query_id, "database insert"): return
-                cosmos_message_id = insert_message(
-                    chat_id=chat_id,
-                    message_type="stellar",
-                    message_content=final_report_html,
-                    is_research_output=True,
-                    html_file=html_filepath_rel,
-                    attached_files=gemini_files_data,
-                    client_id=client_id
-                )
-
-                if not cosmos_message_id:
-                    yield f"data: {json.dumps({'status': 'Error: Failed to save Cosmos report result to database!', 'error': True, 'phase': 'saving'})}\n\n"
-                    error_occurred = True
-                else:
-                     final_data = {
-                         'status': 'display_result',
-                         'session_id': session_id,
-                         'message_id': str(cosmos_message_id),
-                         'user_message_id': str(user_message_id) if user_message_id else None,
-                         'result': final_report_html,
-                         'file_url': f'/view/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
-                         'download_url': f'/download/{os.path.basename(html_filepath_rel)}' if html_filepath_rel else None,
-                         'file_type': '.html' if html_filepath_rel else None,
-                         'is_research_output': True
-                     }
-                     yield f"data: {json.dumps(final_data)}\n\n"
-
-            except Exception as e:
-                logger.error(f"Severe error during Cosmos report generation: {e}", exc_info=True)
-                yield f"data: {json.dumps({'status': 'Severe error during Cosmos report generation.', 'error': True})}\n\n"
-                error_occurred = True
-
-        background_thread_runner(current_app._get_current_object(), query_id, chat_id, generator_task)
-
-    return Response(stream_with_context(stream_consumer(query_id)), mimetype='text/event-stream')
-
 @app.route('/api/stop_generation', methods=['POST'])
 @require_approval
 def stop_generation():
@@ -3766,7 +3126,7 @@ def clear_history():
         db.execute('DELETE FROM tool_calls WHERE chat_id = ?', (chat_id,))
         db.commit()
         
-        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, building applications using Forge Mode, and data analysis reports via Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
+        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with full-stack application development via Repo Control. My capabilities include real-time web search and code execution. How may I assist you today?"
         insert_message(chat_id, "stellar", welcome_message)
         
         return jsonify({'status': 'Success', 'message': 'Conversation history cleared'})
@@ -4027,7 +3387,7 @@ def get_admin_waitlist():
         SELECT
             u.id, u.username, u.display_name, u.role, u.is_approved, u.created_at, u.last_active,
             (SELECT COUNT(*) FROM chats WHERE user_id = u.id) as num_chats,
-            (SELECT COUNT(*) FROM forge_history WHERE user_id = u.id) as num_projects,
+            (SELECT COUNT(*) FROM repo_history WHERE user_id = u.id) as num_projects,
             (SELECT SUM(token_count) FROM chats WHERE user_id = u.id) as total_tokens_approx
         FROM users u
         ORDER BY last_active DESC, u.created_at DESC
@@ -4071,6 +3431,7 @@ def toggle_user_access():
 
         return jsonify({'success': True}), 200
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/admin/approve', methods=['POST'])
@@ -4222,7 +3583,7 @@ def create_new_chat():
         db.commit()
         new_chat_id = cursor.lastrowid
         
-        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with research papers using Spectrum Mode, building applications using Forge Mode, and data analysis reports via Cosmos. My capabilities include real-time web search and code execution. How may I assist you today?"
+        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with full-stack application development via Repo Control. My capabilities include real-time web search and code execution. How may I assist you today?"
         insert_message(new_chat_id, "stellar", welcome_message)
 
         session['current_chat_id'] = new_chat_id
@@ -4391,6 +3752,7 @@ def api_check_url():
         response = requests.get(url, timeout=3, allow_redirects=True)
         return jsonify({'status': response.status_code}), 200
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         return jsonify({'status': 500, 'error': str(e)}), 200
 
 @app.route('/api/user/profile', methods=['GET'])
@@ -4777,8 +4139,8 @@ def stop_container():
                 break
 
         if not process_id:
-            app_type = 'forge'
-            for key in redis_client.scan_iter("forge:process:*"):
+            app_type = 'repo'
+            for key in redis_client.scan_iter("repo:process:*"):
                 cid = redis_client.hget(key, "container_id")
                 if cid and cid == container_id:
                     process_id = redis_client.hget(key, "process_id")
@@ -4786,15 +4148,15 @@ def stop_container():
 
         if process_id:
             # Validate ownership
-            cursor = db.execute('SELECT 1 FROM forge_history WHERE process_id = ? AND user_id = ?', (process_id, user_id))
+            cursor = db.execute('SELECT 1 FROM repo_history WHERE process_id = ? AND user_id = ?', (process_id, user_id))
             is_owner = cursor.fetchone() is not None
 
             # Allow run_code containers that were created in the current session
-            # If it's a run_code container, it might not be in forge_history. We allow it if it's in their session
+            # If it's a run_code container, it might not be in repo_history. We allow it if it's in their session
             if not is_owner and app_type == 'run_code':
                 if session.get('last_run_code_process_id') != process_id:
                      return jsonify({'error': 'Forbidden. You do not own this container.'}), 403
-            elif not is_owner and app_type == 'forge':
+            elif not is_owner and app_type == 'repo':
                  return jsonify({'error': 'Forbidden. You do not own this container.'}), 403
 
             stop_and_cleanup_app_by_process_id(process_id, app_type)
@@ -4992,13 +4354,13 @@ class OrphanContainerMonitor:
                                             logger.error(f"OrphanContainerMonitor: App {process_id} health check returned {resp.status_code}")
                                             with active_apps_lock:
                                                 active_apps[process_id]['status'] = 'failed'
-                                            redis_client.hset(_redis_forge_key(process_id), "status", "failed")
+                                            redis_client.hset(_redis_repo_key(process_id), "status", "failed")
                                     except Exception as req_err:
                                         logger.error(f"OrphanContainerMonitor: App {process_id} health check failed (Connection Error): {req_err}")
                                         # Mark as failed in Redis and memory so user sees the error
                                         with active_apps_lock:
                                             active_apps[process_id]['status'] = 'failed'
-                                        redis_client.hset(_redis_forge_key(process_id), "status", "failed")
+                                        redis_client.hset(_redis_repo_key(process_id), "status", "failed")
                         except Exception as h_err:
                             logger.error(f"OrphanContainerMonitor: Health check logic error: {h_err}")
             except Exception as e:
@@ -5012,10 +4374,11 @@ def cleanup_stale_containers():
                 db = get_db()
                 # 60 hours in seconds
                 sixty_hours_ago = (datetime.datetime.now() - datetime.timedelta(hours=60)).strftime('%Y-%m-%d %H:%M:%S')
-                db.execute("UPDATE forge_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created') AND created_at < ?", (sixty_hours_ago,))
+                db.execute("UPDATE repo_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created') AND created_at < ?", (sixty_hours_ago,))
                 db.commit()
-                logging.info(f"Database status for forge_history reset for apps older than {sixty_hours_ago}.")
+                logging.info(f"Database status for repo_history reset for apps older than {sixty_hours_ago}.")
         except Exception as db_err:
+            logger.exception("Error caught: %s", db_err)
             logging.error(f"Failed to reset database statuses: {db_err}")
 
         client = docker.from_env()
@@ -5058,6 +4421,7 @@ def cleanup_stale_containers():
     except docker.errors.DockerException as e:
         logging.error(f"Docker is not available. Skipping stale container cleanup. Error: {e}")
     except Exception as e:
+        logger.exception("Error caught: %s", e)
         logging.error(f"An unexpected error occurred during stale container cleanup: {e}")
 
 # Start the orphan monitor - only in the main process to avoid multi-worker redundancy
@@ -5079,6 +4443,7 @@ def update_last_active():
             db.execute("UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE id = ?", (session['user_id'],))
             db.commit()
         except Exception as e:
+            logger.exception("Error caught: %s", e)
             pass # Silently fail to not interrupt user experience
 
 @app.before_request
@@ -5091,7 +4456,7 @@ def intercept_subdomains():
         subdomain = domain_parts[0]
 
         db = get_db()
-        cursor = db.execute("SELECT process_id, subdomain, user_id FROM forge_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (subdomain,))
+        cursor = db.execute("SELECT process_id, subdomain, user_id FROM repo_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (subdomain,))
         row = cursor.fetchone()
 
         if row:
@@ -5111,7 +4476,7 @@ def intercept_subdomains():
 
         if not app_info:
             try:
-                redis_key = _redis_forge_key(process_id)
+                redis_key = _redis_repo_key(process_id)
                 redis_data = redis_client.hgetall(redis_key)
                 if not redis_data:
                     redis_key = _redis_runcode_key(process_id)
@@ -5132,7 +4497,7 @@ def intercept_subdomains():
                 return "Error looking up application state.", 500
 
         if not app_info or not app_info.get("port"):
-            return f"Application '{subdomain}' is stopped or unavailable. Start it in Stellar Forge.", 503
+            return f"Application '{subdomain}' is stopped or unavailable. Start it in Repo Control.", 503
 
         # Critical Fix: Don't even try to proxy if we know it's exited
         if app_info.get("status") == "exited":
@@ -5193,158 +4558,20 @@ def intercept_subdomains():
             return f"Error proxying request to application.", 502
 
 
-@app.route('/codelab/forge/files', methods=['GET'])
 @require_approval
-def forge_get_files():
-    if 'forge_project' not in session:
-        return jsonify({'error': 'No active Forge session.'}), 404
-    return jsonify(session['forge_project'].get('files', {}))
-
-@app.route('/codelab/forge/database', methods=['GET'])
 @require_approval
-def forge_get_database():
-    """Fetch the SQLite database file from the running Forge container."""
-    if 'forge_project' not in session:
-        return jsonify({'error': 'No active Forge session.'}), 404
-    
-    process_id = session['forge_project'].get('process_id')
-    if not process_id:
-        return jsonify({'error': 'No process ID found.'}), 404
-    
-    # Get container_id from Redis (since it's stored there, not in session)
-    container_id = None
-    try:
-        redis_key = _redis_forge_key(process_id)
-        cid = redis_client.hget(redis_key, "container_id")
-        if cid:
-            container_id = cid.decode() if isinstance(cid, (bytes, bytearray)) else cid
-    except Exception as e:
-        logger.error(f"Error fetching container_id from redis: {e}")
-    
-    # Fallback to active_apps if Redis didn't have it
-    if not container_id:
-        with active_apps_lock:
-            app_info = active_apps.get(process_id, {})
-            container_id = app_info.get('container_id')
-    
-    if not container_id:
-        return jsonify({'error': 'No running container found.'}), 404
-    
-    try:
-        container = client.containers.get(container_id)
-        
-        # First, find any .db files in the /app directory
-        find_result = container.exec_run("find /app -maxdepth 1 -name '*.db' -type f", demux=False)
-        db_files = find_result.output.decode('utf-8', errors='replace').strip().split('\n') if find_result.output else []
-        db_files = [f for f in db_files if f.endswith('.db')]
-        
-        if not db_files:
-            return jsonify({'error': 'No database found.'}), 404
-        
-        # Use the first .db file found (prefer database.db if exists)
-        db_path = '/app/database.db' if '/app/database.db' in db_files else db_files[0]
-        db_name = db_path.split('/')[-1]
-        
-        # Read the database file
-        cat_result = container.exec_run(f"cat {db_path}", demux=False)
-        if cat_result.exit_code != 0 or not cat_result.output:
-            return jsonify({'error': 'Could not read database file.'}), 404
-        
-        # Return base64 encoded database
-        import base64
-        db_base64 = base64.b64encode(cat_result.output).decode('utf-8')
-        return jsonify({'database': db_base64, 'name': db_name})
-    except docker.errors.NotFound:
-        return jsonify({'error': 'Container not found.'}), 404
-    except Exception as e:
-        logger.error(f"Error fetching database: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/codelab/forge/redeploy', methods=['POST'])
 @require_approval
-def forge_redeploy():
-    if 'forge_project' not in session:
-        return jsonify({'error': 'No active session.'}), 400
-    if not client:
-        return jsonify({'error': 'Docker client not available.'}), 503
-
-    data = request.get_json(silent=True) or {}
-    updated_files = data.get('files', {})
-
-    if 'index.html' not in updated_files or 'app.py' not in updated_files:
-        return jsonify({'error': "Request must contain 'index.html' and 'app.py'."}), 400
-
-    old_process_id = session['forge_project'].get('process_id')
-    old_container_id = None
-    
-    if old_process_id:
-        redis_key = _get_process_key_prefix(old_process_id, 'forge')
-        try:
-            cached_data = redis_client.hgetall(redis_key)
-            if cached_data:
-                old_container_id = cached_data.get('container_id')
-        except Exception:
-            pass
-            
-        with active_apps_lock:
-            active_apps.pop(old_process_id, None)
-
-    try:
-        process_id = old_process_id if old_process_id else str(uuid.uuid4())
-        
-        project_title = session.get('forge_project', {}).get('project_name')
-        subdomain = session.get('forge_project', {}).get('subdomain')
-        
-        if not project_title:
-             project_title = f"Forge Redeploy {process_id[:8]}"
-
-        session['forge_project']['files'] = updated_files
-        session['forge_project']['process_id'] = process_id
-        session['forge_project']['project_name'] = project_title
-        session.modified = True
-
-        # Record in history
-        try:
-            db = get_db()
-            db.execute('''
-                INSERT INTO forge_history (user_id, project_name, process_id, status, files_snapshot, subdomain)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (session['user_id'], project_title, process_id, 'starting', json.dumps(updated_files), subdomain))
-            db.commit()
-        except Exception as e:
-            logger.error(f"Failed to record forge history redeploy: {e}")
-
-        try:
-            redis_client.hset(_redis_forge_key(process_id), mapping={
-                "status": "starting",
-                "files": json.dumps(updated_files)
-            })
-        except Exception:
-            logger.exception("Failed to persist redeploy forge state for %s", process_id)
-
-        app_obj = current_app._get_current_object()
-        thread = threading.Thread(target=_deploy_and_stream_output, args=(app_obj, updated_files, process_id, old_container_id, 'forge', subdomain))
-        thread.daemon = True
-        thread.start()
-
-        return jsonify({'success': True, 'process_id': process_id})
-
-    except Exception as e:
-        logger.error(f"Error in forge_redeploy: {e}", exc_info=True)
-        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
-
-@app.route('/api/forge/history', methods=['GET'])
+@app.route('/api/repo/history', methods=['GET'])
 @require_approval
-def get_forge_history():
+def get_repo_history():
     user_id = session['user_id']
     db = get_db()
     cursor = db.execute('''
         SELECT fh.id, fh.project_name, fh.process_id, fh.status, fh.deployment_url, fh.created_at, fh.last_updated 
-        FROM forge_history fh
+        FROM repo_history fh
         INNER JOIN (
             SELECT process_id, MAX(id) as latest_id
-            FROM forge_history
+            FROM repo_history
             WHERE user_id = ?
             GROUP BY process_id
         ) latest ON fh.id = latest.latest_id
@@ -5353,12 +4580,12 @@ def get_forge_history():
     history = _fetch_as_dict(cursor)
     return jsonify({'history': history})
 
-@app.route('/api/forge/history/<int:history_id>/resume', methods=['POST'])
+@app.route('/api/repo/history/<int:history_id>/resume', methods=['POST'])
 @require_approval
-def resume_forge_history(history_id):
+def resume_repo_history(history_id):
     user_id = session['user_id']
     db = get_db()
-    cursor = db.execute('SELECT * FROM forge_history WHERE id = ? AND user_id = ?', (history_id, user_id))
+    cursor = db.execute('SELECT * FROM repo_history WHERE id = ? AND user_id = ?', (history_id, user_id))
     entry = _fetchone_as_dict(cursor)
 
     if not entry:
@@ -5374,17 +4601,18 @@ def resume_forge_history(history_id):
         return jsonify({'error': 'Invalid file snapshot data.'}), 500
 
     # Stop current project if any
-    if 'forge_project' in session:
+    if 'repo_project' in session:
         try:
-            stop_and_cleanup_app_by_process_id(session['forge_project'].get('process_id'), app_type='forge')
+            stop_and_cleanup_app_by_process_id(session['repo_project'].get('process_id'), app_type='repo')
         except Exception as e:
-            logger.warning(f"Error stopping previous forge project during resume: {e}")
+            logger.exception("Error caught: %s", e)
+            logger.warning(f"Error stopping previous repo project during resume: {e}")
 
     process_id = str(uuid.uuid4())
-    project_name = entry.get('project_name') or "Forge Project"
+    project_name = entry.get('project_name') or "Repo Project"
     subdomain = entry.get('subdomain')
 
-    session['forge_project'] = {
+    session['repo_project'] = {
         'files': files,
         'container_id': None,
         'process_id': process_id,
@@ -5400,18 +4628,17 @@ def resume_forge_history(history_id):
         user_row = cursor.fetchone()
         if user_row:
             current_username = user_row['username']
-            telegram_bot.send_message(f"🛠️ {current_username} resumed forge session: {project_name}")
+            telegram_bot.send_message(f"🛠️ {current_username} resumed repo session: {project_name}")
     except Exception as e:
-        logger.error(f"Failed to send Forge Resume Telegram notification: {e}")
-
+        logger.error(f"Failed to send Repo Resume Telegram notification: {e}")
     return jsonify({'success': True, 'message': 'Project loaded.', 'files': files, 'process_id': process_id})
 
-@app.route('/api/forge/history/<int:history_id>', methods=['DELETE'])
+@app.route('/api/repo/history/<int:history_id>', methods=['DELETE'])
 @require_approval
-def delete_forge_history(history_id):
+def delete_repo_history(history_id):
     user_id = session['user_id']
     db = get_db()
-    cursor = db.execute('SELECT process_id, container_id FROM forge_history WHERE id = ? AND user_id = ?', (history_id, user_id))
+    cursor = db.execute('SELECT process_id, container_id FROM repo_history WHERE id = ? AND user_id = ?', (history_id, user_id))
     entry = _fetchone_as_dict(cursor)
 
     if not entry:
@@ -5420,9 +4647,9 @@ def delete_forge_history(history_id):
     process_id = entry['process_id']
 
     # Stop if running
-    stop_and_cleanup_app_by_process_id(process_id, app_type='forge')
+    stop_and_cleanup_app_by_process_id(process_id, app_type='repo')
 
-    db.execute('DELETE FROM forge_history WHERE id = ?', (history_id,))
+    db.execute('DELETE FROM repo_history WHERE id = ?', (history_id,))
     db.commit()
 
     return jsonify({'success': True, 'message': 'History entry deleted.'})
@@ -5478,30 +4705,29 @@ class TaskSchedulerMonitor:
             task = cursor.fetchone()
             
             if task:
-                try:
-                    self._execute_ai_task(task['id'], task['user_id'], task['chat_id'], task['task_prompt'], task['model_id'], task['metadata'])
-                    
-                    if task['recurring_minutes'] > 0:
-                        db.execute('''
-                            UPDATE scheduled_tasks
-                            SET execute_at = datetime('now', 'localtime', '+' || ? || ' minutes'), 
-                                last_run = datetime('now', 'localtime'),
-                                status = 'pending',
-                                lock_id = NULL
-                            WHERE id = ?
-                        ''', (task['recurring_minutes'], task['id']))
-                    else:
-                        db.execute('''
-                            UPDATE scheduled_tasks 
-                            SET is_active = 0, status = 'completed', last_run = datetime('now', 'localtime'), lock_id = NULL 
-                            WHERE id = ?
-                        ''', (task['id'],))
-                except Exception as e:
-                    logger.error(f"Task Execution Failed (ID {task['id']}): {e}")
-                    # Release lock on failure so it can be retried
-                    db.execute("UPDATE scheduled_tasks SET status = 'pending', lock_id = NULL WHERE id = ?", (task['id'],))
-                
-                db.commit()
+                def run_task_wrapper(t):
+                    try:
+                        self._execute_ai_task(t['id'], t['user_id'], t['chat_id'], t['task_prompt'], t['model_id'], t['metadata'])
+                        with self.app_instance.app_context():
+                            db = get_db()
+                            if t['recurring_minutes'] > 0:
+                                db.execute('''
+                                    UPDATE scheduled_tasks
+                                    SET execute_at = datetime('now', 'localtime', '+' || ? || ' minutes'), 
+                                        last_run = datetime('now', 'localtime'), status = 'pending', lock_id = NULL
+                                    WHERE id = ?
+                                ''', (t['recurring_minutes'], t['id']))
+                            else:
+                                db.execute("UPDATE scheduled_tasks SET is_active = 0, status = 'completed', last_run = datetime('now', 'localtime'), lock_id = NULL WHERE id = ?", (t['id'],))
+                            db.commit()
+                    except Exception as e:
+                        logger.error(f"Task Execution Failed (ID {t['id']}): {e}")
+                        with self.app_instance.app_context():
+                            db = get_db()
+                            db.execute("UPDATE scheduled_tasks SET status = 'failed', lock_id = NULL WHERE id = ?", (t['id'],))
+                            db.commit()
+
+                threading.Thread(target=run_task_wrapper, args=(task,), daemon=True).start()
 
     def _execute_ai_task(self, task_id, user_id, chat_id, task_prompt, model_id, metadata):
         with self.app_instance.app_context():

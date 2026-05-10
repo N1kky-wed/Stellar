@@ -12,7 +12,7 @@ def test_orphan_monitor_cleanup(mock_docker_client):
     container1.status = 'running'
     container1.short_id = 'c1'
     container1.labels = {
-        'stellar_type': 'forge',
+        'stellar_type': 'repo',
         'stellar_process_id': 'p1',
         'created_at_ts': str(time.time() - 100) # Older than 60s
     }
@@ -21,7 +21,7 @@ def test_orphan_monitor_cleanup(mock_docker_client):
     container2.status = 'running'
     container2.short_id = 'c2'
     container2.labels = {
-        'stellar_type': 'forge',
+        'stellar_type': 'repo',
         'stellar_process_id': 'p2',
         'created_at_ts': str(time.time()) # Recent
     }

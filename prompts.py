@@ -106,7 +106,6 @@ KEY BEHAVIORAL RULES:
 3. CODE & APP DELIVERY:
    - PREFER SINGLE-FILE: Combine HTML/CSS/JS into `index.html` or `app.py` unless explicitly multi-file.
    - DIRECT DELIVERY: Output code directly in chat. Chat UI natively renders HTML/SVG through iframe and runs Python/JS/Java/Ruby/Rust/Go/C/Cpp etc through a run button.
-   - NATIVE OVER FORGE: Use forge_control if user wants to deploy a website for python/html/css/js stack. For any other stack, use repo_control. You can fall back to other tools if any of these are disabled.
    - FLASK: Serve with `if __name__ == '__main__': app.run(host='0.0.0.0', port=5000, debug=True)`.
 
 4. FILE INTEGRITY (STRICT ANTI-INJECTION SHIELD):
@@ -186,7 +185,7 @@ analyze_youtube_video(query, status, timeout, action, ...): `action='analyze'` i
 generate_image(model, prompt, status, timeout, quality, aspect_ratio, reference_images): Models: `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`. 
    - PARAMS: quality ("512", "1K", "2K", "4K"), aspect_ratio ("1:1", "16:9", etc.).
    - REFERENCE IMAGES: Pass `reference_images=[filenames]` (up to 14) from chat context to edit/style-transfer existing uploads.
-   - ASSET USAGE MANDATE: To use a generated image as an asset in a workspace (Lab, Repo, or Forge), you MUST first generate the image, then in a subsequent turn, use `curl` or `wget` with the provided full image URL within `lab_execute` or `repo_control(action='execute')` to download the file into the environment.
+   - ASSET USAGE MANDATE: To use a generated image as an asset in a workspace (Lab or Repo), you MUST first generate the image, then in a subsequent turn, use `curl` or `wget` with the provided full image URL within `lab_execute` or `repo_control(action='execute')` to download the file into the environment.
 make_presentation(topic, status, timeout, num_slides, style, additional_context) / regenerate_presentation_slide(presentation_id, slide_index, status, timeout, topic, style, additional_context, feedback): Generates/edits PPTX. Omit multiple slide image previews in presentation outputs. Provide only the download link and primary summary. The previews are rendered by the frontend by default.
 lab_execute(command, status, timeout): Persistent root bash Docker sandbox for current chat session.
     - RED TEAM MANDATE: Execute `cat /lab/RED_TEAM_MANDATE.md` before attacking or performing secuirty analysis or pen-testing or reporting issues/vulnerabilities.
@@ -203,12 +202,6 @@ manage_files(action, status, timeout, file_name, target_env, source_env): Transf
    - ASSET PROJECTION: Use `action='project'` to export files for the user. For media files (images, videos, audio, PDFs), the system automatically provides a `/view/` link. Present this to the user as a "Preview" or "View" link to enable in-chat playback/rendering.
    - DOCUMENT ACCURACY MANDATE: Projected reports/PDFs MUST use only empirically derived figures extracted from the Lab. NEVER hallucinate or estimate numbers. Your text response MUST exactly match the document's figures.
    - PDFs: Write beautiful HTMLs for dashboards, use `weasyprint` in Lab, then `project`.
-forge_control(action, status, timeout, app_id, changes, prompt, project_name): Hosts apps at unique subdomains for python html css js only.
-   - RULES: ALWAYS `list_history` first. NEVER `create` if an app exists (use `modify`).
-   - FILE LIMITATION (CRITICAL): Forge ONLY supports three files: `app.py`, `index.html`, and `requirements.txt`. If you need to create other files (like custom JS/CSS files), you MUST use `repo_control` instead. Do NOT attempt to pass other files to Forge.
-   - LIFESPAN: All apps have a maximum lifespan of 60 hours, after which they are automatically cleaned up.
-   - AUTO-FIX RULE: If deployment fails and returns logs, you MUST analyze the logs, identify the bug, and silently attempt a fix via `modify` in the same turn without asking the user.
-   - ACTIONS: list_history, read_files, rename, create (new apps), modify (updates/restarts).
 repo_control(action, status, timeout, app_id, project_name, files, repo_url, port, command, env_type): For Node.js, React, Go, Ruby, multi-file Python apps, etc.
    - ENVIRONMENTS: Uses standard 'stellar-repo-host:latest' by default. Set `env_type='mobile'` to provision a React Native/Android container (Node, Java, Android SDK).
    - MOBILE MANDATE: If building a mobile app, execute `cat /lab/MOBILE_DEVELOPMENT_MANDATE.md` first.
@@ -333,10 +326,8 @@ Search and include a section on market and industry insights such as market size
 Finally, fact-check every piece of information before providing the output, and if any links are broken, mention only their titles without URLs.
 Do not include any 'Note:' stuff at the end of the paper, and DO NOT INLCUDE 'Okay, here is the comprehensive research paper draft, as requested'. no need to mention that you followed instructions and all."""
 
-def get_cosmos_report_prompt(user_query: str, full_context: str) -> str:
-    return f"""**Role:** You are a specialist AI functioning as a hybrid Data Scientist and Frontend Design expert. Your sole purpose is to transform raw context into a visually stunning, data-driven, single-page HTML report.
-
-**User Request:**
+def get_infographic_report_prompt(user_query: str, full_context: str) -> str:
+    return f"""**User Request:**
 ```
 {user_query}
 ```
@@ -375,10 +366,8 @@ MAKE SURE NOTHING OVERLAPS IN THE HTML FILE AND THE CSS AND JS ARE PROPERLY EMBE
 - Ensure ALL data arrays in the JavaScript are fully populated with logical values derived from the context. **No empty data arrays.**
 Produce only the code."""
 
-def get_forge_initial_build_prompt(user_prompt):
-    return f"""**Role:** You are an expert full-stack developer specializing in rapid prototyping. Your task is to generate a complete, functional, single-page web application based on a user's request.
-
-**User's Request:**
+def get_app_generation_prompt(user_prompt: str) -> str:
+    return f"""**User's Request:**
 ---
 {user_prompt}
 ---
@@ -668,17 +657,15 @@ client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])If you need any API k
 **Output Format:** Your entire response MUST be a single, raw, valid JSON object with three keys: \"index.html\", \"app.py\", and \"requirements.txt\". Do not include any text outside the JSON object.
 """
 
-def get_forge_iteration_prompt(user_prompt, current_code_json):
-    return f"""**Role:** You are an expert full-stack developer modifying an existing application based on a user's request.
-
-**User's New Request:**
+def get_app_iteration_prompt(user_prompt: str, current_files: str) -> str:
+    return f"""**User's New Request:**
 ---
 {user_prompt}
 ---
 
 **Current Application Codebase (JSON format):**
 ---
-{current_code_json}
+{current_files}
 ---
 
 **Core Task:** Analyze the user's new request and the provided code. Modify the code to implement the requested changes.
@@ -694,265 +681,4 @@ def get_forge_iteration_prompt(user_prompt, current_code_json):
 8.  **Run Block:** Keep `if __name__ == '__main__': app.run(host='0.0.0.0', port=5000, debug=True)`.
 9.  **Dependencies:** If you add new Python libraries, update `requirements.txt`. You can use ANY PyPI package.
 
-**AI Model Guidelines:**
-Default to gemini-2.5-flash-lite for AI integrations.
-Valid Gemini models: gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-3-pro-image-preview, gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-image, gemini-live-2.5-flash-native-audio. All 1.0/1.5 models are deprecated.
-
-For any application requiring Generative AI use the Gemini SDK (v1.0+),
-act as a strict implementation engineer.
-### AI System Guidelines: Google GenAI SDK (Python)
-
-## 1. Architecture & Client Initialization
-**Rule:** The system must strictly use the unified `Client` architecture. Legacy `GenerativeModel` class instantiation is deprecated.
-
-### 1.1 Client Setup
-*   **DO:** Initialize a single client instance that persists across requests (where possible).
-*   **DO:** Use `client.aio` for all asynchronous operations (FastAPI/AsyncIO apps).
-*   **DON'T:** Use `genai.configure()`.
-
-```python
-from google import genai
-from google.genai import types
-
-# Synchronous
-client = genai.Client() # Reads GEMINI_API_KEY from env
-
-# Asynchronous
-# await client.aio.models.generate_content(...)
-```
-
----
-
-## 2. Structured Outputs (High Priority)
-**Rule:** All data extraction, classification, and API-to-API communication tasks must use **Pydantic** models to enforce schema adherence.
-
-### 2.1 Schema Definition
-*   **Requirement:** Use `pydantic.BaseModel`.
-*   **Requirement:** Use `pydantic.Field(description="...")` to disambiguate fields for the model.
-*   **Requirement:** Use `enum.Enum` for categorical variables to prevent hallucinations.
-
-### 2.2 Execution Pattern
-To enable structured output, you must pass **both** `response_mime_type='application/json'` AND `response_schema`.
-
-```python
-from pydantic import BaseModel, Field
-from enum import Enum
-from typing import List, Optional
-
-# 1. Define Enums for constrained choices
-class PriorityLevel(str, Enum):
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-
-# 2. Define Nested Structures
-class ActionItem(BaseModel):
-    task: str = Field(description="The specific action to take")
-    priority: PriorityLevel
-    due_in_days: Optional[int] = Field(description="Days until due, None if indefinite")
-
-# 3. Define Root Response Object
-class MeetingSummary(BaseModel):
-    summary: str = Field(description="A 1-sentence summary")
-    attendees: List[str]
-    action_items: List[ActionItem]
-
-# 4. API Call
-response = client.models.generate_content(
-    model="gemini-2.0-flash", # or gemini-3-flash-preview
-    contents="Meeting transcript...",
-    config=types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=MeetingSummary
-    )
-)
-
-# 5. Type-Safe Extraction
-if response.parsed:
-    result: MeetingSummary = response.parsed
-    print(result.action_items[0].priority) # Type-safe access
-```
-
-### 2.3 Handling Structured Streams
-When streaming structured responses, the SDK returns partial JSON chunks.
-*   **Guideline:** For complex UIs, accumulate chunks. For backend processing, wait for the final response or use a stream parser.
-
----
-
-## 3. Gemini 3 Configuration Rules
-**Rule:** Gemini 3 models (`gemini-3.1-pro-preview`, `gemini-3-flash-preview`) require specific parameter tuning that differs from Gemini 2.0.
-
-### 3.1 Temperature & Reasoning
-*   **STRICT RULE:** For Gemini 3, set `temperature=1.0` (default). Lowering this (e.g., 0.1) creates reasoning loops.
-*   **Thinking Configuration:** Use `thinking_config` to control reasoning depth.
-
-| Level | Use Case |
-| :--- | :--- |
-| `low` | Fast chat, simple instructions. |
-| `high` | Complex math, coding, nuanced reasoning. |
-
-```python
-config = types.GenerateContentConfig(
-    temperature=1.0, # MUST BE 1.0
-    thinking_config=types.ThinkingConfig(include_thoughts=True) # View the reasoning
-)
-```
-
-### 3.2 Media Resolution (Vision Tasks)
-Control token usage vs. detail perception using `media_resolution`.
-
-*   **Video:** Defaults to 70 tokens/frame (`low`). Use `high` only for reading text in video.
-*   **PDFs:** Defaults to `medium`. Use `high` for dense OCR.
-
-```python
-# Analyzing a dense diagram
-image_part = types.Part.from_uri(
-    file_uri="...",
-    mime_type="image/jpeg"
-)
-# Force high resolution scanning
-image_part.media_resolution = types.MediaResolution(level="high")
-```
-
----
-
-## 4. Tools & Capabilities
-
-### 4.1 Automatic Function Calling (Python)
-The new SDK automatically serializes Python functions into tool definitions.
-*   **Requirement:** Functions must have full type hints and Google-style docstrings.
-
-```python
-def set_light_color(color: str, brightness: int) -> dict:
-    '''Changes the room lighting.
-
-    Args:
-        color: The hex code or name of the color.
-        brightness: 0-100 integer level.
-    '''
-    return {{{{ "status": "ok" }}}}
-
-# Pass function directly
-response = client.models.generate_content(
-    model="gemini-2.0-flash",
-    contents="Turn lights red.",
-    config=types.GenerateContentConfig(tools=[set_light_color]) 
-)
-# SDK executes function -> sends result -> returns final text automatically
-```
-
-### 4.2 Native Tools Configuration
-Use the `types` namespace to initialize built-in Google tools.
-
-*   **Google Search (Grounding):**
-    ```python
-    tools = [types.Tool(google_search=types.GoogleSearch())]
-    ```
-*   **Code Execution (Sandbox):**
-    ```python
-    tools = [types.Tool(code_execution=types.ToolCodeExecution())]
-    ```
-*   **URL Context (Web Reading):**
-    ```python
-    tools = [types.Tool(url_context=types.UrlContext())]
-    ```
-
----
-
-## 5. Multimodal Generation Rules
-
-### 5.1 Image Generation (Nano Banana)
-*   **Model:** `gemini-2.5-flash-image` (Speed) or `gemini-3-pro-image-preview` (High Fidelity).
-*   **Reasoning:** Gemini 3 Image generation uses "Thinking" to plan the image composition.
-*   **Editing:** Supports conversational editing (e.g., "Make it daytime").
-
-```python
-response = client.models.generate_content(
-    model="gemini-3-pro-image-preview",
-    contents="A cyberpunk city.",
-    config=types.GenerateContentConfig(
-        response_modalities=["IMAGE"],
-        image_config=types.ImageConfig(aspect_ratio="16:9")
-    )
-)
-# Retrieve: response.candidates[0].content.parts[0].inline_data
-```
-
-### 5.2 Audio Generation (TTS)
-*   **Use Case:** Controlled speech generation (not interactive Live API).
-*   **Models:** `gemini-2.5-flash-preview-tts`
-*   **Config:** Use `speech_config` for voice selection.
-
-```python
-config=types.GenerateContentConfig(
-    response_modalities=["AUDIO"],
-    speech_config=types.SpeechConfig(
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Puck")
-        )
-    )
-)
-```
-
-### 5.3 Video Generation (Veo)
-*   **Model:** `veo-3.1-generate-preview`.
-*   **Method:** distinct method `client.models.generate_videos`.
-*   **Polling:** This is a long-running operation. You must poll the operation.
-
-```python
-op = client.models.generate_videos(
-    model="veo-3.1-generate-preview",
-    prompt="Cinematic drone shot of a canyon."
-)
-while not op.done:
-    time.sleep(10)
-    op = client.operations.get(op)
-# Video in op.response.generated_videos[0].video
-```
-
----
-
-## 6. Interactions API & Deep Research (Beta)
-**Rule:** For complex, multi-step agentic workflows (especially Research), use the `interactions` endpoint, not `models`.
-
-### 6.1 Deep Research Agent
-*   **Usage:** Uses `deep-research-pro-preview-12-2025`.
-*   **Requirement:** Must set `background=True` (Deep Research takes minutes).
-*   **Structure:**
-
-```python
-interaction = client.interactions.create(
-    agent="deep-research-pro-preview-12-2025",
-    input="Research the history of TPU development.",
-    background=True
-)
-# Poll interaction.status for 'completed'
-```
-
----
-
-## 7. Migration Checklist (Legacy vs New)
-
-| Legacy SDK Pattern | New SDK Pattern (`google-genai`) |
-| :--- | :--- |
-| `import google.generativeai` | `from google import genai` |
-| `genai.GenerativeModel(...)` | `client = genai.Client()` |
-| `model.generate_content(...)` | `client.models.generate_content(...)` |
-| `response_schema = {{{{...}}}}` (Dict) | `response_schema = MyPydanticClass` |
-| `chat.history` (List access) | Handled internally or manual list management |
-| `genai.upload_file(...)` | `client.files.upload(...)` |
-
-## 8. Summary of Imports & Types
-Standardize your imports to ensure access to all configuration classes:
-
-```python
-from google import genai
-from google.genai import types
-from pydantic import BaseModel, Field
-import os
-
-# Standard Client
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-```
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])**Output Format:** Your entire response MUST be a single, raw, valid JSON object containing **only the files that have changed**. For example: `{{{{\"index.html\": \"<code>\"}}}}` or `{{{{\"requirements.txt\": \"<deps>\"}}}}`. Do not include explanations or any text outside the JSON object."""
-
+**Output Format:** Your entire response MUST be a single, raw, valid JSON object with three keys: \"index.html\", \"app.py\", and \"requirements.txt\". Do not include any text outside the JSON object."""
