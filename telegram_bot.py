@@ -50,7 +50,7 @@ class TelegramBot:
             self._discover_chat_id()
         
         if not self.chat_id:
-            logger.warning("Telegram Chat ID not found. Please message the bot @stellaraiforge_bot to initialize notifications.")
+            logger.warning("Telegram Chat ID not found. Please message the bot @stellaraisystems_bot to initialize notifications.")
             return
 
         try:
