@@ -2102,6 +2102,7 @@ def subagent_tool(
 
     target_container_name = container_id if container_id else f"stellar-lab-u{clean_uid}-c{clean_cid}"
 
+    warning_msg = ""
     try:
         client = docker.from_env()
         try:
@@ -2110,10 +2111,19 @@ def subagent_tool(
                 container.start()
         except docker.errors.NotFound:
             if container_id:
-                return f"Error: Container {container_id} not found."
-            # Fallback if lab container doesn't exist
-            lab_execute("echo 'Init'", "Initializing Lab for offload", timeout=10)
-            container = client.containers.get(target_container_name)
+                warning_msg = f"Warning: Container {container_id} not found. Continuing task in the default lab container.\n\n"
+                target_container_name = f"stellar-lab-u{clean_uid}-c{clean_cid}"
+                try:
+                    container = client.containers.get(target_container_name)
+                    if container.status != 'running':
+                        container.start()
+                except docker.errors.NotFound:
+                    lab_execute("echo 'Init'", "Initializing Lab for offload", timeout=10)
+                    container = client.containers.get(target_container_name)
+            else:
+                # Fallback if lab container doesn't exist
+                lab_execute("echo 'Init'", "Initializing Lab for offload", timeout=10)
+                container = client.containers.get(target_container_name)
     except Exception as e:
         return f"Gemini Offload Error: Docker unavailable - {e}"
 
@@ -2128,8 +2138,16 @@ def subagent_tool(
 
     full_prompt += f"\\nContext:\\n{current_effective_prompt}\\n"
 
-    b64_prompt = base64.b64encode(full_prompt.encode('utf-8')).decode('utf-8')
-    container.exec_run(["bash", "-c", f"echo '{b64_prompt}' | base64 -d > /tmp/gemini_prompt.txt"])
+    import tarfile
+    import io
+    tar_stream = io.BytesIO()
+    with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+        tarinfo = tarfile.TarInfo(name='gemini_prompt.txt')
+        prompt_bytes = full_prompt.encode('utf-8')
+        tarinfo.size = len(prompt_bytes)
+        tar.addfile(tarinfo, io.BytesIO(prompt_bytes))
+    tar_stream.seek(0)
+    container.put_archive('/tmp/', tar_stream)
 
     script = f'''#!/bin/bash
 CONFIG_DIR="/root/.gemini"
@@ -2177,8 +2195,15 @@ done
 echo "Error: All accounts exhausted quota or failed." >&2
 exit 1
 '''
-    b64_script = base64.b64encode(script.encode('utf-8')).decode('utf-8')
-    container.exec_run(["bash", "-c", f"echo '{b64_script}' | base64 -d > /tmp/run_gemini.sh && chmod +x /tmp/run_gemini.sh"])
+    tar_stream_sh = io.BytesIO()
+    with tarfile.open(fileobj=tar_stream_sh, mode='w') as tar:
+        tarinfo = tarfile.TarInfo(name='run_gemini.sh')
+        script_bytes = script.encode('utf-8')
+        tarinfo.size = len(script_bytes)
+        tarinfo.mode = 0o755
+        tar.addfile(tarinfo, io.BytesIO(script_bytes))
+    tar_stream_sh.seek(0)
+    container.put_archive('/tmp/', tar_stream_sh)
 
     exec_result = container.exec_run("/tmp/run_gemini.sh", environment={"TERM": "xterm-256color"})
     output = exec_result.output.decode('utf-8', 'replace')
@@ -2196,9 +2221,9 @@ exit 1
     output = output.strip()
 
     if exec_result.exit_code != 0:
-        return f"Gemini Offload Error:\\n{output}"
+        return f"{warning_msg}Gemini Offload Error:\n{output}"
 
-    return output
+    return f"{warning_msg}{output}"
 
 def report_process_issue(topic: str, issue_description: str, technical_context: str, status: str) -> str:
     """Reports technical bottlenecks, process failures, or feedback on internal tool execution.
