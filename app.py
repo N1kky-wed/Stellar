@@ -35,8 +35,7 @@ from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 import redis
 from prompts import (
-    rtp, crtp, get_refinement_prompt, get_research_analysis_prompt,
-    get_final_expansion_prompt
+    get_refinement_prompt
 )
 
 redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
@@ -1083,55 +1082,6 @@ def scrape_url(url: str) -> str:
 
 stop_sequence="8919018818"
 
-def classify_real_time_needed(query: str, key: str = None) -> str:
-    query_lower = query.lower()
-    check_segment = query_lower[:min(len(query_lower), 250)]
-    real_time_keywords = [
-        "latest", "current", "recent", "today", "now", "live", "ongoing", "update", "new", "breaking",
-        "up-to-the-minute", "presently", "happening", "unfolding", "developments", "changes",
-        "emerging", "novel", "trends", "upto date", "current edition",
-        "verify", "fact check", "accurate", "true", "false", "confirm", "evidence", "sources",
-        "reliable", "validate", "authenticate", "debunk",
-        "look up", "find out", "define", "what is", "who is", "statistics", "data", "details",
-        "specifics", "information on", "tell me about", "explain", "research", "report on",
-        "compare", "vs", "versus", "stats",
-        "financial", "stock", "market", "economic", "rates", "prices", "investment", "business",
-        "weather", "news", "politics", "election", "sports score", "game result",
-        "courses", "books", "material", "syllabus", "curriculum", "learning", "study guide",
-        "tutorial", "documentation", "api reference",
-        "which", "who", "when", "where", "how much", "cost of", "price of", "status of",
-        "search for", "get me", "summarize article", "find paper"
-    ]
-    for keyword in real_time_keywords:
-        if re.search(r'\b' + re.escape(keyword) + r'\b', check_segment, re.IGNORECASE):
-            return "yes"
-    api_key = key or PRIMARY_API_KEY
-    if not api_key:
-        return "no"
-    model_name = 'gemini-2.5-flash-lite'
-    client = None
-    try:
-        client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
-        chat = client.chats.create(model=model_name, config={'tools': []})
-    except Exception as e:
-        logger.exception("Error caught: %s", e)
-        return "no"
-    prompt = crtp(query)
-    try:
-        r = chat.send_message(prompt)
-        if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
-            response_text = r.candidates[0].content.parts[0].text.strip().lower()
-            if "yes" in response_text:
-                return "yes"
-            elif "no" in response_text:
-                return "no"
-            else:
-                return "no"
-        else:
-            return "no"
-    except Exception as e:
-        logger.exception("Error caught: %s", e)
-        return "no"
 def is_output_cut_off(text: str, key: str) -> bool:
     if not key:
         return False
@@ -1390,39 +1340,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         func_name = fc.name
                         args_dict = dict(fc.args) if fc.args else {}
                         
-                        # Priority 1: Use model-provided 'status' if present
-                        if args_dict.get('status'):
-                            yield {'status': args_dict.get('status')}
-                        # Priority 2: Fallback to hardcoded status messages
-                        elif func_name == "native_search":
-                            yield {'status': 'Searching the web...'}
-                        elif func_name == "extensive_search":
-                            yield {'status': 'Performing extensive web research...'}
-                        elif func_name == "generate_image":
-                            yield {'status': 'Generating your image...'}
-                        elif func_name == "logs_and_preferences":
-                            yield {'status': 'Syncing logs and preferences...'}
-                        elif func_name == "make_presentation":
-                            yield {'status': 'Creating presentation slides...'}
-                        elif func_name == "analyze_youtube_video":
-                            yield {'status': 'Analyzing YouTube video content...'}
-                        elif func_name == "manage_files":
-                            yield {'status': 'Managing files...'}
-                        elif func_name == "lab_execute":
-                            yield {'status': 'Using Lab...'}
-                        elif func_name == "read_tool_output":
-                            yield {'status': 'Reading tool history...'}
-                        elif func_name == "repo_control":
-                            action = args_dict.get('action', '')
-                            if action == 'deploy': yield {'status': 'Deploying repository environment...'}
-                            elif action == 'execute': yield {'status': 'Executing command in project...'}
-                            elif action == 'rename': yield {'status': 'Renaming deployment...'}
-                            elif action == 'restart': yield {'status': 'Restarting deployment...'}
-                            elif action == 'stop': yield {'status': 'Stopping deployment...'}
-                            elif action == 'snapshot': yield {'status': 'Snapshotting files...'}
-                            else: yield {'status': 'Managing repository...'}
-                        else:
-                            yield {'status': f'Using tool: {func_name}...'}
+                        timeout_val = args_dict.get('timeout', 600)
+                        
+                        yield {'status': args_dict.get('status', f'Using tool: {func_name}...'), 'timeout': timeout_val}
                             
                         # execute
                         try:
@@ -1451,7 +1371,13 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                         prompt_text = current_effective_prompt
                                     args_dict['current_effective_prompt'] = prompt_text
 
-                                res = func_to_call(**args_dict)
+                                import concurrent.futures
+                                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                                    future = executor.submit(func_to_call, **args_dict)
+                                    try:
+                                        res = future.result(timeout=timeout_val)
+                                    except concurrent.futures.TimeoutError:
+                                        res = f"Error: Tool '{func_name}' was stopped because it exceeded the timeout of {timeout_val} seconds that the agent set for that tool."
                             
                             # Record tool call in DB for context persistence
                             record_tool_call(func_name, args_dict, res)
@@ -2493,7 +2419,10 @@ def refine_stream():
                     current_attempt_result = ""
                     for item in generator_output:
                         if 'status' in item:
-                            yield f"data: {json.dumps({'status': item['status'], 'phase': 'refining'})}\n\n"
+                            status_dict = {'status': item['status'], 'phase': 'refining'}
+                            if 'timeout' in item:
+                                status_dict['timeout'] = item['timeout']
+                            yield f"data: {json.dumps(status_dict)}\n\n"
                         elif 'result' in item:
                             temp_result = item['result']
                             if isinstance(temp_result, str) and temp_result.startswith(ERROR_CODE):

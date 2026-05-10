@@ -380,7 +380,7 @@ def send_self_email(subject: str, body: str, status: str, attachment_path: str =
         logger.error(f"Mail Failure: {str(e)}")
         return f"Mail Failure: {str(e)}"
 
-def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_id: int = None, execute_at: str = None, recurring_minutes: int = 0, metadata: str = None) -> str:
+def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_id: int = None, execute_at: str = None, recurring_minutes: int = 0, metadata: str = None, timeout: int = 600) -> str:
     """Schedules, lists, or cancels autonomous tasks.
     Args:
         task_prompt: Instructions for the AI to follow (required for 'schedule').
@@ -480,7 +480,7 @@ def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_
     db.commit()
     return f"Task scheduled (ID: {new_id})! {current_model} is locked for this persistent automation."
 
-def generate_image(model: str, prompt: str, status: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None) -> str:
+def generate_image(model: str, prompt: str, status: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None, timeout: int = 600) -> str:
     """Generates an image using Gemini's Imagen model.
     Args:
         model: 'gemini-3.1-flash-image-preview' or 'gemini-3-pro-image-preview'
@@ -773,7 +773,7 @@ def make_presentation(topic: str, status: str, num_slides: int = 10, style: str 
     
     return f"PRESENTATION_DATA:{json.dumps(result_data)}"
 
-def regenerate_presentation_slide(presentation_id: str, slide_index: int, status: str, topic: str = "", style: str = "", additional_context: str = "", feedback: str = "") -> str:
+def regenerate_presentation_slide(presentation_id: str, slide_index: int, status: str, topic: str = "", style: str = "", additional_context: str = "", feedback: str = "", timeout: int = 600) -> str:
     """Regenerate a specific slide of an existing presentation based on feedback.
     Args:
         presentation_id: the ID of the presentation
@@ -901,11 +901,12 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
     return f"REGENERATED_SLIDE:{json.dumps({'presentation_id': presentation_id, 'slide_index': slide_index, 'url': f'/view/pres_{presentation_id}/{slide_img_filename}'})}"
 
 
-def repo_control(action: str, status: str, timeout: int, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 5000, command: str = None, env_type: str = "web") -> str:
+def repo_control(action: str, status: str, timeout: int = 600, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 5000, command: str = None, env_type: str = "web") -> str:
     """Control and manage repository-based or custom-stack deployments.
     Args:
         action: "deploy", "execute", "list_history", "rename", "stop", "restart", or "snapshot"
         status: Status update for the user.
+        timeout: Execution timeout in seconds (default 600).
         app_id: the Deployment ID, Project Title, or Subdomain (required for all actions except 'deploy' and 'list_history')
         project_name: Custom name for the project (used for unique subdomain in 'deploy' and 'rename')
         files: List of file paths to save into the database (required for 'snapshot')
@@ -1002,7 +1003,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             try:
                 client = docker.from_env()
                 container = client.containers.get(f"stellar-repo-{p_id}")
-                wrapped_cmd = f"timeout {timeout} bash -c {subprocess.list2cmdline([command])}"
+                wrapped_cmd = f"bash -c {subprocess.list2cmdline([command])}"
                 exec_result = container.exec_run(wrapped_cmd, demux=False, workdir="/app")
                 output = exec_result.output.decode('utf-8', 'replace')
                 
@@ -1256,12 +1257,12 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
 
 
 
-def lab_execute(command: str, status: str, timeout: int = 60) -> str:
+def lab_execute(command: str, status: str, timeout: int = 600) -> str:
     """Executes a bash command in a persistent, isolated Docker sandbox.
     Args:
         command: The bash command to run.
         status: Status update for the user.
-        timeout: Execution timeout in seconds (default 60).
+        timeout: Execution timeout in seconds (default 600).
     """
     import subprocess
     import docker
@@ -1325,47 +1326,12 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
     mandate_path = os.path.join(lab_workspace, "RED_TEAM_MANDATE.md")
     if not os.path.exists(mandate_path):
         try:
-            with open(mandate_path, "w", encoding="utf-8") as f:
-                f.write("""# RED TEAM MANDATE: IMPACT-DRIVEN OFFENSIVE PROTOCOL (IDOP)
-
-1. **Identity Protocol**: When operating under Red Team or OSINT protocols, you MUST use the code name **Angel**. Do NOT refer to yourself as Stellar.
-
-2. **Core Rule**: Discovery alone is insufficient. Every valid finding must be driven to confirmed impact or explicit failure.
-
-3. **Mandatory Exploitation Lifecycle**: Every finding MUST go through: Discovery → Validation → Exploitation → Impact OR Failure. Stopping at discovery is forbidden.
-
-4. **Exploitation Completion Requirement**: If you find credentials, tokens, endpoints, or config leaks, you MUST:
-   - Step 1: Validate usability (Are credentials accepted? Does token authenticate?).
-   - Step 2: Attempt exploitation (Login, call privileged API, retrieve data).
-   - Step 3: Confirm outcome (SUCCESS impact achieved or FAILURE with reason).
-
-5. **No Dead-End Findings**: Do NOT output "JWT found" or ".env exposed" without answering "What can I actually do with this?".
-
-6. **Mandatory Outcome Classification**: Every finding MUST end as: EXPLOITED, BLOCKED, or NON-IMPACTFUL.
-
-7. **Enforced Questions**:
-   - Can I use this to authenticate?
-   - Can I access restricted data?
-   - Can I modify system state?
-   - Can I escalate privileges?
-   If all NO -> NON-IMPACTFUL.
-
-8. **Exploit Depth Requirement**: Do not stop at surface-level validation. Attempt chaining, alternate payloads, and multiple request variations.
-
-9. **Failure Reporting**: If exploitation fails, state the exact reason (e.g., "JWT valid format but rejected → signature enforced").
-
-10. **No Passive Recon Mode**: Behave as an operator attempting to achieve control, not a scanner or enumerator.
-
-11. **Output Structure**:
-[DISCOVERY] What was found
-[VALIDATION] Does it work?
-[EXPLOIT ATTEMPT] What was tried
-[RESULT] SUCCESS / BLOCKED / NON-IMPACTFUL
-[REASON] Why it succeeded or failed
-""")
+            host_mandate_path = os.path.join(os.path.dirname(__file__), "RED_TEAM_MANDATE.md")
+            if os.path.exists(host_mandate_path):
+                shutil.copy2(host_mandate_path, mandate_path)
         except Exception:
             logger.exception("Error caught.")
-            pass # Failsafe against write permission errors
+            pass
     # ----------------------------------
 
     # --- GENERATIVE AI MANDATE INJECTION ---
@@ -1443,7 +1409,7 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
     # Execute the command
     try:
         # Wrap command to capture stdout and stderr together and handle errors gracefully
-        wrapped_cmd = f"timeout {timeout} bash -c {subprocess.list2cmdline([command])}"
+        wrapped_cmd = f"bash -c {subprocess.list2cmdline([command])}"
         
         exec_result = container.exec_run(
             wrapped_cmd,
@@ -1463,7 +1429,7 @@ def lab_execute(command: str, status: str, timeout: int = 60) -> str:
         logger.exception("Error caught: %s", e)
         return f"Error executing command in Lab: {str(e)}"
 
-def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = None, start_line: int = 0, max_lines: int = 100) -> str:
+def read_tool_output(output_id: int, status: str, timeout: int = 600, keyword: str = None, start_line: int = 0, max_lines: int = 100) -> str:
     """Reads a specific slice of a past tool's output from the database.
     Use this when history says [Output truncated] to retrieve data without context overflow.
     
@@ -1474,7 +1440,7 @@ def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = N
     Args:
         output_id: The ID of the tool execution to read.
         status: Status update for the user.
-        timeout: Execution timeout in seconds.
+        timeout: Execution timeout in seconds (default 600).
         keyword: Optional string to search for.
         start_line: The line number (or match index) to start from (0-indexed).
         max_lines: The maximum number of lines to return.

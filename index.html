@@ -8035,6 +8035,7 @@
         newText,
         isError = false,
         analysisDetails = null,
+        timeoutVal = null
       ) {
         const msgDiv = messagesDiv.querySelector(`.message[data-id="${id}"]`);
         if (!msgDiv) {
@@ -8087,6 +8088,9 @@
             // Do nothing if it's identical text
           } else {
             if (currentActiveItem) {
+              if (currentActiveItem.dataset.timerId) {
+                clearInterval(parseInt(currentActiveItem.dataset.timerId, 10));
+              }
               currentActiveItem.classList.remove("active");
               if (isError) {
                 currentActiveItem.classList.add("error");
@@ -8112,6 +8116,10 @@
             ) {
               const item = document.createElement("div");
               item.className = "status-item active";
+              let timeoutHtml = "";
+              if (timeoutVal) {
+                timeoutHtml = `<div class="status-timeout" style="margin-left:auto; font-size:0.85em; opacity:0.8; white-space:nowrap; padding-left:10px;"><span class="countdown-timer" data-time="${timeoutVal}">${timeoutVal}s</span></div>`;
+              }
               item.innerHTML = `
                               <div class="status-icon-container">
                                   <svg class="tool-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" style="width:18px;height:18px;">
@@ -8120,8 +8128,24 @@
                                   </svg>
                               </div>
                               <div class="status-text">${escapeHtml(displayMsg)}</div>
+                              ${timeoutHtml}
                           `;
               statusSpan.appendChild(item);
+              
+              if (timeoutVal) {
+                const timerSpan = item.querySelector(".countdown-timer");
+                let timeLeft = timeoutVal;
+                const intervalId = setInterval(() => {
+                  timeLeft--;
+                  if (timeLeft <= 0) {
+                    clearInterval(intervalId);
+                    if (timerSpan) timerSpan.textContent = "0s";
+                  } else {
+                    if (timerSpan) timerSpan.textContent = timeLeft + "s";
+                  }
+                }, 1000);
+                item.dataset.timerId = intervalId;
+              }
             } else if (isError) {
               const item = document.createElement("div");
               item.className = "status-item error";
@@ -8922,12 +8946,15 @@
                     data.status || "Processing...",
                     false,
                     analysisResultsReceived,
+                    data.timeout
                   );
                 } else if (data.status) {
                   updateStellarMessagePlaceholder(
                     placeholderId,
                     data.status || "Processing...",
                     false,
+                    null,
+                    data.timeout
                   );
                 }
 
