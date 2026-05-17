@@ -43,29 +43,37 @@ To set up and run Stellar, follow these steps:
    sudo systemctl restart stellar
    ```
 
-## Feature Analysis
+## Feature Analysis & Agent Tools
 
-Stellar comes packed with powerful features out-of-the-box designed for complete autonomous development:
+Stellar is equipped with an extensive suite of native tools (`agent_tools.py`) that provide complete system agency:
 
-*   **Stateful Memory & Persistence:** By maintaining SQLite databases (`stellar_local.db`), it ensures any work completed, conversations had, and context built up is never lost between sessions.
-*   **Docker Orchestration Framework:** Spin up hardened environments for running untrusted code securely using the internal Docker orchestration engine (`dockersetup.py` and `app.py`).
-*   **Subagent Delegation:** A robust multi-agent framework where the main AI can spawn, monitor, and coordinate sub-agents specialized in different development mandates (frontend, backend, generative AI, etc.).
-*   **Automated Workspace Management:** Manages files across multiple environments seamlessly (Chat, Lab, Repo), parsing logs, testing code, and generating structured reports automatically.
-*   **Multi-Modal Intelligence Tools:** Native integration to pull youtube transcripts, perform web scraping (`webscrapper.py`), and analyze external intelligence directly into its reasoning loop.
+*   **Repo Control (`repo_control`)**: An industrial-grade orchestrator that allows the agent to spin up multi-file backend/frontend applications in dedicated containers, complete with GitHub cloning, start/stop lifecycles, real-time snapshotting, and secure port routing.
+*   **Isolated Sandboxing (`lab_execute`)**: A zero-latency Docker execution environment enabling the AI to securely run arbitrary Bash/Python scripts, perform data science, or test red-team exploits.
+*   **Subagent Delegation (`subagent_tool`)**: Spawns isolated, mandate-driven sub-agents (e.g., Frontend Specialist, Security Analyst) within secure containers to concurrently tackle segmented components of a larger architecture.
+*   **AI Presentation Generator (`make_presentation` & `regenerate_presentation_slide`)**: End-to-end autonomous creation of `.pptx` slide decks. The agent researches a topic, drafts narratives, generates graphical slides, and can selectively regenerate specific slides based on feedback.
+*   **YouTube Intelligence (`analyze_youtube_video`)**: Multi-modal capability to dissect YouTube videos, extracting precise transcripts, summaries, and timestamps based on targeted queries.
+*   **Generative Assets (`generate_image`)**: Create high-fidelity imagery natively, customizing aspect ratios and applying quality enhancements directly into project workflows.
+*   **Task Scheduling (`schedule_task`)**: Schedule recurring or one-off autonomous prompts and background scripts to execute even when the user is offline.
+*   **Persistent Memory (`logs_and_preferences`)**: Global and user-scoped memory system allowing the AI to read/write its own operational preferences and stateful context between sessions.
+*   **Cross-Environment File Transfer (`manage_files`)**: Secure and seamless movement of files across the user's Chat interface, the secure Lab sandbox, and the persistent Repo orchestrator.
+*   **Deep Web Search (`web_search`)**: Advanced web search capabilities utilizing external APIs to answer complex queries, fetch real-time intelligence, and scrape online imagery.
+*   **Output Stream Management (`read_tool_output`)**: Intelligent pagination and retrieval of massive system logs, preventing context-window overflow during deep analysis.
+*   **Self-Healing Feedback Loop (`report_process_issue`)**: Built-in mechanism to document technical bottlenecks or process failures into an internal database tracker for continuous framework improvement.
+*   **Automated Emailing (`send_self_email`)**: Sends status reports, comprehensive logs, and generated assets directly to configured email addresses.
 
 ## Use Cases & Detailed Examples
 
 ### 1. Autonomous Web Application Development
 **Scenario:** Building a full-stack React application with a Node.js or Python backend.
-**Example:** Provide Stellar with the project requirements. Stellar will automatically scaffold the frontend and backend architectures within its `Repo Control` environment. It can iteratively build components, run tests in an isolated Docker container, inspect network failures or container crash logs, patch the code, and present the finished, deployed prototype. 
+**Example:** Provide Stellar with the project requirements. Stellar will use `repo_control` to automatically scaffold the frontend and backend architectures. It can iteratively build components, run tests, inspect network failures or container crash logs via `read_tool_output`, patch the code, and present the finished, deployed prototype on a dedicated port.
 
 ### 2. Deep Security Analysis (Red Teaming)
 **Scenario:** Identifying vulnerabilities in an open-source library or application codebase.
-**Example:** Using the "Red Team Mandate," Stellar can be directed to pull down a target library. Using its Lab sandbox, it will run automated linting, AST analysis, and custom vulnerability scanners. It documents its findings, attempts to build proof-of-concept exploits in safe, containerized environments, and writes up comprehensive vulnerability reports.
+**Example:** Using the Red Team mandate via `subagent_tool`, Stellar can pull down a target library using `lab_execute`. It will run automated linting, AST analysis, and custom vulnerability scanners. It documents its findings into its `logs_and_preferences`, attempts to build proof-of-concept exploits, and writes up comprehensive vulnerability reports.
 
-### 3. Generative Media and Assets
-**Scenario:** Generating professional assets for a new application or game project.
-**Example:** Driven by the "Game Development" and "Generative AI" mandates, Stellar can write complex narrative structures, then automatically generate visual assets like textures, character sprites, and UI elements. It manages the files in the project folder and integrates them directly into the codebase.
+### 3. Automated Reporting & Presentations
+**Scenario:** Generating professional asset reports or pitch decks on technical architectures.
+**Example:** Stellar uses `web_search` and `analyze_youtube_video` to gather information on a subject. It synthesizes this intelligence and triggers `make_presentation` to generate a `.pptx` file. If a slide misses the mark, the user can request a fix, prompting Stellar to invoke `regenerate_presentation_slide`. Finally, it uses `send_self_email` to deliver the final deck to stakeholders.
 
 ## System Guidelines
 
