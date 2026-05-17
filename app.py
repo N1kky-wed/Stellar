@@ -2820,27 +2820,27 @@ def view_file(filename):
 
 @app.route('/default.min.css')
 def serve_highlight_css():
-    return send_from_directory('.', 'default.min.css')
+    return send_from_directory('static', 'default.min.css')
 
 @app.route('/custom_select.css')
 def serve_custom_select_css():
-    return send_from_directory('.', 'custom_select.css')
+    return send_from_directory('static', 'custom_select.css')
 
 @app.route('/custom_select.js')
 def serve_custom_select_js():
-    return send_from_directory('.', 'custom_select.js')
+    return send_from_directory('static', 'custom_select.js')
 
 @app.route('/highlight.min.js')
 def serve_highlight_js():
-    return send_from_directory('.', 'highlight.min.js')
+    return send_from_directory('static', 'highlight.min.js')
 
 @app.route('/marked.min.js')
 def serve_marked():
-    return send_from_directory('.', 'marked.min.js')
+    return send_from_directory('static', 'marked.min.js')
 
 @app.route('/turndown.js')
 def serve_turndown():
-    return send_from_directory('.', 'turndown.js')
+    return send_from_directory('static', 'turndown.js')
 
 def send_approval_email(recipient_email, display_name):
     sender = os.getenv("EMAIL_USER")
@@ -3411,7 +3411,7 @@ def index():
         return response
 
     if 'user_id' not in session:
-        return serve_no_cache('login.html')
+        return serve_no_cache('templates/login.html')
 
     db = get_db()
     cursor = db.execute('SELECT is_approved FROM users WHERE id = ?', (session['user_id'],))
@@ -3424,13 +3424,13 @@ def index():
         session.pop('is_approved', None)
 
     if not session.get('is_approved'):
-        return serve_no_cache('waitlist.html')
+        return serve_no_cache('templates/waitlist.html')
     
     if 'initialized' not in session:
         session['initialized'] = True
         session.permanent = True
         
-    return serve_no_cache('index.html')
+    return serve_no_cache('templates/index.html')
 @app.route('/api/chats/search_messages', methods=['GET'])
 @require_approval
 def search_messages_route():
