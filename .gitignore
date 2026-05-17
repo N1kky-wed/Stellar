@@ -25,3 +25,5 @@ uploads/
 outputs/
 .DS_Store
 temp_venv/
+GEMINI.md
+gemini.md

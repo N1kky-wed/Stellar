@@ -42,6 +42,7 @@ def _get_effective_session():
 def web_search(
     action: str,
     status: str,
+    timeout: int,
     query: Optional[str] = None,
     url: Optional[str] = None,
     urls: Optional[List[str]] = None,
@@ -72,8 +73,7 @@ def web_search(
     max_depth: int = 2,
     max_breadth: int = 20,
     limit: int = 50,
-    allow_external: bool = True,
-    timeout: Optional[float] = None
+    allow_external: bool = True
 ) -> str:
     """Unified Web Search, Extraction, Crawling, and Mapping Tool.
     
@@ -250,7 +250,7 @@ def web_search(
         logger.exception("Error caught: %s", e)
         return json.dumps({"error": str(e)})
 
-def send_self_email(subject: str, body: str, status: str, attachment_path: str = None) -> str:
+def send_self_email(subject: str, body: str, status: str, timeout: int, attachment_path: str = None) -> str:
     """Secure Closed-Loop Mailer. Sends reports/files ONLY to your registered email address.
     Args:
         subject: Subject line.
@@ -380,7 +380,7 @@ def send_self_email(subject: str, body: str, status: str, attachment_path: str =
         logger.error(f"Mail Failure: {str(e)}")
         return f"Mail Failure: {str(e)}"
 
-def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_id: int = None, execute_at: str = None, recurring_minutes: int = 0, metadata: str = None, timeout: int = 600) -> str:
+def schedule_task(task_prompt: str, status: str, timeout: int, action: str = "schedule", task_id: int = None, execute_at: str = None, recurring_minutes: int = 0, metadata: str = None) -> str:
     """Schedules, lists, or cancels autonomous tasks.
     Args:
         task_prompt: Instructions for the AI to follow (required for 'schedule').
@@ -480,7 +480,7 @@ def schedule_task(task_prompt: str, status: str, action: str = "schedule", task_
     db.commit()
     return f"Task scheduled (ID: {new_id})! {current_model} is locked for this persistent automation."
 
-def generate_image(model: str, prompt: str, status: str, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None, timeout: int = 600) -> str:
+def generate_image(model: str, prompt: str, status: str, timeout: int, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None) -> str:
     """Generates an image using Gemini's Imagen model.
     Args:
         model: 'gemini-3.1-flash-image-preview' or 'gemini-3-pro-image-preview'
@@ -579,7 +579,7 @@ def generate_image(model: str, prompt: str, status: str, quality: str = "1K", as
 
 
 
-def logs_and_preferences(status: str, write: str = "", user_id: str = "global") -> str:
+def logs_and_preferences(status: str, timeout: int, write: str = "", user_id: str = "global") -> str:
     """Stores user preferences, previous errors, and resolution strategies. Memory is automatically provided to your context.
     
     Args:
@@ -622,7 +622,7 @@ def logs_and_preferences(status: str, write: str = "", user_id: str = "global") 
         logger.exception("Error caught: %s", e)
         return f"Error accessing logs/preferences: {str(e)}"
 
-def make_presentation(topic: str, status: str, num_slides: int = 10, style: str = "corporate", additional_context: str = "") -> str:
+def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 10, style: str = "corporate", additional_context: str = "") -> str:
     """Generate a fully designed PowerPoint presentation where each slide is a full-bleed AI generated image containing text.
     Args:
         topic: The topic of the presentation
@@ -773,7 +773,7 @@ def make_presentation(topic: str, status: str, num_slides: int = 10, style: str 
     
     return f"PRESENTATION_DATA:{json.dumps(result_data)}"
 
-def regenerate_presentation_slide(presentation_id: str, slide_index: int, status: str, topic: str = "", style: str = "", additional_context: str = "", feedback: str = "", timeout: int = 600) -> str:
+def regenerate_presentation_slide(presentation_id: str, slide_index: int, status: str, timeout: int, topic: str = "", style: str = "", additional_context: str = "", feedback: str = "") -> str:
     """Regenerate a specific slide of an existing presentation based on feedback.
     Args:
         presentation_id: the ID of the presentation
@@ -901,12 +901,12 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
     return f"REGENERATED_SLIDE:{json.dumps({'presentation_id': presentation_id, 'slide_index': slide_index, 'url': f'/view/pres_{presentation_id}/{slide_img_filename}'})}"
 
 
-def repo_control(action: str, status: str, timeout: int = 600, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 5000, command: str = None, env_type: str = "web") -> str:
+def repo_control(action: str, status: str, timeout: int, app_id: str = None, project_name: str = None, files: list[str] = None, repo_url: str = None, port: int = 5000, command: str = None, env_type: str = "web") -> str:
     """Control and manage repository-based or custom-stack deployments.
     Args:
         action: "deploy", "execute", "list_history", "rename", "stop", "restart", or "snapshot"
         status: Status update for the user.
-        timeout: Execution timeout in seconds (default 600).
+        timeout: Execution timeout in seconds.
         app_id: the Deployment ID, Project Title, or Subdomain (required for all actions except 'deploy' and 'list_history')
         project_name: Custom name for the project (used for unique subdomain in 'deploy' and 'rename')
         files: List of file paths to save into the database (required for 'snapshot')
@@ -980,9 +980,8 @@ def repo_control(action: str, status: str, timeout: int = 600, app_id: str = Non
                 db.execute("UPDATE repo_history SET status = 'running', deployment_url = ? WHERE process_id = ?", (f"https://{subdomain}.stellarai.live/", process_id))
                 db.commit()
                 if repo_url:
-                    clone_res = container.exec_run(f"git clone {repo_url} .", workdir="/app")
-                    if clone_res.exit_code != 0: return f"Git clone failed: {clone_res.output.decode()}"
-                
+                    clone_res = container.exec_run(f"git clone {repo_url} .")
+                    if clone_res.exit_code != 0: return f"Git clone failed: {clone_res.output.decode()}"                
                 public_url = f"https://{subdomain}.stellarai.live/"
                 return f"Container provisioned for '{project_title}'! ID: `{process_id}`. Live URL: {public_url} Use action='execute' to build and start the app. CRITICAL: Ensure your app listens on 0.0.0.0 and port {port}."
             except Exception as e:
@@ -1004,8 +1003,28 @@ def repo_control(action: str, status: str, timeout: int = 600, app_id: str = Non
                 client = docker.from_env()
                 container = client.containers.get(f"stellar-repo-{p_id}")
                 wrapped_cmd = f"bash -c {subprocess.list2cmdline([command])}"
-                exec_result = container.exec_run(wrapped_cmd, demux=False, workdir="/app")
+                
+                # --- OCI RUNTIME FIX: Avoid explicit workdir to prevent namespace errors ---
+                exec_result = container.exec_run(wrapped_cmd, demux=False)
                 output = exec_result.output.decode('utf-8', 'replace')
+
+                # --- OCI RUNTIME ERROR RECOVERY ---
+                if exec_result.exit_code == 128 and ("mount namespace root" in output or "container breakout" in output or "exec failed" in output):
+                    logger.warning(f"Detected broken container mount for stellar-repo-{p_id}. Restarting...")
+                    try:
+                        # Attempt a quick stop and restart to refresh mounts
+                        container.stop(timeout=2)
+                        container.remove(force=True)
+                    except: pass
+                    
+                    restart_res = repo_control(action="restart", status="Restarting for recovery...", app_id=p_id)
+                    if "Error" in restart_res: return restart_res
+                    
+                    # Prevent infinite recursion
+                    if kwargs.get('_retry_count', 0) < 2:
+                        kwargs['_retry_count'] = kwargs.get('_retry_count', 0) + 1
+                        return repo_control(action, status, timeout, app_id, project_name, files, repo_url, port, command, env_type, **kwargs)
+                # ----------------------------------
                 
                 # Enhanced health check if a start-like command is detected
                 if any(kw in command.lower() for kw in ["npm start", "python", "node", "serve", "go run", "npm run dev"]):
@@ -1076,7 +1095,7 @@ def repo_control(action: str, status: str, timeout: int = 600, app_id: str = Non
                 tracked_files = list(current_snapshot.keys())
                 
                 # Scan for any code files in /app to ensure new files are captured
-                res = container.exec_run("find . -maxdepth 3 -not -path '*/.*' -not -path './node_modules/*' -not -path './venv/*' -type f", workdir="/app")
+                res = container.exec_run("find . -maxdepth 3 -not -path '*/.*' -not -path './node_modules/*' -not -path './venv/*' -type f")
                 if res.exit_code == 0:
                     found_files = res.output.decode('utf-8', 'replace').strip().split('\n')
                     for f in found_files:
@@ -1090,7 +1109,7 @@ def repo_control(action: str, status: str, timeout: int = 600, app_id: str = Non
                     clean_path = file_path.replace('/app/', '').lstrip('/')
                     if clean_path in ['repo', 'port']: continue
                     
-                    res = container.exec_run(f"cat {clean_path}", workdir="/app")
+                    res = container.exec_run(f"cat {clean_path}")
                     if res.exit_code == 0:
                         current_snapshot[clean_path] = res.output.decode('utf-8', 'replace')
                         count += 1
@@ -1180,13 +1199,13 @@ def repo_control(action: str, status: str, timeout: int = 600, app_id: str = Non
             with active_apps_lock: active_apps[process_id] = {"container_id": container.id, "port": host_port, "status": "running"}
 
             if repo_url:
-                container.exec_run(f"git clone {repo_url} .", workdir="/app")
+                container.exec_run(f"git clone {repo_url} .")
             
             # Restore manual edits from snapshot
             for fname, content in snapshot.items():
                 if fname in ['repo', 'port'] or not isinstance(content, str): continue
                 b64_content = base64.b64encode(content.encode()).decode()
-                container.exec_run(f"python3 -c \"import base64; import os; d=os.path.dirname('{fname}'); d and os.makedirs(d, exist_ok=True); open('{fname}', 'wb').write(base64.b64decode('{b64_content}'))\"", workdir="/app")
+                container.exec_run(f"python3 -c \"import base64; import os; d=os.path.dirname('{fname}'); d and os.makedirs(d, exist_ok=True); open('{fname}', 'wb').write(base64.b64decode('{b64_content}'))\"")
 
             public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
             
@@ -1235,7 +1254,7 @@ def repo_control(action: str, status: str, timeout: int = 600, app_id: str = Non
             for file_path in files:
                 # Remove leading /app/ if present
                 clean_path = file_path.replace('/app/', '').lstrip('/')
-                res = container.exec_run(f"cat {clean_path}", workdir="/app")
+                res = container.exec_run(f"cat {clean_path}")
                 if res.exit_code == 0:
                     try:
                         decoded_text = res.output.decode('utf-8', strict=True)
@@ -1257,12 +1276,12 @@ def repo_control(action: str, status: str, timeout: int = 600, app_id: str = Non
 
 
 
-def lab_execute(command: str, status: str, timeout: int = 600) -> str:
+def lab_execute(command: str, status: str, timeout: int) -> str:
     """Executes a bash command in a persistent, isolated Docker sandbox.
     Args:
         command: The bash command to run.
         status: Status update for the user.
-        timeout: Execution timeout in seconds (default 600).
+        timeout: Execution timeout in seconds.
     """
     import subprocess
     import docker
@@ -1363,7 +1382,7 @@ def lab_execute(command: str, status: str, timeout: int = 600) -> str:
     mobile_dev_mandate_path = os.path.join(lab_workspace, "MOBILE_DEVELOPMENT_MANDATE.md")
     if not os.path.exists(mobile_dev_mandate_path):
         try:
-            host_mobile_dev_mandate_path = os.path.join(os.path.dirname(__file__), "MOBILE_DEVELOPMENT_MANDATE.md")
+            host_mobile_dev_mandate_path = os.path.join(os.path.dirname(__file__), "mandates", "MOBILE_DEVELOPMENT_MANDATE.md")
             if os.path.exists(host_mobile_dev_mandate_path):
                 shutil.copy2(host_mobile_dev_mandate_path, mobile_dev_mandate_path)
         except Exception:
@@ -1400,7 +1419,13 @@ def lab_execute(command: str, status: str, timeout: int = 600) -> str:
                 working_dir='/lab',
                 volumes={lab_workspace: {'bind': '/lab', 'mode': 'rw'}, '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
                 restart_policy={"Name": "unless-stopped"},
-                network=user_network
+                network=user_network,
+                labels={
+                    "stellar_type": "lab",
+                    "stellar_user_id": str(u_id),
+                    "stellar_chat_id": str(c_id),
+                    "created_at_ts": str(time.time())
+                }
             )
         except Exception as e:
             logger.exception("Error caught: %s", e)
@@ -1411,14 +1436,42 @@ def lab_execute(command: str, status: str, timeout: int = 600) -> str:
         # Wrap command to capture stdout and stderr together and handle errors gracefully
         wrapped_cmd = f"bash -c {subprocess.list2cmdline([command])}"
         
+        # --- OCI RUNTIME FIX: Avoid explicit workdir if possible to prevent namespace errors ---
+        # The container is already started with working_dir='/lab' bound to the workspace.
         exec_result = container.exec_run(
             wrapped_cmd,
-            demux=False, # Get combined stdout/stderr
-            workdir="/lab"
+            demux=False # Get combined stdout/stderr
         )
         
         output = exec_result.output.decode('utf-8', 'replace')
         exit_code = exec_result.exit_code
+        
+        # --- OCI RUNTIME ERROR RECOVERY ---
+        # Detects 'current working directory is outside of container mount namespace root'
+        # and other fatal OCI/container breakout errors that require a fresh sandbox.
+        is_oci_error = (exit_code == 128 and ("mount namespace root" in output or "container breakout" in output or "exec failed" in output))
+        
+        if is_oci_error:
+            # Prevent infinite recursion using Flask's g to track retries for this chat/container
+            retry_count = 0
+            from flask import has_app_context
+            if has_app_context():
+                retry_key = f"lab_retry_{container_name}"
+                retry_count = getattr(g, retry_key, 0)
+                setattr(g, retry_key, retry_count + 1)
+            
+            if retry_count < 2:
+                logger.warning(f"Detected broken container mount for {container_name} (retry {retry_count}). Recreating...")
+                try:
+                    container.stop(timeout=2)
+                    container.remove(force=True)
+                except:
+                    pass
+                time.sleep(1) # Grace period for Docker to release resources
+                return lab_execute(command, status, timeout)
+            else:
+                return f"Critical OCI Runtime Error (Persistent after recreation): {output}"
+        # ----------------------------------
         
         if exit_code != 0:
             return f"Command failed with exit code {exit_code}.\nOutput:\n{output}"
@@ -1426,10 +1479,21 @@ def lab_execute(command: str, status: str, timeout: int = 600) -> str:
         return output if output else "Command executed successfully with no output."
         
     except Exception as e:
-        logger.exception("Error caught: %s", e)
+        error_msg = str(e)
+        if "mount namespace root" in error_msg or "container breakout" in error_msg:
+            logger.warning(f"Caught OCI error exception for {container_name}. Attempting recovery...")
+            try:
+                container.stop(timeout=2)
+                container.remove(force=True)
+            except:
+                pass
+            time.sleep(1)
+            return lab_execute(command, status, timeout)
+
+        logger.exception("Error caught during lab_execute: %s", e)
         return f"Error executing command in Lab: {str(e)}"
 
-def read_tool_output(output_id: int, status: str, timeout: int = 600, keyword: str = None, start_line: int = 0, max_lines: int = 100) -> str:
+def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = None, start_line: int = 0, max_lines: int = 100) -> str:
     """Reads a specific slice of a past tool's output from the database.
     Use this when history says [Output truncated] to retrieve data without context overflow.
     
@@ -1440,7 +1504,7 @@ def read_tool_output(output_id: int, status: str, timeout: int = 600, keyword: s
     Args:
         output_id: The ID of the tool execution to read.
         status: Status update for the user.
-        timeout: Execution timeout in seconds (default 600).
+        timeout: Execution timeout in seconds.
         keyword: Optional string to search for.
         start_line: The line number (or match index) to start from (0-indexed).
         max_lines: The maximum number of lines to return.
@@ -1497,7 +1561,7 @@ def read_tool_output(output_id: int, status: str, timeout: int = 600, keyword: s
         logger.exception("Error caught: %s", e)
         return f"Error reading tool output: {str(e)}"
 
-def analyze_youtube_video(query: str, status: str, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
+def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
     """Analyzes a specific YouTube video or searches for the best video based on a query.
     Args:
         query: What you want to find/analyze. Mandatory for both actions.
@@ -1618,7 +1682,7 @@ def analyze_youtube_video(query: str, status: str, action: str = "analyze", vide
 
     return f"Error: All API keys exhausted. Last error: {str(last_error)}"
 
-def manage_files(action: str, status: str, file_name: str = None, target_env: str = "lab", source_env: str = "chat") -> str:
+def manage_files(action: str, status: str, timeout: int, file_name: str = None, target_env: str = "lab", source_env: str = "chat") -> str:
     """
     Manage user-uploaded files or export code out of execution environments.
     Args:
@@ -1814,6 +1878,7 @@ def subagent_tool(
     task_description: str,
     mode: str,
     status: str,
+    timeout: int,
     model_tier: str = "capable",
     container_id: str = None,
     pass_to_user: bool = True,
@@ -1851,6 +1916,17 @@ def subagent_tool(
         if "lab" in cid_lower or cid_lower in ["global", "default", "none", "null", ""]:
             container_id = None
 
+    if container_id and not container_id.startswith('stellar-'):
+        try:
+            from app import get_db
+            db = get_db()
+            cursor = db.execute('SELECT process_id FROM repo_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (container_id, container_id, container_id, u_id))
+            row = cursor.fetchone()
+            if row:
+                container_id = row['process_id']
+        except Exception:
+            pass
+
     target_container_name = container_id if container_id else f"stellar-lab-u{clean_uid}-c{clean_cid}"
 
     if container_id and not container_id.startswith('stellar-'):
@@ -1871,7 +1947,8 @@ def subagent_tool(
                 except docker.errors.NotFound:
                     pass
             if container_id and "container" not in locals():
-                warning_msg = f"Warning: Container {container_id} not found. Continuing task in the default lab container.\\n\\n"
+                logger.warning(f"Container {container_id} not found. Continuing task in default lab container.")
+                warning_msg = ""
                 target_container_name = f"stellar-lab-u{clean_uid}-c{clean_cid}"
                 try:
                     container = client.containers.get(target_container_name)
@@ -1890,14 +1967,17 @@ def subagent_tool(
 
     model = "gemini-3.1-pro-preview" if model_tier == "obsidian" else "gemini-3-flash-preview"
 
-    full_prompt = "You are a subagent working on behalf of the main agent Stellar. You have your own separate internal tools (which may not exactly match the main agent's tools but are equivalent capabilities like lab_execute, web_search, etc.). If you need more information or specific context about something that isn't provided here, ask the main agent for it.\\n\\n"
-    full_prompt += f"Task: {task_description}\\n\\n"
+    disabled_tools = "['analyze_youtube_video', 'list_background_processes']"
+    full_prompt = f"You are a subagent working on behalf of the main agent Stellar. You have your own separate internal tools (which may not exactly match the main agent's tools but are equivalent capabilities like lab_execute, web_search, etc.).\n\n"
+    full_prompt += f"CRITICAL: You are PROHIBITED from using the following main-agent tools directly: {disabled_tools}. If you need to perform an action involving these tools, or if you need to execute something at the root level outside your sandbox, you MUST request the main agent to do it for you by including the tag [TOOL_REQUEST] followed by your specific request in your response.\n\n"
+    full_prompt += "Regarding plans: If you need to use Plan Mode, all plan files MUST be written to the designated plans directory: `/root/.gemini/plans/`. Any attempt to write plans elsewhere will result in 'Access denied'.\n\n"
+    full_prompt += f"Task: {task_description}\n\n"
     if mode == "summarization":
-        full_prompt += "Please summarize the following context concisely but preserving all facts:\\n"
+        full_prompt += "Please summarize the following context concisely but preserving all facts:\n"
     else:
-        full_prompt += "Please execute the following task given the context:\\n"
+        full_prompt += "Please execute the following task given the context:\n"
 
-    full_prompt += f"\\nContext:\\n{current_effective_prompt}\\n"
+    full_prompt += f"\nContext:\n{current_effective_prompt}\n"
 
     import tarfile
     import io
@@ -1912,6 +1992,7 @@ def subagent_tool(
 
     script = f'''#!/bin/bash
 CONFIG_DIR="/root/.gemini"
+mkdir -p "$CONFIG_DIR/plans"
 mkdir -p "$CONFIG_DIR"
 
 ACTIVE_ACC=0
@@ -1969,6 +2050,22 @@ exit 1
     exec_result = container.exec_run("/tmp/run_gemini.sh", environment={"TERM": "xterm-256color"})
     output = exec_result.output.decode('utf-8', 'replace')
     
+    # --- OCI RUNTIME ERROR RECOVERY ---
+    if exec_result.exit_code == 128 and ("mount namespace root" in output or "container breakout" in output or "exec failed" in output):
+        logger.warning(f"Detected broken container mount in subagent_tool for {target_container_name}. Recreating...")
+        try:
+            container.stop(timeout=2)
+            container.remove(force=True)
+        except:
+            pass
+        
+        retry_count = kwargs.get('_retry_count', 0)
+        if retry_count < 2:
+            kwargs['_retry_count'] = retry_count + 1
+            time.sleep(1)
+            return subagent_tool(task_description, mode, status, model_tier, container_id, pass_to_user, **kwargs)
+    # ----------------------------------
+    
     # Strip Gemini CLI verbose warnings
     output = re.sub(r'Warning: True color \(24-bit\) support not detected\..*\n?', '', output)
     output = re.sub(r'YOLO mode is enabled\. All tool calls will be automatically approved\.\n?', '', output)
@@ -1986,7 +2083,7 @@ exit 1
 
     return f"{warning_msg}{output}"
 
-def report_process_issue(topic: str, issue_description: str, technical_context: str, status: str) -> str:
+def report_process_issue(topic: str, issue_description: str, technical_context: str, status: str, timeout: int) -> str:
     """Reports technical bottlenecks, process failures, or feedback on internal tool execution.
     Args:
         topic: A concise label for the issue (e.g., 'SIGKILL', 'Path Alignment', 'Port Latency').

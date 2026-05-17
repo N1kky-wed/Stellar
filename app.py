@@ -1340,7 +1340,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         func_name = fc.name
                         args_dict = dict(fc.args) if fc.args else {}
                         
-                        timeout_val = args_dict.get('timeout', 600)
+                        timeout_val = args_dict.get('timeout')
                         
                         yield {'status': args_dict.get('status', f'Using tool: {func_name}...'), 'timeout': timeout_val}
                             
@@ -1366,14 +1366,27 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 if func_name == "subagent_tool":
                                     prompt_text = ""
                                     if isinstance(current_effective_prompt, list):
-                                        prompt_text = "\\n".join([p.text for p in current_effective_prompt if hasattr(p, 'text')])
+                                        # Use getattr to safely get 'text' and filter out None values to avoid TypeError in join
+                                        prompt_parts = [getattr(p, 'text', None) for p in current_effective_prompt]
+                                        prompt_text = "\\n".join([str(p) for p in prompt_parts if p is not None])
                                     elif isinstance(current_effective_prompt, str):
                                         prompt_text = current_effective_prompt
                                     args_dict['current_effective_prompt'] = prompt_text
 
                                 import concurrent.futures
+                                from flask import current_app, g
+                                
+                                app_obj = current_app._get_current_object()
+                                g_state = {k: getattr(g, k) for k in ['user_id', 'username', 'chat_id', 'session_id', 'model_id'] if hasattr(g, k)}
+                                
+                                def _run_tool_with_context(**kwargs):
+                                    with app_obj.app_context():
+                                        for k, v in g_state.items():
+                                            setattr(g, k, v)
+                                        return func_to_call(**kwargs)
+
                                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                                    future = executor.submit(func_to_call, **args_dict)
+                                    future = executor.submit(_run_tool_with_context, **args_dict)
                                     try:
                                         res = future.result(timeout=timeout_val)
                                     except concurrent.futures.TimeoutError:
@@ -1635,7 +1648,6 @@ def _extract_json_from_response(response_text):
         
     return None
 
-@require_approval
 def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='repo', subdomain=None):
     logs_buffer = []
 
@@ -2026,8 +2038,6 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         cleanup_thread = threading.Thread(target=_delayed_cleanup, args=(process_id, redis_key,), daemon=True)
         cleanup_thread.start()
 
-@require_approval
-@require_approval
 def stop_and_cleanup_app_by_process_id(process_id, app_type='repo'):
     if not process_id:
         return
@@ -3926,11 +3936,11 @@ def cleanup_stale_containers():
         try:
             with app.app_context():
                 db = get_db()
-                # 60 hours in seconds
-                sixty_hours_ago = (datetime.datetime.now() - datetime.timedelta(hours=60)).strftime('%Y-%m-%d %H:%M:%S')
-                db.execute("UPDATE repo_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created') AND created_at < ?", (sixty_hours_ago,))
+                # 90 hours in seconds
+                ninety_hours_ago = (datetime.datetime.now() - datetime.timedelta(hours=90)).strftime('%Y-%m-%d %H:%M:%S')
+                db.execute("UPDATE repo_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created') AND created_at < ?", (ninety_hours_ago,))
                 db.commit()
-                logging.info(f"Database status for repo_history reset for apps older than {sixty_hours_ago}.")
+                logging.info(f"Database status for repo_history reset for apps older than {ninety_hours_ago}.")
         except Exception as db_err:
             logger.exception("Error caught: %s", db_err)
             logging.error(f"Failed to reset database statuses: {db_err}")
@@ -3952,14 +3962,14 @@ def cleanup_stale_containers():
         current_time = time.time()
         for container in all_stale:
             try:
-                # Check for 60-hour grace period
+                # Check for 90-hour grace period
                 labels = container.labels
                 created_ts_str = labels.get("created_at_ts")
                 if created_ts_str:
                     try:
                         created_ts = float(created_ts_str)
-                        if current_time - created_ts < 60 * 60 * 60:
-                            logging.info(f"Skipping recently created container (within 60h): {container.name}")
+                        if current_time - created_ts < 90 * 60 * 60:
+                            logging.info(f"Skipping recently created orphan (within 90h): {container.name}")
                             continue
                     except ValueError:
                         pass
@@ -4071,7 +4081,7 @@ def intercept_subdomains():
                 cookies=request.cookies,
                 allow_redirects=False,
                 stream=True, 
-                timeout=600
+                timeout=3600
             )
 
             excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
