@@ -38,10 +38,7 @@ To set up and run Stellar, follow these steps:
    ```bash
    python3 app.py
    ```
-   **Note for backend changes:** When making changes to backend files (e.g., `app.py`, `agent_tools.py`, `prompts.py`), always restart the service to apply changes:
-   ```bash
-   sudo systemctl restart stellar
-   ```
+
 
 ## Feature Analysis & Agent Tools
 
