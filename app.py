@@ -15,6 +15,8 @@ import random
 import logging
 import sqlite3
 import uuid
+import socket
+import ipaddress
 from pathlib import Path
 from google import genai
 import pypandoc
@@ -252,12 +254,12 @@ MODEL_NAMES = {
     "gemini-2.5-flash-lite": "Emerald",
     "gemini-3.1-flash-lite-preview": "Lunarity",
     "gemini-3-flash-preview": "Crimson",
-    "gemini-3.1-pro-preview": "Obsidian"
+    "gemini-3.5-flash": "Obsidian"
 }
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
 def get_fallback_chain(start_model):
-    chain = ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]
+    chain = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]
     if start_model in chain:
         idx = chain.index(start_model)
         return chain[idx:]
@@ -735,8 +737,6 @@ def get_tool_history(chat_id):
         context = "\n**Internal Tool Execution History:**\n"
         for r in rows:
             res_str = str(r['result'])
-            lines = res_str.split('\n')
-            num_lines = len(lines)
             num_chars = len(res_str)
 
             # Smart Truncation Logic
@@ -744,10 +744,15 @@ def get_tool_history(chat_id):
                 clean_res = res_str
             elif 'data:image' in res_str:
                 clean_res = "[Image Generated]"
-            elif num_chars > 600 or num_lines > 20:
+            elif num_chars > 600:
+                num_lines = res_str.count('\n') + 1
                 clean_res = f"[Output truncated. ID: {r['id']}, Lines: {num_lines}, Length: {num_chars} chars. Use read_tool_output(output_id={r['id']}) to view.]"
             else:
-                clean_res = res_str
+                num_lines = res_str.count('\n') + 1
+                if num_lines > 20:
+                    clean_res = f"[Output truncated. ID: {r['id']}, Lines: {num_lines}, Length: {num_chars} chars. Use read_tool_output(output_id={r['id']}) to view.]"
+                else:
+                    clean_res = res_str
 
             context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` (ID: {r['id']}) | Input: `{r['input_params']}` | Result: `{clean_res}`\n"
         return context + "---\n"
@@ -1069,10 +1074,38 @@ def tavily_search(query, search_depth="advanced", topic="general", time_range=No
         logger.exception("Error caught: %s", e)
         return {"error": f"Tavily search failed: {str(e)}"}
 
+def is_safe_hostname(hostname):
+    """Helper to resolve hostname and check if all associated IPs are safe for SSRF protection."""
+    if not hostname:
+        return False, "Invalid hostname"
+    try:
+        addr_info = socket.getaddrinfo(hostname, None)
+        for family, kind, proto, canonname, sockaddr in addr_info:
+            ip_str = sockaddr[0]
+            try:
+                ip = ipaddress.ip_address(ip_str)
+                if (ip.is_private or ip.is_loopback or ip.is_link_local or 
+                    ip.is_multicast or ip.is_reserved or ip.is_unspecified):
+                    return False, f"Access to internal networks is forbidden: {ip_str}"
+            except ValueError:
+                continue
+    except socket.gaierror:
+        return False, "Failed to resolve hostname"
+    return True, "Safe"
+
 def scrape_url(url: str) -> str:
     if not url or not url.startswith(('http://', 'https://')):
         return f"Error scraping {url}: Invalid URL format"
+    
+    from urllib.parse import urlparse
+    
     try:
+        parsed = urlparse(url)
+        safe, msg = is_safe_hostname(parsed.hostname)
+        if not safe:
+            logger.warning(f"Blocked scraping SSRF attempt: {msg} via {url}")
+            return f"Error scraping {url}: {msg}"
+
         apron=webscrapper.scrape_url(url)
         print(apron)
         return apron
@@ -1142,11 +1175,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     raw_keys = [PRIMARY_API_KEY, key] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k] 
     
-    # If the user specifically requested Obsidian, do not retry other global backup keys. 
-    # Fail immediately so the system gracefully falls back to Crimson and delegates to the subagent tool.
-    if model_id == "gemini-3.1-pro-preview":
-        keys_to_try = [PRIMARY_API_KEY] if PRIMARY_API_KEY else keys_to_try[:1]
-        attempts = 1
 
     current_key_index = 0
 
@@ -1172,7 +1200,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             tools_config = available_tools.copy()
             
             # Restrict lab_execute and repo_control to Elite models
-            elite_models = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+            elite_models = ["gemini-3-flash-preview", "gemini-3.5-flash"]
             if model_id == "gemini-3.1-flash-lite-preview": # Lunarity gets Lab access
                  tools_config = [t for t in tools_config if getattr(t, '__name__', '') != 'repo_control']
             elif model_id not in elite_models:
@@ -1183,7 +1211,16 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
             # Extract system instruction if present in the prompt
             system_instruction = None
-            if "<!-- Internal Processing Guidelines -->" in current_effective_prompt:
+            if isinstance(current_effective_prompt, list):
+                for part in current_effective_prompt:
+                    if hasattr(part, 'text') and part.text and "<!-- Internal Processing Guidelines -->" in part.text:
+                        p_text = part.text
+                        parts = p_text.split("<!-- End Internal Guidelines -->")
+                        if len(parts) > 1:
+                            system_instruction = parts[0].replace("<!-- Internal Processing Guidelines -->", "").strip()
+                            part.text = parts[1].strip()
+                        break
+            elif isinstance(current_effective_prompt, str) and "<!-- Internal Processing Guidelines -->" in current_effective_prompt:
                 parts = current_effective_prompt.split("<!-- End Internal Guidelines -->")
                 if len(parts) > 1:
                     system_instruction = parts[0].replace("<!-- Internal Processing Guidelines -->", "").strip()
@@ -1385,12 +1422,14 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                             setattr(g, k, v)
                                         return func_to_call(**kwargs)
 
-                                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                                    future = executor.submit(_run_tool_with_context, **args_dict)
-                                    try:
-                                        res = future.result(timeout=timeout_val)
-                                    except concurrent.futures.TimeoutError:
-                                        res = f"Error: Tool '{func_name}' was stopped because it exceeded the timeout of {timeout_val} seconds that the agent set for that tool."
+                                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                                future = executor.submit(_run_tool_with_context, **args_dict)
+                                try:
+                                    res = future.result(timeout=timeout_val)
+                                except concurrent.futures.TimeoutError:
+                                    res = f"Error: Tool '{func_name}' was stopped because it exceeded the timeout of {timeout_val} seconds that the agent set for that tool."
+                                finally:
+                                    executor.shutdown(wait=False)
                             
                             # Record tool call in DB for context persistence
                             record_tool_call(func_name, args_dict, res)
@@ -2166,8 +2205,8 @@ def api_logs_preferences():
             return jsonify({'error': 'Invalid data'}), 400
         
         db.execute('DELETE FROM user_logs_prefs WHERE user_id = ?', (user_id,))
-        for log in data['logs']:
-            db.execute('INSERT INTO user_logs_prefs (user_id, log_entry) VALUES (?, ?)', (user_id, log))
+        if data['logs']:
+            db.executemany('INSERT INTO user_logs_prefs (user_id, log_entry) VALUES (?, ?)', [(user_id, log) for log in data['logs']])
         db.commit()
         return jsonify({'success': True})
         
@@ -2385,7 +2424,7 @@ def refine_stream():
                     if partial_work_done:
                         capability_note = ""
                         # Define model tiers clearly for fallback guidance
-                        full_access = ["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+                        full_access = ["gemini-3-flash-preview", "gemini-3.5-flash"]
                         lab_only = ["gemini-3.1-flash-lite-preview"] # Lunarity
                     
                         if current_model in lab_only:
@@ -2583,29 +2622,33 @@ def background_thread_runner(app_obj, query_id, chat_id, task_func, *args):
 @require_approval
 def delete_message():
     data = request.get_json()
-    message_id = data.get('message_id')
-
-    if not message_id:
-        return jsonify({'error': 'Missing message_id.'}), 400
+    try:
+        message_id = int(data.get('message_id'))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid message_id.'}), 400
     
     user_id = session['user_id']
     db = get_db()
     
     try:
+        logger.info(f"Attempting to delete message {message_id} for user {user_id}")
         # Verify ownership by checking the chat the message belongs to
         cursor = db.execute('''
-            SELECT 1 FROM messages m
+            SELECT m.id, c.user_id FROM messages m
             JOIN chats c ON m.chat_id = c.id
             WHERE m.id = ? AND c.user_id = ?
         ''', (message_id, user_id))
         
-        if not cursor.fetchone():
+        row = cursor.fetchone()
+        if not row:
+            logger.warning(f"Deletion failed: Message {message_id} not found or unauthorized for user {user_id}")
             return jsonify({'error': 'Message not found or unauthorized.'}), 403
 
+        logger.info(f"Ownership verified for message {message_id}. Proceeding with deletion.")
         db.execute('DELETE FROM messages WHERE id = ?', (message_id,))
         db.commit()
 
-        logging.info(f"User {user_id} deleted message {message_id}.")
+        logger.info(f"User {user_id} successfully deleted message {message_id}.")
         return jsonify({'success': True})
 
     except Exception as e:
@@ -2704,8 +2747,6 @@ def clear_history():
 @app.route('/image-proxy')
 @require_approval
 def image_proxy():
-    import socket
-    import ipaddress
     from urllib.parse import urlparse
     
     image_url = request.args.get('url')
@@ -2715,55 +2756,63 @@ def image_proxy():
     try:
         # 1. SSRF Protection: Prevent access to internal/private networks
         parsed = urlparse(image_url)
-        hostname = parsed.hostname
-        if not hostname:
-            return "Invalid hostname", 400
-            
-        ip_addr = socket.gethostbyname(hostname)
-        ip = ipaddress.ip_address(ip_addr)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
-            logger.warning(f"Blocked SSRF attempt to internal IP: {ip_addr} via {image_url}")
-            return "Access to internal networks is forbidden", 403
+        safe, msg = is_safe_hostname(parsed.hostname)
+        if not safe:
+            logger.warning(f"Blocked SSRF attempt: {msg} via {image_url}")
+            return msg, 403
 
         # 2. Fetch the image with a strict timeout and prevent redirects (SSRF Protection)
-        resp = requests.get(image_url, stream=True, timeout=15, allow_redirects=False)
-        if resp.status_code in (301, 302, 303, 307, 308):
-            return "Redirects are not allowed for security reasons", 400
-        resp.raise_for_status()
-        
-        # 3. MIME Type Validation: Ensure it's actually an image, not a malicious script/HTML
-        content_type = resp.headers.get('Content-Type', '')
-        if not content_type.startswith('image/'):
-            return "Target is not an image", 400
+        resp = None
+        try:
+            resp = requests.get(image_url, stream=True, timeout=15, allow_redirects=False)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                resp.close()
+                return "Redirects are not allowed for security reasons", 400
+            resp.raise_for_status()
             
-        # 4. DoS Protection: Prevent downloading massive files (Max 50MB)
-        content_length = resp.headers.get('Content-Length')
-        if content_length and int(content_length) > 50 * 1024 * 1024:
-            return "Image exceeds maximum allowed size (50MB)", 400
+            # 3. MIME Type Validation: Ensure it's actually an image, not a malicious script/HTML
+            content_type = resp.headers.get('Content-Type', '')
+            if not content_type.startswith('image/'):
+                resp.close()
+                return "Target is not an image", 400
+                
+            # 4. DoS Protection: Prevent downloading massive files (Max 50MB)
+            content_length = resp.headers.get('Content-Length')
+            if content_length and int(content_length) > 50 * 1024 * 1024:
+                resp.close()
+                return "Image exceeds maximum allowed size (50MB)", 400
 
-        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        headers = [(name, value) for (name, value) in resp.raw.headers.items()
-                   if name.lower() not in excluded_headers]
-        
-        def generate():
-            bytes_read = 0
-            max_bytes = 50 * 1024 * 1024
-            for chunk in resp.iter_content(chunk_size=10*1024):
-                bytes_read += len(chunk)
-                if bytes_read > max_bytes:
-                    logger.warning(f"Aborted streaming from {image_url}: exceeded size limit (DoS protection)")
-                    break
-                yield chunk
+            excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+            headers = [(name, value) for (name, value) in resp.raw.headers.items()
+                       if name.lower() not in excluded_headers]
+            
+            def generate():
+                try:
+                    bytes_read = 0
+                    max_bytes = 50 * 1024 * 1024
+                    for chunk in resp.iter_content(chunk_size=10*1024):
+                        bytes_read += len(chunk)
+                        if bytes_read > max_bytes:
+                            logger.warning(f"Aborted streaming from {image_url}: exceeded size limit (DoS protection)")
+                            break
+                        yield chunk
+                finally:
+                    resp.close()
 
-        return Response(generate(), 
-                        status=resp.status_code, 
-                        content_type=content_type, 
-                        headers=headers)
+            return Response(stream_with_context(generate()), 
+                            status=resp.status_code, 
+                            content_type=content_type, 
+                            headers=headers)
+        except requests.exceptions.RequestException as e:
+            if resp:
+                try:
+                    resp.close()
+                except:
+                    pass
+            logger.error(f"Image proxy request failed for {image_url}: {e}")
+            return "Failed to fetch image", 502
     except socket.gaierror:
         return "Failed to resolve hostname", 400
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Image proxy request failed for {image_url}: {e}")
-        return "Failed to fetch image", 502
     except Exception as e:
         logger.error(f"Image proxy unexpected error for {image_url}: {e}")
         return "Internal server error", 500
@@ -3741,7 +3790,7 @@ def generate_visualization():
     data = request.get_json()
     content = data.get('content')
     message_id = data.get('message_id') # Get message_id to persist visualization
-    model_id = 'gemini-3.1-pro-preview' # Use the pro preview model as requested
+    model_id = 'gemini-3.5-flash' # Use the pro preview model as requested
     api_key = PRIMARY_API_KEY
  # Use RTP key for faster/cheaper generation or PRIMARY if needed
 
@@ -4071,6 +4120,7 @@ def intercept_subdomains():
         path = request.full_path # Preserves exact routing paths and query parameters!
         target_url = f"http://127.0.0.1:{target_port}{path}"
 
+        resp = None
         try:
             logger.debug(f"Proxying request for {subdomain} ({process_id}) to port {target_port}")
             resp = requests.request(
@@ -4080,13 +4130,13 @@ def intercept_subdomains():
                 data=request.get_data(),
                 cookies=request.cookies,
                 allow_redirects=False,
-                stream=True, 
+                stream=True,
                 timeout=3600
             )
 
             excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
             headers =[(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
-            
+
             # Add cache control to ensure the browser always gets the latest iteration
             headers.append(('Cache-Control', 'no-cache, no-store, must-revalidate'))
             headers.append(('Pragma', 'no-cache'))
@@ -4100,16 +4150,20 @@ def intercept_subdomains():
                         if chunk:
                             yield chunk
                 finally:
-                    # CRITICAL: If the user refreshes/disconnects, Flask stops consuming 
-                    # the generator. This finally block executes and severs the connection 
+                    # CRITICAL: If the user refreshes/disconnects, Flask stops consuming
+                    # the generator. This finally block executes and severs the connection
                     # to the inner container, freeing up its threads immediately.
                     resp.close()
 
             return Response(stream_with_context(generate()), resp.status_code, headers)
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Dynamic proxy error for app {process_id}: {e}")
-            
+            if resp:
+                try:
+                    resp.close()
+                except:
+                    pass
+            logger.error(f"Dynamic proxy error for app {process_id}: {e}")            
             # Passive Health Check: If connection is refused/reset, invalidate local cache
             # The port might be stale. Removing it forces a Redis re-fetch on the next request.
             if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):

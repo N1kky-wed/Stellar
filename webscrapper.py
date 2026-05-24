@@ -5,8 +5,12 @@ import re
 def scrape_url(url):
     headers = {'User-Agent': 'Mozilla/5.0 (compatible; MyScraper/1.0)'}
     try:
-        # Added a timeout for robustness
-        response = requests.get(url, headers=headers, timeout=15)
+        # Added a timeout for robustness and disabled redirects to prevent SSRF bypasses
+        response = requests.get(url, headers=headers, timeout=15, allow_redirects=False)
+
+        # If a redirect occurs, block it for safety as we've already validated the initial URL
+        if response.status_code in (301, 302, 303, 307, 308):
+            return f"Redirects are not allowed for security reasons (attempted to redirect to {response.headers.get('Location')})"
 
         # Raise an exception for bad status codes
         response.raise_for_status()

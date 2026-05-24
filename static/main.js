@@ -1463,15 +1463,11 @@
           const response = await fetch("/api/messages/delete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            credentials: "include",
             body: JSON.stringify({ message_id: messageId }),
           });
 
-          // If it's 403/404, it's likely already deleted or never saved. Safely remove from UI.
-          if (
-            response.ok ||
-            response.status === 403 ||
-            response.status === 404
-          ) {
+          if (response.ok) {
             messageElement.remove();
           } else {
             const err = await response.json();

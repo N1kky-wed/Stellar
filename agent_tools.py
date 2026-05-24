@@ -637,7 +637,7 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
     import os
     import uuid
     from pptx import Presentation
-    from pptx.util import Inches, Pt
+    from pptx.util import Inches
     from io import BytesIO
     from app import PRIMARY_API_KEY, BACKUP_API_KEYS
     from pydantic import BaseModel, Field
@@ -1341,66 +1341,20 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
         pass # Silent fail if permissions or path issues
     # ------------------------------------------------------------------------
 
-    # --- RED TEAM MANDATE INJECTION ---
-    mandate_path = os.path.join(lab_workspace, "RED_TEAM_MANDATE.md")
-    if not os.path.exists(mandate_path):
+    # --- MANDATE INJECTION ---
+    mandates_dir = os.path.join(os.path.dirname(__file__), "mandates")
+    if os.path.exists(mandates_dir):
         try:
-            host_mandate_path = os.path.join(os.path.dirname(__file__), "RED_TEAM_MANDATE.md")
-            if os.path.exists(host_mandate_path):
-                shutil.copy2(host_mandate_path, mandate_path)
+            for mandate_file in os.listdir(mandates_dir):
+                if mandate_file.endswith("MANDATE.md"):
+                    src = os.path.join(mandates_dir, mandate_file)
+                    dst = os.path.join(lab_workspace, mandate_file)
+                    if not os.path.exists(dst):
+                        shutil.copy2(src, dst)
         except Exception:
-            logger.exception("Error caught.")
+            logger.exception("Error copying mandates to lab workspace.")
             pass
-    # ----------------------------------
-
-    # --- GENERATIVE AI MANDATE INJECTION ---
-    gen_ai_mandate_path = os.path.join(lab_workspace, "GENERATIVE_AI_MANDATE.md")
-    if not os.path.exists(gen_ai_mandate_path):
-        try:
-            # Use os.path.dirname(__file__) to get the directory of agent_tools.py
-            host_mandate_path = os.path.join(os.path.dirname(__file__), "GENERATIVE_AI_MANDATE.md")
-            if os.path.exists(host_mandate_path):
-                shutil.copy2(host_mandate_path, gen_ai_mandate_path)
-        except Exception:
-            logger.exception("Error caught.")
-            pass
-    # ----------------------------------------
-
-    # --- GAME DEVELOPMENT MANDATE INJECTION ---
-    game_dev_mandate_path = os.path.join(lab_workspace, "GAME_DEVELOPMENT_MANDATE.md")
-    if not os.path.exists(game_dev_mandate_path):
-        try:
-            host_game_dev_mandate_path = os.path.join(os.path.dirname(__file__), "GAME_DEVELOPMENT_MANDATE.md")
-            if os.path.exists(host_game_dev_mandate_path):
-                shutil.copy2(host_game_dev_mandate_path, game_dev_mandate_path)
-        except Exception:
-            logger.exception("Error caught.")
-            pass
-    # ----------------------------------------
-
-    # --- MOBILE DEVELOPMENT MANDATE INJECTION ---
-    mobile_dev_mandate_path = os.path.join(lab_workspace, "MOBILE_DEVELOPMENT_MANDATE.md")
-    if not os.path.exists(mobile_dev_mandate_path):
-        try:
-            host_mobile_dev_mandate_path = os.path.join(os.path.dirname(__file__), "mandates", "MOBILE_DEVELOPMENT_MANDATE.md")
-            if os.path.exists(host_mobile_dev_mandate_path):
-                shutil.copy2(host_mobile_dev_mandate_path, mobile_dev_mandate_path)
-        except Exception:
-            logger.exception("Error caught.")
-            pass
-    # ----------------------------------------
-
-    # --- FRONTEND DESIGN MANDATE INJECTION ---
-    frontend_design_mandate_path = os.path.join(lab_workspace, "FRONTEND_DESIGN_MANDATE.md")
-    if not os.path.exists(frontend_design_mandate_path):
-        try:
-            host_frontend_design_mandate_path = os.path.join(os.path.dirname(__file__), "FRONTEND_DESIGN_MANDATE.md")
-            if os.path.exists(host_frontend_design_mandate_path):
-                shutil.copy2(host_frontend_design_mandate_path, frontend_design_mandate_path)
-        except Exception:
-            logger.exception("Error caught.")
-            pass
-    # ----------------------------------------
+    # -------------------------
 
     # Ensure sandbox container is running
     container = None
@@ -1890,7 +1844,7 @@ def subagent_tool(
         task_description: The description of the task or summarization goal.
         mode: 'summarization' or 'delegation'.
         status: Status update for the user.
-        model_tier: 'capable' (gemini-3.1-pro-preview) or 'fast' (gemini-3-flash-preview).
+        model_tier: 'capable' (gemini-3.5-flash) or 'fast' (gemini-3-flash-preview).
         container_id: Optional. Target a specific container ID or name.
         pass_to_user: If True, output is forcibly appended to chat. If False, output is hidden from chat for background processing.
     """
@@ -1965,7 +1919,7 @@ def subagent_tool(
         logger.exception("Error caught: %s", e)
         return f"Gemini Offload Error: Docker unavailable - {e}"
 
-    model = "gemini-3.1-pro-preview" if model_tier == "obsidian" else "gemini-3-flash-preview"
+    model = "gemini-3.5-flash" if model_tier == "obsidian" else "gemini-3-flash-preview"
 
     disabled_tools = "['analyze_youtube_video', 'list_background_processes']"
     full_prompt = f"You are a subagent working on behalf of the main agent Stellar. You have your own separate internal tools (which may not exactly match the main agent's tools but are equivalent capabilities like lab_execute, web_search, etc.).\n\n"
