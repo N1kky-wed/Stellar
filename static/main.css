@@ -4958,3 +4958,13 @@ header, .sidebar, .input-container, .message, .card, .glass-card, .chat-containe
   -webkit-backdrop-filter: none !important;
 }
 
+/* Remove text gradients from specific headers, keeping them solid white */
+.welcome-greeting,
+.profile-modal-content h2,
+.settings-header h2,
+#adminWaitlistModal h2 {
+  background: none !important;
+  -webkit-text-fill-color: #ffffff !important;
+  color: #ffffff !important;
+}
+
