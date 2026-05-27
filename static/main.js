@@ -2665,7 +2665,18 @@
               }
             }
 
-            // 2. Create new active status
+            // 2. Remove obsolete 'thinking' items to avoid UI clutter
+            if (displayMsg.endsWith(" is thinking...")) {
+              const allItems = statusSpan.querySelectorAll(".status-item");
+              allItems.forEach(item => {
+                const textEl = item.querySelector(".status-text");
+                if (textEl && textEl.textContent.endsWith(" is thinking...")) {
+                  item.remove();
+                }
+              });
+            }
+
+            // 3. Create new active status
             if (
               !isError &&
               newText &&

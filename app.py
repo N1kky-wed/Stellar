@@ -1461,6 +1461,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             ))
                         )
                         message_to_send = function_responses
+                        yield {'status': f"{display_name} is thinking..."}
 
             # Forcibly add tool results if the model forgot to include them or mangled them
             import re
