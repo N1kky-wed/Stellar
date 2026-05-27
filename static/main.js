@@ -551,13 +551,29 @@
           html = html.replace(placeholderRegex, () => block);
         });
 
-        // 4. Restore SVGs intact
+        // 4. Restore SVGs intact or escaped if inside code block
         svgBlocks.forEach((block, index) => {
           const placeholderRegex = new RegExp(
             `SVGBLOCKPLACEHOLDER${index}SVGBLOCK`,
             "g",
           );
-          html = html.replace(placeholderRegex, () => block);
+          html = html.replace(placeholderRegex, (match, offset, str) => {
+            const before = str.substring(0, offset);
+            const codeStart = before.lastIndexOf("<code");
+            const codeEnd = before.lastIndexOf("</code>");
+            
+            // If the last thing opened before us was a <code tag, we are inside a code block
+            if (codeStart > codeEnd) {
+              return block
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+            } else {
+              return block;
+            }
+          });
         });
 
         // 5. Proxy raw insecure HTTP images that escaped the renderer
