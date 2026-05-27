@@ -4944,6 +4944,14 @@
 
       let sidebarHoverTimeout;
 
+      // Expand trigger area to the entire left edge of screen
+      document.addEventListener("mousemove", (e) => {
+        if (e.clientX <= 40) { // Using 40px for a generous edge trigger
+          clearTimeout(sidebarHoverTimeout);
+          sidebar.classList.add("open");
+        }
+      });
+
       sidebarToggleBtn.addEventListener("mouseenter", () => {
         clearTimeout(sidebarHoverTimeout);
         sidebar.classList.add("open");
