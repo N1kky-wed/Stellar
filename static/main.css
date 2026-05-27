@@ -4933,20 +4933,16 @@
 }
 
 @keyframes foldBreathe {
-  0% { background-position: 0% 0%; background-size: 150vw 150vh; }
-  100% { background-position: 10% 10%; background-size: 160vw 160vh; }
+  0% { background-position: 0% 0%; background-size: 100vw 100vh; }
+  100% { background-position: -5% -5%; background-size: 105vw 105vh; }
 }
 
 body {
   background-color: #030303 !important;
-  background-image: 
-    conic-gradient(from 150deg at 30% 70%, rgba(255,255,255,0.03) 0 30deg, transparent 30deg),
-    conic-gradient(from 270deg at 70% 30%, rgba(255,255,255,0.02) 0 60deg, transparent 60deg),
-    conic-gradient(from 45deg at 20% 20%, rgba(255,255,255,0.015) 0 45deg, transparent 45deg),
-    linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.02) 40%, rgba(255,255,255,0.02) 45%, transparent 45%),
-    linear-gradient(225deg, transparent 30%, rgba(255,255,255,0.01) 30%, rgba(255,255,255,0.01) 32%, transparent 32%) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1000' height='800' viewBox='0 0 1000 800'%3E%3Cg stroke='%23ffffff' stroke-width='0.5' stroke-opacity='0.04' stroke-linejoin='round'%3E%3Cpolygon points='-100,-100 300,200 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3Cpolygon points='300,200 800,50 700,600' fill='%23ffffff' fill-opacity='0.02' /%3E%3Cpolygon points='800,50 1100,400 700,600' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='1100,400 900,900 700,600' fill='%23ffffff' fill-opacity='0.015' /%3E%3Cpolygon points='900,900 400,700 700,600' fill='%23ffffff' fill-opacity='0.025' /%3E%3Cpolygon points='400,700 -100,800 200,450' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='400,700 700,600 200,450' fill='%23ffffff' fill-opacity='0.018' /%3E%3Cpolygon points='-100,800 -100,-100 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3C/g%3E%3C/svg%3E") !important;
   background-attachment: fixed !important;
-  animation: foldBreathe 40s infinite alternate ease-in-out !important;
+  background-position: center !important;
+  animation: foldBreathe 60s infinite alternate ease-in-out !important;
 }
 
 /* Remove flowing background gradients */
