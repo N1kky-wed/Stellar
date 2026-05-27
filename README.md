@@ -1,83 +1,697 @@
 # Stellar AI Operating System
 
-A persistent, stateful AI operating system for total autonomous agency across infrastructure, research, and design. Orchestrate Docker clusters, clone Git repos, and perform deep research with YouTube intelligence.
+> **A persistent, stateful, multi-user AI operating system delivering total autonomous agency across infrastructure, research, development, and security.**
 
-## Setup and Compilation
+Stellar is a production-grade Flask application powering [stellarai.live](https://stellarai.live) — a platform where users interact with a suite of AI agents (Crimson, Obsidian, Lunarity, Emerald) backed by the Gemini API. It is not merely a chatbot. It is a full AI runtime with native Docker orchestration, isolated sandboxed execution, persistent memory, autonomous scheduling, multi-modal content generation, and an extensible mandate system.
 
-To set up and run Stellar, follow these steps:
+---
 
-1. **Clone the repository:**
-   ```bash
-   git clone <repository_url>
-   cd my_app
-   ```
+## Table of Contents
 
-2. **Set up a Virtual Environment:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
+- [Architecture Overview](#architecture-overview)
+- [Prerequisites](#prerequisites)
+- [Setup & Installation](#setup--installation)
+- [Environment Configuration (`keys.env`)](#environment-configuration-keysenv)
+- [Docker Infrastructure](#docker-infrastructure)
+- [Production Deployment (Nginx + Gunicorn + systemd)](#production-deployment-nginx--gunicorn--systemd)
+- [Agent Models & Personas](#agent-models--personas)
+- [Agent Tool Suite](#agent-tool-suite)
+- [Mandate System](#mandate-system)
+- [Persistent Memory & Scheduling](#persistent-memory--scheduling)
+- [Use Cases & Examples](#use-cases--examples)
+- [API Key Management & Account Rotation](#api-key-management--account-rotation)
+- [Security Model](#security-model)
+- [Database Schema](#database-schema)
+- [Testing](#testing)
+- [Troubleshooting & Known Issues](#troubleshooting--known-issues)
 
-3. **Install Dependencies:**
-   Ensure you have all the required Python packages installed.
-   ```bash
-   pip install -r requirements.txt
-   ```
+---
 
-4. **Environment Variables:**
-   Set up your API keys and configuration in `keys.env`.
+## Architecture Overview
 
-5. **Docker Infrastructure Setup:**
-   Run the docker setup script to build the necessary containers.
-   ```bash
-   python3 dockersetup.py
-   ```
+```
+Internet ──► Nginx (HTTPS + wildcard *.stellarai.live)
+                │
+                ▼
+          Gunicorn (gthread, 4 workers × 25 threads)
+                │
+                ▼
+         Flask App (app.py)
+         ├── Google OAuth / Firebase Auth
+         ├── SQLite (WAL mode) ──── stellar_local.db
+         ├── Redis (session / repo state)
+         ├── Agent Prompt Engine (prompts.py)
+         └── Tool Execution Layer (agent_tools.py)
+              ├── lab_execute  ──► stellar-lab-core Docker containers (per user/chat)
+              ├── repo_control ──► stellar-repo-host Docker containers (per deployment)
+              └── subagent_tool ─► Gemini CLI inside lab containers
+```
 
-6. **Run the Application:**
-   Start the application locally.
-   ```bash
-   python3 app.py
-   ```
+Key design principles:
+- **Per-user isolation** — every user gets their own Docker network (`stellar_net_<user_id>`) with ICC disabled.
+- **Stateful persistence** — all repo deployments snapshot their file trees to SQLite on stop/restart.
+- **Multi-account Gemini key rotation** — primary + backup API keys are cycled automatically on quota exhaustion.
+- **Streaming responses** — all agent responses are streamed to the frontend via Server-Sent Events (SSE).
 
+---
 
-## Feature Analysis & Agent Tools
+## Prerequisites
 
-Stellar is equipped with an extensive suite of native tools (`agent_tools.py`) that provide complete system agency:
+| Requirement | Version / Notes |
+|---|---|
+| Python | 3.10+ |
+| Docker Engine | 20.10+ (daemon must be running) |
+| Redis | 6+ (running on `localhost:6379`) |
+| Nginx | For production TLS termination |
+| Pandoc | Required by `pypandoc` for document conversion |
+| Node.js | Optional — only needed if you build the frontend separately |
 
-*   **Repo Control (`repo_control`)**: An industrial-grade orchestrator that allows the agent to spin up multi-file backend/frontend applications in dedicated containers, complete with GitHub cloning, start/stop lifecycles, real-time snapshotting, and secure port routing.
-*   **Isolated Sandboxing (`lab_execute`)**: A zero-latency Docker execution environment enabling the AI to securely run arbitrary Bash/Python scripts, perform data science, or test red-team exploits.
-*   **Subagent Delegation (`subagent_tool`)**: Spawns isolated, mandate-driven sub-agents (e.g., Frontend Specialist, Security Analyst) within secure containers to concurrently tackle segmented components of a larger architecture.
-*   **AI Presentation Generator (`make_presentation` & `regenerate_presentation_slide`)**: End-to-end autonomous creation of `.pptx` slide decks. The agent researches a topic, drafts narratives, generates graphical slides, and can selectively regenerate specific slides based on feedback.
-*   **YouTube Intelligence (`analyze_youtube_video`)**: Multi-modal capability to dissect YouTube videos, extracting precise transcripts, summaries, and timestamps based on targeted queries.
-*   **Generative Assets (`generate_image`)**: Create high-fidelity imagery natively, customizing aspect ratios and applying quality enhancements directly into project workflows.
-*   **Task Scheduling (`schedule_task`)**: Schedule recurring or one-off autonomous prompts and background scripts to execute even when the user is offline.
-*   **Persistent Memory (`logs_and_preferences`)**: Global and user-scoped memory system allowing the AI to read/write its own operational preferences and stateful context between sessions.
-*   **Cross-Environment File Transfer (`manage_files`)**: Secure and seamless movement of files across the user's Chat interface, the secure Lab sandbox, and the persistent Repo orchestrator.
-*   **Deep Web Search (`web_search`)**: Advanced web search capabilities utilizing external APIs to answer complex queries, fetch real-time intelligence, and scrape online imagery.
-*   **Output Stream Management (`read_tool_output`)**: Intelligent pagination and retrieval of massive system logs, preventing context-window overflow during deep analysis.
-*   **Self-Healing Feedback Loop (`report_process_issue`)**: Built-in mechanism to document technical bottlenecks or process failures into an internal database tracker for continuous framework improvement.
-*   **Automated Emailing (`send_self_email`)**: Sends status reports, comprehensive logs, and generated assets directly to configured email addresses.
+**Docker Images Required** (build or pull before first run):
 
-## Use Cases & Detailed Examples
+```bash
+# Core lab sandbox image — used by lab_execute
+docker pull your-registry/stellar-lab-core:latest
 
-### 1. Autonomous Web Application Development
-**Scenario:** Building a full-stack React application with a Node.js or Python backend.
-**Example:** Provide Stellar with the project requirements. Stellar will use `repo_control` to automatically scaffold the frontend and backend architectures. It can iteratively build components, run tests, inspect network failures or container crash logs via `read_tool_output`, patch the code, and present the finished, deployed prototype on a dedicated port.
+# Repo host image — used by repo_control deployments
+docker pull your-registry/stellar-repo-host:latest
+```
 
-### 2. Deep Security Analysis (Red Teaming)
-**Scenario:** Identifying vulnerabilities in an open-source library or application codebase.
-**Example:** Using the Red Team mandate via `subagent_tool`, Stellar can pull down a target library using `lab_execute`. It will run automated linting, AST analysis, and custom vulnerability scanners. It documents its findings into its `logs_and_preferences`, attempts to build proof-of-concept exploits, and writes up comprehensive vulnerability reports.
+> The lab image must include: `bash`, `python3`, `pip`, `curl`, `git`, `gemini` CLI (for subagent_tool), and any common data science / web scraping libraries.
 
-### 3. Automated Reporting & Presentations
-**Scenario:** Generating professional asset reports or pitch decks on technical architectures.
-**Example:** Stellar uses `web_search` and `analyze_youtube_video` to gather information on a subject. It synthesizes this intelligence and triggers `make_presentation` to generate a `.pptx` file. If a slide misses the mark, the user can request a fix, prompting Stellar to invoke `regenerate_presentation_slide`. Finally, it uses `send_self_email` to deliver the final deck to stakeholders.
+---
 
-## System Guidelines
+## Setup & Installation
 
-### Infrastructure
-*   **Docker Orchestration:** Every workspace is a hardened container with isolated networking.
-*   **Persistence:** Code edits in Repo Control are preserved via automated SQLite snapshots.
-*   **Managed File System:** Securely move files across environments (Chat ↔ Lab ↔ Repo).
+### 1. Clone the Repository
 
-### Autonomous Logic
-Stellar is designed for **total agency**. It identifies technical failures, analyzes logs, and applies patches without user intervention. It operates as a root-level administrator within its sandboxes to deliver results, not just text.
+```bash
+git clone <repository_url>
+cd my_app
+```
+
+### 2. Create and Activate a Virtual Environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 3. Install Python Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+This installs all required packages including Flask, google-genai, docker SDK, Tavily, Redis client, cryptography, Twilio, and more. See [`requirements.txt`](requirements.txt) for the full pinned dependency list.
+
+### 4. Configure Environment Variables
+
+Copy or create `keys.env` in the project root (see the [Environment Configuration](#environment-configuration-keysenv) section below for all required keys):
+
+```bash
+cp keys.env.example keys.env
+nano keys.env
+```
+
+### 5. Initialize the Docker Networks and Images
+
+```bash
+python3 dockersetup.py
+```
+
+This script builds the required `stellar-lab-core` and `stellar-repo-host` Docker images and creates the `stellar_isolated` bridge network with inter-container communication disabled.
+
+### 6. Ensure Redis is Running
+
+```bash
+sudo systemctl start redis
+sudo systemctl enable redis
+```
+
+### 7. Run the Application (Development)
+
+```bash
+python3 app.py
+```
+
+The application will start on `http://0.0.0.0:5000`. For development, Flask's built-in server is sufficient. For production, use Gunicorn (see below).
+
+---
+
+## Environment Configuration (`keys.env`)
+
+All secrets and configuration are loaded from `keys.env` at startup. This file must never be committed to version control (it is already listed in `.gitignore`).
+
+| Variable | Description | Required |
+|---|---|---|
+| `FLASK_SECRET_KEY` | Flask session signing secret. Use a long random string. | ✅ |
+| `GEMINI_API_KEY` | Primary Gemini API key (Google AI Studio) | ✅ |
+| `GEMINI_BACKUP_KEY_1` ... `_N` | Additional Gemini API keys for automatic quota rotation | Optional |
+| `TAVILY_API_KEY` | Primary Tavily search/crawl API key | ✅ |
+| `TAVILY_BACKUP_KEY_1` ... `_N` | Backup Tavily keys for rotation | Optional |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key (for `analyze_youtube_video` search action) | ✅ |
+| `EMAIL_USER` | Gmail address used by `send_self_email` | ✅ |
+| `EMAIL_PASS` | Gmail app password (not account password) | ✅ |
+| `FIREBASE_PROJECT_ID` | Firebase project ID for Google OAuth token verification | ✅ |
+| `TWILIO_ACCOUNT_SID` | Twilio SID for SMS notifications | Optional |
+| `TWILIO_AUTH_TOKEN` | Twilio auth token | Optional |
+| `TWILIO_FROM_NUMBER` | Twilio phone number | Optional |
+| `DATABASE_NAME` | Path to SQLite DB file (default: `stellar_local.db`) | Optional |
+| `ENCRYPTION_KEY` | Fernet encryption key for sensitive stored data | ✅ |
+
+> **Generating a Fernet Key:**
+> ```python
+> from cryptography.fernet import Fernet
+> print(Fernet.generate_key().decode())
+> ```
+
+---
+
+## Docker Infrastructure
+
+Stellar uses Docker extensively. All AI-executed code runs inside isolated containers — never on the host directly.
+
+### Lab Containers (`stellar-lab-core`)
+
+- **Purpose:** Persistent bash sandboxes for `lab_execute` — running scripts, data analysis, installing packages, security research.
+- **Naming:** `stellar-lab-u<user_id>-c<chat_id>` — one per user/chat session.
+- **Mounts:**
+  - `/lab` → `sandbox_runs/lab_workspace_u<uid>_c<cid>/` (host workspace, persisted across turns)
+  - `/cred_store` → `credentials/` (read-only credential store for Gemini CLI inside subagents)
+- **Lifecycle:** Started on first `lab_execute` call, persists until explicitly cleaned up or expired.
+- **Mandate Injection:** Operational mandate files (`mandates/*.md`) are automatically injected into `/lab` so the agent reads them before executing specialized tasks.
+
+### Repo Containers (`stellar-repo-host`)
+
+- **Purpose:** Full application hosting environments for `repo_control` — deploy Node.js, React, Python Flask, Go, Ruby, or any custom stack.
+- **Naming:** `stellar-repo-<process_id>`
+- **Subdomain Routing:** Each deployment gets a unique subdomain `https://<name>.stellarai.live/` routed through Nginx.
+- **Persistence:** File snapshots stored in SQLite (`repo_history.files_snapshot` column as JSON). Auto-snapshot occurs before any `stop` or `restart` action.
+- **Lifespan:** Maximum 90 hours per container.
+- **Mobile Builds:** Setting `env_type='mobile'` provisions a `reactnativecommunity/react-native-android` container instead.
+
+### Network Isolation
+
+```bash
+# Each user gets a private bridge network
+stellar_net_<user_id>   # ICC disabled — containers cannot talk to each other
+
+# Global fallback network
+stellar_isolated         # Also ICC-disabled for unresolved users
+```
+
+---
+
+## Production Deployment (Nginx + Gunicorn + systemd)
+
+### systemd Service
+
+The `deploy/gunicorn_stellar.service` file configures Stellar as a managed system service:
+
+```bash
+sudo cp deploy/gunicorn_stellar.service /etc/systemd/system/stellar.service
+sudo systemctl daemon-reload
+sudo systemctl enable stellar
+sudo systemctl start stellar
+```
+
+The service runs Gunicorn with:
+- Worker class: `gthread` (gevent-compatible threaded workers)
+- Workers: `4`, Threads per worker: `25`
+- Timeout: `3600s` (long timeout for streaming AI responses)
+- Bind: Unix socket `stellar.sock` (consumed by Nginx)
+
+**To apply backend code changes:**
+```bash
+sudo systemctl restart stellar
+```
+
+### Nginx Configuration
+
+`deploy/nginx_stellar.conf` configures TLS termination and reverse proxy for both the main domain and all wildcard subdomains:
+
+```bash
+sudo cp deploy/nginx_stellar.conf /etc/nginx/sites-available/stellar
+sudo ln -s /etc/nginx/sites-available/stellar /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Key Nginx settings:
+- **SSL:** Let's Encrypt certificates for `stellarai.live` and `*.stellarai.live`
+- **Max body size:** 50MB (for file uploads)
+- **Proxy timeouts:** 3600s (matching Gunicorn)
+- **Buffering:** Disabled (`proxy_buffering off`) for real-time streaming
+- **HTTP/1.1 upgrade:** Enabled for SSE compatibility
+
+---
+
+## Agent Models & Personas
+
+Stellar supports four AI personas, each mapped to a specific Gemini model tier:
+
+| Persona | Model | Infrastructure Access | Best For |
+|---|---|---|---|
+| **Obsidian** | `gemini-3.5-flash` | Lab + Repo | Complex reasoning, long multi-step tasks |
+| **Crimson** | `gemini-3-flash-preview` | Lab + Repo | Fast execution, lower quota usage |
+| **Lunarity** | `gemini-3.1-flash-lite` | Lab only | Lightweight tasks, error explanations |
+| **Emerald** | `gemini-2.5-flash-lite` | None | Standard Q&A, no infrastructure |
+
+All models share access to YouTube intelligence and standard tools. The agent dynamically selects which persona processes a request based on user preference and current quota availability.
+
+---
+
+## Agent Tool Suite
+
+All tools are defined in [`agent_tools.py`](agent_tools.py) and exposed to the Gemini model as a function-calling schema. Every tool requires a `status` parameter (displayed to the user as a real-time progress update) and a `timeout`.
+
+---
+
+### `lab_execute(command, status, timeout)`
+
+**The core execution primitive.** Runs arbitrary bash commands inside an isolated, persistent Docker sandbox.
+
+- **Root access** — the agent runs as `root` inside the container.
+- **Persistent workspace** — the `/lab` directory persists across all turns in a chat session.
+- **Auto file sync** — files uploaded by the user are automatically synced to `/lab` before execution.
+- **OCI error recovery** — if the container mount namespace breaks (exit code 128), the container is automatically recreated and the command is retried transparently.
+- **Use cases:** Data science, web scraping, installing tools (`apt-get`, `pip`), running exploit scripts, compiling code, generating PDFs with WeasyPrint, running test suites.
+
+```python
+# Example: Run a Python data analysis script
+lab_execute(
+    command="pip install pandas && python3 analysis.py",
+    status="Running data analysis...",
+    timeout=120
+)
+```
+
+---
+
+### `repo_control(action, status, timeout, ...)`
+
+**Full-stack application deployment and management.** Spins up dedicated Docker containers accessible via public HTTPS subdomains.
+
+**Actions:**
+
+| Action | Description |
+|---|---|
+| `deploy` | Provision a new container. Optionally clone a GitHub repo into it. Returns a live public URL. |
+| `execute` | Run a bash command inside a running deployment (install deps, start servers, patch files). |
+| `stop` | Gracefully stop and auto-snapshot all code files to SQLite before container destruction. |
+| `restart` | Stop + re-provision a fresh container, restoring all snapshotted files. |
+| `snapshot` | Manually trigger a file snapshot of specific paths. |
+| `list_history` | List all past deployments with URLs and statuses. |
+| `rename` | Change a deployment's display name and generate a new public subdomain. |
+
+**Key behaviors:**
+- Server health is automatically verified post-start (HTTP status check on the internal port).
+- The agent is required to bind servers to `0.0.0.0` for the ingress router to work.
+- Pre-flight dependency installation and server start must be **separate `execute` calls** to prevent OOM kills.
+- For mobile builds (Android APKs, React Native), pass `env_type='mobile'`.
+
+---
+
+### `web_search(action, status, timeout, ...)`
+
+**Unified OSINT and web intelligence suite** powered by Tavily and Google Search.
+
+**Actions:**
+
+| Action | Description |
+|---|---|
+| `google_quick` | Fast answer via Gemini + Google Search grounding |
+| `tavily_search` | Deep semantic search with optional AI summary, image extraction, and date filtering |
+| `tavily_extract` | Full-page markdown/HTML extraction of up to 20 URLs simultaneously |
+| `tavily_crawl` | Recursive site crawling with configurable depth and path filters |
+| `tavily_map` | Domain architecture mapping — discovers all reachable URLs on a site |
+
+**Advanced parameters:** Topic filtering (`general`, `news`, `finance`), domain inclusion/exclusion lists, exact phrase matching, time range filters (`d`, `w`, `m`, `y`), natural language crawler instructions, and image extraction with automatic dead-link verification.
+
+---
+
+### `subagent_tool(task_description, mode, status, timeout, ...)`
+
+**Gemini CLI delegation.** Spawns an independent Gemini CLI agent inside a lab or repo container to handle a subtask concurrently.
+
+- **Modes:** `delegation` (execute a task) or `summarization` (compress long context).
+- **Account rotation:** The subagent script automatically cycles through all credential accounts (`/cred_store/account_X/`) if it hits quota limits — up to 5 retries.
+- **`pass_to_user`:** If `True`, the subagent's raw output is streamed directly to the chat; the main agent should not repeat it. If `False`, the output is used silently for background processing.
+- **`container_id`:** Optionally run the subagent inside a specific repo deployment container.
+
+---
+
+### `make_presentation(topic, status, timeout, num_slides, style, additional_context)`
+
+**End-to-end AI-generated PowerPoint presentations.**
+
+1. Uses `gemini-2.5-flash` with structured JSON output to plan slide titles, summaries, and visual layouts.
+2. Generates each slide as a full-bleed 16:9 AI image using `gemini-3.1-flash-image-preview` — all slides are generated concurrently via `asyncio`.
+3. Assembles a `.pptx` file with images embedded as full-slide pictures.
+4. Returns a download link and slide preview URLs (rendered as an interactive carousel by the frontend).
+
+### `regenerate_presentation_slide(presentation_id, slide_index, ...)`
+
+Re-generates a single slide in an existing presentation using the original slide image as a reference, with user-specified feedback to guide the revision.
+
+---
+
+### `analyze_youtube_video(query, status, timeout, action, ...)`
+
+**Multi-modal YouTube intelligence.**
+
+- **`action='search'`** — queries the YouTube Data API v3, returns up to 50 results enriched with view counts, like counts, duration, and full descriptions, sorted by popularity.
+- **`action='analyze'`** — feeds the video directly to Gemini's multimodal model. Supports `start_time`/`end_time` offsets and configurable `fps` sampling for precise segment analysis.
+
+---
+
+### `generate_image(model, prompt, status, timeout, quality, aspect_ratio, reference_images)`
+
+**Native image generation** using Gemini's Imagen models.
+
+- **Models:** `gemini-3.1-flash-image-preview` (fast) or `gemini-3-pro-image-preview` (high quality).
+- **Quality tiers:** `512`, `1K`, `2K`, `4K`.
+- **Aspect ratios:** `1:1`, `3:4`, `4:3`, `9:16`, `16:9`.
+- **Reference images:** Pass up to 14 uploaded filenames for image editing, style transfer, or conditioning.
+- Generated images are saved to `outputs/` and served at `https://stellarai.live/view/<filename>`.
+
+---
+
+### `schedule_task(task_prompt, status, timeout, action, ...)`
+
+**Persistent autonomous task scheduler.** Tasks are stored in SQLite and executed by a background scheduler thread even when the user is offline.
+
+- **`action='schedule'`** — create a new task. Supports one-time (`execute_at`) or recurring (`recurring_minutes`) execution. Maximum 10 active tasks per user.
+- **`action='list'`** — inspect all active tasks with their next run times.
+- **`action='cancel'`** — deactivate a task by ID (cannot cancel a running task).
+- **`action='edit'`** — modify an existing task's prompt, schedule, or metadata.
+- **`metadata`** — a scratchpad for retry state (e.g., tracking which attempt a polling loop is on).
+
+---
+
+### `logs_and_preferences(status, timeout, write)`
+
+**Persistent long-term memory.** The agent's "brain" between sessions.
+
+- Writes preferences, user facts, past errors, and verified resolution strategies to `user_logs_prefs` in SQLite.
+- Memory is automatically injected into the system prompt at the start of every conversation turn — no explicit "read" action is needed.
+- Limited to the last 100 entries per user to prevent bloat.
+- **Intended for high-signal, permanent data only.** Transient retry state belongs in `schedule_task.metadata`.
+
+---
+
+### `manage_files(action, status, timeout, file_name, target_env, source_env)`
+
+**Cross-environment file transfer** between chat uploads, lab sandboxes, and repo containers.
+
+| Action | Description |
+|---|---|
+| `read` | List all files currently uploaded in the chat context |
+| `move` | Transfer a file or directory between environments (chat → lab, lab → repo, etc.) |
+| `project` | Export a file or directory from a container to the host `outputs/` folder, making it downloadable/previewable by the user |
+
+Directories are automatically compressed as `.tar.gz` before projection.
+
+---
+
+### `send_self_email(subject, body, status, timeout, attachment_path)`
+
+**Secure closed-loop mailer.** Sends emails only to the authenticated user's own registered address.
+
+- Body is rendered as rich HTML from Markdown (with syntax highlighting via `codehilite`).
+- Supports attaching files from `outputs/`, `uploads/`, or `sandbox_runs/` directories.
+- Uses Gmail SMTP over SSL (port 465).
+
+---
+
+### `read_tool_output(output_id, status, timeout, keyword, start_line, max_lines)`
+
+**Paginated log retrieval.** Fetches the full, untruncated output of a past tool call from the database.
+
+- Essential when the chat history shows `[Output truncated]` for large outputs (build logs, data dumps).
+- Supports keyword filtering — returns only lines containing a search term with their original line numbers.
+- Paginated via `start_line` + `max_lines`.
+
+---
+
+### `report_process_issue(topic, issue_description, technical_context, status, timeout)`
+
+**Autonomous self-healing feedback loop.** When the agent encounters a genuine technical failure during tool execution, it immediately logs a structured bug report to `agent_feedback` in SQLite and triggers `issue_resolver.py` as a background subprocess for developer review.
+
+- Strict protocol: only for empirically verified internal failures — not for feature requests or user-reported issues that haven't been reproduced.
+
+---
+
+## Mandate System
+
+The `mandates/` directory contains operational mandates — instruction files injected into the lab sandbox at `/lab/` and referenced by the agent before undertaking specialized tasks:
+
+| Mandate | Trigger Condition |
+|---|---|
+| `FRONTEND_DESIGN_MANDATE.md` | Before building any web UI, component, or dashboard |
+| `GENERATIVE_AI_MANDATE.md` | Before writing any Gemini/GenAI integration code |
+| `GAME_DEVELOPMENT_MANDATE.md` | Before building 3D rendering engines or game mechanics |
+| `MOBILE_DEVELOPMENT_MANDATE.md` | Before building Android APKs or React Native apps |
+| `RED_TEAM_MANDATE.md` | Before any security research, pen-testing, or vulnerability analysis |
+
+These mandates define technical standards, preferred libraries, code structure requirements, and quality gates that the agent must follow. They are the equivalent of an engineering style guide, automatically enforced at runtime.
+
+---
+
+## Persistent Memory & Scheduling
+
+### How Memory Works
+
+At the start of every agent turn, the system prompt is dynamically constructed by `get_refinement_prompt()` in `prompts.py`. This function:
+
+1. Queries `user_logs_prefs` in SQLite for all entries belonging to the current user.
+2. Injects them as a `### PERSISTENT MEMORY & USER PREFERENCES` block directly into the prompt.
+3. The agent reads this block before responding and adheres to any stored preferences.
+
+Memory entries survive server restarts, model changes, and new chat sessions. They are the agent's long-term context layer.
+
+### How Scheduling Works
+
+A background daemon thread in `app.py` polls `scheduled_tasks` in SQLite every minute. For any task whose `execute_at` has passed:
+
+1. A Flask application context is pushed.
+2. `g` is populated with the task owner's `user_id`, `chat_id`, and `model_id`.
+3. The full agent pipeline is invoked — the same pipeline as a real user request — and the output is appended to the user's chat history.
+4. Recurring tasks update their `execute_at` to `now + recurring_minutes`.
+
+This enables fully autonomous operation: the agent can schedule itself to monitor news, retry failed extractions, send reports, or perform maintenance — all without any user interaction.
+
+---
+
+## Use Cases & Examples
+
+### 1. Autonomous Full-Stack Application Development
+
+Deploy a complete React + Python backend application with one conversation:
+
+> *"Build a real-time stock dashboard with a React frontend and a Flask WebSocket backend. Deploy it live."*
+
+Stellar will:
+1. `repo_control(action='deploy')` — provision a fresh container.
+2. `repo_control(action='execute')` — scaffold the project, install `npm` and `pip` dependencies (separate calls to avoid OOM).
+3. `repo_control(action='execute')` — start the server on `0.0.0.0:5000`.
+4. Verify the deployment URL is responding and return the live link.
+
+---
+
+### 2. Data Analysis & Report Generation
+
+> *"Analyze the attached sales CSV, generate key visualizations, and email me the PDF report."*
+
+Stellar will:
+1. `lab_execute` — install pandas, matplotlib, weasyprint; run the analysis script.
+2. `lab_execute` — generate charts and compile an HTML dashboard.
+3. `lab_execute` — convert HTML to PDF using `weasyprint`.
+4. `manage_files(action='project')` — export the PDF to the host.
+5. `send_self_email` — attach and send the PDF report to the user.
+
+---
+
+### 3. Deep Security Analysis (Red Team Mode)
+
+> *"Audit this open-source API for authentication vulnerabilities."*
+
+Under the Red Team mandate (persona: **Angel**), Stellar will:
+1. `lab_execute` — clone the target repository, install `sqlmap`, `semgrep`, or custom scanners.
+2. `lab_execute` — run static analysis, enumerate endpoints, attempt injection payloads.
+3. `logs_and_preferences` — record the methodology and any verified findings.
+4. Produce a structured vulnerability report.
+
+---
+
+### 4. AI Presentation on Demand
+
+> *"Create a 12-slide corporate pitch deck on quantum computing for a non-technical audience."*
+
+Stellar will:
+1. `web_search` — gather recent research, statistics, and key concepts.
+2. `make_presentation` — plan slides with structured JSON, generate 12 AI-designed full-bleed slide images concurrently, assemble the `.pptx`.
+3. Return a download link and interactive slide preview carousel.
+4. If a slide needs revision: `regenerate_presentation_slide` — re-generate just that slide using the original as a reference.
+
+---
+
+### 5. Autonomous Scheduled Intelligence
+
+> *"Every Monday at 9 AM, search for the top 5 AI news stories and email me a summary."*
+
+Stellar will:
+1. `schedule_task(action='schedule', recurring_minutes=10080)` — schedule a weekly task.
+2. When triggered: `web_search(action='tavily_search', topic='news')` — gather stories.
+3. `send_self_email` — format and deliver the digest automatically.
+
+---
+
+### 6. YouTube Deep Dive
+
+> *"Find the most-watched tutorial on LangGraph and summarize how it handles state management."*
+
+Stellar will:
+1. `analyze_youtube_video(action='search')` — query YouTube API, return top videos by view count.
+2. `analyze_youtube_video(action='analyze', video_url=...)` — feed the video to Gemini multimodal, extract the specific segment on state management, return a timestamped summary.
+
+---
+
+## API Key Management & Account Rotation
+
+Stellar is designed for high availability across multiple Gemini API accounts.
+
+### Key Hierarchy
+
+- `PRIMARY_API_KEY` — used first for all requests.
+- `BACKUP_API_KEYS` — a list of additional keys tried in order on `429`, `403`, `503`, or `500` errors.
+
+All tools in `agent_tools.py` implement the same retry loop:
+```python
+for current_key in keys_to_try:
+    try:
+        # ... API call
+    except Exception as e:
+        if is_quota_error(e):
+            continue  # Try next key
+        return error
+return "All keys exhausted"
+```
+
+### Credential Store for Subagents
+
+The `credentials/` directory holds account-specific `google_accounts.json` and `oauth_creds.json` files for the Gemini CLI used inside subagent containers:
+
+```
+credentials/
+├── account_0/
+│   ├── google_accounts.json
+│   └── oauth_creds.json
+├── account_1/
+│   └── ...
+```
+
+The `subagent_tool` bash script automatically rotates through these accounts if it detects quota exhaustion in the CLI output.
+
+### Manual Account Switching
+
+To switch the active CLI account on the host machine:
+```bash
+cp credentials/account_X/google_accounts.json ~/.gemini/google_accounts.json
+cp credentials/account_X/oauth_creds.json ~/.gemini/oauth_creds.json
+pkill -f gemini
+```
+
+---
+
+## Security Model
+
+| Layer | Mechanism |
+|---|---|
+| **Authentication** | Google OAuth via Firebase ID token verification (`/login/google`) |
+| **Authorization** | `@require_approval` decorator on all protected routes; user status checked against SQLite `users` table |
+| **Container isolation** | Per-user Docker networks with ICC disabled; lab/repo containers cannot communicate with each other |
+| **File system access** | `manage_files` restricts host-side moves to `UPLOAD_FOLDER` and `outputs/` only |
+| **Email** | `send_self_email` sends only to the authenticated user's registered email — not arbitrary addresses |
+| **Session security** | Flask-Session with signed cookies (`FLASK_SECRET_KEY`); session cookie named `stellar_session_main` |
+| **Encryption** | Fernet symmetric encryption for sensitive stored data |
+| **Upload validation** | File extension allowlist enforced on all uploads |
+| **Nginx TLS** | Let's Encrypt certificates with HSTS and modern SSL configuration |
+
+---
+
+## Database Schema
+
+The application uses a single SQLite file (`stellar_local.db`) in WAL journal mode. Key tables:
+
+| Table | Purpose |
+|---|---|
+| `users` | User accounts: `id`, `username` (email), `is_approved`, `display_name`, `password_hash` |
+| `chats` | Chat sessions per user |
+| `messages` | All chat messages (role, content, model_id, tool calls) |
+| `tool_calls` | Stores full tool input/output for paginated retrieval by `read_tool_output` |
+| `repo_history` | Deployment history: `process_id`, `project_name`, `subdomain`, `files_snapshot` (JSON), `status` |
+| `scheduled_tasks` | Autonomous task queue: `task_prompt`, `execute_at`, `recurring_minutes`, `metadata`, `is_active` |
+| `user_logs_prefs` | Persistent agent memory: `user_id`, `log_entry`, `created_at` |
+| `agent_feedback` | Bug reports filed by `report_process_issue`: `topic`, `issue_description`, `technical_context` |
+
+WAL mode and `busy_timeout=5000` are set on all connections to handle concurrent access from multiple Gunicorn threads.
+
+---
+
+## Testing
+
+The `tests/` directory contains a `pytest` suite using `pytest-flask` and `pytest-mock`.
+
+```bash
+# Activate venv first
+source venv/bin/activate
+
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov=app --cov=agent_tools --cov-report=term-missing
+```
+
+Tests mock Docker and external API calls to run without live infrastructure.
+
+---
+
+## Project Structure
+
+```
+my_app/
+├── app.py                  # Main Flask application, routes, scheduling daemon
+├── agent_tools.py          # All agent tool implementations (14 tools, ~2100 lines)
+├── prompts.py              # System prompt construction, persona definitions
+├── dockersetup.py          # Docker image build and network initialization script
+├── webscrapper.py          # Lightweight web scraping utility
+├── send_email.py           # Standalone email utility
+├── telegram_bot.py         # Telegram notification bot for login alerts
+├── issue_resolver.py       # Background subprocess for processing agent_feedback
+├── requirements.txt        # Pinned Python dependencies
+├── keys.env                # ⚠️ Secret keys and configuration (never commit this)
+├── encryption.key          # ⚠️ Fernet key file (never commit this)
+├── stellar_local.db        # SQLite database (WAL mode)
+├── deploy/
+│   ├── gunicorn_stellar.service   # systemd unit file
+│   └── nginx_stellar.conf         # Nginx reverse proxy config
+├── mandates/               # Operational mandate files injected into lab sandbox
+│   ├── FRONTEND_DESIGN_MANDATE.md
+│   ├── GENERATIVE_AI_MANDATE.md
+│   ├── GAME_DEVELOPMENT_MANDATE.md
+│   ├── MOBILE_DEVELOPMENT_MANDATE.md
+│   └── RED_TEAM_MANDATE.md
+├── credentials/            # Gemini CLI OAuth credentials per account
+│   └── account_X/
+├── static/                 # Frontend static assets
+├── templates/              # Jinja2 HTML templates
+├── uploads/                # User-uploaded files (per chat session)
+├── outputs/                # Generated files (images, PDFs, presentations)
+├── sandbox_runs/           # Lab container workspace directories (host-side)
+└── tests/                  # pytest test suite
+```
+
+---
+
+*Built with Flask · Powered by Gemini · Deployed on stellarai.live*
