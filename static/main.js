@@ -2431,6 +2431,7 @@
         const userMsgId = Date.now() + "_user";
         if (query || stagedFiles.length > 0) {
           if (!silent) {
+            hideWelcomeScreen();
             appendUserMessage(query, userMsgId, [...stagedFiles], true);
           }
         }
@@ -3908,6 +3909,39 @@
         }
       }
 
+      function showWelcomeScreen() {
+        const welcomeScreen = document.getElementById("welcomeScreen");
+        if (welcomeScreen) {
+          welcomeScreen.style.display = "flex";
+          welcomeScreen.classList.remove("fade-out");
+          const greeting = document.getElementById("welcomeGreeting");
+          if (greeting) {
+            const hour = new Date().getHours();
+            let timeGreeting = "Greetings.";
+            if (hour < 12) timeGreeting = "Good morning";
+            else if (hour < 18) timeGreeting = "Good afternoon";
+            else timeGreeting = "Good evening";
+            
+            const name = typeof currentUsername !== "undefined" && currentUsername ? `, ${currentUsername}` : "";
+            greeting.textContent = `${timeGreeting}${name}.`;
+          }
+        }
+      }
+
+      function hideWelcomeScreen(instant = false) {
+        const welcomeScreen = document.getElementById("welcomeScreen");
+        if (welcomeScreen && welcomeScreen.style.display !== "none") {
+          if (instant) {
+            welcomeScreen.style.display = "none";
+          } else {
+            welcomeScreen.classList.add("fade-out");
+            setTimeout(() => {
+              welcomeScreen.style.display = "none";
+            }, 500);
+          }
+        }
+      }
+
       async function loadHistory(
         chatIdToLoad = null,
         targetMessageId = null,
@@ -3932,6 +3966,7 @@
             Array.isArray(data.history) &&
             data.history.length > 0
           ) {
+            hideWelcomeScreen(true);
             const ids = new Set();
             data.history.forEach((msg) => {
               if (!msg?.id || ids.has(msg.id)) {
@@ -4078,9 +4113,7 @@
               setTimeout(scrollToBottom, 400);
             }
           } else {
-            const welcome =
-              "Heyy there! I'm Stellar, and I can help you build, host, and orchestrate applications with continuous ground-truth memory! You can also perform deep research and generate professional presentations! ✨  ";
-            appendStellarMessage(welcome, "welcome-msg");
+            showWelcomeScreen();
           }
           historyLoaded = true;
         } catch (error) {
@@ -4136,7 +4169,7 @@
               }
             }
           } else {
-            await createNewChat(false);
+            await createNewChat(true);
           }
         } catch (error) {
           setStatus(`Error loading chats: ${error.message}`, true);
@@ -4942,6 +4975,7 @@
             // Clear the frontend UI
             messagesDiv.innerHTML = "";
             historyLoaded = true; // Set true so it doesn't auto-load past DB history
+            hideWelcomeScreen(true);
 
             // Inject intro message
             const tempWelcome =

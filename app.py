@@ -596,8 +596,7 @@ def get_current_chat_id(user_id):
         new_chat_id = cursor.lastrowid
         if has_request_context():
             session['current_chat_id'] = new_chat_id
-        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with full-stack application development via Repo Control. My capabilities include real-time web search and code execution. How may I assist you today?"
-        insert_message(new_chat_id, "stellar", welcome_message)
+
 
     if has_request_context():
         session.modified = True
@@ -2722,8 +2721,7 @@ def clear_history():
         db.execute('DELETE FROM tool_calls WHERE chat_id = ?', (chat_id,))
         db.commit()
         
-        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with full-stack application development via Repo Control. My capabilities include real-time web search and code execution. How may I assist you today?"
-        insert_message(chat_id, "stellar", welcome_message)
+
         
         return jsonify({'status': 'Success', 'message': 'Conversation history cleared'})
     except sqlite3.Error as db_e:
@@ -3185,8 +3183,7 @@ def create_new_chat():
         db.commit()
         new_chat_id = cursor.lastrowid
         
-        welcome_message = "Greetings. I am Stellar, a professional AI assistant. I can assist you with full-stack application development via Repo Control. My capabilities include real-time web search and code execution. How may I assist you today?"
-        insert_message(new_chat_id, "stellar", welcome_message)
+
 
         session['current_chat_id'] = new_chat_id
         session.modified = True

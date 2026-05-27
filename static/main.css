@@ -4423,3 +4423,451 @@
           transform: translateY(0);
         }
       }
+
+      /* ============================================
+         WELCOME SCREEN — Empty Chat Overhaul
+         ============================================ */
+
+      .welcome-screen {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        padding: 40px 20px 120px;
+        text-align: center;
+        animation: welcomeFadeIn 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        position: relative;
+        overflow: hidden;
+        min-height: 0;
+      }
+
+      .welcome-screen.fade-out {
+        animation: welcomeFadeOut 0.5s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+        pointer-events: none;
+      }
+
+      @keyframes welcomeFadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(30px) scale(0.97);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      @keyframes welcomeFadeOut {
+        from {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+        to {
+          opacity: 0;
+          transform: translateY(-20px) scale(0.98);
+        }
+      }
+
+      /* --- Floating Particles --- */
+      .welcome-particles {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 0;
+      }
+
+      .welcome-particle {
+        position: absolute;
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: var(--model-color-start);
+        opacity: 0;
+        animation: particleDrift linear infinite;
+      }
+
+      .welcome-particle:nth-child(1) { left: 10%; top: 80%; animation-duration: 18s; animation-delay: 0s; width: 2px; height: 2px; }
+      .welcome-particle:nth-child(2) { left: 25%; top: 90%; animation-duration: 22s; animation-delay: 2s; width: 4px; height: 4px; background: var(--model-color-end); }
+      .welcome-particle:nth-child(3) { left: 50%; top: 85%; animation-duration: 16s; animation-delay: 4s; }
+      .welcome-particle:nth-child(4) { left: 70%; top: 95%; animation-duration: 20s; animation-delay: 1s; width: 2px; height: 2px; background: var(--model-color-end); }
+      .welcome-particle:nth-child(5) { left: 85%; top: 88%; animation-duration: 24s; animation-delay: 3s; width: 4px; height: 4px; }
+      .welcome-particle:nth-child(6) { left: 40%; top: 92%; animation-duration: 19s; animation-delay: 5s; width: 2px; height: 2px; }
+      .welcome-particle:nth-child(7) { left: 60%; top: 78%; animation-duration: 21s; animation-delay: 0.5s; background: var(--model-color-end); }
+      .welcome-particle:nth-child(8) { left: 15%; top: 95%; animation-duration: 17s; animation-delay: 6s; width: 3px; height: 3px; }
+
+      @keyframes particleDrift {
+        0% {
+          opacity: 0;
+          transform: translateY(0) translateX(0);
+        }
+        10% {
+          opacity: 0.4;
+        }
+        50% {
+          opacity: 0.15;
+          transform: translateY(-45vh) translateX(20px);
+        }
+        90% {
+          opacity: 0.3;
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(-90vh) translateX(-10px);
+        }
+      }
+
+      /* --- Animated Orb --- */
+      .welcome-orb-wrapper {
+        position: relative;
+        width: 100px;
+        height: 100px;
+        margin-bottom: 32px;
+        z-index: 1;
+      }
+
+      .welcome-orb {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle at 35% 35%,
+          rgba(181, 84, 255, 0.6),
+          rgba(123, 97, 255, 0.4) 40%,
+          rgba(100, 70, 230, 0.2) 70%,
+          transparent 100%
+        );
+        box-shadow:
+          0 0 60px rgba(123, 97, 255, 0.35),
+          0 0 120px rgba(181, 84, 255, 0.15),
+          inset 0 0 40px rgba(123, 97, 255, 0.2);
+        animation: orbFloat 6s ease-in-out infinite, orbGlow 4s ease-in-out infinite alternate;
+        position: relative;
+      }
+
+      .welcome-orb::before {
+        content: '';
+        position: absolute;
+        inset: -8px;
+        border-radius: 50%;
+        background: conic-gradient(
+          from 0deg,
+          transparent,
+          rgba(123, 97, 255, 0.15),
+          transparent,
+          rgba(181, 84, 255, 0.1),
+          transparent
+        );
+        animation: orbRingSpin 12s linear infinite;
+      }
+
+      .welcome-orb::after {
+        content: '';
+        position: absolute;
+        top: 15%;
+        left: 20%;
+        width: 30%;
+        height: 25%;
+        border-radius: 50%;
+        background: radial-gradient(
+          ellipse at center,
+          rgba(255, 255, 255, 0.25),
+          transparent 70%
+        );
+        filter: blur(3px);
+      }
+
+      @keyframes orbFloat {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-12px); }
+      }
+
+      @keyframes orbGlow {
+        0% {
+          box-shadow:
+            0 0 60px rgba(123, 97, 255, 0.3),
+            0 0 120px rgba(181, 84, 255, 0.1),
+            inset 0 0 40px rgba(123, 97, 255, 0.15);
+        }
+        100% {
+          box-shadow:
+            0 0 80px rgba(123, 97, 255, 0.45),
+            0 0 160px rgba(181, 84, 255, 0.2),
+            inset 0 0 50px rgba(123, 97, 255, 0.25);
+        }
+      }
+
+      @keyframes orbRingSpin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* --- Greeting Text --- */
+      .welcome-greeting {
+        font-size: 2rem;
+        font-weight: 600;
+        background: linear-gradient(135deg, #ffffff 0%, var(--model-color-start) 50%, var(--model-color-end) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 8px;
+        letter-spacing: 0.5px;
+        z-index: 1;
+        line-height: 1.3;
+      }
+
+      .welcome-subtitle {
+        font-size: 1.05rem;
+        color: var(--secondary-text-color);
+        margin-bottom: 44px;
+        font-weight: 300;
+        z-index: 1;
+        max-width: 460px;
+        line-height: 1.5;
+      }
+
+      /* --- Capability Cards Grid --- */
+      .welcome-capabilities {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+        max-width: 800px;
+        width: 100%;
+        margin-bottom: 32px;
+        z-index: 1;
+      }
+
+      .welcome-cap-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(123, 97, 255, 0.12);
+        border-radius: 16px;
+        padding: 20px 18px;
+        cursor: pointer;
+        transition: all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
+        text-align: left;
+        position: relative;
+        overflow: hidden;
+        backdrop-filter: blur(12px);
+      }
+
+      .welcome-cap-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 16px;
+        background: radial-gradient(
+          ellipse at 50% 0%,
+          rgba(123, 97, 255, 0.08),
+          transparent 70%
+        );
+        opacity: 0;
+        transition: opacity 0.35s ease;
+      }
+
+      .welcome-cap-card:hover {
+        border-color: rgba(123, 97, 255, 0.35);
+        transform: translateY(-3px);
+        box-shadow:
+          0 8px 32px rgba(123, 97, 255, 0.12),
+          0 0 0 1px rgba(123, 97, 255, 0.1);
+      }
+
+      .welcome-cap-card:hover::before {
+        opacity: 1;
+      }
+
+      .welcome-cap-card:active {
+        transform: translateY(-1px) scale(0.99);
+      }
+
+      .welcome-cap-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 14px;
+        font-size: 18px;
+      }
+      .welcome-cap-icon.purple { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+      .welcome-cap-icon.blue { background: rgba(59, 130, 246, 0.12); color: #60a5fa; }
+      .welcome-cap-icon.green { background: rgba(52, 211, 153, 0.12); color: #34d399; }
+      .welcome-cap-icon.pink { background: rgba(236, 72, 153, 0.12); color: #f472b6; }
+
+      .welcome-cap-title {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: var(--primary-text-color);
+        margin-bottom: 5px;
+        letter-spacing: 0.3px;
+      }
+
+      .welcome-cap-desc {
+        font-size: 0.78rem;
+        color: var(--secondary-text-color);
+        line-height: 1.45;
+        font-weight: 300;
+      }
+
+      /* --- Suggestion Chips --- */
+      .welcome-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+        max-width: 800px;
+        z-index: 1;
+      }
+
+      .welcome-chip {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(123, 97, 255, 0.08);
+        border: 1px solid rgba(123, 97, 255, 0.18);
+        border-radius: 100px;
+        padding: 8px 18px;
+        font-size: 0.8rem;
+        color: var(--secondary-text-color);
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        white-space: nowrap;
+        font-family: inherit;
+        font-weight: 400;
+        letter-spacing: 0.2px;
+      }
+
+      .welcome-chip:hover {
+        background: rgba(123, 97, 255, 0.18);
+        border-color: rgba(123, 97, 255, 0.4);
+        color: var(--primary-text-color);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 16px rgba(123, 97, 255, 0.15);
+      }
+
+      .welcome-chip:active {
+        transform: translateY(0);
+      }
+
+      .welcome-chip i {
+        font-size: 14px;
+        color: rgba(167, 139, 250, 0.7);
+      }
+
+      /* --- Divider --- */
+      .welcome-divider {
+        width: 60px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(123, 97, 255, 0.3), transparent);
+        margin-bottom: 24px;
+        z-index: 1;
+      }
+
+      /* --- Powered By --- */
+      .welcome-powered {
+        margin-top: 28px;
+        font-size: 0.7rem;
+        color: rgba(169, 163, 199, 0.4);
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        z-index: 1;
+      }
+
+      /* --- Responsive --- */
+      @media (max-width: 768px) {
+        .welcome-screen {
+          padding: 24px 16px 100px;
+        }
+
+        .welcome-orb-wrapper {
+          width: 72px;
+          height: 72px;
+          margin-bottom: 24px;
+        }
+
+        .welcome-greeting {
+          font-size: 1.5rem;
+        }
+
+        .welcome-subtitle {
+          font-size: 0.92rem;
+          margin-bottom: 32px;
+        }
+
+        .welcome-capabilities {
+          grid-template-columns: 1fr;
+          gap: 10px;
+          max-width: 100%;
+        }
+
+        .welcome-cap-card {
+          padding: 16px 14px;
+        }
+
+        .welcome-chips {
+          gap: 8px;
+        }
+
+        .welcome-chip {
+          padding: 7px 14px;
+          font-size: 0.75rem;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .welcome-greeting {
+          font-size: 1.3rem;
+        }
+
+        .welcome-orb-wrapper {
+          width: 60px;
+          height: 60px;
+          margin-bottom: 20px;
+        }
+
+        .welcome-subtitle {
+          font-size: 0.85rem;
+          margin-bottom: 24px;
+        }
+
+        .welcome-cap-card {
+          padding: 14px 12px;
+        }
+
+        .welcome-cap-icon {
+          font-size: 1.3rem;
+        }
+      }
+
+      @media (max-height: 500px) and (orientation: landscape) {
+        .welcome-screen {
+          padding: 12px 16px 80px;
+        }
+
+        .welcome-orb-wrapper {
+          width: 48px;
+          height: 48px;
+          margin-bottom: 12px;
+        }
+
+        .welcome-greeting {
+          font-size: 1.2rem;
+          margin-bottom: 4px;
+        }
+
+        .welcome-subtitle {
+          font-size: 0.8rem;
+          margin-bottom: 16px;
+        }
+
+        .welcome-capabilities {
+          grid-template-columns: repeat(4, 1fr);
+          gap: 8px;
+          max-width: 100%;
+        }
+
+        .welcome-cap-card {
+          padding: 10px;
+        }
+      }
