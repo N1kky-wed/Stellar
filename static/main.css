@@ -4907,3 +4907,54 @@
           padding: 10px;
         }
       }
+
+/* --- OVERRIDES FOR PURE BLACK & NO-GLOSS THEME --- */
+:root {
+  --body-bg-color1: #000000 !important;
+  --body-bg-color2: #000000 !important;
+  --body-bg-color3: #000000 !important;
+  --body-bg-color4: #000000 !important;
+  --base-bg: #000000 !important;
+  
+  --header-bg: #000000 !important;
+  --sidebar-bg: #000000 !important;
+  --card-bg: #0a0a0a !important;
+  --input-bg: #0a0a0a !important;
+  --user-msg-bg: #111111 !important;
+  --stellar-msg-bg: #0a0a0a !important;
+  
+  --header-border: rgba(255, 255, 255, 0.05) !important;
+  --sidebar-border: rgba(255, 255, 255, 0.05) !important;
+  --input-border: rgba(255, 255, 255, 0.1) !important;
+  --user-msg-border: rgba(255, 255, 255, 0.05) !important;
+  --stellar-msg-border: rgba(255, 255, 255, 0.05) !important;
+  --card-border: rgba(255, 255, 255, 0.05) !important;
+  --model-color-start-rgb: 255, 255, 255 !important;
+}
+
+body {
+  background-color: #000000 !important;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E") !important;
+  background-attachment: fixed !important;
+  animation: none !important;
+}
+
+/* Remove flowing background gradients */
+.dynamic-bg, #dynamic-bg-canvas, .orb, .particle, .glow-1, .glow-2 {
+  display: none !important;
+  animation: none !important;
+  opacity: 0 !important;
+  background: none !important;
+}
+
+/* Remove glassmorphism */
+* {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+header, .sidebar, .input-container, .message, .card, .glass-card, .chat-container {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
