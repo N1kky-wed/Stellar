@@ -24,11 +24,31 @@
         width: 100%;
         z-index: 1000;
         border-bottom: 1px solid var(--header-border);
+        transform: translateY(calc(-100% + 12px));
+        opacity: 0.4;
         transition:
+          transform 0.3s ease-in-out,
+          opacity 0.3s ease-in-out,
           background var(--transition-duration-medium)
             var(--transition-timing-function),
           border-color var(--transition-duration-medium)
             var(--transition-timing-function);
+      }
+
+      header:hover, header:focus-within {
+        transform: translateY(0);
+        opacity: 1;
+      }
+
+      /* Extends the hoverable area below the header */
+      header::after {
+        content: "";
+        position: absolute;
+        bottom: -50px; 
+        left: 0;
+        right: 0;
+        height: 50px;
+        background: transparent;
       }
 
       .code-controls .run-code-btn {

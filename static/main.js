@@ -4944,6 +4944,13 @@
 
       sidebarToggleBtn.addEventListener("click", toggleSidebar);
       sidebarCloseBtn.addEventListener("click", toggleSidebar);
+      
+      // Auto-close sidebar when mouse leaves
+      sidebar.addEventListener("mouseleave", () => {
+        if (sidebar.classList.contains("open")) {
+          sidebar.classList.remove("open");
+        }
+      });
       newChatBtn.addEventListener("click", createNewChat);
 
       const headerTempChatBtn = document.getElementById("headerTempChatBtn");
@@ -5124,6 +5131,9 @@
               canvasCtx.scale(dpr, dpr);
             };
 
+            let cachedColorStart = null;
+            let cachedColorEnd = null;
+
             const draw = () => {
               if (!analyser) return;
               animationFrameId = requestAnimationFrame(draw);
@@ -5136,20 +5146,24 @@
                   dataArray[i] * (1 - smoothingFactor);
               }
               canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-              const colorStart = getComputedStyle(document.documentElement)
-                .getPropertyValue("--model-color-start")
-                .trim();
-              const colorEnd = getComputedStyle(document.documentElement)
-                .getPropertyValue("--model-color-end")
-                .trim();
+              
+              if (!cachedColorStart) {
+                cachedColorStart = getComputedStyle(document.documentElement)
+                  .getPropertyValue("--model-color-start")
+                  .trim() || "#a78bfa";
+                cachedColorEnd = getComputedStyle(document.documentElement)
+                  .getPropertyValue("--model-color-end")
+                  .trim() || "#7b61ff";
+              }
+              
               const gradient = canvasCtx.createLinearGradient(
                 0,
                 0,
                 canvas.width,
                 0,
               );
-              gradient.addColorStop(0.2, colorStart);
-              gradient.addColorStop(0.8, colorEnd);
+              gradient.addColorStop(0.2, cachedColorStart);
+              gradient.addColorStop(0.8, cachedColorEnd);
               canvasCtx.strokeStyle = gradient;
               canvasCtx.lineWidth = 4;
               const barWidth = 6;
