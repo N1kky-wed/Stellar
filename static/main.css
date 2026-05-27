@@ -4975,14 +4975,14 @@ header, .sidebar, .input-container, .message, .card, .glass-card, .chat-containe
 }
 
 /* Remove glow from sendBtn and modelSelect, matching mic/file upload */
-#sendBtn, #modelSelect {
+#sendBtn, #modelSelect, .custom-select-trigger {
   background: rgba(255, 255, 255, 0.07) !important;
   color: var(--secondary-text-color) !important;
   box-shadow: none !important;
   border: 1px solid transparent !important;
   filter: none !important;
 }
-#sendBtn:hover, #modelSelect:hover, #modelSelect:focus {
+#sendBtn:hover, #modelSelect:hover, #modelSelect:focus, .custom-select-trigger:hover, .custom-select-trigger:focus {
   background: rgba(255, 255, 255, 0.1) !important;
   color: var(--primary-text-color) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
