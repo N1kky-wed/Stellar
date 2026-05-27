@@ -4649,7 +4649,7 @@
 
       .welcome-cap-card {
         background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(123, 97, 255, 0.12);
+        border: 1px solid rgba(var(--model-color-start-rgb), 0.12);
         border-radius: 16px;
         padding: 20px 18px;
         cursor: pointer;
@@ -4667,7 +4667,7 @@
         border-radius: 16px;
         background: radial-gradient(
           ellipse at 50% 0%,
-          rgba(123, 97, 255, 0.08),
+          rgba(var(--model-color-start-rgb), 0.08),
           transparent 70%
         );
         opacity: 0;
@@ -4675,11 +4675,11 @@
       }
 
       .welcome-cap-card:hover {
-        border-color: rgba(123, 97, 255, 0.35);
+        border-color: rgba(var(--model-color-start-rgb), 0.35);
         transform: translateY(-3px);
         box-shadow:
-          0 8px 32px rgba(123, 97, 255, 0.12),
-          0 0 0 1px rgba(123, 97, 255, 0.1);
+          0 8px 32px rgba(var(--model-color-start-rgb), 0.12),
+          0 0 0 1px rgba(var(--model-color-start-rgb), 0.1);
       }
 
       .welcome-cap-card:hover::before {
@@ -4699,11 +4699,16 @@
         justify-content: center;
         margin-bottom: 14px;
         font-size: 18px;
+        background: rgba(var(--model-color-start-rgb), 0.15);
+        color: var(--model-color-start);
       }
-      .welcome-cap-icon.purple { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
-      .welcome-cap-icon.blue { background: rgba(59, 130, 246, 0.12); color: #60a5fa; }
-      .welcome-cap-icon.green { background: rgba(52, 211, 153, 0.12); color: #34d399; }
-      .welcome-cap-icon.pink { background: rgba(236, 72, 153, 0.12); color: #f472b6; }
+      .welcome-cap-icon.purple,
+      .welcome-cap-icon.blue,
+      .welcome-cap-icon.green,
+      .welcome-cap-icon.pink { 
+        background: rgba(var(--model-color-start-rgb), 0.15); 
+        color: var(--model-color-start); 
+      }
 
       .welcome-cap-title {
         font-size: 0.92rem;
@@ -4734,8 +4739,8 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        background: rgba(123, 97, 255, 0.08);
-        border: 1px solid rgba(123, 97, 255, 0.18);
+        background: rgba(var(--model-color-start-rgb), 0.08);
+        border: 1px solid rgba(var(--model-color-start-rgb), 0.18);
         border-radius: 100px;
         padding: 8px 18px;
         font-size: 0.8rem;
@@ -4749,11 +4754,11 @@
       }
 
       .welcome-chip:hover {
-        background: rgba(123, 97, 255, 0.18);
-        border-color: rgba(123, 97, 255, 0.4);
+        background: rgba(var(--model-color-start-rgb), 0.18);
+        border-color: rgba(var(--model-color-start-rgb), 0.4);
         color: var(--primary-text-color);
         transform: translateY(-2px);
-        box-shadow: 0 4px 16px rgba(123, 97, 255, 0.15);
+        box-shadow: 0 4px 16px rgba(var(--model-color-start-rgb), 0.15);
       }
 
       .welcome-chip:active {
@@ -4762,14 +4767,14 @@
 
       .welcome-chip i {
         font-size: 14px;
-        color: rgba(167, 139, 250, 0.7);
+        color: rgba(var(--model-color-start-rgb), 0.7);
       }
 
       /* --- Divider --- */
       .welcome-divider {
         width: 60px;
         height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(123, 97, 255, 0.3), transparent);
+        background: linear-gradient(90deg, transparent, rgba(var(--model-color-start-rgb), 0.3), transparent);
         margin-bottom: 24px;
         z-index: 1;
       }
@@ -4778,7 +4783,8 @@
       .welcome-powered {
         margin-top: 28px;
         font-size: 0.7rem;
-        color: rgba(169, 163, 199, 0.4);
+        color: var(--secondary-text-color);
+        opacity: 0.4;
         letter-spacing: 1.5px;
         text-transform: uppercase;
         z-index: 1;
