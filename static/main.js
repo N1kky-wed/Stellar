@@ -4942,15 +4942,36 @@
         fileUploadInput.addEventListener("change", handleFileUpload);
       }
 
+      let sidebarHoverTimeout;
+
+      sidebarToggleBtn.addEventListener("mouseenter", () => {
+        clearTimeout(sidebarHoverTimeout);
+        sidebar.classList.add("open");
+      });
+
+      sidebarToggleBtn.addEventListener("mouseleave", () => {
+        sidebarHoverTimeout = setTimeout(() => {
+          if (sidebar.classList.contains("open")) {
+            sidebar.classList.remove("open");
+          }
+        }, 150);
+      });
+
+      sidebar.addEventListener("mouseenter", () => {
+        clearTimeout(sidebarHoverTimeout);
+      });
+
+      sidebar.addEventListener("mouseleave", () => {
+        sidebarHoverTimeout = setTimeout(() => {
+          if (sidebar.classList.contains("open")) {
+            sidebar.classList.remove("open");
+          }
+        }, 150);
+      });
+
+      // Keep click for mobile fallback
       sidebarToggleBtn.addEventListener("click", toggleSidebar);
       sidebarCloseBtn.addEventListener("click", toggleSidebar);
-      
-      // Auto-close sidebar when mouse leaves
-      sidebar.addEventListener("mouseleave", () => {
-        if (sidebar.classList.contains("open")) {
-          sidebar.classList.remove("open");
-        }
-      });
       newChatBtn.addEventListener("click", createNewChat);
 
       const headerTempChatBtn = document.getElementById("headerTempChatBtn");
