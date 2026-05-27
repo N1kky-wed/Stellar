@@ -520,8 +520,16 @@
         const mathBlocks = [];
         const svgBlocks = [];
 
+        // 0. Unwrap Generative UI accidentally placed in code blocks by the LLM
+        let processedText = text.replace(/```(?:html|xml|css)\s*?\n([\s\S]*?)\n\s*```/gi, (match, codeContent) => {
+            if (/class=["'][^"']*?sui-[^"']*?["']/i.test(codeContent)) {
+                return codeContent;
+            }
+            return match;
+        });
+
         // 1. Protect SVGs first
-        let processedText = text.replace(/(<svg[\s\S]*?<\/svg>)/gi, (match) => {
+        processedText = processedText.replace(/(<svg[\s\S]*?<\/svg>)/gi, (match) => {
           svgBlocks.push(match);
           return `SVGBLOCKPLACEHOLDER${svgBlocks.length - 1}SVGBLOCK`;
         });
@@ -959,6 +967,44 @@
           if (!codeEl) return;
 
           const rawCode = codeEl.textContent;
+
+          const langMatch = codeEl.className.match(/language-(\w+)/i);
+          const lang = langMatch ? langMatch[1].toLowerCase() : null;
+          const isWebVisual = ["html", "xml", "css", "svg"].includes(lang);
+
+          const trimmedCode = rawCode.trim();
+          const looksLikeHtml = trimmedCode.startsWith('<') && (trimmedCode.includes('<div') || trimmedCode.includes('<svg') || trimmedCode.includes('<style') || trimmedCode.includes('<span'));
+
+          // 0. Rescue Generative UI that marked.parse missed (e.g. due to streaming edges or browser caching)
+          // CRITICAL: Unconditionally unwrap HTML/XML/CSS/SVG so the model has full control natively without hardcoded iframes.
+          if (isWebVisual || looksLikeHtml || /class=["'][^"']*?sui-[^"']*?["']/i.test(rawCode)) {
+              const tempDiv = document.createElement("div");
+              tempDiv.innerHTML = rawCode;
+              
+              // CRITICAL: Recreate script tags so the browser executes inline JS
+              const scripts = tempDiv.querySelectorAll("script");
+              scripts.forEach(oldScript => {
+                  let scriptContent = oldScript.innerHTML;
+                  // Convert let/const to var to prevent SyntaxError on multiple injections of the same UI widget
+                  scriptContent = scriptContent.replace(/\blet\s+/g, "var ").replace(/\bconst\s+/g, "var ");
+                  
+                  oldScript.remove(); // Remove inert script
+                  
+                  // Delay execution to ensure the UI elements are fully attached to the live DOM
+                  setTimeout(() => {
+                      const newScript = document.createElement("script");
+                      newScript.textContent = scriptContent;
+                      document.body.appendChild(newScript);
+                  }, 100);
+              });
+
+              // Move children out of tempDiv to avoid unnecessary wrapping
+              while (tempDiv.firstChild) {
+                  pre.parentNode.insertBefore(tempDiv.firstChild, pre);
+              }
+              pre.remove();
+              return;
+          }
           codeEl.removeAttribute("data-highlighted");
           codeEl.className = codeEl.className.replace(/hljs.*/g, "").trim();
           try {
@@ -967,8 +1013,6 @@
             console.error("Highlighting error:", err);
           }
 
-          const langClass = codeEl.className.match(/language-(\w+)/);
-          const lang = langClass ? langClass[1] : null;
           const isPreviewable = lang === "html";
           const isRunnable = [
             "python",
@@ -1085,6 +1129,102 @@
             wrapper.insertBefore(controls, pre);
           }
         });
+      }
+
+      function processGenerativeUI(containerElement) {
+        if (!containerElement) return;
+
+        // 0. Execute any inline scripts (e.g. from raw HTML blocks) to ensure generative UI interactivity works.
+        const rawScripts = containerElement.querySelectorAll("script");
+        rawScripts.forEach(oldScript => {
+            let scriptContent = oldScript.innerHTML;
+            if (scriptContent.trim() !== "") {
+                // Convert let/const to var to prevent SyntaxError on multiple injections of the same UI widget
+                scriptContent = scriptContent.replace(/\blet\s+/g, "var ").replace(/\bconst\s+/g, "var ");
+                oldScript.remove();
+                
+                setTimeout(() => {
+                    const newScript = document.createElement("script");
+                    newScript.textContent = scriptContent;
+                    document.body.appendChild(newScript);
+                }, 100);
+            }
+        });
+
+        // 1. Lazy load images
+        const suiImages = containerElement.querySelectorAll('.sui-img, [class*="sui-"] img');
+        suiImages.forEach(img => {
+          img.setAttribute('loading', 'lazy');
+        });
+
+        // 2. Tabs logic
+        const tabContainers = containerElement.querySelectorAll('.sui-tabs');
+        tabContainers.forEach(container => {
+          const navBtns = container.querySelectorAll('.sui-tab-btn');
+          const panels = container.querySelectorAll('.sui-tab-panel');
+          navBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+              const target = btn.getAttribute('data-tab');
+              if (!target) return;
+              
+              navBtns.forEach(b => b.classList.remove('active'));
+              panels.forEach(p => p.classList.remove('active'));
+              
+              btn.classList.add('active');
+              let targetPanel;
+              try { targetPanel = container.querySelector(target); } catch(e){}
+              if (!targetPanel) targetPanel = container.querySelector(`.sui-tab-panel[data-tab="${target}"]`);
+              if (!targetPanel) targetPanel = container.querySelector(`.sui-tab-panel#${target}`);
+              if (targetPanel) targetPanel.classList.add('active');
+            });
+          });
+        });
+
+        // 3. Before/After slider
+        const baContainers = containerElement.querySelectorAll('.sui-before-after');
+        baContainers.forEach(container => {
+          const slider = container.querySelector('.sui-ba-slider');
+          const afterImg = container.querySelector('.sui-after-img');
+          const line = container.querySelector('.sui-ba-line');
+          if (slider && afterImg && line) {
+            slider.addEventListener('input', (e) => {
+              const val = e.target.value;
+              afterImg.style.clipPath = `polygon(0 0, ${val}% 0, ${val}% 100%, 0 100%)`;
+              line.style.left = `${val}%`;
+            });
+          }
+        });
+
+        // 4. Lightbox for gallery
+        const galleryImages = containerElement.querySelectorAll('.sui-gallery img, .sui-img');
+        if (galleryImages.length > 0) {
+          let lightbox = document.getElementById('sui-lightbox');
+          if (!lightbox) {
+            lightbox = document.createElement('div');
+            lightbox.id = 'sui-lightbox';
+            lightbox.innerHTML = `<span id="sui-lightbox-close">&times;</span><img src="" alt="">`;
+            document.body.appendChild(lightbox);
+            
+            const closeBtn = document.getElementById('sui-lightbox-close');
+            const closeLb = () => lightbox.classList.remove('active');
+            
+            closeBtn.addEventListener('click', closeLb);
+            lightbox.addEventListener('click', (e) => {
+              if(e.target === lightbox) closeLb();
+            });
+            document.addEventListener('keydown', (e) => {
+              if (e.key === 'Escape') closeLb();
+            });
+          }
+          const lbImg = lightbox.querySelector('img');
+          
+          galleryImages.forEach(img => {
+            img.addEventListener('click', () => {
+              lbImg.src = img.src;
+              lightbox.classList.add('active');
+            });
+          });
+        }
       }
 
       function createOutputPanel(wrapper, runButton) {
@@ -1746,6 +1886,7 @@
           contentDiv.innerHTML = htmlText;
           msg.appendChild(contentDiv);
           processCodeBlocks(contentDiv);
+          processGenerativeUI(contentDiv);
           renderMath(contentDiv);
           addOutputCopyButton(msg);
           setTimeout(scrollToBottom, 50);
@@ -2588,6 +2729,7 @@
           msg.appendChild(contentDiv);
           unwrapVisuals(contentDiv);
           processCodeBlocks(contentDiv);
+          processGenerativeUI(contentDiv);
           renderMath(contentDiv);
           addOutputCopyButton(msg);
           setTimeout(scrollToBottom, 50);
@@ -3283,6 +3425,7 @@
           }
           unwrapVisuals(contentDiv);
           processCodeBlocks(contentDiv);
+          processGenerativeUI(contentDiv);
           if (analysisContextUsed) {
             addAnalysisIndicator(placeholderDiv, analysisContextUsed);
           }
@@ -3443,6 +3586,7 @@
           contentDiv.innerHTML = htmlContent;
           unwrapVisuals(contentDiv);
           processCodeBlocks(contentDiv);
+          processGenerativeUI(contentDiv);
           addAnalysisIndicator(msg, analysisContext);
           addOutputCopyButton(msg);
           setTimeout(() => {
@@ -4056,6 +4200,7 @@
                   msgDiv.appendChild(contentDiv);
                   unwrapVisuals(contentDiv);
                   processCodeBlocks(contentDiv);
+          processGenerativeUI(contentDiv);
                   if (analysisContext) {
                     addAnalysisIndicator(msgDiv, analysisContext);
                   }
@@ -4905,6 +5050,7 @@
             if (contentDiv) {
               contentDiv.innerHTML = html;
               processCodeBlocks(contentDiv);
+          processGenerativeUI(contentDiv);
               setTimeout(() => renderMath(contentDiv), 150);
               createAndAppendResearchButtons(
                 currentEditingMsg,

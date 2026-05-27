@@ -19,7 +19,23 @@ Instruction:
 3. Provide actionable advice for the user (e.g., "Try again in a few minutes" or "Simplify the request").
 4. Maintain a professional, clinical, and helpful tone. Do not apologize."""
 
-def get_refinement_prompt(user_query: str, conversation_history_list: list, username: str = None, disabled_tools: list = None, user_id: int = None) -> str:
+def get_generative_ui_guide() -> str:
+    return """
+9. GENERATIVE UI - UNRESTRICTED CREATIVE CONTROL:
+You have FULL creative freedom to generate raw, interactive HTML and CSS UI components directly in the chat to answer the user's queries (e.g. dashboards, widgets, interactive galleries, custom layouts).
+
+**RULES OF THE ROAD:**
+- **Raw HTML Delivery**: You MUST output the raw HTML directly into the chat. DO NOT wrap the HTML in markdown code blocks (e.g. ```html). Output the raw tags directly.
+- **NO MARKDOWN CODE BLOCKS ANYWHERE (CRITICAL)**: The frontend uses a markdown parser. If you use backticks (```) anywhere in your response (even inside your HTML structure to display code snippets), the parser will break your UI. If you want to show code inside your UI, you MUST use standard HTML `<pre><code>` tags and escape the code yourself. NEVER use markdown backticks when generating UI.
+- **Full Styling Freedom**: You are ENCOURAGED to generate your own `<style>` tags, define your own CSS classes, animations, gradients, and interactive elements.
+- **Dark Mode Context**: IMPORTANT! Your UI will be injected into a chat bubble with a DARK background. Ensure your text colors, borders, and contrast are readable in Dark Mode.
+- **Scope Your CSS**: Do not use `body` or `:root` selectors that might affect the parent application. Keep your styles scoped to your specific widget (e.g. wrap your widget in a unique ID or class).
+- **Responsive Layouts**: Do not use giant outer wrapper divs with hardcoded max-widths (like `max-width: 1200px`) that break out of the chat bubble. Let your UI flow naturally within the chat width.
+- **Use When Appropriate**: Use this freedom to create stunning, modern web components when explaining concepts, comparing data, or building tutorials.
+- **Seamless Native Blending (CRITICAL)**: Do not build UI elements that look like isolated "iframes" or separate floating widgets inside the chat. The MAIN outermost wrapper/container of your component MUST have a `transparent` background (`background: transparent;`) and NO outer borders (`border: none;`) or box-shadows. Let the natural dark background of the chat bubble act as your background. Your UI components should blend seamlessly into the chat message text and flow natively with the chat interface.
+"""
+
+def get_refinement_prompt(user_query: str, conversation_history_list: list, username: str = None, disabled_tools: list = None, user_id: int = None, model_id: str = None) -> str:
     conv_hist_str = "\n".join(conversation_history_list) if conversation_history_list else "No previous conversation turns."
     internal_guidelines_header = "<!-- Internal Processing Guidelines -->"
 
@@ -57,6 +73,9 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
     except Exception as e:
         # We don't want to crash the prompt generation if the database is busy or missing
         memory_text = f"\n\n(Error loading persistent memory from DB: {str(e)})"
+
+    # Unconditionally grant generative UI capabilities
+    generative_ui_section = get_generative_ui_guide()
 
     return f"""<!-- Internal Processing Guidelines -->
 
@@ -136,6 +155,8 @@ KEY BEHAVIORAL RULES:
       - EXECUTION: Deliver as a **SINGLE HTML FILE** (using Three.js, CSS 3D, or WebGL) directly in the chat.
    6. VIDEO CONTENT:
       - USE FOR: Explicit requests for videos. Present the video (YouTube embed or direct link) as the primary medium.
+
+{generative_ui_section}
 
 7. TOOLING SPECIFICATIONS (CRITICAL: The 'status' parameter is MANDATORY for all tools. Use it to provide professional, concise, and technical updates to the user in real-time):
 

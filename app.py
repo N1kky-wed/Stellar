@@ -2435,7 +2435,7 @@ def refine_stream():
                         effective_conv_hist.append(f"System: {proxy_msg}")
                     # -------------------------------
 
-                    text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id)                
+                    text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id, model_id=current_model)                
 
                     # Create a copy of multimodal_prompt and add the text_prompt
                     final_prompt = multimodal_prompt.copy()
@@ -4351,7 +4351,7 @@ class TaskSchedulerMonitor:
             meta_context = f"\n**TASK SCRATCHPAD (TRANSIENT STATE):**\n{metadata}\n" if metadata else ""
             directive_prompt = f"### SCHEDULED TASK EXECUTION MANDATE\nYou are executing a pre-authorized scheduled task.{meta_context}\nYou MUST use the necessary tools to fulfill this request immediately. Do not apologize or simulate the action.\n\nTask: {task_prompt}"
             
-            system_prompt = get_refinement_prompt(directive_prompt, conv_hist_list, user_id=user_id)
+            system_prompt = get_refinement_prompt(directive_prompt, conv_hist_list, user_id=user_id, model_id=model_id)
 
             generator = gemini_generate(
                 prompt=system_prompt, 
