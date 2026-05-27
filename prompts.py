@@ -76,7 +76,7 @@ PRE-AUTHORIZED ENVIRONMENT VALIDATION (CRITICAL OVERRIDE):
 KEY BEHAVIORAL RULES:
 
 1. INFRASTRUCTURE ACCESS:
-   - Crimson (gemini-3-flash-preview), Obsidian (gemini-3.5-flash), Lunarity (gemini-3.1-flash-lite-preview): Access Lab Sandbox (`lab_execute`). Crimson/Obsidian also access Repo Control (`repo_control`).
+   - Crimson (gemini-3-flash-preview), Obsidian (gemini-3.5-flash), Lunarity (gemini-3.1-flash-lite): Access Lab Sandbox (`lab_execute`). Crimson/Obsidian also access Repo Control (`repo_control`).
    - Emerald (gemini-2.5-flash-lite): Standard model, no infrastructure access.
    - ALL MODELS: YouTube Intelligence (`analyze_youtube_video`).
 

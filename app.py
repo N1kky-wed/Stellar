@@ -252,18 +252,18 @@ else:
 
 MODEL_NAMES = {
     "gemini-2.5-flash-lite": "Emerald",
-    "gemini-3.1-flash-lite-preview": "Lunarity",
+    "gemini-3.1-flash-lite": "Lunarity",
     "gemini-3-flash-preview": "Crimson",
     "gemini-3.5-flash": "Obsidian"
 }
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
 def get_fallback_chain(start_model):
-    chain = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview"]
+    chain = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite"]
     if start_model in chain:
         idx = chain.index(start_model)
         return chain[idx:]
-    return [start_model, "gemini-3.1-flash-lite-preview"]
+    return [start_model, "gemini-3.1-flash-lite"]
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -280,6 +280,14 @@ backup_vars = {
 
 # 3. Final list of functional backup keys (automatically scales)
 BACKUP_API_KEYS = [backup_vars[i] for i in sorted(backup_vars.keys())]
+
+tavily_backup_env_pattern = re.compile(r'^TAVILY_BACKUP_API_KEY_(\d+)$')
+tavily_backup_vars = {
+    int(match.group(1)): os.environ[key]
+    for key in os.environ
+    if (match := tavily_backup_env_pattern.match(key))
+}
+TAVILY_BACKUP_API_KEYS = [tavily_backup_vars[i] for i in sorted(tavily_backup_vars.keys())]
 
 DATABASE_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stellar_local.db')
 
@@ -1055,25 +1063,6 @@ def sanitize_filename(filename: str) -> str:
     sanitized = re.sub(r'[^\w\-\.]+', '', filename)
     return sanitized[:100] if len(sanitized) > 100 else sanitized
 
-def tavily_search(query, search_depth="advanced", topic="general", time_range=None, max_results=15, include_images=False, include_answer="advanced"):
-    try:
-        if not TAVILY_API_KEY:
-            return {"error": "Tavily search failed: API Key missing."}
-        client = TavilyClient(TAVILY_API_KEY)
-        response = client.search(
-            query=query,
-            search_depth=search_depth,
-            topic=topic,
-            max_results=max_results,
-            time_range=time_range,
-            include_images=include_images,
-            include_answer=include_answer
-        )
-        return response
-    except Exception as e:
-        logger.exception("Error caught: %s", e)
-        return {"error": f"Tavily search failed: {str(e)}"}
-
 def is_safe_hostname(hostname):
     """Helper to resolve hostname and check if all associated IPs are safe for SSRF protection."""
     if not hostname:
@@ -1201,7 +1190,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             
             # Restrict lab_execute and repo_control to Elite models
             elite_models = ["gemini-3-flash-preview", "gemini-3.5-flash"]
-            if model_id == "gemini-3.1-flash-lite-preview": # Lunarity gets Lab access
+            if model_id == "gemini-3.1-flash-lite": # Lunarity gets Lab access
                  tools_config = [t for t in tools_config if getattr(t, '__name__', '') != 'repo_control']
             elif model_id not in elite_models:
                 tools_config = [t for t in tools_config if getattr(t, '__name__', '') not in ['lab_execute', 'repo_control']]
@@ -2425,7 +2414,7 @@ def refine_stream():
                         capability_note = ""
                         # Define model tiers clearly for fallback guidance
                         full_access = ["gemini-3-flash-preview", "gemini-3.5-flash"]
-                        lab_only = ["gemini-3.1-flash-lite-preview"] # Lunarity
+                        lab_only = ["gemini-3.1-flash-lite"] # Lunarity
                     
                         if current_model in lab_only:
                             capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the task using the Lab or Web Search."
@@ -2499,7 +2488,7 @@ def refine_stream():
                 
                     generator_output = gemini_generate(
                         prompt=diag_prompt,
-                        model_id="gemini-3.1-flash-lite-preview",
+                        model_id="gemini-3.1-flash-lite",
                         key=PRIMARY_API_KEY,
                         attempts=1,
                         model_display_name="Lunarity (Diagnostic)",

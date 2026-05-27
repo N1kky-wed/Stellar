@@ -44,12 +44,9 @@ def test_search_stream(client):
     query_id = json.loads(rv.data)['query_id']
 
     # Mock Tavily and LLM
-    mock_tavily_resp = {'answer': 'Summary', 'results': [{'url': 'http://example.com'}]}
+    mock_tavily_resp = json.dumps({'tool': 'tavily_search', 'data': {'answer': 'Summary', 'results': [{'url': 'http://example.com'}]}})
 
-    # We mocked sys.modules['tavily'] in conftest, but app.py imports TavilyClient.
-    # We should patch app.tavily_search.
-
-    with patch('app.tavily_search', return_value=mock_tavily_resp):
+    with patch('agent_tools.web_search', return_value=mock_tavily_resp):
         with patch('app.scrape_url', return_value="Content"):
             with patch('app.gemini_generate', side_effect=[
                 iter([{'result': 'Analysis'}]), # Analysis

@@ -137,8 +137,30 @@ def web_search(
             
             return json.dumps({"error": f"All API keys exhausted. Last error: {str(last_error)}"})
 
-        # Initialize Tavily Client
-        t_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+        from app import TAVILY_API_KEY, TAVILY_BACKUP_API_KEYS
+        tavily_keys = [TAVILY_API_KEY] + [bk for bk in TAVILY_BACKUP_API_KEYS if bk]
+        tavily_keys = [k for k in dict.fromkeys(tavily_keys) if k]
+
+        def execute_tavily_with_retries(operation, **kwargs):
+            if not tavily_keys:
+                raise Exception("Tavily search failed: API Key missing.")
+            last_error = None
+            for key in tavily_keys:
+                try:
+                    t_client = TavilyClient(api_key=key)
+                    if operation == 'search':
+                        return t_client.search(**kwargs)
+                    elif operation == 'extract':
+                        return t_client.extract(**kwargs)
+                    elif operation == 'crawl':
+                        return t_client.crawl(**kwargs)
+                    elif operation == 'map':
+                        return t_client.map(**kwargs)
+                except Exception as e:
+                    logger.error(f"Error in Tavily {operation} with key ending in ...{key[-4:] if key else ''}: {e}")
+                    last_error = e
+                    continue
+            raise Exception(f"All Tavily API keys exhausted. Last error: {str(last_error)}")
 
         # Strip None values out of kwargs to prevent SDK validation errors
         def clean_kwargs(kwargs_dict):
@@ -192,10 +214,10 @@ def web_search(
                 "include_favicon": include_favicon, "include_usage": include_usage,
                 "timeout": timeout
             })
-            if search_depth in["advanced", "fast"]:
+            if search_depth in ["advanced", "fast"]:
                 kwargs["chunks_per_source"] = chunks_per_source
             
-            res = t_client.search(**kwargs)
+            res = execute_tavily_with_retries('search', **kwargs)
             return json.dumps({"tool": "tavily_search", "data": _verify_tavily_images(res)}, indent=2)
 
         # 3. Tavily Extract
@@ -210,7 +232,7 @@ def web_search(
                 kwargs["query"] = query
                 kwargs["chunks_per_source"] = chunks_per_source
                 
-            res = t_client.extract(**kwargs)
+            res = execute_tavily_with_retries('extract', **kwargs)
             return json.dumps({"tool": "tavily_extract", "data": _verify_tavily_images(res)}, indent=2)
 
         # 4. Tavily Crawl
@@ -226,7 +248,7 @@ def web_search(
                 "include_usage": include_usage, "timeout": timeout,
                 "chunks_per_source": chunks_per_source
             })
-            res = t_client.crawl(**kwargs)
+            res = execute_tavily_with_retries('crawl', **kwargs)
             return json.dumps({"tool": "tavily_crawl", "data": _verify_tavily_images(res)}, indent=2)
 
         # 5. Tavily Map
@@ -240,7 +262,7 @@ def web_search(
                 "include_usage": include_usage, "timeout": timeout
             })
             # Map doesn't return images typically, but we wrap it just in case it ever does
-            res = t_client.map(**kwargs)
+            res = execute_tavily_with_retries('map', **kwargs)
             return json.dumps({"tool": "tavily_map", "data": _verify_tavily_images(res)}, indent=2)
 
         else:
@@ -400,7 +422,7 @@ def schedule_task(task_prompt: str, status: str, timeout: int, action: str = "sc
     u_id = None
     c_id = None
     # Server-side model detection to prevent hallucination
-    current_model = getattr(g, 'model_id', 'gemini-3.1-flash-lite-preview')
+    current_model = getattr(g, 'model_id', 'gemini-3.1-flash-lite')
     
     if has_request_context():
         u_id = session.get('user_id')
@@ -1515,7 +1537,7 @@ def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = N
         logger.exception("Error caught: %s", e)
         return f"Error reading tool output: {str(e)}"
 
-def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite-preview") -> str:
+def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite") -> str:
     """Analyzes a specific YouTube video or searches for the best video based on a query.
     Args:
         query: What you want to find/analyze. Mandatory for both actions.
