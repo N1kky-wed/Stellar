@@ -825,14 +825,6 @@
 
       body {
         font-family: "Poppins", sans-serif;
-        background: linear-gradient(
-          135deg,
-          var(--body-bg-color1),
-          var(--body-bg-color2),
-          var(--body-bg-color3),
-          var(--body-bg-color4)
-        );
-        background-size: 400% 400%;
         color: var(--primary-text-color);
         display: flex;
         flex-direction: column;
@@ -841,6 +833,24 @@
         padding-top: 80px; /* Space for fixed header */
         transition: color var(--transition-duration-slow)
           var(--transition-timing-function);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: -1;
+        background: linear-gradient(
+          135deg,
+          var(--body-bg-color1),
+          var(--body-bg-color2),
+          var(--body-bg-color3),
+          var(--body-bg-color4)
+        );
+        background-size: 400% 400%;
         animation: animatedGradient 20s ease infinite;
       }
 
