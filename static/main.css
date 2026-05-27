@@ -4680,16 +4680,19 @@
       }
 
       .welcome-cap-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(var(--model-color-start-rgb), 0.12);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 16px;
-        padding: 20px 18px;
+        padding: 32px;
         cursor: pointer;
-        transition: all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
+        transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
         text-align: left;
         position: relative;
         overflow: hidden;
-        backdrop-filter: blur(12px);
+        backdrop-filter: blur(16px);
+        min-height: 220px;
+        display: flex;
+        flex-direction: column;
       }
 
       .welcome-cap-card::before {
@@ -4707,11 +4710,10 @@
       }
 
       .welcome-cap-card:hover {
-        border-color: rgba(var(--model-color-start-rgb), 0.35);
-        transform: translateY(-3px);
-        box-shadow:
-          0 8px 32px rgba(var(--model-color-start-rgb), 0.12),
-          0 0 0 1px rgba(var(--model-color-start-rgb), 0.1);
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.15);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
       }
 
       .welcome-cap-card:hover::before {
@@ -4723,38 +4725,50 @@
       }
 
       .welcome-cap-icon {
-        width: 38px;
-        height: 38px;
-        border-radius: 10px;
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-bottom: 14px;
-        font-size: 18px;
-        background: rgba(var(--model-color-start-rgb), 0.15);
-        color: var(--model-color-start);
+        margin-bottom: 24px;
+        font-size: 24px;
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(255, 255, 255, 0.6);
+        transition: all 0.3s;
+      }
+      .welcome-cap-card:hover .welcome-cap-icon {
+        background: rgba(255, 255, 255, 1);
+        color: #000;
       }
       .welcome-cap-icon.purple,
       .welcome-cap-icon.blue,
       .welcome-cap-icon.green,
       .welcome-cap-icon.pink { 
-        background: rgba(var(--model-color-start-rgb), 0.15); 
-        color: var(--model-color-start); 
+        background: rgba(255, 255, 255, 0.05); 
+        color: rgba(255, 255, 255, 0.6); 
+      }
+      .welcome-cap-card:hover .welcome-cap-icon.purple,
+      .welcome-cap-card:hover .welcome-cap-icon.blue,
+      .welcome-cap-card:hover .welcome-cap-icon.green,
+      .welcome-cap-card:hover .welcome-cap-icon.pink {
+        background: rgba(255, 255, 255, 1);
+        color: #000;
       }
 
       .welcome-cap-title {
-        font-size: 0.92rem;
-        font-weight: 600;
+        font-size: 1.25rem;
+        font-weight: 700;
         color: var(--primary-text-color);
-        margin-bottom: 5px;
-        letter-spacing: 0.3px;
+        margin-bottom: 8px;
+        letter-spacing: normal;
       }
 
       .welcome-cap-desc {
-        font-size: 0.78rem;
-        color: var(--secondary-text-color);
-        line-height: 1.45;
-        font-weight: 300;
+        font-size: 0.875rem;
+        color: rgba(255, 255, 255, 0.6);
+        line-height: 1.625;
+        font-weight: 400;
       }
 
       /* --- Suggestion Chips --- */
