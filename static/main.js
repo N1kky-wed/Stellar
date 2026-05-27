@@ -5476,12 +5476,14 @@
       }
 
       if (chatSearchInput) {
-        let debounceTimer;
+        chatSearchInput.addEventListener("input", (e) => {
+          if (e.target.value.trim() === "") {
+            chatSearchInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+          }
+        });
 
-        chatSearchInput.addEventListener("input", () => {
-          clearTimeout(debounceTimer);
-
-          debounceTimer = setTimeout(async () => {
+        chatSearchInput.addEventListener("keydown", async (e) => {
+          if (e.key === "Enter") {
             const searchTerm = chatSearchInput.value.toLowerCase().trim();
             currentSearchTerm = searchTerm;
             const chatItems = document.querySelectorAll("#chatList .chat-item");
@@ -5570,7 +5572,7 @@
                 delete item.dataset.searchTerm;
               });
             }
-          }, 300);
+          }
         });
       }
 
