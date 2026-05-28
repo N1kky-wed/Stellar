@@ -16,6 +16,7 @@ Stellar is a production-grade Flask application powering [stellarai.live](https:
 - [Production Deployment (Nginx + Gunicorn + systemd)](#production-deployment-nginx--gunicorn--systemd)
 - [Agent Models & Personas](#agent-models--personas)
 - [Agent Tool Suite](#agent-tool-suite)
+- [Human-in-the-Loop Interactive UI](#request_user_interactionhtml_ui-goal-status-timeout)
 - [Mandate System](#mandate-system)
 - [Persistent Memory & Scheduling](#persistent-memory--scheduling)
 - [Use Cases & Examples](#use-cases--examples)
@@ -433,6 +434,33 @@ Directories are automatically compressed as `.tar.gz` before projection.
 
 ---
 
+### `request_user_interaction(html_ui, goal, status, timeout)`
+
+**Human-in-the-Loop Stateful UI — Stellar's most powerful interactive capability.** This tool supercharges the agent with a whole new dimension of interactivity by allowing it to render rich, fully interactive HTML widgets directly inside the chat and **pause execution** until the user responds.
+
+The agent generates a complete, self-contained HTML/CSS/JS widget. The user interacts with it (clicks buttons, selects options, makes moves). The JavaScript calls `window.stellar.finish(data)` which returns the user's response to the agent. The agent then processes the response with its own reasoning, and can call the tool again to continue the loop.
+
+**Architecture:** The AI is always the brain — JavaScript is just a dumb UI layer for capturing input. All game logic, decision-making, and state evaluation happen inside the LLM's reasoning, not in client-side code.
+
+**Key capabilities:**
+
+| Use Case | How It Works |
+|---|---|
+| 🎮 **Interactive Games** | Play chess, tic-tac-toe, RPGs, and more — the AI renders the board, captures your move, thinks about its counter-move using its own neural network, and re-renders the updated state. No external engines needed. |
+| 🎨 **Mock UI Gallery** | Before building a website, the agent generates 3-4 distinct visual mockups as interactive cards. You browse and pick your favorite. The agent proceeds with your chosen design — zero wasted iterations. |
+| 📋 **Project Questionnaires** | Instead of guessing what you want, the agent renders a beautiful multi-step form asking targeted questions: "Auth provider?", "Color scheme?", "Layout style?". Your answers drive the entire build. |
+| 🔍 **Preference Discovery** | When the agent needs API keys, config values, or style preferences, it renders a clean card-based picker instead of dumping a wall of text. |
+| 📚 **Interactive Tutorials** | Step-by-step lessons where each step waits for you to complete an action before proceeding. |
+| 🗳️ **MCQ & Polls** | Render beautiful multiple-choice questions to gather structured feedback or quiz the user. |
+
+**Built-in UX safeguards:**
+- **Visual feedback** — buttons disable and show "Thinking..." immediately on click, preventing spam.
+- **Escape hatch** — every widget includes an "Exit" or "Cancel" button so you're never locked into an interaction.
+- **Optional text input** — widgets can include a small text field so you can type instructions to the agent mid-interaction (e.g., "change the rules" or "I want to do something else").
+- **DOM collision prevention** — each widget is scoped to avoid interfering with previous widgets in the chat feed.
+
+---
+
 ### `report_process_issue(topic, issue_description, technical_context, status, timeout)`
 
 **Autonomous self-healing feedback loop.** When the agent encounters a genuine technical failure during tool execution, it immediately logs a structured bug report to `agent_feedback` in SQLite and triggers `issue_resolver.py` as a background subprocess for developer review.
@@ -553,6 +581,30 @@ Stellar will:
 Stellar will:
 1. `analyze_youtube_video(action='search')` — query YouTube API, return top videos by view count.
 2. `analyze_youtube_video(action='analyze', video_url=...)` — feed the video to Gemini multimodal, extract the specific segment on state management, return a timestamped summary.
+
+---
+
+### 7. Interactive Project Planning with Live UI
+
+> *"Build me a personal portfolio website."*
+
+Instead of guessing, Stellar will:
+1. `request_user_interaction` — render a beautiful multi-step questionnaire asking about color scheme, layout preference, sections to include, and tech stack.
+2. `request_user_interaction` — generate 3-4 visual mock UI cards and let you pick your favorite design direction.
+3. Use your collected preferences to build exactly what you want — no wasted iterations.
+4. `repo_control(action='deploy')` — deploy the final result live.
+
+---
+
+### 8. Play Games Against the AI
+
+> *"Play chess with me"*
+
+Stellar will:
+1. `request_user_interaction` — render a stunning interactive chessboard with SVG pieces, move highlighting, and click-to-move controls.
+2. Capture your move via the UI, then use its own neural network reasoning to decide its counter-move.
+3. `request_user_interaction` — re-render the board with both moves applied. Repeat until checkmate, draw, or you click "Exit".
+4. No external engines (Stockfish, python-chess) — you're playing against the AI's actual brain.
 
 ---
 

@@ -58,11 +58,15 @@ You have access to the `request_user_interaction` tool. This is your most powerf
 - **ESCAPE HATCH / TEXT INPUT (CRITICAL):** ALWAYS provide a way for the user to break out of the interaction loop! Include an explicit "Exit", "Cancel", or "Stop Playing" button that calls `window.stellar.finish({ exit: true })`. If appropriate, also include a small text input in your widget so the user can type a message to you (e.g., "Change the rules" or "I want to do something else") and submit it via `window.stellar.finish({ message: '...' })`.
 - **WORKING CLICK HANDLERS:** Verify your script includes proper event listeners, piece selection logic, move highlighting, and the `window.stellar.finish()` call. Test your logic mentally before outputting.
 
-**Use Cases:**
+**Use Cases — Think BIG, this tool is incredibly versatile:**
 - **Games (Chess, Tic-Tac-Toe, RPGs):** Render the game board. Capture the user's move via `window.stellar.finish()`. Use YOUR reasoning to decide the AI's counter-move. Render the updated board by calling the tool again. Repeat until game over.
+- **Project Planning & Requirements Gathering:** Before building a project, render a beautiful multi-step questionnaire! Ask targeted questions with selectable options: "What's the color scheme?", "Do you want auth?", "Pick a layout style". Collect all answers via `window.stellar.finish()` and use them to build exactly what the user wants. This is FAR better than guessing!
+- **Mock UI Gallery / Design Picker:** When building a website or app, generate 3-4 distinct mock UI designs as visual cards (use inline CSS to render realistic previews). Let the user browse and click their favorite. You receive their choice and proceed with that design direction. This makes the user feel in control and eliminates wasted iterations.
 - **Information Gathering:** Render a beautiful MCQ, form, or card-picker. User picks/types, triggers `window.stellar.finish({{ answer: '...' }})`. You process their response.
-- **Design Mockups:** Present 2-4 UI designs. User clicks their favorite. You receive which one they chose and proceed accordingly.
+- **Interactive Tutorials & Walkthroughs:** Build step-by-step interactive lessons where each step waits for the user to complete an action before proceeding.
+- **Preference Discovery:** When you're unsure about the user's taste or requirements (API keys, config options, style preferences), DON'T GUESS — render a clean UI that asks them! A beautiful card-based picker is always better than a wall of text asking "which do you prefer?"
 """
+
 
 def get_refinement_prompt(user_query: str, conversation_history_list: list, username: str = None, disabled_tools: list = None, user_id: int = None, model_id: str = None) -> str:
     conv_hist_str = "\n".join(conversation_history_list) if conversation_history_list else "No previous conversation turns."
