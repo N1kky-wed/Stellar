@@ -1401,6 +1401,15 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 if func_name == "request_user_interaction":
                                     interaction_id = str(uuid.uuid4())
                                     html_ui = args_dict.get('html_ui', '')
+                                    # Strip structural tags that browsers discard when inserted via innerHTML into a div.
+                                    # The model often wraps html_ui in <!DOCTYPE><html><head>...<body>...</body></html>.
+                                    # Browsers silently strip <html>, <head>, <body> and their closing tags when they appear
+                                    # inside a <div>.innerHTML, which can cause <script> tags inside <body> to be lost.
+                                    import re as _re
+                                    html_ui = _re.sub(r'<!DOCTYPE[^>]*>', '', html_ui, flags=_re.IGNORECASE)
+                                    html_ui = _re.sub(r'</?html[^>]*>', '', html_ui, flags=_re.IGNORECASE)
+                                    html_ui = _re.sub(r'</?head[^>]*>', '', html_ui, flags=_re.IGNORECASE)
+                                    html_ui = _re.sub(r'</?body[^>]*>', '', html_ui, flags=_re.IGNORECASE)
                                     yield {'type': 'generative_ui', 'html': html_ui, 'interaction_id': interaction_id}
                                     
                                     # Polling loop
@@ -1508,7 +1517,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     if isinstance(tool['result'], str) and '[TOOL_REQUEST]' in tool['result']:
                         continue # Hide from UI! But it's already in function_responses for the Main Agent.
                     # ---------------------------------------
-                elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image']:
+                elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'request_user_interaction']:
                     continue
 
                 if not isinstance(tool['result'], str): continue
@@ -2257,7 +2266,7 @@ def get_active_stream(chat_id):
     return jsonify({})
 
 @app.route('/api/generative_ui/finish', methods=['POST'])
-@login_required
+@require_approval
 def generative_ui_finish():
     data = request.json
     interaction_id = data.get('interaction_id')
@@ -2510,6 +2519,8 @@ def refine_stream():
                             if 'timeout' in item:
                                 status_dict['timeout'] = item['timeout']
                             yield f"data: {json.dumps(status_dict)}\n\n"
+                        elif 'type' in item and item['type'] == 'generative_ui':
+                            yield f"data: {json.dumps(item)}\n\n"
                         elif 'result' in item:
                             temp_result = item['result']
                             if isinstance(temp_result, str) and temp_result.startswith(ERROR_CODE):

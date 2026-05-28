@@ -1154,19 +1154,39 @@ const defaultAgentSettings = {
 
         // 0. Execute any inline scripts (e.g. from raw HTML blocks) to ensure generative UI interactivity works.
         const rawScripts = containerElement.querySelectorAll("script");
+        const externalScriptPromises = [];
+        const inlineScripts = [];
+
         rawScripts.forEach(oldScript => {
-            let scriptContent = oldScript.innerHTML;
-            if (scriptContent.trim() !== "") {
-                // Convert let/const to var to prevent SyntaxError on multiple injections of the same UI widget
-                scriptContent = scriptContent.replace(/\blet\s+/g, "var ").replace(/\bconst\s+/g, "var ");
-                oldScript.remove();
-                
-                setTimeout(() => {
+            if (oldScript.src) {
+                const p = new Promise((resolve, reject) => {
                     const newScript = document.createElement("script");
-                    newScript.textContent = scriptContent;
+                    newScript.src = oldScript.src;
+                    if (oldScript.type) newScript.type = oldScript.type;
+                    if (oldScript.crossOrigin) newScript.crossOrigin = oldScript.crossOrigin;
+                    newScript.onload = resolve;
+                    newScript.onerror = resolve; // Resolve anyway to continue
                     document.body.appendChild(newScript);
-                }, 100);
+                });
+                externalScriptPromises.push(p);
+                oldScript.remove();
+            } else {
+                let scriptContent = oldScript.innerHTML;
+                if (scriptContent.trim() !== "") {
+                    // Convert let/const to var to prevent SyntaxError on multiple injections of the same UI widget
+                    scriptContent = scriptContent.replace(/\blet\s+/g, "var ").replace(/\bconst\s+/g, "var ");
+                    inlineScripts.push(scriptContent);
+                }
+                oldScript.remove();
             }
+        });
+
+        Promise.all(externalScriptPromises).then(() => {
+            inlineScripts.forEach(scriptContent => {
+                const newScript = document.createElement("script");
+                newScript.textContent = scriptContent;
+                document.body.appendChild(newScript);
+            });
         });
 
         // 1. Lazy load images

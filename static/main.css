@@ -1025,11 +1025,11 @@
         left: 0;
         bottom: 0;
         width: 280px;
-        background: rgba(10, 10, 15, 0.7);
-        backdrop-filter: blur(30px);
-        -webkit-backdrop-filter: blur(30px);
+        background: rgba(10, 10, 15, 0.95);
+        backdrop-filter: blur(40px);
+        -webkit-backdrop-filter: blur(40px);
         border-right: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 4px 0 30px rgba(0, 0, 0, 0.5);
+        box-shadow: 4px 0 30px rgba(0, 0, 0, 0.6);
         transform: translateX(-100%);
         transition: transform 0.3s ease-in-out;
         z-index: 2000; /* Increased to stay above fixed header (z-index 1000) */
@@ -4956,7 +4956,7 @@
 
 body {
   background-color: #030303 !important;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1000' height='800' viewBox='0 0 1000 800'%3E%3Cg stroke='%23ffffff' stroke-width='0.5' stroke-opacity='0.04' stroke-linejoin='round'%3E%3Cpolygon points='-100,-100 300,200 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3Cpolygon points='300,200 800,50 700,600' fill='%23ffffff' fill-opacity='0.02' /%3E%3Cpolygon points='800,50 1100,400 700,600' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='1100,400 900,900 700,600' fill='%23ffffff' fill-opacity='0.015' /%3E%3Cpolygon points='900,900 400,700 700,600' fill='%23ffffff' fill-opacity='0.025' /%3E%3Cpolygon points='400,700 -100,800 200,450' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='400,700 700,600 200,450' fill='%23ffffff' fill-opacity='0.018' /%3E%3Cpolygon points='-100,800 -100,-100 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3C/g%3E%3C/svg%3E") !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1000' height='800' viewBox='0 0 1000 800'%3E%3Cg stroke='%23ffffff' stroke-width='0.5' stroke-opacity='0.04' stroke-linejoin='round'%3E%3Cpolygon points='-250,-150 300,50 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3Cpolygon points='300,50 1200,-50 700,600' fill='%23ffffff' fill-opacity='0.02' /%3E%3Cpolygon points='1200,-50 1300,400 700,600' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='1300,400 1200,1100 700,600' fill='%23ffffff' fill-opacity='0.015' /%3E%3Cpolygon points='1200,1100 400,700 700,600' fill='%23ffffff' fill-opacity='0.025' /%3E%3Cpolygon points='400,700 -300,950 200,450' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='400,700 700,600 200,450' fill='%23ffffff' fill-opacity='0.018' /%3E%3Cpolygon points='-300,950 -250,-150 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3C/g%3E%3C/svg%3E") !important;
   background-attachment: fixed !important;
   background-position: center !important;
   animation: foldBreathe 60s infinite alternate ease-in-out !important;
