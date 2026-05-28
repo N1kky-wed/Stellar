@@ -1,7 +1,7 @@
 window.stellar = window.stellar || {};
 window.stellar.send = function(prompt, silent = false) {
-    const chatInput = document.getElementById("chat-input");
-    const sendBtn = document.getElementById("send-btn");
+    const chatInput = document.getElementById("chatInput");
+    const sendBtn = document.getElementById("sendBtn");
     if (chatInput && sendBtn) {
         chatInput.value = prompt;
         // Since handleSend is scoped, the easiest global hook is to trigger a click
@@ -2556,7 +2556,7 @@ const defaultAgentSettings = {
       }
 
       window.addEventListener("stellarSend", (e) => {
-          const chatInput = document.getElementById("chat-input");
+          const chatInput = document.getElementById("chatInput");
           if (chatInput) {
               chatInput.value = e.detail.prompt;
               handleSend(e.detail.silent);
