@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sick Leave Application</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --surface: #ffffff;
+            --background: #f8fafc;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --radius: 12px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem;
+            line-height: 1.6;
+        }
+
+        .letter-container {
+            background-color: var(--surface);
+            max-width: 600px;
+            width: 100%;
+            padding: 3rem;
+            border-radius: var(--radius);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .letter-container:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08), 0 2px 5px rgba(0, 0, 0, 0.03);
+        }
+
+        .letter-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 6px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sender-info h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 0.25rem;
+        }
+
+        .sender-info p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .date {
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.95rem;
+        }
+
+        .recipient-info {
+            margin-bottom: 2rem;
+        }
+
+        .recipient-info strong {
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .recipient-info span {
+            color: var(--text-muted);
+            display: block;
+        }
+
+        .subject {
+            background-color: #eff6ff;
+            color: var(--primary);
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .subject::before {
+            content: 'Subject:';
+            font-weight: 700;
+        }
+
+        .body-text {
+            color: var(--text-main);
+            font-size: 1.05rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .body-text p {
+            margin-bottom: 1rem;
+        }
+
+        .signature {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px dashed var(--border);
+        }
+
+        .signature p {
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .signature-name {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-main);
+            font-family: 'Caveat', cursive, -apple-system, sans-serif;
+            letter-spacing: 1px;
+        }
+
+        @media (max-width: 600px) {
+            .letter-container {
+                padding: 2rem;
+            }
+            .header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+        }
+    </style>
+    <!-- Import a nice cursive font for the signature and Inter for body -->
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div class="letter-container">
+        <div class="header">
+            <div class="sender-info">
+                <h1>Nikky</h1>
+                <p>Employee</p>
+            </div>
+            <div class="date" id="currentDate"></div>
+        </div>
+
+        <div class="recipient-info">
+            <strong>To,</strong>
+            <span>The Manager / HR Department</span>
+            <span>Technirmaan</span>
+        </div>
+
+        <div class="subject">
+            Application for Sick Leave
+        </div>
+
+        <div class="body-text">
+            <p>Dear Sir/Madam,</p>
+            <p>I am writing to formally request a sick leave for today, as I am feeling unwell and unable to attend the office. I have been advised by my doctor to take some rest in order to recover fully.</p>
+            <p>I will ensure that any urgent tasks are handed over and I will catch up on any pending work immediately upon my return.</p>
+            <p>I appreciate your understanding and support in this matter.</p>
+        </div>
+
+        <div class="signature">
+            <p>Sincerely,</p>
+            <div class="signature-name">Nikky</div>
+        </div>
+    </div>
+
+    <script>
+        // Set today's date dynamically
+        const options = { year: 'numeric', month: 'long', day: 'numeric' };
+        document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-US', options);
+    </script>
+
+</body>
+</html>

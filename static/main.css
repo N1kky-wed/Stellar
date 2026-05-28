@@ -1473,7 +1473,7 @@
         overflow-x: hidden;
         overscroll-behavior: contain;
         /* Padding controls text inset, but scrollbar stays at the right edge */
-        padding: 80px max(45px, calc((100% - 1400px) / 2 + 25px)) 120px;
+        padding: 80px max(45px, calc((100% - 1400px) / 2 + 25px)) 200px;
         width: 100%;
         box-sizing: border-box;
         scrollbar-width: thin;

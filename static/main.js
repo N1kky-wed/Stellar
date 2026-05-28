@@ -1008,10 +1008,12 @@ const defaultAgentSettings = {
 
           const trimmedCode = rawCode.trim();
           const looksLikeHtml = trimmedCode.startsWith('<') && (trimmedCode.includes('<div') || trimmedCode.includes('<svg') || trimmedCode.includes('<style') || trimmedCode.includes('<span'));
+          
+          const isRawCode = rawCode.includes('<!--raw-code-->');
 
           // 0. Rescue Generative UI that marked.parse missed (e.g. due to streaming edges or browser caching)
           // CRITICAL: Unconditionally unwrap HTML/XML/CSS/SVG so the model has full control natively without hardcoded iframes.
-          if (isWebVisual || looksLikeHtml || /class=["'][^"']*?sui-[^"']*?["']/i.test(rawCode)) {
+          if (!isRawCode && (isWebVisual || looksLikeHtml || /class=["'][^"']*?sui-[^"']*?["']/i.test(rawCode))) {
               const tempDiv = document.createElement("div");
               tempDiv.innerHTML = rawCode;
               
