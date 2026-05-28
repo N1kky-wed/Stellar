@@ -17,6 +17,15 @@ logger.setLevel(logging.INFO)
 from typing import List, Optional
 from flask import g, has_request_context
 
+def request_user_interaction(html_ui: str, goal: str, status: str, timeout: int) -> str:
+    """
+    Renders an interactive UI on the user's screen and pauses your execution until the user interacts with it to achieve the goal. 
+    Use this when you need the user to play a minigame, fill out a custom form, or provide structured visual input.
+    The `html_ui` must contain Javascript that eventually calls `window.stellar.finish(data)` with a JSON object or string containing the result.
+    The result will be returned to you directly.
+    """
+    pass # This is intercepted by gemini_generate in app.py
+
 def _get_effective_session():
     """Helper to get session data safely in both request and background thread contexts."""
     from flask import session, has_app_context
@@ -2110,6 +2119,7 @@ def report_process_issue(topic: str, issue_description: str, technical_context: 
 # Define the tools list for Gemini
 
 available_tools = [
+    request_user_interaction,
     web_search,
     send_self_email,
     schedule_task,

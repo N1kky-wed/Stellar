@@ -3685,6 +3685,36 @@ const defaultAgentSettings = {
                   }
                 }
 
+                if (data.type === "generative_ui") {
+                  // Render the UI into the placeholder message directly
+                  const msgDiv = document.querySelector(`.message[data-id="${placeholderId}"]`);
+                  if (msgDiv) {
+                    let contentDiv = msgDiv.querySelector(".message-content");
+                    if (!contentDiv) {
+                        contentDiv = document.createElement("div");
+                        contentDiv.classList.add("message-content");
+                        msgDiv.appendChild(contentDiv);
+                    }
+                    contentDiv.innerHTML = data.html;
+                    unwrapVisuals(contentDiv);
+                    processCodeBlocks(contentDiv);
+                    processGenerativeUI(contentDiv);
+                    
+                    // Expose the finish hook for this specific interaction
+                    window.stellar.finish = async function(resultData) {
+                        try {
+                            await fetch("/api/generative_ui/finish", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ interaction_id: data.interaction_id, data: resultData })
+                            });
+                        } catch(e) {
+                            console.error("Failed to finish interaction:", e);
+                        }
+                    };
+                  }
+                }
+
                 if (data.status) {
                   currentStatusText = data.status;
                   const simpleStatus = currentStatusText.replace(

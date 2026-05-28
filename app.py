@@ -1398,26 +1398,55 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                         prompt_text = current_effective_prompt
                                     args_dict['current_effective_prompt'] = prompt_text
 
-                                import concurrent.futures
-                                from flask import current_app, g
-                                
-                                app_obj = current_app._get_current_object()
-                                g_state = {k: getattr(g, k) for k in ['user_id', 'username', 'chat_id', 'session_id', 'model_id'] if hasattr(g, k)}
-                                
-                                def _run_tool_with_context(**kwargs):
-                                    with app_obj.app_context():
-                                        for k, v in g_state.items():
-                                            setattr(g, k, v)
-                                        return func_to_call(**kwargs)
+                                if func_name == "request_user_interaction":
+                                    interaction_id = str(uuid.uuid4())
+                                    html_ui = args_dict.get('html_ui', '')
+                                    yield {'type': 'generative_ui', 'html': html_ui, 'interaction_id': interaction_id}
+                                    
+                                    # Polling loop
+                                    start_time = time.time()
+                                    poll_interval = 2
+                                    res = None
+                                    import redis
+                                    try:
+                                        r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+                                        redis_key = f"ui_interaction:{interaction_id}"
+                                        
+                                        while time.time() - start_time < (timeout_val or 300):
+                                            val = r_client.get(redis_key)
+                                            if val:
+                                                res = val
+                                                r_client.delete(redis_key)
+                                                break
+                                            yield {'status': 'Waiting for user interaction...'}
+                                            time.sleep(poll_interval)
+                                            
+                                        if res is None:
+                                            res = "Error: User did not interact with the UI in time."
+                                    except Exception as e:
+                                        logger.exception(f"Redis error during active polling: {e}")
+                                        res = f"Error: Backend polling failed - {str(e)}"
+                                else:
+                                    import concurrent.futures
+                                    from flask import current_app, g
+                                    
+                                    app_obj = current_app._get_current_object()
+                                    g_state = {k: getattr(g, k) for k in ['user_id', 'username', 'chat_id', 'session_id', 'model_id'] if hasattr(g, k)}
+                                    
+                                    def _run_tool_with_context(**kwargs):
+                                        with app_obj.app_context():
+                                            for k, v in g_state.items():
+                                                setattr(g, k, v)
+                                            return func_to_call(**kwargs)
 
-                                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                                future = executor.submit(_run_tool_with_context, **args_dict)
-                                try:
-                                    res = future.result(timeout=timeout_val)
-                                except concurrent.futures.TimeoutError:
-                                    res = f"Error: Tool '{func_name}' was stopped because it exceeded the timeout of {timeout_val} seconds that the agent set for that tool."
-                                finally:
-                                    executor.shutdown(wait=False)
+                                    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                                    future = executor.submit(_run_tool_with_context, **args_dict)
+                                    try:
+                                        res = future.result(timeout=timeout_val)
+                                    except concurrent.futures.TimeoutError:
+                                        res = f"Error: Tool '{func_name}' was stopped because it exceeded the timeout of {timeout_val} seconds that the agent set for that tool."
+                                    finally:
+                                        executor.shutdown(wait=False)
                             
                             # Record tool call in DB for context persistence
                             record_tool_call(func_name, args_dict, res)
@@ -2226,6 +2255,26 @@ def get_active_stream(chat_id):
     if active_query_str:
         return Response(active_query_str, mimetype='application/json')
     return jsonify({})
+
+@app.route('/api/generative_ui/finish', methods=['POST'])
+@login_required
+def generative_ui_finish():
+    data = request.json
+    interaction_id = data.get('interaction_id')
+    result_data = data.get('data')
+    if not interaction_id:
+        return jsonify({'error': 'Missing interaction_id'}), 400
+        
+    try:
+        import redis
+        r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        redis_key = f"ui_interaction:{interaction_id}"
+        # We store it as JSON string
+        r_client.setex(redis_key, 60, json.dumps(result_data) if isinstance(result_data, dict) else str(result_data))
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        logger.error(f"Error in generative_ui_finish: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/register_query', methods=['POST'])
 @require_approval
