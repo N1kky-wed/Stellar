@@ -1,5 +1,22 @@
-      const defaultAgentSettings = {
-        logs_and_preferences: true,
+window.stellar = window.stellar || {};
+window.stellar.send = function(prompt, silent = false) {
+    const chatInput = document.getElementById("chat-input");
+    const sendBtn = document.getElementById("send-btn");
+    if (chatInput && sendBtn) {
+        chatInput.value = prompt;
+        // Since handleSend is scoped, the easiest global hook is to trigger a click
+        if (silent) {
+            // We can't trigger silent globally via click, so we dispatch a custom event
+            const event = new CustomEvent("stellarSend", { detail: { prompt, silent } });
+            window.dispatchEvent(event);
+        } else {
+            sendBtn.click();
+        }
+    }
+};
+
+const defaultAgentSettings = {
+  logs_and_preferences: true,
         generate_image: true,
         make_presentation: true,
         web_search: true,
@@ -27,6 +44,7 @@
 
       // Setup event listener for agent tools changes
       document.addEventListener("DOMContentLoaded", () => {
+        console.log("DOM LOADED FIRED IN MAIN JS!");
         applySettingsUI();
 
         const profileNotificationsToggle = document.getElementById(
@@ -2537,14 +2555,13 @@
         }
       }
 
-      window.stellar = window.stellar || {};
-      window.stellar.send = function(prompt, silent = false) {
+      window.addEventListener("stellarSend", (e) => {
           const chatInput = document.getElementById("chat-input");
           if (chatInput) {
-              chatInput.value = prompt;
-              handleSend(silent);
+              chatInput.value = e.detail.prompt;
+              handleSend(e.detail.silent);
           }
-      };
+      });
 
       async function handleSend(silent = false) {
         const lastEditIcon = document.querySelector(
