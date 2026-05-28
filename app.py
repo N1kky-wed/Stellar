@@ -2376,7 +2376,7 @@ def refine_stream():
                 if current_chat_tokens > 200000:
                     try:
                         from agent_tools import subagent_tool
-                        yield f"data: {{json.dumps({'status': 'Compressing context...'})}}\\n\\n"
+                        yield f"data: {{json.dumps({'status': 'Compressing context...'})}}\n\n"
                         summary = subagent_tool(
                             task_description="Summarize the chat and tool history to free up context window.",
                             mode="summarization",
@@ -2421,12 +2421,12 @@ def refine_stream():
                         elif current_model not in full_access:
                             capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task."
                     
-                        effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\\n\\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
+                        effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
                 
                     # --- ADD THIS PROXY OVERRIDE ---
                     if current_model != model_id:
                         proxy_msg = (
-                            f"\\n\\n[CRITICAL SYSTEM OVERRIDE]: The user explicitly requested '{model_id}', but its API key failed. "
+                            f"\n\n[CRITICAL SYSTEM OVERRIDE]: The user explicitly requested '{model_id}', but its API key failed. "
                             f"You are running as a fallback proxy ({current_model}). DO NOT ATTEMPT TO ANSWER THE USER'S PROMPT YOURSELF. "
                             f"You MUST immediately use the `subagent_tool` with `model_tier='capable'` and `pass_to_user=True` to pass their exact prompt to the subagent. "
                             f"DO NOT output any conversational text. Return ONLY the function call. "
@@ -4375,7 +4375,7 @@ class TaskSchedulerMonitor:
             if final_output:
                 from app import MODEL_NAMES
                 display_name = MODEL_NAMES.get(model_id, model_id)
-                insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\\n\\n{final_output}")
+                insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\n\n{final_output}")
 
 task_scheduler = TaskSchedulerMonitor(app)
 task_scheduler.start()
