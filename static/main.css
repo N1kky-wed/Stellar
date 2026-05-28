@@ -97,31 +97,9 @@
         height: 8px;
       }
 
-      #waitlistContent::-webkit-scrollbar-track {
-        background: var(--scrollbar-track-bg);
-        border-radius: 0px;
-      }
-
-      #waitlistContent::-webkit-scrollbar-thumb {
-        background: linear-gradient(
-          var(--scrollbar-thumb-start),
-          var(--scrollbar-thumb-end)
-        );
-        border-radius: 10px;
-        border: 1px solid var(--scrollbar-thumb-border);
-      }
-
-      #waitlistContent::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(
-          var(--scrollbar-thumb-hover-start),
-          var(--scrollbar-thumb-hover-end)
-        );
-        border: 1px solid var(--scrollbar-thumb-hover-border);
-      }
-
       #waitlistContent {
         scrollbar-width: thin;
-        scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track-bg);
+        scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
       }
 
       .code-output-container {
@@ -1137,7 +1115,7 @@
         overflow-y: auto;
         overflow-x: hidden;
         scrollbar-width: thin;
-        scrollbar-color: var(--scrollbar-thumb-start) var(--scrollbar-track-bg);
+        scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
       }
 
       .chat-search-container {
@@ -1481,18 +1459,24 @@
         touch-action: pan-y; /* Explicitly allow vertical panning on mobile */
       }
 
-      #messages::-webkit-scrollbar-track {
+      #messages::-webkit-scrollbar-track,
+      #chatList::-webkit-scrollbar-track,
+      #waitlistContent::-webkit-scrollbar-track {
         background: transparent !important;
         border: none !important;
       }
 
-      #messages::-webkit-scrollbar-thumb {
+      #messages::-webkit-scrollbar-thumb,
+      #chatList::-webkit-scrollbar-thumb,
+      #waitlistContent::-webkit-scrollbar-thumb {
         background: rgba(255, 255, 255, 0.2) !important;
         border-radius: 10px;
         border: none !important;
       }
 
-      #messages::-webkit-scrollbar-thumb:hover {
+      #messages::-webkit-scrollbar-thumb:hover,
+      #chatList::-webkit-scrollbar-thumb:hover,
+      #waitlistContent::-webkit-scrollbar-thumb:hover {
         background: rgba(255, 255, 255, 0.3) !important;
       }
 
