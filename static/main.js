@@ -3312,10 +3312,51 @@ const defaultAgentSettings = {
         wrapper.className = "browser-iframe-wrapper active";
         wrapper.id = tabId;
         wrapper.dataset.rawUrl = url;
-        // Use the same trick for the iframe width here!
-        const sep = url.includes("?") ? "&" : "?";
-        const noCacheUrl = url + sep + "t=" + Date.now();
-        wrapper.innerHTML = `<iframe src="${noCacheUrl}" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+
+        function loadIframeOrError() {
+          const sep = url.includes("?") ? "&" : "?";
+          const noCacheUrl = url + sep + "t=" + Date.now();
+          
+          wrapper.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--secondary-text-color);">
+              <style>@keyframes spinner-spin { to { transform: rotate(360deg); } }</style>
+              <div style="width:30px;height:30px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--model-color-start);border-radius:50%;animation:spinner-spin 1s linear infinite;margin-bottom:15px;"></div>
+              <div style="font-size:0.9rem;">Connecting to project...</div>
+          </div>`;
+
+          fetch('/api/utils/check_url?url=' + encodeURIComponent(noCacheUrl))
+            .then(res => res.json())
+            .then(data => {
+              if (data.status === 200) {
+                wrapper.innerHTML = `<iframe src="${noCacheUrl}" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+              } else {
+                wrapper.innerHTML = `
+                  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--primary-text-color);text-align:center;padding:20px;background:rgba(0,0,0,0.2);">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--model-color-start)" stroke-width="2" style="margin-bottom:16px;">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <h3 style="margin:0 0 8px 0;font-size:1.2rem;">Project is Offline</h3>
+                    <p style="margin:0 0 16px 0;color:var(--secondary-text-color);font-size:0.9rem;max-width:300px;line-height:1.5;">
+                      The server at <strong>${url}</strong> cannot be reached. It may have been shut down or is currently restarting.
+                    </p>
+                    <button class="retry-btn" style="padding:8px 16px;background:var(--model-color-start);border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:0.9rem;transition:transform 0.2s;">
+                      Try Again
+                    </button>
+                  </div>
+                `;
+                wrapper.querySelector(".retry-btn").addEventListener("click", () => {
+                   loadIframeOrError();
+                });
+              }
+            })
+            .catch(err => {
+               // Fallback if the check endpoint itself fails
+               wrapper.innerHTML = `<iframe src="${noCacheUrl}" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+            });
+        }
+        
+        loadIframeOrError();
 
         // Tab Switching
         tab.addEventListener("click", (e) => {
@@ -3329,11 +3370,7 @@ const defaultAgentSettings = {
         // Tab Refresh
         tab.querySelector(".browser-tab-refresh").addEventListener("click", (e) => {
           e.stopPropagation();
-          const iframe = wrapper.querySelector("iframe");
-          if (iframe) {
-            const sep = url.includes("?") ? "&" : "?";
-            iframe.src = url + sep + "t=" + Date.now();
-          }
+          loadIframeOrError();
         });
 
         // Tab Closing
