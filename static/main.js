@@ -47,6 +47,22 @@ const defaultAgentSettings = {
         console.log("DOM LOADED FIRED IN MAIN JS!");
         applySettingsUI();
 
+        document.getElementById("closeBrowserPaneBtn")?.addEventListener("click", () => {
+          document.getElementById("browserPane").style.display = "none";
+          document.body.classList.remove("browser-open");
+        });
+
+        document.getElementById("toggleBrowserPaneBtn")?.addEventListener("click", () => {
+          const pane = document.getElementById("browserPane");
+          if (pane.style.display === "none") {
+            pane.style.display = "flex";
+            document.body.classList.add("browser-open");
+          } else {
+            pane.style.display = "none";
+            document.body.classList.remove("browser-open");
+          }
+        });
+
         const profileNotificationsToggle = document.getElementById(
           "profile-notifications-toggle",
         );
@@ -3227,6 +3243,126 @@ const defaultAgentSettings = {
         });
       }
 
+      function openInBrowserPane(url, tabName) {
+        const browserPane = document.getElementById("browserPane");
+        const tabsContainer = document.getElementById("browserTabsContainer");
+        const contentContainer = document.getElementById("browserContentContainer");
+
+        if (!browserPane || !tabsContainer || !contentContainer) return;
+
+        // Check if tab for this URL already exists
+        let existingWrapper = Array.from(contentContainer.querySelectorAll(".browser-iframe-wrapper")).find(w => w.dataset.rawUrl === url);
+        
+        if (existingWrapper) {
+          // Reactivate existing tab
+          tabsContainer.querySelectorAll(".browser-tab").forEach(tab => tab.classList.remove("active"));
+          contentContainer.querySelectorAll(".browser-iframe-wrapper").forEach(wrap => wrap.classList.remove("active"));
+          
+          const existingTab = tabsContainer.querySelector(`.browser-tab[data-target-id="${existingWrapper.id}"]`);
+          if (existingTab) existingTab.classList.add("active");
+          existingWrapper.classList.add("active");
+          
+          // Refresh the iframe to show new changes
+          const iframe = existingWrapper.querySelector("iframe");
+          if (iframe) {
+            const sep = url.includes("?") ? "&" : "?";
+            iframe.src = url + sep + "t=" + Date.now();
+          }
+          
+          browserPane.style.display = "flex";
+          document.body.classList.add("browser-open");
+          const toggleBtn = document.getElementById("toggleBrowserPaneBtn");
+          if (toggleBtn) toggleBtn.style.display = "flex";
+          return;
+        }
+
+        // Animate in and show
+        browserPane.style.display = "flex";
+        document.body.classList.add("browser-open");
+        const toggleBtn = document.getElementById("toggleBrowserPaneBtn");
+        if (toggleBtn) toggleBtn.style.display = "flex";
+
+        // Deactivate all existing tabs
+        tabsContainer.querySelectorAll(".browser-tab").forEach(tab => tab.classList.remove("active"));
+        contentContainer.querySelectorAll(".browser-iframe-wrapper").forEach(wrap => wrap.classList.remove("active"));
+
+        const tabId = "tab-" + Date.now();
+
+        // Create Tab
+        const tab = document.createElement("div");
+        tab.className = "browser-tab active";
+        tab.dataset.targetId = tabId;
+        tab.innerHTML = `
+          <svg class="browser-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+          <span class="browser-tab-title">${tabName}</span>
+          <div style="display: flex; gap: 4px; margin-left: auto;">
+            <button class="browser-tab-refresh" title="Refresh tab" style="background:none; border:none; color:inherit; cursor:pointer; padding:2px; opacity:0.7; display:flex; align-items:center; justify-content:center;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+            </button>
+            <button class="browser-tab-close" title="Close tab" style="background:none; border:none; color:inherit; cursor:pointer; padding:2px; opacity:0.7; display:flex; align-items:center; justify-content:center;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+            </button>
+          </div>
+        `;
+
+        // Create Content Wrapper
+        const wrapper = document.createElement("div");
+        wrapper.className = "browser-iframe-wrapper active";
+        wrapper.id = tabId;
+        wrapper.dataset.rawUrl = url;
+        // Use the same trick for the iframe width here!
+        const sep = url.includes("?") ? "&" : "?";
+        const noCacheUrl = url + sep + "t=" + Date.now();
+        wrapper.innerHTML = `<iframe src="${noCacheUrl}" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+
+        // Tab Switching
+        tab.addEventListener("click", (e) => {
+          if (e.target.closest(".browser-tab-close") || e.target.closest(".browser-tab-refresh")) return;
+          tabsContainer.querySelectorAll(".browser-tab").forEach(t => t.classList.remove("active"));
+          contentContainer.querySelectorAll(".browser-iframe-wrapper").forEach(w => w.classList.remove("active"));
+          tab.classList.add("active");
+          wrapper.classList.add("active");
+        });
+
+        // Tab Refresh
+        tab.querySelector(".browser-tab-refresh").addEventListener("click", (e) => {
+          e.stopPropagation();
+          const iframe = wrapper.querySelector("iframe");
+          if (iframe) {
+            const sep = url.includes("?") ? "&" : "?";
+            iframe.src = url + sep + "t=" + Date.now();
+          }
+        });
+
+        // Tab Closing
+        tab.querySelector(".browser-tab-close").addEventListener("click", (e) => {
+          e.stopPropagation();
+          const wasActive = tab.classList.contains("active");
+          tab.remove();
+          wrapper.remove();
+
+          if (wasActive) {
+            const remainingTabs = tabsContainer.querySelectorAll(".browser-tab");
+            if (remainingTabs.length > 0) {
+              const lastTab = remainingTabs[remainingTabs.length - 1];
+              lastTab.classList.add("active");
+              document.getElementById(lastTab.dataset.targetId).classList.add("active");
+            } else {
+              browserPane.style.display = "none";
+              document.body.classList.remove("browser-open");
+              const toggleBtn = document.getElementById("toggleBrowserPaneBtn");
+              if (toggleBtn) toggleBtn.style.display = "none";
+            }
+          }
+        });
+
+        tabsContainer.appendChild(tab);
+        contentContainer.appendChild(wrapper);
+        
+        // Scroll to the new tab
+        tab.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
       function unwrapVisuals(container) {
         if (!container) return;
 
@@ -3283,26 +3419,36 @@ const defaultAgentSettings = {
               .then((response) => response.json())
               .then((data) => {
                 if (data.status === 200) {
-                  const iframeContainer = document.createElement("div");
-                  iframeContainer.className = "app-iframe-container";
-                  iframeContainer.style.width = "100%";
-                  iframeContainer.style.maxWidth = "1000px";
-                  iframeContainer.style.height = "600px"; // Give it a fixed height or aspect ratio
-                  iframeContainer.style.margin = "15px auto";
-                  iframeContainer.style.borderRadius = "12px";
-                  iframeContainer.style.overflow = "hidden";
-                  iframeContainer.style.border =
-                    "1px solid rgba(255,255,255,0.2)";
-                  iframeContainer.style.boxShadow =
-                    "0 10px 30px rgba(0,0,0,0.3)";
+                  let tabName = "App";
+                  try {
+                    const urlObj = new URL(url);
+                    tabName = urlObj.hostname.split('.')[0];
+                  } catch (e) {}
 
-                  iframeContainer.innerHTML = `<iframe width="100%" height="100%" src="${url}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+                  if (window.innerWidth > 768) {
+                    openInBrowserPane(url, tabName);
+                  } else {
+                    const iframeContainer = document.createElement("div");
+                    iframeContainer.className = "app-iframe-container";
+                    iframeContainer.style.width = "100%";
+                    iframeContainer.style.maxWidth = "1000px";
+                    iframeContainer.style.height = "600px"; // Give it a fixed height or aspect ratio
+                    iframeContainer.style.margin = "15px auto";
+                    iframeContainer.style.borderRadius = "12px";
+                    iframeContainer.style.overflow = "hidden";
+                    iframeContainer.style.border =
+                      "1px solid rgba(255,255,255,0.2)";
+                    iframeContainer.style.boxShadow =
+                      "0 10px 30px rgba(0,0,0,0.3)";
 
-                  // Place the iframe after the link
-                  link.parentNode.insertBefore(
-                    iframeContainer,
-                    link.nextSibling,
-                  );
+                    iframeContainer.innerHTML = `<iframe width="100%" height="100%" src="${url}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+
+                    // Place the iframe after the link
+                    link.parentNode.insertBefore(
+                      iframeContainer,
+                      link.nextSibling,
+                    );
+                  }
                 }
               })
               .catch((err) => console.error("Error checking URL status:", err));
@@ -4489,6 +4635,17 @@ const defaultAgentSettings = {
         messagesDiv.innerHTML = "";
         historyLoaded = false;
         setStatus("Switching chat...");
+
+        // Clear and hide the browser pane on chat switch
+        const browserPane = document.getElementById("browserPane");
+        if (browserPane) {
+          browserPane.style.display = "none";
+          document.body.classList.remove("browser-open");
+          document.getElementById("browserTabsContainer").innerHTML = "";
+          document.getElementById("browserContentContainer").innerHTML = "";
+          const toggleBtn = document.getElementById("toggleBrowserPaneBtn");
+          if (toggleBtn) toggleBtn.style.display = "none";
+        }
 
         document
           .querySelectorAll(".chat-item")
