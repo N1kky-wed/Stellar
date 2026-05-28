@@ -2537,6 +2537,15 @@
         }
       }
 
+      window.stellar = window.stellar || {};
+      window.stellar.send = function(prompt, silent = false) {
+          const chatInput = document.getElementById("chat-input");
+          if (chatInput) {
+              chatInput.value = prompt;
+              handleSend(silent);
+          }
+      };
+
       async function handleSend(silent = false) {
         const lastEditIcon = document.querySelector(
           ".user-msg:last-of-type .edit-prompt-wrapper",
