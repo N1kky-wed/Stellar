@@ -553,6 +553,15 @@ def initialize_database():
             )''')
             print("Created 'agent_feedback' table.")
 
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='talents'")
+        if cursor.fetchone() is None:
+            cursor.execute('''CREATE TABLE talents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                talent_name TEXT UNIQUE NOT NULL,
+                mandate_text TEXT NOT NULL
+            )''')
+            print("Created 'talents' table.")
+
         db.commit()
 
 initialize_database()
@@ -1478,7 +1487,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         if isinstance(llm_safe_res, str):
                             if 'data:image' in llm_safe_res:
                                 llm_safe_res = "Image successfully generated and rendered to the user's UI. Do not attempt to output the image markdown yourself."
-                            elif func_name != 'read_tool_output' and (len(llm_safe_res) > 10000 or len(llm_safe_res.split('\n')) > 100):
+                            elif func_name not in ['read_tool_output', 'obtain_talent'] and (len(llm_safe_res) > 10000 or len(llm_safe_res.split('\n')) > 100):
                                 # Get the ID of the record we JUST inserted
                                 last_tool_id = "unknown"
                                 try:
@@ -1517,7 +1526,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     if isinstance(tool['result'], str) and '[TOOL_REQUEST]' in tool['result']:
                         continue # Hide from UI! But it's already in function_responses for the Main Agent.
                     # ---------------------------------------
-                elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'request_user_interaction']:
+                elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'request_user_interaction', 'obtain_talent']:
                     continue
 
                 if not isinstance(tool['result'], str): continue

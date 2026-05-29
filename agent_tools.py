@@ -964,14 +964,31 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
 
         if action == "deploy":
             if 'user_id' not in session: return "Error: Authentication required to host repos."
+            
+            # --- PERSISTENCE FIX: Check for existing snapshot if app_id/project_name provided ---
+            existing_snapshot = None
+            if app_id or project_name:
+                lookup = app_id or project_name
+                cursor = db.execute('SELECT files_snapshot FROM repo_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (lookup, lookup, lookup, session['user_id']))
+                row = cursor.fetchone()
+                if row:
+                    existing_snapshot = json.loads(row['files_snapshot'])
+            # ----------------------------------------------------------------------------------
+
             process_id = str(uuid.uuid4())
             if project_name: project_title = project_name
             elif repo_url: project_title = f"Repo: {repo_url.split('/')[-1].replace('.git', '')}"
             else: project_title = "Custom Stack Project"
 
             subdomain = generate_unique_subdomain(project_title)
+            
+            # Prepare initial files snapshot
+            initial_files = existing_snapshot if existing_snapshot else ({"repo": repo_url, "port": port} if repo_url else {"port": port})
+            if repo_url: initial_files['repo'] = repo_url
+            if port: initial_files['port'] = port
+
             db.execute('INSERT INTO repo_history (user_id, project_name, process_id, status, files_snapshot, subdomain) VALUES (?, ?, ?, ?, ?, ?)',
-                       (session['user_id'], project_title, process_id, 'created', json.dumps({"repo": repo_url, "port": port} if repo_url else {"port": port}), subdomain))
+                       (session['user_id'], project_title, process_id, 'created', json.dumps(initial_files), subdomain))
             db.commit()
 
             try:
@@ -982,12 +999,26 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
 
                 # Determine image based on env_type
                 target_image = 'reactnativecommunity/react-native-android:latest' if env_type == "mobile" else 'stellar-repo-host:latest'
+                
+                project_dir = f"/home/stellaradmin/my_app/deployments/{process_id}"
+                os.makedirs(project_dir, exist_ok=True)
+                
+                if existing_snapshot:
+                    for fname, content in existing_snapshot.items():
+                        if fname in ['repo', 'port'] or not isinstance(content, str): continue
+                        fpath = os.path.join(project_dir, fname)
+                        os.makedirs(os.path.dirname(fpath), exist_ok=True)
+                        with open(fpath, 'wb') as f:
+                            f.write(content.encode('utf-8'))
 
                 container = client.containers.run(
                     image=target_image,
                     command='sleep infinity',
                     ports={f"{port}/tcp": ('0.0.0.0', 0)},                    name=f"stellar-repo-{process_id}",
-                    volumes={'/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
+                    volumes={
+                        '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'},
+                        project_dir: {'bind': '/app', 'mode': 'rw'}
+                    },
                     remove=False,
                     detach=True,
                     init=True,
@@ -1006,15 +1037,20 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                 time.sleep(2)
                 container.reload()
                 host_port = container.attrs['NetworkSettings']['Ports'][f"{port}/tcp"][0]['HostPort']
-                redis_client.hset(r_key, mapping={"container_id": container.id, "status": "running", "process_id": process_id, "host_port": str(host_port), "files": json.dumps({"repo": repo_url, "port": port} if repo_url else {"port": port})})
+                redis_client.hset(r_key, mapping={"container_id": container.id, "status": "running", "process_id": process_id, "host_port": str(host_port), "files": json.dumps(initial_files)})
                 with active_apps_lock: active_apps[process_id] = {"container_id": container.id, "port": host_port, "status": "running"}
                 db.execute("UPDATE repo_history SET status = 'running', deployment_url = ? WHERE process_id = ?", (f"https://{subdomain}.stellarai.live/", process_id))
                 db.commit()
-                if repo_url:
+                
+                if repo_url and not os.listdir(project_dir):
                     clone_res = container.exec_run(f"git clone {repo_url} .")
-                    if clone_res.exit_code != 0: return f"Git clone failed: {clone_res.output.decode()}"                
+                    if clone_res.exit_code != 0: return f"Git clone failed: {clone_res.output.decode()}"
+                
+                restored_count = len(existing_snapshot) if existing_snapshot else 0
+                
                 public_url = f"https://{subdomain}.stellarai.live/"
-                return f"Container provisioned for '{project_title}'! ID: `{process_id}`. Live URL: {public_url} Use action='execute' to build and start the app. CRITICAL: Ensure your app listens on 0.0.0.0 and port {port}."
+                restore_msg = f" (Restored {restored_count} files from snapshot)" if restored_count > 0 else ""
+                return f"Container provisioned for '{project_title}'! ID: `{process_id}`. Live URL: {public_url}{restore_msg} Use action='execute' to build and start the app. CRITICAL: Ensure your app listens on 0.0.0.0 and port {port}."
             except Exception as e:
                 logger.exception("Error caught: %s", e)
                 db.execute("UPDATE repo_history SET status = 'failed' WHERE process_id = ?", (process_id,))
@@ -1162,14 +1198,13 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             p_id = row['process_id']
             current_snapshot = json.loads(row['files_snapshot'])
             
-            # Deterministic Auto-Snapshot before destruction
-            snap_count = _perform_snapshot(p_id, f"stellar-repo-{p_id}", current_snapshot)
+            current_snapshot = json.loads(row['files_snapshot'])
             
             stop_and_cleanup_app_by_process_id(p_id, app_type='repo')
             db.execute("UPDATE repo_history SET status = 'stopped' WHERE process_id = ?", (p_id,))
             db.commit()
             
-            return f"Deployment '{app_id}' has been stopped. Auto-snapshotted {snap_count} files for persistence."
+            return f"Deployment '{app_id}' has been stopped. Files are safely persisted on the host filesystem."
 
         if action == "restart":
             if not app_id: return "Error: app_id is required to restart a deployment."
@@ -1183,8 +1218,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             subdomain = row['subdomain']
             current_snapshot = json.loads(row['files_snapshot'])
             
-            # Deterministic Auto-Snapshot before destruction
-            _perform_snapshot(process_id, f"stellar-repo-{process_id}", current_snapshot)
+            current_snapshot = json.loads(row['files_snapshot'])
             
             # Reload updated snapshot
             cursor = db.execute('SELECT files_snapshot FROM repo_history WHERE process_id = ?', (process_id,))
@@ -1202,12 +1236,26 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             from app import ensure_user_network
             user_network = ensure_user_network(client, session['user_id'])
             r_key = _redis_repo_key(process_id)
+            
+            project_dir = f"/home/stellaradmin/my_app/deployments/{process_id}"
+            os.makedirs(project_dir, exist_ok=True)
+            
+            if not os.listdir(project_dir) and snapshot:
+                for fname, content in snapshot.items():
+                    if fname in ['repo', 'port'] or not isinstance(content, str): continue
+                    fpath = os.path.join(project_dir, fname)
+                    os.makedirs(os.path.dirname(fpath), exist_ok=True)
+                    with open(fpath, 'wb') as f:
+                        f.write(content.encode('utf-8'))
 
             container = client.containers.run(
                 image='stellar-repo-host:latest',
                 command='sleep infinity',
                 ports={f"{port}/tcp": ('0.0.0.0', 0)},
-                volumes={'/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
+                volumes={
+                    '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'},
+                    project_dir: {'bind': '/app', 'mode': 'rw'}
+                },
                 name=f"stellar-repo-{process_id}",
                 detach=True,
                 init=True,
@@ -1229,14 +1277,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             redis_client.hset(r_key, mapping={"container_id": container.id, "status": "running", "process_id": process_id, "host_port": str(host_port), "files": json.dumps(snapshot)})
             with active_apps_lock: active_apps[process_id] = {"container_id": container.id, "port": host_port, "status": "running"}
 
-            if repo_url:
+            if repo_url and not os.listdir(project_dir):
                 container.exec_run(f"git clone {repo_url} .")
-            
-            # Restore manual edits from snapshot
-            for fname, content in snapshot.items():
-                if fname in ['repo', 'port'] or not isinstance(content, str): continue
-                b64_content = base64.b64encode(content.encode()).decode()
-                container.exec_run(f"python3 -c \"import base64; import os; d=os.path.dirname('{fname}'); d and os.makedirs(d, exist_ok=True); open('{fname}', 'wb').write(base64.b64decode('{b64_content}'))\"")
 
             public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
             
@@ -1267,36 +1309,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             if not app_id or not files:
                 return "Error: app_id and a list of 'files' paths are required to snapshot manual edits."
             
-            cursor = db.execute('SELECT process_id, files_snapshot FROM repo_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (app_id, app_id, app_id, session.get('user_id')))
-            row = cursor.fetchone()
-            if not row: return f"Error: Deployment '{app_id}' not found."
-            
-            p_id = row['process_id']
-            current_snapshot = json.loads(row['files_snapshot'])
-            
-            client = docker.from_env()
-            container_name = f"stellar-repo-{p_id}"
-            try:
-                container = client.containers.get(container_name)
-            except:
-                return "Error: Container not found. Cannot snapshot files from a stopped or missing container."
-                
-            count = 0
-            for file_path in files:
-                # Remove leading /app/ if present
-                clean_path = file_path.replace('/app/', '').lstrip('/')
-                res = container.exec_run(f"cat {clean_path}")
-                if res.exit_code == 0:
-                    try:
-                        decoded_text = res.output.decode('utf-8', strict=True)
-                        current_snapshot[clean_path] = decoded_text
-                        count += 1
-                    except UnicodeDecodeError:
-                        continue
-            
-            db.execute("UPDATE repo_history SET files_snapshot = ? WHERE process_id = ?", (json.dumps(current_snapshot), p_id))
-            db.commit()
-            return f"Successfully snapshotted {count} files to the database for project '{app_id}'. These edits will now persist across restarts."
+            return f"Successfully snapshotted {len(files)} files natively to the host filesystem for project '{app_id}' (DB snapshots are deprecated)."
 
         return f"Error: Unknown action '{action}'."
     except Exception as e:
@@ -1371,21 +1384,6 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
         logger.exception("Error caught: %s", sync_e)
         pass # Silent fail if permissions or path issues
     # ------------------------------------------------------------------------
-
-    # --- MANDATE INJECTION ---
-    mandates_dir = os.path.join(os.path.dirname(__file__), "mandates")
-    if os.path.exists(mandates_dir):
-        try:
-            for mandate_file in os.listdir(mandates_dir):
-                if mandate_file.endswith("MANDATE.md"):
-                    src = os.path.join(mandates_dir, mandate_file)
-                    dst = os.path.join(lab_workspace, mandate_file)
-                    if not os.path.exists(dst):
-                        shutil.copy2(src, dst)
-        except Exception:
-            logger.exception("Error copying mandates to lab workspace.")
-            pass
-    # -------------------------
 
     # Ensure sandbox container is running
     container = None
@@ -1477,6 +1475,33 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
 
         logger.exception("Error caught during lab_execute: %s", e)
         return f"Error executing command in Lab: {str(e)}"
+
+def obtain_talent(talent_name: str, status: str, timeout: int) -> str:
+    """
+    Load a specialized mandate (talent) from the database to acquire detailed instructions, rules, and best practices for specific roles (e.g., frontend_design, generative_ai).
+    You MUST read these mandates when operating in these domains. This tool is protected from output truncation.
+
+    Args:
+        talent_name (str): The name of the talent/mandate to obtain (e.g., 'generative_ai', 'frontend_design').
+        status (str): The status to report to the user.
+        timeout (int): The maximum time to wait for the command to complete.
+    """
+    import sqlite3
+    import os
+    db_path = os.path.join(os.path.dirname(__file__), 'stellar_local.db')
+    try:
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        c.execute("SELECT mandate_text FROM talents WHERE talent_name = ?", (talent_name.lower(),))
+        row = c.fetchone()
+        conn.close()
+        
+        if row:
+            return f"--- TALENT ACQUIRED: {talent_name.upper()} ---\n{row[0]}"
+        else:
+            return f"Error: Talent '{talent_name}' not found in database."
+    except Exception as e:
+        return f"Error obtaining talent: {str(e)}"
 
 def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = None, start_line: int = 0, max_lines: int = 100) -> str:
     """Reads a specific slice of a past tool's output from the database.
@@ -2133,5 +2158,6 @@ available_tools = [
     read_tool_output,
     logs_and_preferences,
     subagent_tool,
-    report_process_issue
+    report_process_issue,
+    obtain_talent
 ]

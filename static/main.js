@@ -6120,3 +6120,78 @@ const defaultAgentSettings = {
         }
       }
       if (stopBtn) stopBtn.addEventListener("click", handleStopGeneration);
+
+// ==== BROWSER PANE RESIZER LOGIC ====
+document.addEventListener("DOMContentLoaded", () => {
+  const resizer = document.getElementById("paneResizer");
+  const browserPane = document.getElementById("browserPane");
+  const chatPane = document.getElementById("chatPane");
+  let isResizing = false;
+
+  if (resizer && browserPane && chatPane) {
+    resizer.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      isResizing = true;
+      document.body.style.cursor = "col-resize";
+      browserPane.style.transition = "none"; // Disable animation during drag
+      // Remove max-width restriction
+      browserPane.style.maxWidth = "none";
+      browserPane.style.flex = "none";
+      // Prevent iframe from intercepting mouse events during drag
+      browserPane.style.pointerEvents = "none";
+      
+      // Prevent text selection while dragging
+      document.body.style.userSelect = "none";
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!isResizing) return;
+      
+      // Calculate new width (from right edge)
+      // The browser window width minus the mouse X position
+      let newWidth = window.innerWidth - e.clientX;
+      
+      // Enforce min and max widths
+      if (newWidth < 300) newWidth = 300; // Min width 300px
+      if (newWidth > window.innerWidth - 300) newWidth = window.innerWidth - 300; // Leave 300px for chatPane
+      
+      browserPane.style.width = `${newWidth}px`;
+      
+      const header = document.querySelector('header');
+      if (header && document.body.classList.contains('browser-open')) {
+        header.style.width = `calc(100% - ${newWidth}px)`;
+      }
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        // Re-enable iframe mouse events
+        browserPane.style.pointerEvents = "auto";
+      }
+    });
+
+    // Observer to toggle resizer visibility whenever browserPane visibility changes
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === "attributes" && mutation.attributeName === "style") {
+          const display = window.getComputedStyle(browserPane).display;
+          resizer.style.display = display === "none" ? "none" : "block";
+          
+          const header = document.querySelector('header');
+          if (header) {
+            if (display === "none") {
+              header.style.width = "";
+            } else if (browserPane.style.width) {
+              header.style.width = `calc(100% - ${browserPane.style.width})`;
+            }
+          }
+        }
+      });
+    });
+    
+    observer.observe(browserPane, { attributes: true });
+  }
+});
