@@ -1476,15 +1476,17 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
         logger.exception("Error caught during lab_execute: %s", e)
         return f"Error executing command in Lab: {str(e)}"
 
-def obtain_talent(talent_name: str, status: str, timeout: int) -> str:
+def obtain_talent(talent_names: list[str], status: str, timeout: int, search_query: str = None) -> str:
     """
-    Load a specialized mandate (talent) from the database to acquire detailed instructions, rules, and best practices for specific roles (e.g., frontend_design, generative_ai).
-    You MUST read these mandates when operating in these domains. This tool is protected from output truncation.
+    Load specialized mandates (talents) from the database to acquire detailed instructions, rules, and best practices for specific roles (e.g., frontend_design, generative_ai).
+    You can pass exact talent_names OR a search_query to search for keywords across all talents.
+    This tool is protected from output truncation.
 
     Args:
-        talent_name (str): The name of the talent/mandate to obtain (e.g., 'generative_ai', 'frontend_design').
+        talent_names (list[str]): The names of the talents/mandates to obtain (e.g., ['generative_ai', 'frontend_design']). Leave empty if using search_query.
         status (str): The status to report to the user.
         timeout (int): The maximum time to wait for the command to complete.
+        search_query (str): Optional. A keyword to search across all templates/talents (e.g., 'cars', 'ecommerce').
     """
     import sqlite3
     import os
@@ -1492,14 +1494,30 @@ def obtain_talent(talent_name: str, status: str, timeout: int) -> str:
     try:
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        c.execute("SELECT mandate_text FROM talents WHERE talent_name = ?", (talent_name.lower(),))
-        row = c.fetchone()
-        conn.close()
         
-        if row:
-            return f"--- TALENT ACQUIRED: {talent_name.upper()} ---\n{row[0]}"
-        else:
-            return f"Error: Talent '{talent_name}' not found in database."
+        results = []
+        if search_query:
+            query = f"%{search_query}%"
+            c.execute("SELECT talent_name, mandate_text FROM talents WHERE mandate_text LIKE ? OR talent_name LIKE ?", (query, query))
+            rows = c.fetchall()
+            if rows:
+                results.append(f"--- SEARCH RESULTS FOR '{search_query}' ---")
+                for row in rows:
+                    results.append(f"Talent Name: {row[0]}\nPreview:\n{row[1][:1500]}...\n")
+            else:
+                results.append(f"No talents found matching '{search_query}'.")
+
+        if talent_names:
+            for name in talent_names:
+                c.execute("SELECT mandate_text FROM talents WHERE talent_name = ?", (name.lower(),))
+                row = c.fetchone()
+                if row:
+                    results.append(f"--- TALENT ACQUIRED: {name.upper()} ---\n{row[0]}")
+                else:
+                    results.append(f"Error: Talent '{name}' not found in database.")
+                
+        conn.close()
+        return "\n\n".join(results)
     except Exception as e:
         return f"Error obtaining talent: {str(e)}"
 

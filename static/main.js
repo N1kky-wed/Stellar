@@ -3891,6 +3891,19 @@ const defaultAgentSettings = {
                 }
 
                 if (data.type === "generative_ui") {
+                  // Notify user that interaction is required
+                  if ("Notification" in window) {
+                    if (Notification.permission === "granted") {
+                      new Notification("Stellar", { body: "Interaction required! The model is waiting for your input." });
+                    } else if (Notification.permission !== "denied") {
+                      Notification.requestPermission().then(permission => {
+                        if (permission === "granted") {
+                          new Notification("Stellar", { body: "Interaction required! The model is waiting for your input." });
+                        }
+                      });
+                    }
+                  }
+
                   // Render the UI into the placeholder message directly
                   const msgDiv = document.querySelector(`.message[data-id="${placeholderId}"]`);
                   if (msgDiv) {
@@ -3907,6 +3920,15 @@ const defaultAgentSettings = {
                     
                     // Expose the finish hook for this specific interaction
                     window.stellar.finish = async function(resultData) {
+                        // Automatically provide visual feedback by disabling interactive elements
+                        const interactables = contentDiv.querySelectorAll('button, input, select, textarea, [role="button"], a');
+                        interactables.forEach(el => {
+                            el.disabled = true;
+                            el.style.opacity = '0.5';
+                            el.style.cursor = 'wait';
+                            el.style.pointerEvents = 'none'; // Prevents clicks on divs/svgs
+                        });
+
                         try {
                             await fetch("/api/generative_ui/finish", {
                                 method: "POST",
@@ -5554,8 +5576,9 @@ const defaultAgentSettings = {
             }
           }, 100);
 
-          if (messagesDiv)
+          if (messagesDiv) {
             messagesDiv.addEventListener("scroll", toggleScrollButton);
+          }
           window.addEventListener("scroll", toggleScrollButton);
           window.addEventListener("resize", toggleScrollButton);
 
@@ -6195,3 +6218,31 @@ document.addEventListener("DOMContentLoaded", () => {
     observer.observe(browserPane, { attributes: true });
   }
 });
+
+
+// Toggle .has-content class on input container to prevent minimization
+(function() {
+  const inputContainer = document.getElementById("inputContainer");
+  const chatInput = document.getElementById("chatInput");
+  const stagedFilesContainer = document.getElementById("stagedFilesContainer");
+  
+  function updateHasContent() {
+    if (!inputContainer || !chatInput || !stagedFilesContainer) return;
+    const hasText = chatInput.value.trim().length > 0;
+    const hasFiles = stagedFilesContainer.children.length > 0;
+    if (hasText || hasFiles) {
+      inputContainer.classList.add("has-content");
+    } else {
+      inputContainer.classList.remove("has-content");
+    }
+  }
+
+  if (chatInput) {
+    chatInput.addEventListener("input", updateHasContent);
+  }
+  
+  if (stagedFilesContainer) {
+    const observer = new MutationObserver(updateHasContent);
+    observer.observe(stagedFilesContainer, { childList: true });
+  }
+})();

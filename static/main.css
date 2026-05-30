@@ -479,7 +479,7 @@
       }
 
       .file-upload-label-button {
-        background: rgba(255, 255, 255, 0.07);
+        background: transparent;
         color: var(--secondary-text-color);
         padding: 0;
         border-radius: 6px;
@@ -1455,12 +1455,26 @@
         overflow-x: hidden;
         overscroll-behavior: contain;
         /* Padding controls text inset, but scrollbar stays at the right edge */
-        padding: 80px max(45px, calc((100% - 1400px) / 2 + 25px)) 200px;
+        padding: 80px max(45px, calc((100% - 1400px) / 2 + 25px)) 100px;
         width: 100%;
         box-sizing: border-box;
+        transition: padding var(--transition-duration-medium) ease;
         scrollbar-width: thin;
         scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
         touch-action: pan-y; /* Explicitly allow vertical panning on mobile */
+      }
+      @media (min-width: 769px) {
+        :has(#inputContainer:hover) #messages,
+        :has(#inputContainer:focus-within) #messages,
+        :has(#inputContainer.has-content) #messages {
+          padding-bottom: 150px;
+        }
+      }
+
+      @media (max-width: 768px) {
+        #messages {
+          padding-bottom: 150px !important;
+        }
       }
 
       #messages::-webkit-scrollbar-track,
@@ -1992,19 +2006,22 @@
         background: rgba(10, 10, 15, 0.6);
         backdrop-filter: blur(25px);
         -webkit-backdrop-filter: blur(25px);
-        border-radius: 16px;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        border-radius: 30px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         border: 1px solid rgba(255, 255, 255, 0.1);
         z-index: 100;
         display: flex;
         flex-direction: column;
         gap: 8px;
         transition: all var(--transition-duration-medium) ease;
-        max-width: 1200px;
+        max-width: 400px;
         box-sizing: border-box;
       }
 
+      #inputContainer:hover,
       #inputContainer:focus-within {
+        max-width: 1200px;
+        border-radius: 16px;
         background: rgba(10, 10, 15, 0.98);
         box-shadow: 0 15px 50px rgba(0, 0, 0, 0.8);
         border-color: var(--model-color-start);
@@ -2022,10 +2039,50 @@
         overflow-y: auto;
         min-height: 24px;
         max-height: 240px;
-        transition: background var(--transition-duration-medium)
-          var(--transition-timing-function);
+        transition: all var(--transition-duration-medium) var(--transition-timing-function);
       }
 
+      @media (min-width: 769px) {
+        #inputContainer:not(:hover):not(:focus-within):not(.has-content) #chatInput,
+        #inputContainer:not(:hover):not(:focus-within):not(.has-content) #stagedFilesContainer {
+          height: 0 !important;
+          min-height: 0 !important;
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
+          margin: 0 !important;
+          opacity: 0 !important;
+          overflow: hidden !important;
+        }
+
+        #inputContainer:not(:hover):not(:focus-within):not(.has-content) {
+          padding: 8px 16px;
+          gap: 0 !important;
+          border-radius: 50px;
+          min-height: auto;
+          max-width: 200px !important;
+        }
+
+        #inputContainer .left-buttons,
+        #inputContainer #sendBtn,
+        #inputContainer #stopBtn {
+          transition: all var(--transition-duration-medium) ease;
+          overflow: hidden;
+        }
+
+        #inputContainer:not(:hover):not(:focus-within):not(.has-content) .left-buttons,
+        #inputContainer:not(:hover):not(:focus-within):not(.has-content) #sendBtn,
+        #inputContainer:not(:hover):not(:focus-within):not(.has-content) #stopBtn {
+          max-width: 0 !important;
+          opacity: 0 !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          border: none !important;
+        }
+
+        #inputContainer:not(:hover):not(:focus-within):not(.has-content) .input-buttons {
+          justify-content: center !important;
+        }
+      }
       #chatInput::placeholder {
         color: rgba(255, 255, 255, 0.5);
         transition: color var(--transition-duration-medium)
@@ -5021,8 +5078,8 @@ header, .sidebar, .input-container, .message, .card, .glass-card, .chat-containe
 }
 
 /* Remove glow from sendBtn and modelSelect, matching mic/file upload */
-#sendBtn, #modelSelect, .custom-select-trigger {
-  background: rgba(255, 255, 255, 0.07) !important;
+#sendBtn, #modelSelect, .custom-select-trigger, #stopBtn {
+  background: transparent !important;
   color: var(--secondary-text-color) !important;
   box-shadow: none !important;
   border: 1px solid transparent !important;

@@ -756,7 +756,7 @@ def get_tool_history(chat_id):
             num_chars = len(res_str)
 
             # Smart Truncation Logic
-            if r['tool_name'] == 'read_tool_output':
+            if r['tool_name'] in ['read_tool_output', 'obtain_talent']:
                 clean_res = res_str
             elif 'data:image' in res_str:
                 clean_res = "[Image Generated]"
@@ -770,7 +770,10 @@ def get_tool_history(chat_id):
                 else:
                     clean_res = res_str
 
-            context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` (ID: {r['id']}) | Input: `{r['input_params']}` | Result: `{clean_res}`\n"
+            input_str = str(r['input_params'])
+            clean_input = input_str if (r['tool_name'] != 'subagent_tool' or len(input_str) <= 1000) else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
+
+            context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` (ID: {r['id']}) | Input: `{clean_input}` | Result: `{clean_res}`\n"
         return context + "---\n"
     except Exception as e:
         logger.error(f"Error fetching tool history: {e}")
@@ -915,7 +918,10 @@ def count_chat_tokens(chat_id=None):
                 else:
                     clean_res = res_str
 
-                tool_hist_entry = f"- [{t['timestamp']}] Tool: `{t['tool_name']}` (ID: {t['id']}) | Input: `{t['input_params']}` | Result: `{clean_res}`"
+                input_str = str(t['input_params'])
+                clean_input = input_str if (t['tool_name'] != 'subagent_tool' or len(input_str) <= 1000) else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
+
+                tool_hist_entry = f"- [{t['timestamp']}] Tool: `{t['tool_name']}` (ID: {t['id']}) | Input: `{clean_input}` | Result: `{clean_res}`"
                 history_for_tokens.append(types.Content(role="user", parts=[types.Part(text=tool_hist_entry)]))
 
         if len(history_for_tokens) <= 1: # Only system prompt
@@ -2874,6 +2880,7 @@ def image_proxy():
         logger.error(f"Image proxy unexpected error for {image_url}: {e}")
         return "Internal server error", 500
 
+# INTENTIONALLY UNPROTECTED: This route omits @require_approval to allow users to easily share generated files and outputs via direct links.
 @app.route('/download/<path:filename>')
 def download_file(filename):
     if '..' in filename or filename.startswith('/'):
@@ -2890,6 +2897,7 @@ def download_file(filename):
     basename = os.path.basename(filename)
     return send_from_directory(os.path.join(directory, subdir), basename, as_attachment=True)
 
+# INTENTIONALLY UNPROTECTED: This route omits @require_approval to allow users to easily share generated files and outputs via direct links.
 @app.route('/view/<path:filename>')
 def view_file(filename):
     if '..' in filename or filename.startswith('/'):
