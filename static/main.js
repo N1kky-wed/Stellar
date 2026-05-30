@@ -43,6 +43,9 @@ const defaultAgentSettings = {
       }
 
       // Setup event listener for agent tools changes
+      window.addEventListener("load", () => {
+        document.body.classList.remove("preload");
+      });
       document.addEventListener("DOMContentLoaded", () => {
         console.log("DOM LOADED FIRED IN MAIN JS!");
         applySettingsUI();
@@ -2218,10 +2221,15 @@ const defaultAgentSettings = {
       function adjustTextareaHeight() {
         if (!chatInput) return;
         try {
-          chatInput.style.height = "auto";
-          const newHeight = Math.min(chatInput.scrollHeight, 240);
-          chatInput.style.height = `${newHeight}px`;
-          chatInput.style.overflowY = newHeight >= 240 ? "auto" : "hidden";
+          if (chatInput.value.length === 0) {
+            chatInput.style.height = "";
+            chatInput.style.overflowY = "hidden";
+          } else {
+            chatInput.style.height = "auto";
+            const newHeight = Math.min(chatInput.scrollHeight, 240);
+            chatInput.style.height = `${newHeight}px`;
+            chatInput.style.overflowY = newHeight >= 240 ? "auto" : "hidden";
+          }
         } catch (e) {}
         if (typeof window.updateHasContent === 'function') {
           window.updateHasContent();
