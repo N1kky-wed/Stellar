@@ -2059,7 +2059,7 @@
           gap: 0 !important;
           border-radius: 50px;
           min-height: auto;
-          max-width: 200px !important;
+          max-width: fit-content !important;
         }
 
         #inputContainer .left-buttons,

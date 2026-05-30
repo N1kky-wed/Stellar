@@ -499,6 +499,16 @@ def initialize_database():
             FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
         )''')
 
+        cursor.execute("PRAGMA table_info(tool_calls)")
+        tc_columns = [info[1] for info in cursor.fetchall()]
+        if 'hidden' not in tc_columns:
+            try:
+                cursor.execute("ALTER TABLE tool_calls ADD COLUMN hidden BOOLEAN DEFAULT 0")
+                print("Added 'hidden' column to 'tool_calls' table.")
+            except Exception as e:
+                logger.exception("Error caught: %s", e)
+                print(f"Error adding 'hidden' column to tool_calls: {e}")
+
         cursor.execute("PRAGMA table_info(chats)")
         chats_columns = [info[1] for info in cursor.fetchall()]
         if 'is_temp' not in chats_columns:
@@ -695,18 +705,26 @@ def insert_message(chat_id, message_type, message_content,
             return None
 
 
-def get_conversation_history(chat_id):
+def get_conversation_history(chat_id, for_ui=False):
     """Retrieve conversation history for a chat."""
     if not chat_id:
         return []
     try:
         db = get_db()
-        cursor = db.execute(
-            '''SELECT id, message_type, message_content, is_research_output, html_file,
-                      attached_files, visualization_html, timestamp
-               FROM messages WHERE chat_id = ? AND hidden = 0 ORDER BY timestamp ASC''',
-            (chat_id,)
-        )
+        if for_ui:
+            cursor = db.execute(
+                '''SELECT id, message_type, message_content, is_research_output, html_file,
+                          attached_files, visualization_html, timestamp, hidden
+                   FROM messages WHERE chat_id = ? ORDER BY timestamp ASC''',
+                (chat_id,)
+            )
+        else:
+            cursor = db.execute(
+                '''SELECT id, message_type, message_content, is_research_output, html_file,
+                          attached_files, visualization_html, timestamp, hidden
+                   FROM messages WHERE chat_id = ? AND (hidden = 0 OR message_content LIKE '[COMPRESSED MEMORY STATE]%') ORDER BY timestamp ASC''',
+                (chat_id,)
+            )
         rows = _fetch_as_dict(cursor)
 
         history = []
@@ -746,7 +764,7 @@ def get_tool_history(chat_id):
     if not chat_id: return ""
     try:
         db = get_db()
-        cursor = db.execute('SELECT id, tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? ORDER BY timestamp ASC', (chat_id,))
+        cursor = db.execute('SELECT id, tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? AND hidden = 0 ORDER BY timestamp ASC', (chat_id,))
         rows = cursor.fetchall()
         if not rows: return ""
         
@@ -873,14 +891,14 @@ def count_chat_tokens(chat_id=None):
 
         # Get messages
         cursor = db.execute(
-            '''SELECT id, message_type, message_content, timestamp FROM messages WHERE chat_id = ? ORDER BY timestamp ASC''',
+            '''SELECT id, message_type, message_content, timestamp FROM messages WHERE chat_id = ? AND (hidden = 0 OR message_content LIKE '[COMPRESSED MEMORY STATE]%') ORDER BY timestamp ASC''',
             (chat_id,)
         )
         messages = _fetch_as_dict(cursor)
         
         # Get tool calls
         cursor = db.execute(
-            '''SELECT id, tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? ORDER BY timestamp ASC''',
+            '''SELECT id, tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? AND hidden = 0 ORDER BY timestamp ASC''',
             (chat_id,)
         )
         tool_calls = _fetch_as_dict(cursor)
@@ -2187,7 +2205,9 @@ def get_history_route():
         if not check_chat_ownership:
             return jsonify({'status': 'Failed: Chat not found or unauthorized', 'history': []}), 403
 
-        history = get_conversation_history(chat_id)
+        history = get_conversation_history(chat_id, for_ui=True)
+        # Filter out hidden compressed state docs — they're for LLM context only, not the UI
+        history = [msg for msg in history if not str(msg.get('message_content', '')).startswith('[COMPRESSED MEMORY STATE]')]
         
         return jsonify({'history': history})
     except Exception as e:
@@ -2443,25 +2463,102 @@ def refine_stream():
                 if tool_hist_context:
                     conv_hist_list.append(tool_hist_context)
 
-                # --- Context Compression ---
-                full_history_text = "\\n".join(conv_hist_list)
+                # --- Targeted Memory Compression System ---
+                # Phase 1: Three-Bucket Ratio Calculation
+                new_msg_size = len(user_query_from_frontend)
+                history_msg_size = sum(len(str(msg.get('message_content', ''))) for msg in conversation_history if str(msg.get('id')) != str(user_message_id))
+                
+                # Calculate tool size from the raw tool history context string
+                tool_size = len(tool_hist_context) if tool_hist_context else 0
+                
+                total_size = new_msg_size + history_msg_size + tool_size
+                if total_size > 0:
+                    new_msg_pct = int((new_msg_size / total_size) * 100)
+                    msg_pct = int((history_msg_size / total_size) * 100)
+                    tool_pct = int((tool_size / total_size) * 100)
+                else:
+                    new_msg_pct = msg_pct = tool_pct = 0
+
                 current_chat_tokens = count_chat_tokens(chat_id)
-                if current_chat_tokens > 200000:
+                MODEL_CONTEXT_LIMIT = 1000000  # 1M tokens for Gemini Flash models
+
+                # Phase 2: 95% Safety Drop
+                safety_rounds = 0
+                while current_chat_tokens > 0.95 * MODEL_CONTEXT_LIMIT and safety_rounds < 2:
+                    safety_rounds += 1
+                    if new_msg_pct > 60:
+                        # The new message itself is too large
+                        yield 'data: ' + json.dumps({"error": "Your message is too large for the remaining context window. Please shorten it or start a new chat."}) + '\n\n'
+                        return
+                    
                     try:
-                        from agent_tools import subagent_tool
-                        yield f"data: {{json.dumps({'status': 'Compressing context...'})}}\n\n"
-                        summary = subagent_tool(
-                            task_description="Summarize the chat and tool history to free up context window.",
-                            mode="summarization",
-                            status="Compressing Context...",
-                            current_effective_prompt=full_history_text,
-                            model_tier="crimson"
-                        )
-                        if not summary.startswith("Gemini Offload Error"):
-                            conv_hist_list = [f"Stellar: [Context Compressed] {summary}"]
+                        db_safety = get_db()
+                        if tool_pct >= msg_pct:
+                            # Drop oldest 25% of tool calls
+                            total_tools = db_safety.execute('SELECT COUNT(*) FROM tool_calls WHERE chat_id = ? AND hidden = 0', (chat_id,)).fetchone()[0]
+                            drop_count = max(1, total_tools // 4)
+                            db_safety.execute(
+                                'UPDATE tool_calls SET hidden = 1 WHERE id IN (SELECT id FROM tool_calls WHERE chat_id = ? AND hidden = 0 ORDER BY id ASC LIMIT ?)',
+                                (chat_id, drop_count)
+                            )
+                        else:
+                            # Drop oldest 25% of messages
+                            total_msgs = db_safety.execute('SELECT COUNT(*) FROM messages WHERE chat_id = ? AND hidden = 0', (chat_id,)).fetchone()[0]
+                            drop_count = max(1, total_msgs // 4)
+                            db_safety.execute(
+                                'UPDATE messages SET hidden = 1 WHERE id IN (SELECT id FROM messages WHERE chat_id = ? AND hidden = 0 AND message_content NOT LIKE ? ORDER BY id ASC LIMIT ?)',
+                                (chat_id, '[COMPRESSED MEMORY STATE]%', drop_count)
+                            )
+                        db_safety.commit()
+                        logger.info(f"Safety drop round {safety_rounds} for chat {chat_id}: dropped {drop_count} items (tool_pct={tool_pct}, msg_pct={msg_pct})")
                     except Exception as e:
-                        logger.error(f"Context compression failed: {e}")
-                # ---------------------------
+                        logger.error(f"Safety drop failed for chat {chat_id}: {e}")
+                        break
+                    
+                    # Rebuild context after safety drop
+                    conversation_history = get_conversation_history(chat_id)
+                    conv_hist_list = []
+                    if conversation_history:
+                        for msg in conversation_history:
+                            if str(msg.get('id')) == str(user_message_id):
+                                continue
+                            role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
+                            content = msg.get('message_content', '')
+                            clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
+                            conv_hist_list.append(f"{role}: {clean_content}")
+                    tool_hist_context = get_tool_history(chat_id)
+                    if tool_hist_context:
+                        conv_hist_list.append(tool_hist_context)
+                    
+                    current_chat_tokens = count_chat_tokens(chat_id)
+
+                if safety_rounds >= 2 and current_chat_tokens > 0.95 * MODEL_CONTEXT_LIMIT:
+                    yield 'data: ' + json.dumps({"error": "This chat's history is too large. Please start a new chat."}) + '\n\n'
+                    return
+
+                # Phase 3: 75% Warning Injection
+                if current_chat_tokens > 0.75 * MODEL_CONTEXT_LIMIT:
+                    # Compression loop prevention: check if compress_memory was called recently
+                    try:
+                        db_check = get_db()
+                        recent_compress = db_check.execute(
+                            "SELECT COUNT(*) FROM tool_calls WHERE chat_id = ? AND tool_name = 'compress_memory' AND hidden = 0 ORDER BY id DESC LIMIT 3",
+                            (chat_id,)
+                        ).fetchone()[0]
+                    except:
+                        recent_compress = 0
+                    
+                    if recent_compress == 0:
+                        total_pct = int((current_chat_tokens / MODEL_CONTEXT_LIMIT) * 100)
+                        compression_warning = (
+                            f"\n\n[SYSTEM CRITICAL WARNING]: Context window at {total_pct}%. "
+                            f"Breakdown: Tool Logs ({tool_pct}%), Chat Messages ({msg_pct}%), Current Message ({new_msg_pct}%). "
+                            f"You MUST immediately call the `compress_memory` tool before doing anything else. "
+                            f"Target the largest category. Write a thorough state_document preserving: "
+                            f"Current Objective, Key Discoveries (file paths, schemas, specific values), Files Modified, and Current State & Pending Blockers."
+                        )
+                        conv_hist_list.append(compression_warning)
+                # -------------------------------------------
 
                 refined_query_result = ""
                 models_to_try = get_fallback_chain(model_id)
