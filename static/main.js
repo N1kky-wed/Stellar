@@ -2180,6 +2180,9 @@ const defaultAgentSettings = {
           chatInput.style.height = `${newHeight}px`;
           chatInput.style.overflowY = newHeight >= 240 ? "auto" : "hidden";
         } catch (e) {}
+        if (typeof window.updateHasContent === 'function') {
+          window.updateHasContent();
+        }
       }
       function showEditModal(id, htmlContent, msgDiv) {
         currentEditingMsg = msgDiv;
@@ -6221,28 +6224,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 // Toggle .has-content class on input container to prevent minimization
-(function() {
+window.updateHasContent = function() {
   const inputContainer = document.getElementById("inputContainer");
   const chatInput = document.getElementById("chatInput");
   const stagedFilesContainer = document.getElementById("stagedFilesContainer");
-  
-  function updateHasContent() {
-    if (!inputContainer || !chatInput || !stagedFilesContainer) return;
-    const hasText = chatInput.value.trim().length > 0;
-    const hasFiles = stagedFilesContainer.children.length > 0;
-    if (hasText || hasFiles) {
-      inputContainer.classList.add("has-content");
-    } else {
-      inputContainer.classList.remove("has-content");
-    }
+  if (!inputContainer || !chatInput || !stagedFilesContainer) return;
+  const hasText = chatInput.value.trim().length > 0;
+  const hasFiles = stagedFilesContainer.children.length > 0;
+  if (hasText || hasFiles) {
+    inputContainer.classList.add("has-content");
+  } else {
+    inputContainer.classList.remove("has-content");
   }
+};
 
+(function() {
+  const chatInput = document.getElementById("chatInput");
+  const stagedFilesContainer = document.getElementById("stagedFilesContainer");
   if (chatInput) {
-    chatInput.addEventListener("input", updateHasContent);
+    chatInput.addEventListener("input", window.updateHasContent);
   }
   
   if (stagedFilesContainer) {
-    const observer = new MutationObserver(updateHasContent);
+    const observer = new MutationObserver(window.updateHasContent);
     observer.observe(stagedFilesContainer, { childList: true });
   }
 })();
