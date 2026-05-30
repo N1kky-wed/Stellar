@@ -1191,8 +1191,48 @@ const defaultAgentSettings = {
             } else {
                 let scriptContent = oldScript.innerHTML;
                 if (scriptContent.trim() !== "") {
-                    // Convert let/const to var to prevent SyntaxError on multiple injections of the same UI widget
+                    // Assign a unique ID to the container if it doesn't have one
+                    if (!containerElement.id) {
+                        containerElement.id = 'gen-ui-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+                    }
+                    
+                    // Convert let/const to var to prevent SyntaxError on multiple injections
                     scriptContent = scriptContent.replace(/\blet\s+/g, "var ").replace(/\bconst\s+/g, "var ");
+                    
+                    // Wrap the script in an IIFE and shadow 'document' with a Proxy 
+                    // that restricts DOM queries to this specific message's container!
+                    scriptContent = `
+                    (function() {
+                        var _container = window.document.getElementById('${containerElement.id}');
+                        var document = new Proxy(window.document, {
+                            get: function(target, prop) {
+                                if (prop === 'getElementById') {
+                                    return function(id) {
+                                        var el = _container ? _container.querySelector('[id="' + id.replace(/"/g, '\\\\"') + '"]') : null;
+                                        return el || target.getElementById(id);
+                                    };
+                                }
+                                if (prop === 'querySelector') {
+                                    return function(selector) {
+                                        if (selector === 'body' || selector === 'html' || selector === 'head') return target.querySelector(selector);
+                                        var el = _container ? _container.querySelector(selector) : null;
+                                        return el || target.querySelector(selector);
+                                    };
+                                }
+                                if (prop === 'querySelectorAll') {
+                                    return function(selector) {
+                                        if (selector === 'body' || selector === 'html' || selector === 'head') return target.querySelectorAll(selector);
+                                        var els = _container ? _container.querySelectorAll(selector) : [];
+                                        return els.length > 0 ? els : target.querySelectorAll(selector);
+                                    };
+                                }
+                                var value = target[prop];
+                                return typeof value === 'function' ? value.bind(target) : value;
+                            }
+                        });
+                        ${scriptContent}
+                    })();
+                    `;
                     inlineScripts.push(scriptContent);
                 }
                 oldScript.remove();
@@ -1591,21 +1631,23 @@ const defaultAgentSettings = {
 
         button.addEventListener("click", (e) => {
           e.stopPropagation();
-          let textToCopy = "";
-          if (typeof turndownService !== "undefined") {
-            // Clone the node to clean up any UI-only elements before converting
-            const clone = contentDiv.cloneNode(true);
-
-            // Remove UI elements that shouldn't be in the markdown
-            clone
-              .querySelectorAll(
-                ".yt-player-container, .app-iframe-container, .analysis-indicator, .analysis-content, .code-controls",
-              )
-              .forEach((el) => el.remove());
-
-            textToCopy = turndownService.turndown(clone.innerHTML);
-          } else {
-            textToCopy = contentDiv.textContent || contentDiv.innerText || "";
+          let textToCopy = messageElement.rawMarkdownData;
+          if (!textToCopy) {
+            if (typeof turndownService !== "undefined") {
+              // Clone the node to clean up any UI-only elements before converting
+              const clone = contentDiv.cloneNode(true);
+  
+              // Remove UI elements that shouldn't be in the markdown
+              clone
+                .querySelectorAll(
+                  ".yt-player-container, .app-iframe-container, .analysis-indicator, .analysis-content, .code-controls",
+                )
+                .forEach((el) => el.remove());
+  
+              textToCopy = turndownService.turndown(clone.innerHTML);
+            } else {
+              textToCopy = contentDiv.textContent || contentDiv.innerText || "";
+            }
           }
 
           if (!textToCopy) {
@@ -1936,6 +1978,7 @@ const defaultAgentSettings = {
         msg.dataset.id = id;
         const contentDiv = document.createElement("div");
         contentDiv.classList.add("message-content");
+        msg.rawMarkdownData = markdownText;
         try {
           let htmlText = marked.parse(markdownText || "");
           htmlText = wrapTables(htmlText);
@@ -2789,6 +2832,7 @@ const defaultAgentSettings = {
         msg.dataset.id = id;
         const contentDiv = document.createElement("div");
         contentDiv.classList.add("message-content");
+        msg.rawMarkdownData = markdownText;
         try {
           let htmlContent = marked.parse(markdownText || "");
           htmlContent = wrapTables(htmlContent);
@@ -3671,6 +3715,7 @@ const defaultAgentSettings = {
               contentDiv.innerHTML,
             );
           }
+          placeholderDiv.rawMarkdownData = finalContent;
           addOutputCopyButton(placeholderDiv);
 
           const timeDiv = document.createElement("div");
@@ -3814,6 +3859,7 @@ const defaultAgentSettings = {
         msg.dataset.id = id;
         const contentDiv = document.createElement("div");
         contentDiv.classList.add("message-content");
+        msg.rawMarkdownData = markdownText;
         try {
           let htmlContent = marked.parse(markdownText || "");
           htmlContent = wrapTables(htmlContent);
@@ -4453,6 +4499,7 @@ const defaultAgentSettings = {
 
                   const contentDiv = document.createElement("div");
                   contentDiv.classList.add("message-content");
+                  msgDiv.rawMarkdownData = content;
 
                   let htmlContent = "";
                   let spec = robustParseSpecial(content, "PRESENTATION_DATA:");
@@ -5345,6 +5392,7 @@ const defaultAgentSettings = {
             const contentDiv =
               currentEditingMsg.querySelector(".message-content");
             if (contentDiv) {
+              currentEditingMsg.rawMarkdownData = md;
               contentDiv.innerHTML = html;
               processCodeBlocks(contentDiv);
           processGenerativeUI(contentDiv);
