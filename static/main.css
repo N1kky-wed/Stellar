@@ -2039,7 +2039,9 @@
         resize: none;
         overflow-y: auto;
         min-height: 24px;
+        height: 40px;
         max-height: 240px;
+        box-sizing: border-box;
         transition: all 0.6s cubic-bezier(0.19, 1, 0.22, 1);
       }
 
