@@ -6229,7 +6229,7 @@ window.updateHasContent = function() {
   const chatInput = document.getElementById("chatInput");
   const stagedFilesContainer = document.getElementById("stagedFilesContainer");
   if (!inputContainer || !chatInput || !stagedFilesContainer) return;
-  const hasText = chatInput.value.trim().length > 0;
+  const hasText = chatInput.value.length > 0;
   const hasFiles = stagedFilesContainer.children.length > 0;
   if (hasText || hasFiles) {
     inputContainer.classList.add("has-content");

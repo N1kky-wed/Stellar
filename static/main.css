@@ -2013,13 +2013,14 @@
         display: flex;
         flex-direction: column;
         gap: 8px;
-        transition: all var(--transition-duration-medium) ease;
+        transition: all 0.6s cubic-bezier(0.19, 1, 0.22, 1);
         max-width: 400px;
         box-sizing: border-box;
       }
 
       #inputContainer:hover,
-      #inputContainer:focus-within {
+      #inputContainer:focus-within,
+      #inputContainer.has-content {
         max-width: 1200px;
         border-radius: 16px;
         background: rgba(10, 10, 15, 0.98);
@@ -2039,7 +2040,7 @@
         overflow-y: auto;
         min-height: 24px;
         max-height: 240px;
-        transition: all var(--transition-duration-medium) var(--transition-timing-function);
+        transition: all 0.6s cubic-bezier(0.19, 1, 0.22, 1);
       }
 
       @media (min-width: 769px) {
@@ -2059,13 +2060,13 @@
           gap: 0 !important;
           border-radius: 50px;
           min-height: auto;
-          max-width: fit-content !important;
+          max-width: 145px !important;
         }
 
         #inputContainer .left-buttons,
         #inputContainer #sendBtn,
         #inputContainer #stopBtn {
-          transition: all var(--transition-duration-medium) ease;
+          transition: all 0.6s cubic-bezier(0.19, 1, 0.22, 1);
           overflow: hidden;
         }
 
