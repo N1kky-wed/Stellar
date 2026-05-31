@@ -691,11 +691,18 @@ const defaultAgentSettings = {
 
       function toggleSendStopButtons(showStop) {
         if (showStop) {
-          sendBtn.style.display = "inline-flex";
-          sendBtn.disabled = false;
           stopBtn.style.display = "inline-flex";
+          const hasText = chatInput && chatInput.value.trim().length > 0;
+          if (hasText) {
+            sendBtn.style.display = "inline-flex";
+            sendBtn.disabled = false;
+          } else {
+            sendBtn.style.display = "none";
+            sendBtn.disabled = true;
+          }
         } else {
           sendBtn.style.display = "inline-flex";
+          sendBtn.disabled = false;
           stopBtn.style.display = "none";
         }
       }
@@ -2692,6 +2699,7 @@ const defaultAgentSettings = {
 
           chatInput.value = "";
           adjustTextareaHeight();
+          toggleSendStopButtons(true);
 
           // Show the message in the UI immediately
           const injectMsgId = Date.now() + "_inject";
@@ -2775,6 +2783,7 @@ const defaultAgentSettings = {
         const originalQuery = query;
         chatInput.value = "";
         adjustTextareaHeight();
+        toggleSendStopButtons(true);
 
         let serverFileIds = [];
         let hasFilesToSend = stagedFiles.length > 0;
@@ -5442,6 +5451,9 @@ const defaultAgentSettings = {
           }
         });
         chatInput.addEventListener("input", adjustTextareaHeight);
+        chatInput.addEventListener("input", () => {
+          toggleSendStopButtons(isProcessing);
+        });
       }
       if (modeSelector)
         modeSelector.addEventListener("change", handleModeChange);
