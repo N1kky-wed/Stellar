@@ -691,14 +691,15 @@ const defaultAgentSettings = {
 
       function toggleSendStopButtons(showStop) {
         if (showStop) {
-          stopBtn.style.display = "inline-flex";
           const hasText = chatInput && chatInput.value.trim().length > 0;
           if (hasText) {
             sendBtn.style.display = "inline-flex";
             sendBtn.disabled = false;
+            stopBtn.style.display = "none";
           } else {
             sendBtn.style.display = "none";
             sendBtn.disabled = true;
+            stopBtn.style.display = "inline-flex";
           }
         } else {
           sendBtn.style.display = "inline-flex";
