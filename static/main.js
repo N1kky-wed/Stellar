@@ -73,7 +73,25 @@ const defaultAgentSettings = {
       window.addEventListener("beforeinstallprompt", (e) => {
         e.preventDefault();
         deferredPrompt = e;
+        
+        const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+        if (isStandalone) return;
+
+        if (
+          localStorage.getItem("pwa_installed") === "true" ||
+          localStorage.getItem("pwa_prompt_dismissed") === "true"
+        ) {
+          return;
+        }
+
         showInstallBanner("android");
+      });
+
+      // Listen to native appinstalled event
+      window.addEventListener("appinstalled", () => {
+        console.log("[PWA] App installed successfully!");
+        localStorage.setItem("pwa_installed", "true");
+        document.getElementById("pwa-install-banner")?.remove();
       });
 
       // Show custom install prompt for iOS/Android if not in standalone mode
@@ -84,17 +102,32 @@ const defaultAgentSettings = {
           const isIOS = /ipad|iphone|ipod/.test(ua) && !window.MSStream;
           const isAndroid = /android/.test(ua);
           
-          if (isIOS) {
-            setTimeout(() => showInstallBanner("ios"), 5000);
-          } else if (isAndroid && !deferredPrompt) {
-            setTimeout(() => {
-              if (!deferredPrompt) showInstallBanner("android-fallback");
-            }, 6000);
+          if (
+            localStorage.getItem("pwa_installed") !== "true" &&
+            localStorage.getItem("pwa_prompt_dismissed") !== "true"
+          ) {
+            if (isIOS) {
+              setTimeout(() => showInstallBanner("ios"), 5000);
+            } else if (isAndroid && !deferredPrompt) {
+              setTimeout(() => {
+                if (!deferredPrompt) showInstallBanner("android-fallback");
+              }, 6000);
+            }
           }
         }
       });
 
       function showInstallBanner(platform) {
+        const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+        if (isStandalone) return;
+
+        if (
+          localStorage.getItem("pwa_installed") === "true" ||
+          localStorage.getItem("pwa_prompt_dismissed") === "true"
+        ) {
+          return;
+        }
+
         if (document.getElementById("pwa-install-banner")) return;
 
         const banner = document.createElement("div");
@@ -111,7 +144,7 @@ const defaultAgentSettings = {
               <h4>Install Stellar</h4>
               <p>Tap <span class="pwa-highlight-btn">⎋ (Share)</span> then <strong>"Add to Home Screen"</strong> for native notifications & full experience.</p>
             </div>
-            <button class="pwa-banner-close" onclick="this.parentElement.remove()">×</button>
+            <button class="pwa-banner-close" id="pwa-ios-close-btn">×</button>
           `;
         } else {
           content = `
@@ -134,7 +167,13 @@ const defaultAgentSettings = {
 
         setTimeout(() => banner.classList.add("active"), 100);
 
-        if (platform !== "ios") {
+        if (platform === "ios") {
+          const iosCloseBtn = document.getElementById("pwa-ios-close-btn");
+          iosCloseBtn?.addEventListener("click", () => {
+            localStorage.setItem("pwa_prompt_dismissed", "true");
+            banner.remove();
+          });
+        } else {
           const actionBtn = document.getElementById("pwa-install-action-btn");
           const closeBtn = document.getElementById("pwa-install-close-btn");
 
@@ -142,6 +181,9 @@ const defaultAgentSettings = {
             if (deferredPrompt) {
               deferredPrompt.prompt();
               deferredPrompt.userChoice.then((choiceResult) => {
+                if (choiceResult.outcome === "accepted") {
+                  localStorage.setItem("pwa_installed", "true");
+                }
                 deferredPrompt = null;
                 banner.remove();
               });
@@ -152,6 +194,7 @@ const defaultAgentSettings = {
           });
 
           closeBtn?.addEventListener("click", () => {
+            localStorage.setItem("pwa_prompt_dismissed", "true");
             banner.remove();
           });
         }
