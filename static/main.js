@@ -42,6 +42,121 @@ const defaultAgentSettings = {
         }
       }
 
+      // PWA Installation & Service Worker Integration
+      let deferredPrompt = null;
+
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/service-worker.js")
+            .then(reg => {
+              console.log("[PWA] Service Worker registered successfully with scope:", reg.scope);
+              
+              reg.addEventListener("updatefound", () => {
+                const newWorker = reg.installing;
+                newWorker.addEventListener("statechange", () => {
+                  if (newWorker.state === "activated") {
+                    console.log("[PWA] New updates activated. Hot-reloading...");
+                    window.location.reload();
+                  }
+                });
+              });
+            })
+            .catch(err => console.error("[PWA] Service Worker registration failed:", err));
+
+          navigator.serviceWorker.addEventListener("controllerchange", () => {
+            console.log("[PWA] SW controller changed. Hot-reloading...");
+            window.location.reload();
+          });
+        });
+      }
+
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        showInstallBanner("android");
+      });
+
+      // Show custom install prompt for iOS/Android if not in standalone mode
+      window.addEventListener("load", () => {
+        const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+        if (!isStandalone) {
+          const ua = navigator.userAgent.toLowerCase();
+          const isIOS = /ipad|iphone|ipod/.test(ua) && !window.MSStream;
+          const isAndroid = /android/.test(ua);
+          
+          if (isIOS) {
+            setTimeout(() => showInstallBanner("ios"), 5000);
+          } else if (isAndroid && !deferredPrompt) {
+            setTimeout(() => {
+              if (!deferredPrompt) showInstallBanner("android-fallback");
+            }, 6000);
+          }
+        }
+      });
+
+      function showInstallBanner(platform) {
+        if (document.getElementById("pwa-install-banner")) return;
+
+        const banner = document.createElement("div");
+        banner.id = "pwa-install-banner";
+        banner.className = "pwa-install-banner";
+        
+        let content = "";
+        if (platform === "ios") {
+          content = `
+            <div class="pwa-banner-icon">
+              <img src="/static/icon.svg" alt="Stellar">
+            </div>
+            <div class="pwa-banner-text">
+              <h4>Install Stellar</h4>
+              <p>Tap <span class="pwa-highlight-btn">⎋ (Share)</span> then <strong>"Add to Home Screen"</strong> for native notifications & full experience.</p>
+            </div>
+            <button class="pwa-banner-close" onclick="this.parentElement.remove()">×</button>
+          `;
+        } else {
+          content = `
+            <div class="pwa-banner-icon">
+              <img src="/static/icon.svg" alt="Stellar">
+            </div>
+            <div class="pwa-banner-text">
+              <h4>Install Stellar App</h4>
+              <p>Add to your home screen for instant access and native background updates.</p>
+            </div>
+            <div class="pwa-banner-actions">
+              <button class="pwa-install-btn" id="pwa-install-action-btn">Install</button>
+              <button class="pwa-banner-close-text" id="pwa-install-close-btn">Dismiss</button>
+            </div>
+          `;
+        }
+
+        banner.innerHTML = content;
+        document.body.appendChild(banner);
+
+        setTimeout(() => banner.classList.add("active"), 100);
+
+        if (platform !== "ios") {
+          const actionBtn = document.getElementById("pwa-install-action-btn");
+          const closeBtn = document.getElementById("pwa-install-close-btn");
+
+          actionBtn?.addEventListener("click", () => {
+            if (deferredPrompt) {
+              deferredPrompt.prompt();
+              deferredPrompt.userChoice.then((choiceResult) => {
+                deferredPrompt = null;
+                banner.remove();
+              });
+            } else {
+              alert("To install, tap the browser's menu (three dots) and select 'Install app' or 'Add to Home screen'.");
+              banner.remove();
+            }
+          });
+
+          closeBtn?.addEventListener("click", () => {
+            banner.remove();
+          });
+        }
+      }
+
       // Setup event listener for agent tools changes
       window.addEventListener("load", () => {
         document.body.classList.remove("preload");
@@ -1033,8 +1148,10 @@ const defaultAgentSettings = {
               const scripts = tempDiv.querySelectorAll("script");
               scripts.forEach(oldScript => {
                   let scriptContent = oldScript.innerHTML;
-                  // Convert let/const to var to prevent SyntaxError on multiple injections of the same UI widget
-                  scriptContent = scriptContent.replace(/\blet\s+/g, "var ").replace(/\bconst\s+/g, "var ");
+                  if (scriptContent.trim() !== "") {
+                      // Wrap in an IIFE to prevent SyntaxError on multiple injections of the same UI widget
+                      scriptContent = `(function(){\n${scriptContent}\n})();`;
+                  }
                   
                   oldScript.remove(); // Remove inert script
                   
@@ -1207,9 +1324,6 @@ const defaultAgentSettings = {
                     if (!containerElement.id) {
                         containerElement.id = 'gen-ui-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
                     }
-                    
-                    // Convert let/const to var to prevent SyntaxError on multiple injections
-                    scriptContent = scriptContent.replace(/\blet\s+/g, "var ").replace(/\bconst\s+/g, "var ");
                     
                     // Wrap the script in an IIFE and shadow 'document' with a Proxy 
                     // that restricts DOM queries to this specific message's container!
@@ -5459,8 +5573,22 @@ const defaultAgentSettings = {
         }
       }
 
+      let isSidebarLocked = localStorage.getItem("stellar_sidebar_locked") === "true";
+      if (isSidebarLocked) {
+        sidebar.classList.add("open");
+        sidebar.classList.add("locked");
+      }
+
       function toggleSidebar() {
-        sidebar.classList.toggle("open");
+        isSidebarLocked = !isSidebarLocked;
+        localStorage.setItem("stellar_sidebar_locked", isSidebarLocked);
+        if (isSidebarLocked) {
+          sidebar.classList.add("open");
+          sidebar.classList.add("locked");
+        } else {
+          sidebar.classList.remove("open");
+          sidebar.classList.remove("locked");
+        }
       }
 
       function showProfileModal() {
@@ -5592,8 +5720,9 @@ const defaultAgentSettings = {
 
       let sidebarHoverTimeout;
 
-      // Expand trigger area to the entire left edge of screen
+      // Expand trigger area to the entire left edge of screen (Desktop only)
       document.addEventListener("mousemove", (e) => {
+        if (window.innerWidth <= 768) return; // Disable edge-trigger on mobile
         if (e.clientX <= 40) { // Using 40px for a generous edge trigger
           clearTimeout(sidebarHoverTimeout);
           sidebar.classList.add("open");
@@ -5601,11 +5730,14 @@ const defaultAgentSettings = {
       });
 
       sidebarToggleBtn.addEventListener("mouseenter", () => {
+        if (window.innerWidth <= 768) return; // Disable hover trigger on mobile
         clearTimeout(sidebarHoverTimeout);
         sidebar.classList.add("open");
       });
 
       sidebarToggleBtn.addEventListener("mouseleave", () => {
+        if (window.innerWidth <= 768) return; // Disable hover trigger on mobile
+        if (isSidebarLocked) return;
         sidebarHoverTimeout = setTimeout(() => {
           if (sidebar.classList.contains("open")) {
             sidebar.classList.remove("open");
@@ -5614,10 +5746,13 @@ const defaultAgentSettings = {
       });
 
       sidebar.addEventListener("mouseenter", () => {
+        if (window.innerWidth <= 768) return; // Disable hover trigger on mobile
         clearTimeout(sidebarHoverTimeout);
       });
 
       sidebar.addEventListener("mouseleave", () => {
+        if (window.innerWidth <= 768) return; // Disable hover trigger on mobile
+        if (isSidebarLocked) return;
         sidebarHoverTimeout = setTimeout(() => {
           if (sidebar.classList.contains("open")) {
             sidebar.classList.remove("open");
