@@ -131,7 +131,7 @@ def web_search(
                 try:
                     client = genai.Client(api_key=current_key)
                     response = client.models.generate_content(
-                        model='gemini-2.5-flash-lite',
+                        model='gemini-3.1-flash-lite',
                         contents=f"Please answer this concisely using Google Search: {query}",
                         config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
                     )
@@ -431,7 +431,7 @@ def schedule_task(task_prompt: str, status: str, timeout: int, action: str = "sc
     u_id = None
     c_id = None
     # Server-side model detection to prevent hallucination
-    current_model = getattr(g, 'model_id', 'gemini-3.1-flash-lite')
+    current_model = getattr(g, 'model_id', 'gemma-4-31b-it')
     
     if has_request_context():
         u_id = session.get('user_id')
@@ -1589,7 +1589,7 @@ def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = N
         logger.exception("Error caught: %s", e)
         return f"Error reading tool output: {str(e)}"
 
-def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemini-3.1-flash-lite") -> str:
+def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "analyze", video_url: str = None, start_time: str = None, end_time: str = None, fps: int = 1, max_results: int = 5, model_id: str = "gemma-4-31b-it") -> str:
     """Analyzes a specific YouTube video or searches for the best video based on a query.
     Args:
         query: What you want to find/analyze. Mandatory for both actions.
