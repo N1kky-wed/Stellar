@@ -4924,7 +4924,14 @@
       /* --- Responsive --- */
       @media (max-width: 768px) {
         .welcome-screen {
-          padding: 24px 16px 100px;
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          overflow-y: auto !important;
+          justify-content: flex-start !important;
+          padding: 130px 16px 140px !important; /* Top 130px clears header nav, bottom 140px clears mobile chat input container */
         }
 
         .welcome-orb-wrapper {

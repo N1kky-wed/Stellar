@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stellar-static-v2';
+const CACHE_NAME = 'stellar-static-v6';
 const ASSETS_TO_CACHE = [
   '/',
   '/default.min.css',
@@ -8,7 +8,8 @@ const ASSETS_TO_CACHE = [
   '/marked.min.js',
   '/turndown.js',
   '/static/manifest.json',
-  '/static/icon.svg'
+  '/static/icon.svg',
+  '/static/notification-icon.png'
 ];
 
 // Install Event - Pre-cache minimal assets for offline verification
@@ -103,7 +104,7 @@ self.addEventListener('push', event => {
   const options = {
     body: data.body,
     icon: '/static/icon.svg',
-    badge: '/static/icon.svg',
+    badge: '/static/notification-icon.png',
     vibrate: [200, 100, 200],
     data: {
       url: data.url || '/'

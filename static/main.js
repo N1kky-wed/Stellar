@@ -51,6 +51,10 @@ const defaultAgentSettings = {
             .then(reg => {
               console.log("[PWA] Service Worker registered successfully with scope:", reg.scope);
               
+              if (agentSettings.notifications_enabled && Notification.permission === "granted") {
+                subscribeUserToPush();
+              }
+              
               reg.addEventListener("updatefound", () => {
                 const newWorker = reg.installing;
                 newWorker.addEventListener("statechange", () => {
@@ -596,12 +600,85 @@ const defaultAgentSettings = {
         }
       }
 
+      function urlB64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding)
+          .replace(/\-/g, '+')
+          .replace(/_/g, '/');
+
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+
+        for (let i = 0; i < rawData.length; ++i) {
+          outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+      }
+
+      async function subscribeUserToPush() {
+        if (!("serviceWorker" in navigator)) return;
+        if (!("PushManager" in window)) {
+          console.warn("[PWA] Push notifications are not supported on this browser.");
+          return;
+        }
+
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          let subscription = await reg.pushManager.getSubscription();
+          
+          if (!subscription) {
+            const res = await fetch('/api/pwa/vapid_public_key');
+            const data = await res.json();
+            if (!data.success || !data.publicKey) {
+              console.error("[PWA] Failed to fetch VAPID public key:", data.message);
+              return;
+            }
+            
+            const applicationServerKey = urlB64ToUint8Array(data.publicKey);
+            subscription = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: applicationServerKey
+            });
+            console.log("[PWA] Successfully subscribed to Push Manager.");
+          }
+
+          const subJSON = subscription.toJSON();
+          const subscribeRes = await fetch('/api/pwa/subscribe', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              subscription: {
+                endpoint: subJSON.endpoint,
+                keys: {
+                  p256dh: subJSON.keys.p256dh,
+                  auth: subJSON.keys.auth
+                }
+              }
+            })
+          });
+          const subscribeData = await subscribeRes.json();
+          if (subscribeData.success) {
+            console.log("[PWA] Push subscription saved on backend.");
+          } else {
+            console.error("[PWA] Failed to save push subscription on backend:", subscribeData.message);
+          }
+        } catch (err) {
+          console.error("[PWA] Error during push subscription workflow:", err);
+        }
+      }
+
       async function requestNotificationPermission() {
         if (!("Notification" in window)) return;
         if (Notification.permission === "default") {
           await Notification.requestPermission();
         }
+        if (Notification.permission === "granted") {
+          await subscribeUserToPush();
+        }
       }
+
 
       function notifyUser(title, body) {
         if (!agentSettings.notifications_enabled) return;

@@ -118,6 +118,60 @@ if keys_env_path.is_file():
 else:
     logger.error(f"CRITICAL: keys.env NOT FOUND at {keys_env_path}.")
 # -------------------------------
+# VAPID Key Loading & Generation for PWA Web Push
+# -------------------------------
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
+VAPID_PRIVATE_KEY_PEM = None
+
+vapid_private_b64 = os.getenv("VAPID_PRIVATE_KEY_B64")
+if vapid_private_b64:
+    import base64
+    try:
+        VAPID_PRIVATE_KEY_PEM = base64.b64decode(vapid_private_b64).decode('utf-8')
+    except Exception as e:
+        logger.error(f"Failed to decode VAPID_PRIVATE_KEY_B64: {e}")
+
+if not VAPID_PUBLIC_KEY or not VAPID_PRIVATE_KEY_PEM:
+    logger.info("VAPID keys not found. Generating fresh elliptic curve keys for PWA Web Push...")
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+    import base64
+    try:
+        private_key = ec.generate_private_key(ec.SECP256R1())
+        private_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ).decode('utf-8')
+        
+        public_bytes = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint
+        )
+        public_b64url = base64.urlsafe_b64encode(public_bytes).decode('utf-8').rstrip('=')
+        private_b64 = base64.b64encode(private_pem.encode('utf-8')).decode('utf-8')
+        
+        VAPID_PUBLIC_KEY = public_b64url
+        VAPID_PRIVATE_KEY_PEM = private_pem
+        
+        if keys_env_path.is_file():
+            with open(keys_env_path, 'a') as f:
+                f.write(f"\n# VAPID keys for PWA Web Push notifications\n")
+                f.write(f"VAPID_PUBLIC_KEY=\"{public_b64url}\"\n")
+                f.write(f"VAPID_PRIVATE_KEY_B64=\"{private_b64}\"\n")
+            logger.info("Saved fresh VAPID keys to keys.env.")
+    except Exception as e:
+        logger.error(f"Failed to generate or save VAPID keys: {e}")
+
+# Write the private key to a local PEM file for pywebpush to parse correctly
+VAPID_PRIVATE_KEY_PATH = "/home/stellaradmin/my_app/vapid_private.pem"
+if VAPID_PRIVATE_KEY_PEM:
+    try:
+        with open(VAPID_PRIVATE_KEY_PATH, "w") as f:
+            f.write(VAPID_PRIVATE_KEY_PEM)
+    except Exception as e:
+        logger.error(f"Failed to write vapid_private.pem file: {e}")
+# -------------------------------
 
 app = Flask(__name__)
 SANDBOX_DIR = 'sandbox_runs'
@@ -571,6 +625,19 @@ def initialize_database():
                 mandate_text TEXT NOT NULL
             )''')
             print("Created 'talents' table.")
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='push_subscriptions'")
+        if cursor.fetchone() is None:
+            cursor.execute('''CREATE TABLE push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                endpoint TEXT UNIQUE NOT NULL,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )''')
+            print("Created 'push_subscriptions' table.")
 
         db.commit()
 
@@ -1468,6 +1535,31 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                     html_ui = _re.sub(r'</?head[^>]*>', '', html_ui, flags=_re.IGNORECASE)
                                     html_ui = _re.sub(r'</?body[^>]*>', '', html_ui, flags=_re.IGNORECASE)
                                     yield {'type': 'generative_ui', 'html': html_ui, 'interaction_id': interaction_id}
+                                    
+                                    # Dispatch Web Push background notification
+                                    try:
+                                        from flask import g
+                                        p_user_id = getattr(g, 'user_id', None)
+                                        if not p_user_id and chat_id:
+                                            import sqlite3
+                                            db_temp = sqlite3.connect(DATABASE_NAME)
+                                            db_temp.row_factory = sqlite3.Row
+                                            row = db_temp.execute('SELECT user_id FROM chats WHERE id = ?', (chat_id,)).fetchone()
+                                            if row:
+                                                p_user_id = row['user_id']
+                                            db_temp.close()
+                                        
+                                        if p_user_id:
+                                            prompt_desc = args_dict.get('status', 'Stellar needs your interaction to proceed with the task.')
+                                            send_push_notification(
+                                                user_id=p_user_id,
+                                                title="Stellar: Action Required",
+                                                body=prompt_desc,
+                                                url=f"/?chat_id={chat_id}" if chat_id else "/"
+                                            )
+                                    except Exception as push_err:
+                                        logger.error(f"Failed to dispatch interaction push notification: {push_err}")
+
                                     
                                     # Polling loop
                                     start_time = time.time()
@@ -2791,6 +2883,37 @@ def refine_stream():
                              'refined_query': refined_query_result
                          }
                          yield f"data: {json.dumps(final_data)}\n\n"
+                         
+                         # Dispatch background notification when task is complete!
+                         try:
+                             from flask import g
+                             p_user_id = getattr(g, 'user_id', None)
+                             if not p_user_id and chat_id:
+                                 import sqlite3
+                                 db_temp = sqlite3.connect(DATABASE_NAME)
+                                 db_temp.row_factory = sqlite3.Row
+                                 row = db_temp.execute('SELECT user_id FROM chats WHERE id = ?', (chat_id,)).fetchone()
+                                 if row:
+                                     p_user_id = row['user_id']
+                                 db_temp.close()
+                                 
+                             if p_user_id:
+                                 # Limit notification body preview
+                                 preview_body = refined_query_result or "Task execution completed successfully."
+                                 # Strip markdown for clean preview
+                                 import re as _re
+                                 preview_body = _re.sub(r'[*#`_\-\[\]]', '', preview_body)
+                                 if len(preview_body) > 120:
+                                     preview_body = preview_body[:117].strip() + "..."
+                                 send_push_notification(
+                                     user_id=p_user_id,
+                                     title="Stellar: Task Completed",
+                                     body=preview_body,
+                                     url=f"/?chat_id={chat_id}" if chat_id else "/"
+                                 )
+                         except Exception as push_err:
+                             logger.error(f"Failed to dispatch completion push notification: {push_err}")
+
                     else:
                           error_msg = "Refinement generated but failed to save AI response to database."
                           yield f"data: {json.dumps({'status': error_msg, 'error': True})}\n\n"
@@ -3721,6 +3844,121 @@ def manifest():
 def favicon():
     svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#7b61ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 2 17 12 22 22 17 22 7"/><circle cx="12" cy="12" r="4"/><path d="M12 2v6M22 7l-6 3M22 17l-6-3M12 22v-6M2 17l6-3M2 7l6 3"/></svg>'
     return Response(svg, mimetype='image/svg+xml')
+
+# -------------------------------------------------------------
+# PWA WEB PUSH NOTIFICATION API
+# -------------------------------------------------------------
+def send_push_notification(user_id, title, body, url=None):
+    """Sends a Web Push notification to all active devices registered by the user."""
+    db = get_db()
+    cursor = db.execute(
+        'SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?',
+        (user_id,)
+    )
+    subscriptions = cursor.fetchall()
+    if not subscriptions:
+        return 0
+
+    from pywebpush import webpush, WebPushException
+    import json
+    
+    payload = json.dumps({
+        "title": title,
+        "body": body,
+        "url": url or "/"
+    })
+    
+    success_count = 0
+    expired_endpoints = []
+    
+    for sub in subscriptions:
+        sub_info = {
+            "endpoint": sub['endpoint'],
+            "keys": {
+                "p256dh": sub['p256dh'],
+                "auth": sub['auth']
+            }
+        }
+        try:
+            webpush(
+                subscription_info=sub_info,
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY_PATH,
+                vapid_claims={"sub": "mailto:admin@stellar.app"}
+            )
+            success_count += 1
+        except WebPushException as ex:
+            logger.warning(f"WebPush failed for endpoint {sub['endpoint']}: {ex}")
+            if ex.response is not None and ex.response.status_code in [404, 410]:
+                expired_endpoints.append(sub['endpoint'])
+        except Exception as e:
+            logger.error(f"Error sending push: {e}")
+            
+    if expired_endpoints:
+        try:
+            db.executemany(
+                'DELETE FROM push_subscriptions WHERE endpoint = ?',
+                [(ep,) for ep in expired_endpoints]
+            )
+            db.commit()
+            logger.info(f"Cleaned up {len(expired_endpoints)} expired push subscriptions.")
+        except Exception as e:
+            logger.error(f"Error cleaning up expired push subscriptions: {e}")
+            
+    return success_count
+
+@app.route('/api/pwa/vapid_public_key', methods=['GET'])
+def get_vapid_public_key():
+    if 'user_id' not in session:
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+    return jsonify({"success": True, "publicKey": VAPID_PUBLIC_KEY}), 200
+
+@app.route('/api/pwa/subscribe', methods=['POST'])
+def pwa_subscribe():
+    if 'user_id' not in session:
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+        
+    data = request.get_json()
+    subscription = data.get('subscription')
+    if not subscription or not subscription.get('endpoint'):
+        return jsonify({"success": False, "message": "Invalid subscription object."}), 400
+        
+    endpoint = subscription.get('endpoint')
+    keys = subscription.get('keys', {})
+    p256dh = keys.get('p256dh')
+    auth = keys.get('auth')
+    
+    if not p256dh or not auth:
+        return jsonify({"success": False, "message": "Missing subscription cryptographic keys."}), 400
+        
+    db = get_db()
+    try:
+        db.execute('''
+            INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+            VALUES (?, ?, ?, ?)
+        ''', (session['user_id'], endpoint, p256dh, auth))
+        db.commit()
+        return jsonify({"success": True, "message": "Subscribed to background notifications."}), 200
+    except Exception as e:
+        logger.error(f"Error saving PWA subscription: {e}")
+        return jsonify({"success": False, "message": "Database error."}), 500
+
+@app.route('/api/pwa/test_push', methods=['POST'])
+def pwa_test_push():
+    if 'user_id' not in session:
+        return jsonify({"success": False, "message": "Not logged in"}), 401
+        
+    success_count = send_push_notification(
+        user_id=session['user_id'],
+        title="Stellar Push Test",
+        body="Congratulations! Your background push notifications are fully configured and functional.",
+        url="/"
+    )
+    
+    if success_count > 0:
+        return jsonify({"success": True, "message": f"Sent test push to {success_count} device(s)."}), 200
+    else:
+        return jsonify({"success": False, "message": "No active push subscriptions found for this user."}), 404
 
 @app.route('/')
 def index():

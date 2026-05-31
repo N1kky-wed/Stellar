@@ -26,4 +26,6 @@ outputs/
 .DS_Store
 temp_venv/
 deployments/
+vapid_private.pem
+
 
