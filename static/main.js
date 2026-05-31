@@ -1235,6 +1235,27 @@ const defaultAgentSettings = {
                             }
                         });
                         ${scriptContent}
+                        
+                        // Re-bind inline on* event attributes to execute within this IIFE's local scope
+                        if (_container) {
+                            _container.querySelectorAll("*").forEach(function(el) {
+                                var attrs = Array.from(el.attributes);
+                                attrs.forEach(function(attr) {
+                                    if (attr.name.indexOf("on") === 0) {
+                                        var eventName = attr.name.slice(2);
+                                        var handlerStr = attr.value;
+                                        el.removeAttribute(attr.name);
+                                        el.addEventListener(eventName, function(event) {
+                                            try {
+                                                eval(handlerStr);
+                                            } catch(e) {
+                                                console.error("Error executing event handler:", e);
+                                            }
+                                        });
+                                    }
+                                });
+                            });
+                        }
                     })();
                     `;
                     inlineScripts.push(scriptContent);
