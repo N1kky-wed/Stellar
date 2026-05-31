@@ -5856,6 +5856,30 @@ const defaultAgentSettings = {
       openAgentSettingsBtn.addEventListener("click", showAgentSettingsModal);
       agentSettingsCloseBtn.addEventListener("click", hideAgentSettingsModal);
 
+      // Bind PWA profile install action
+      const pwaProfileInstallBtn = document.getElementById("pwaProfileInstallBtn");
+      if (pwaProfileInstallBtn) {
+        const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+        if (!isStandalone && localStorage.getItem("pwa_installed") !== "true") {
+          pwaProfileInstallBtn.style.display = "block";
+        }
+        
+        pwaProfileInstallBtn.addEventListener("click", () => {
+          if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then((choiceResult) => {
+              if (choiceResult.outcome === "accepted") {
+                localStorage.setItem("pwa_installed", "true");
+                pwaProfileInstallBtn.style.display = "none";
+              }
+              deferredPrompt = null;
+            });
+          } else {
+            alert("To install Stellar, tap your browser's menu (three dots or share button) and select 'Add to Home screen' or 'Install App'.");
+          }
+        });
+      }
+
       window.addEventListener("click", function (event) {
         if (event.target === profileModal) {
           hideProfileModal();
