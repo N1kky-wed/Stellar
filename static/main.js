@@ -691,7 +691,8 @@ const defaultAgentSettings = {
 
       function toggleSendStopButtons(showStop) {
         if (showStop) {
-          sendBtn.style.display = "none";
+          sendBtn.style.display = "inline-flex";
+          sendBtn.disabled = false;
           stopBtn.style.display = "inline-flex";
         } else {
           sendBtn.style.display = "inline-flex";
@@ -2664,8 +2665,47 @@ const defaultAgentSettings = {
         }
 
         if (isProcessing) {
-          setStatus("Wait...", true);
-          setTimeout(() => setStatus(currentStatusText, false), 2000);
+          // --- LIVE INTERRUPT: Inject follow-up message into active stream ---
+          const injectQuery = chatInput.value.trim();
+          if (!injectQuery) return;
+
+          chatInput.value = "";
+          adjustTextareaHeight();
+
+          // Show the message in the UI immediately
+          const injectMsgId = Date.now() + "_inject";
+          hideWelcomeScreen();
+          appendUserMessage(injectQuery, injectMsgId, [], true);
+          scrollToBottom();
+
+          // Send to backend inject endpoint
+          try {
+            const injectRes = await fetch("/api/inject_message", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: currentChatId,
+                message: injectQuery,
+                client_id: CLIENT_ID,
+              }),
+            });
+            if (injectRes.ok) {
+              const injectData = await injectRes.json();
+              // Update the DOM message with the real DB ID
+              const injectMsgEl = document.querySelector(`.user-msg[data-id="${injectMsgId}"]`);
+              if (injectMsgEl && injectData.message_id) {
+                injectMsgEl.dataset.id = injectData.message_id;
+              }
+              setStatus("Follow-up sent! Stellar will address it...");
+              setTimeout(() => setStatus(currentStatusText, false), 3000);
+            } else {
+              setStatus("Could not inject message", true);
+              setTimeout(() => setStatus(currentStatusText, false), 3000);
+            }
+          } catch (e) {
+            setStatus("Injection failed: " + e.message, true);
+            setTimeout(() => setStatus(currentStatusText, false), 3000);
+          }
           return;
         }
 
@@ -3945,6 +3985,13 @@ const defaultAgentSettings = {
                   if (scrapingTimerId === null) {
                     processScrapingQueue();
                   }
+                }
+
+                if (data.type === "injection_ack") {
+                  // Live follow-up was acknowledged by the backend
+                  setStatus("Stellar received your follow-up!");
+                  setTimeout(() => setStatus(currentStatusText, false), 2000);
+                  return;
                 }
 
                 if (data.type === "generative_ui") {

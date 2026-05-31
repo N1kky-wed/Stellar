@@ -251,19 +251,19 @@ else:
 # ------------------------------
 
 MODEL_NAMES = {
-    "gemini-2.5-flash-lite": "Emerald",
-    "gemini-3.1-flash-lite": "Lunarity",
+    "gemini-3.1-flash-lite": "Emerald",
+    "gemma-4-31b-it": "Lunarity",
     "gemini-3-flash-preview": "Crimson",
     "gemini-3.5-flash": "Obsidian"
 }
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
 def get_fallback_chain(start_model):
-    chain = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite"]
+    chain = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemma-4-31b-it"]
     if start_model in chain:
         idx = chain.index(start_model)
         return chain[idx:]
-    return [start_model, "gemini-3.1-flash-lite"]
+    return [start_model, "gemma-4-31b-it"]
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -822,7 +822,7 @@ def generate_chat_name(chat_id, first_message_content):
         db = get_db()
         try:
             prompt = f"Given the following first message of a conversation, generate a very short, descriptive name (max 5 words) for this chat. Respond only with the name.\n\nMessage: {first_message_content}"
-            model_name = "gemini-2.5-flash-lite"
+            model_name = "gemini-3.1-flash-lite"
             
             raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
             keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
@@ -947,7 +947,7 @@ def count_chat_tokens(chat_id=None):
          
         client = genai.Client(api_key=PRIMARY_API_KEY)
         token_count_response = client.models.count_tokens(
-            model="gemini-2.5-flash-lite", contents=history_for_tokens
+            model="gemini-3.1-flash-lite", contents=history_for_tokens
         )
         t_count = token_count_response.total_tokens
         
@@ -1152,7 +1152,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
     
     try:
         client = genai.Client(api_key=key, http_options={'api_version': 'v1beta'})
-        chat = client.chats.create(model='gemini-2.5-flash-lite', config={'tools': []})
+        chat = client.chats.create(model='gemini-3.1-flash-lite', config={'tools': []})
         r = chat.send_message(check_prompt)
         
         if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
@@ -1221,10 +1221,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             tools_config = available_tools.copy()
             
             # Restrict lab_execute and repo_control to Elite models
-            elite_models = ["gemini-3-flash-preview", "gemini-3.5-flash"]
-            if model_id == "gemini-3.1-flash-lite": # Lunarity gets Lab access
-                 tools_config = [t for t in tools_config if getattr(t, '__name__', '') != 'repo_control']
-            elif model_id not in elite_models:
+            elite_models = ["gemini-3-flash-preview", "gemini-3.5-flash", "gemma-4-31b-it"]
+            if model_id not in elite_models:
                 tools_config = [t for t in tools_config if getattr(t, '__name__', '') not in ['lab_execute', 'repo_control']]
 
             if disabled_tools:
@@ -1380,16 +1378,42 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 # Capture and yield any introductory text that comes WITH the function calls
                 current_parts_text = []
                 for part in parts:
+                    if getattr(part, 'thought', False):
+                        continue # Skip thinking blocks!
                     if getattr(part, 'text', None):
                         current_parts_text.append(part.text)
                 
                 intro_text = "".join(current_parts_text)
+                
                 if intro_text:
                     yield {'result': intro_text}
                     accumulated_full_output += intro_text
                     output_this_attempt_parts.append(intro_text)
 
                 if not function_calls:
+                    # --- LIVE INTERRUPT: Check before finishing ---
+                    if chat_id:
+                        injected_msgs = []
+                        while True:
+                            raw = redis_client.lpop(f"inject_messages:{chat_id}")
+                            if not raw:
+                                break
+                            try:
+                                inj = json.loads(raw if isinstance(raw, str) else raw.decode('utf-8'))
+                                injected_msgs.append(inj)
+                            except:
+                                pass
+                        if injected_msgs:
+                            inject_text = "\n".join([f"[LIVE USER FOLLOW-UP]: {m['message']}" for m in injected_msgs])
+                            inject_notice = (
+                                f"\n\n[SYSTEM: LIVE INTERRUPT] The user just sent follow-up messages while you were generating your response. "
+                                f"You MUST address these immediately in a new response turn. Your previous output has already been sent to the user.\n{inject_text}"
+                            )
+                            message_to_send = inject_notice
+                            yield {'status': 'User follow-up received! Continuing...'}
+                            logger.info(f"Injected {len(injected_msgs)} live follow-up(s) at text-break for chat {chat_id}")
+                            continue  # Don't break — loop back to send_message with the follow-up
+                    # --- END LIVE INTERRUPT ---
                     break
                 else:
                     # We have function calls! Let's animate and execute
@@ -1532,6 +1556,34 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             ))
                         )
                         message_to_send = function_responses
+
+                        # --- LIVE INTERRUPT: Check for injected user messages ---
+                        if chat_id:
+                            injected_msgs = []
+                            while True:
+                                raw = redis_client.lpop(f"inject_messages:{chat_id}")
+                                if not raw:
+                                    break
+                                try:
+                                    inj = json.loads(raw if isinstance(raw, str) else raw.decode('utf-8'))
+                                    injected_msgs.append(inj)
+                                except:
+                                    pass
+                            if injected_msgs:
+                                inject_text = "\n".join([f"[LIVE USER FOLLOW-UP]: {m['message']}" for m in injected_msgs])
+                                inject_notice = (
+                                    f"\n\n[SYSTEM: LIVE INTERRUPT] The user just sent follow-up messages while you were working. "
+                                    f"You MUST acknowledge and address these in your response. Adjust your current approach if needed:\n{inject_text}"
+                                )
+                                # Append as a text part alongside the function responses
+                                if isinstance(message_to_send, list):
+                                    message_to_send.append(types.Part.from_text(text=inject_notice))
+                                else:
+                                    message_to_send = [types.Part.from_text(text=inject_notice)]
+                                yield {'status': 'User follow-up received! Adjusting...'}
+                                logger.info(f"Injected {len(injected_msgs)} live follow-up(s) into chat {chat_id}")
+                        # --- END LIVE INTERRUPT ---
+
                         yield {'status': f"{display_name} is thinking..."}
 
             # Forcibly add tool results if the model forgot to include them or mangled them
@@ -2320,6 +2372,54 @@ def generative_ui_finish():
         logger.error(f"Error in generative_ui_finish: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/inject_message', methods=['POST'])
+@require_approval
+def inject_message():
+    """Inject a follow-up message into an active generation stream.
+    The message is stored in Redis and picked up by the tool loop in gemini_generate."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data received'}), 400
+
+        chat_id = data.get('chat_id')
+        message = data.get('message', '').strip()
+        client_id = data.get('client_id')
+
+        if not chat_id or not message:
+            return jsonify({'error': 'Missing chat_id or message'}), 400
+
+        # Check if there's an active stream for this chat
+        active_query_str = redis_client.get(f"chat_active_query:{chat_id}")
+        if not active_query_str:
+            return jsonify({'error': 'No active stream to inject into'}), 409
+
+        # Store the user's message in the DB immediately so it appears in history
+        user_msg_id = insert_message(chat_id, "user", message, client_id=client_id)
+
+        # Push the injection into a Redis list keyed by chat_id
+        injection_data = json.dumps({
+            'message': message,
+            'message_id': str(user_msg_id),
+            'timestamp': time.time()
+        })
+        redis_client.rpush(f"inject_messages:{chat_id}", injection_data)
+
+        # Notify frontend via SSE that the injection was acknowledged
+        active_query = json.loads(active_query_str)
+        query_id = active_query.get('query_id')
+        if query_id:
+            ack_event = f"data: {json.dumps({'type': 'injection_ack', 'message_id': str(user_msg_id), 'message': message})}\n\n"
+            redis_client.rpush(f"stream_history:{query_id}", ack_event)
+            redis_client.publish(f"stream:{query_id}", ack_event)
+
+        logger.info(f"Message injected into chat {chat_id}: {message[:80]}...")
+        return jsonify({'success': True, 'message_id': str(user_msg_id)}), 200
+
+    except Exception as e:
+        logger.error(f"Error in inject_message: {e}", exc_info=True)
+        return jsonify({'error': 'Internal server error'}), 500
+
 @app.route('/register_query', methods=['POST'])
 @require_approval
 def register_query():
@@ -2426,6 +2526,8 @@ def refine_stream():
             g.session_id = session_id
 
             gemini_files_data =[]
+            # Clear any stale injection messages from previous streams
+            redis_client.delete(f"inject_messages:{chat_id}")
             if pending_files:
                 context_id = str(chat_id) if chat_id else session_id
                 gemini_files_data = upload_files_to_gemini(context_id, pending_files)
@@ -2583,8 +2685,8 @@ def refine_stream():
                     if partial_work_done:
                         capability_note = ""
                         # Define model tiers clearly for fallback guidance
-                        full_access = ["gemini-3-flash-preview", "gemini-3.5-flash"]
-                        lab_only = ["gemini-3.1-flash-lite"] # Lunarity
+                        full_access = ["gemini-3-flash-preview", "gemini-3.5-flash", "gemma-4-31b-it"]
+                        lab_only = [] # Lunarity now has full access
                     
                         if current_model in lab_only:
                             capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the task using the Lab or Web Search."
@@ -2660,7 +2762,7 @@ def refine_stream():
                 
                     generator_output = gemini_generate(
                         prompt=diag_prompt,
-                        model_id="gemini-3.1-flash-lite",
+                        model_id="gemma-4-31b-it",
                         key=PRIMARY_API_KEY,
                         attempts=1,
                         model_display_name="Lunarity (Diagnostic)",
@@ -3508,7 +3610,7 @@ def api_count_tokens():
         client = genai.Client(api_key=PRIMARY_API_KEY)
         contents = [types.Content(role="user", parts=[types.Part(text=t)]) for t in text_list]
         token_count_response = client.models.count_tokens(
-            model="gemini-2.5-flash-lite", contents=contents
+            model="gemini-3.1-flash-lite", contents=contents
         )
         return jsonify({'token_count': token_count_response.total_tokens}), 200
     except Exception as e:
