@@ -2953,7 +2953,12 @@ const defaultAgentSettings = {
 
         if (statusSpan) {
           // Ensure status container is styled correctly
-          if (
+          const genUiContainer = msgDiv.querySelector(".generative-ui-container");
+          const isUiActive = genUiContainer && genUiContainer.style.display === "block";
+          
+          if (isUiActive) {
+            statusSpan.style.display = "none";
+          } else if (
             !statusSpan.style.display ||
             statusSpan.style.display !== "flex"
           ) {
@@ -4048,15 +4053,29 @@ const defaultAgentSettings = {
                         contentDiv.classList.add("message-content");
                         msgDiv.appendChild(contentDiv);
                     }
-                    contentDiv.innerHTML = data.html;
-                    unwrapVisuals(contentDiv);
-                    processCodeBlocks(contentDiv);
-                    processGenerativeUI(contentDiv);
+                    
+                    // Hide other sibling status elements
+                    const statusSpan = contentDiv.querySelector(".placeholder-status");
+                    if (statusSpan) statusSpan.style.display = "none";
+                    const detailsDiv = contentDiv.querySelector(".analysis-content");
+                    if (detailsDiv) detailsDiv.style.display = "none";
+
+                    let genUiContainer = contentDiv.querySelector(".generative-ui-container");
+                    if (!genUiContainer) {
+                        genUiContainer = document.createElement("div");
+                        genUiContainer.classList.add("generative-ui-container");
+                        contentDiv.appendChild(genUiContainer);
+                    }
+                    genUiContainer.style.display = "block";
+                    genUiContainer.innerHTML = data.html;
+                    unwrapVisuals(genUiContainer);
+                    processCodeBlocks(genUiContainer);
+                    processGenerativeUI(genUiContainer);
                     
                     // Expose the finish hook for this specific interaction
                     window.stellar.finish = async function(resultData) {
                         // Automatically provide visual feedback by disabling interactive elements
-                        const interactables = contentDiv.querySelectorAll('button, input, select, textarea, [role="button"], a');
+                        const interactables = genUiContainer.querySelectorAll('button, input, select, textarea, [role="button"], a');
                         interactables.forEach(el => {
                             el.disabled = true;
                             el.style.opacity = '0.5';
@@ -4084,6 +4103,28 @@ const defaultAgentSettings = {
                     "",
                   );
                   setStatus(simpleStatus, !!data.error);
+                  
+                  // --- UNLOAD GENERATIVE UI ON NEXT VALID STATUS ---
+                  const statusLower = data.status.toLowerCase();
+                  const isThinking = statusLower.includes("thinking") || 
+                                     statusLower.includes("wait") ||
+                                     statusLower === "refined_ready";
+                  
+                  if (!isThinking) {
+                    const activePlaceholder = messagesDiv.querySelector(`.message[data-id="${placeholderId}"]`);
+                    if (activePlaceholder) {
+                      const genUiContainer = activePlaceholder.querySelector(".generative-ui-container");
+                      if (genUiContainer && genUiContainer.style.display !== "none") {
+                        genUiContainer.style.display = "none";
+                        // Restore status and details display
+                        const statusSpan = activePlaceholder.querySelector(".placeholder-status");
+                        if (statusSpan) statusSpan.style.display = "flex";
+                        const detailsDiv = activePlaceholder.querySelector(".analysis-content");
+                        if (detailsDiv) detailsDiv.style.display = "block";
+                      }
+                    }
+                  }
+                  // --- END UNLOAD ---
                 }
 
                 if (data.analysis_results) {
