@@ -1655,7 +1655,20 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         if injected_msgs:
                             # --- Segment the stream backend-only on dynamic injection ---
                             if accumulated_full_output.strip():
-                                insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*")
+                                stellar_msg_id = insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*")
+                                if stellar_msg_id and injected_msgs:
+                                    try:
+                                        first_user_msg_id = injected_msgs[0].get('message_id')
+                                        if first_user_msg_id:
+                                            db = get_db()
+                                            db.execute('''
+                                                UPDATE messages 
+                                                SET timestamp = datetime((SELECT timestamp FROM messages WHERE id = ?), '-1 second')
+                                                WHERE id = ?
+                                            ''', (int(first_user_msg_id), stellar_msg_id))
+                                            db.commit()
+                                    except Exception as e:
+                                        logger.error(f"Error adjusting interrupted message timestamp: {e}")
                             accumulated_full_output = ""
                             output_this_attempt_parts = []
                             yield {'type': 'stream_reset'}
@@ -1856,7 +1869,20 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             if injected_msgs:
                                 # --- Segment the stream backend-only on dynamic injection ---
                                 if accumulated_full_output.strip():
-                                    insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*")
+                                    stellar_msg_id = insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*")
+                                    if stellar_msg_id and injected_msgs:
+                                        try:
+                                            first_user_msg_id = injected_msgs[0].get('message_id')
+                                            if first_user_msg_id:
+                                                db = get_db()
+                                                db.execute('''
+                                                    UPDATE messages 
+                                                    SET timestamp = datetime((SELECT timestamp FROM messages WHERE id = ?), '-1 second')
+                                                    WHERE id = ?
+                                                ''', (int(first_user_msg_id), stellar_msg_id))
+                                                db.commit()
+                                        except Exception as e:
+                                            logger.error(f"Error adjusting interrupted message timestamp: {e}")
                                 accumulated_full_output = ""
                                 output_this_attempt_parts = []
                                 yield {'type': 'stream_reset'}
