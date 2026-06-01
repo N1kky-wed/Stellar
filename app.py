@@ -865,14 +865,14 @@ def get_conversation_history(chat_id, for_ui=False):
             cursor = db.execute(
                 '''SELECT id, message_type, message_content, is_research_output, html_file,
                           attached_files, visualization_html, timestamp, hidden
-                   FROM messages WHERE chat_id = ? ORDER BY timestamp ASC''',
+                   FROM messages WHERE chat_id = ? AND hidden = 0 ORDER BY timestamp ASC''',
                 (chat_id,)
             )
         else:
             cursor = db.execute(
                 '''SELECT id, message_type, message_content, is_research_output, html_file,
                           attached_files, visualization_html, timestamp, hidden
-                   FROM messages WHERE chat_id = ? AND (hidden = 0 OR message_content LIKE '[COMPRESSED MEMORY STATE]%') ORDER BY timestamp ASC''',
+                   FROM messages WHERE chat_id = ? AND (hidden = 0 OR message_content LIKE '[COMPRESSED MEMORY STATE]%' OR message_content LIKE '%*[Response interrupted by user]*%') ORDER BY timestamp ASC''',
                 (chat_id,)
             )
         rows = _fetch_as_dict(cursor)
@@ -1655,7 +1655,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         if injected_msgs:
                             # --- Segment the stream backend-only on dynamic injection ---
                             if accumulated_full_output.strip():
-                                stellar_msg_id = insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*")
+                                stellar_msg_id = insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*", hidden=True)
                                 if stellar_msg_id and injected_msgs:
                                     try:
                                         first_user_msg_id = injected_msgs[0].get('message_id')
@@ -1867,9 +1867,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 except:
                                     pass
                             if injected_msgs:
-                                # --- Segment the stream backend-only on dynamic injection ---
                                 if accumulated_full_output.strip():
-                                    stellar_msg_id = insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*")
+                                    stellar_msg_id = insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*", hidden=True)
                                     if stellar_msg_id and injected_msgs:
                                         try:
                                             first_user_msg_id = injected_msgs[0].get('message_id')
@@ -3057,9 +3056,7 @@ def refine_stream():
                     current_attempt_result = ""
                     for item in generator_output:
                         if cancel_event and cancel_event.is_set():
-                            logger.info(f"generator_task for chat {chat_id} aborted mid-stream due to cancellation. Saving partial progress...")
-                            if refined_query_result:
-                                insert_message(chat_id, "stellar", refined_query_result + "\n\n*[Response interrupted by user]*")
+                            logger.info(f"generator_task for chat {chat_id} aborted mid-stream due to cancellation. Deleting partial progress.")
                             return
                         if 'status' in item:
                             status_dict = {'status': item['status'], 'phase': 'refining'}
@@ -3109,17 +3106,14 @@ def refine_stream():
                     )
                     for item in generator_output:
                         if cancel_event and cancel_event.is_set():
-                            logger.info(f"generator_task for chat {chat_id} aborted mid-stream during diagnostics. Saving partial progress...")
-                            if refined_query_result:
-                                insert_message(chat_id, "stellar", refined_query_result + "\n\n*[Response interrupted by user]*")
+                            logger.info(f"generator_task for chat {chat_id} aborted mid-stream during diagnostics. Deleting partial progress.")
                             return
                         if 'result' in item:
                             refined_query_result += item['result']
  
                 if refined_query_result:
                     if cancel_event and cancel_event.is_set():
-                        logger.info(f"generator_task for chat {chat_id} aborted before database insert. Saving partial progress...")
-                        insert_message(chat_id, "stellar", refined_query_result + "\n\n*[Response interrupted by user]*")
+                        logger.info(f"generator_task for chat {chat_id} aborted before database insert. Deleting partial progress.")
                         return
                     if check_and_log_stop(query_id, "database insert"): return
                     stellar_message_id = insert_message(
