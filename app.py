@@ -3158,6 +3158,10 @@ def stop_generation():
     redis_client.setex(f"stop_flag:{query_id}", 3600, "1")
     if chat_id:
         redis_client.delete(f"chat_active_query:{chat_id}")
+        cancel_event = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
+        if cancel_event:
+            logger.info(f"Stop button clicked: Signalling thread termination for chat_id: {chat_id}")
+            cancel_event.set()
         
     logging.info(f"Stop flag set in Redis for query_id: {query_id}")
     return jsonify({'success': True, 'message': 'Stop signal received.'})
