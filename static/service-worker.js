@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stellar-static-v6';
+const CACHE_NAME = 'stellar-static-v7';
 const ASSETS_TO_CACHE = [
   '/',
   '/default.min.css',
@@ -119,7 +119,8 @@ self.addEventListener('push', event => {
 // Notification Click Event - Focus or launch the app shell
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/';
+  // Resolve targetUrl as a fully qualified absolute URL so that the WebAPK/Android intent filters launch the standalone app window
+  const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin).href;
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {

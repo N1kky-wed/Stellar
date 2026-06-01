@@ -831,14 +831,28 @@ def get_tool_history(chat_id):
     if not chat_id: return ""
     try:
         db = get_db()
-        cursor = db.execute('SELECT id, tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? AND hidden = 0 ORDER BY timestamp ASC', (chat_id,))
+        cursor = db.execute('''
+            SELECT id, tool_name, input_params, length(result) as res_len,
+                   CASE 
+                       WHEN tool_name IN ('read_tool_output', 'obtain_talent') THEN result
+                       ELSE substr(result, 1, 1000)
+                   END as res_part,
+                   timestamp 
+            FROM tool_calls 
+            WHERE chat_id = ? AND hidden = 0 
+            ORDER BY timestamp ASC
+        ''', (chat_id,))
         rows = cursor.fetchall()
         if not rows: return ""
         
         context = "\n**Internal Tool Execution History:**\n"
         for r in rows:
-            res_str = str(r['result'])
-            num_chars = len(res_str)
+            res_str = r['res_part']
+            if res_str is None:
+                res_str = ""
+            else:
+                res_str = str(res_str)
+            num_chars = r['res_len'] if r['res_len'] is not None else 0
 
             # Smart Truncation Logic
             if r['tool_name'] in ['read_tool_output', 'obtain_talent']:
@@ -965,7 +979,15 @@ def count_chat_tokens(chat_id=None):
         
         # Get tool calls
         cursor = db.execute(
-            '''SELECT id, tool_name, input_params, result, timestamp FROM tool_calls WHERE chat_id = ? AND hidden = 0 ORDER BY timestamp ASC''',
+            '''SELECT id, tool_name, input_params, length(result) as res_len,
+                      CASE 
+                          WHEN tool_name IN ('read_tool_output', 'obtain_talent') THEN result
+                          ELSE substr(result, 1, 1000)
+                      END as res_part,
+                      timestamp 
+               FROM tool_calls 
+               WHERE chat_id = ? AND hidden = 0 
+               ORDER BY timestamp ASC''',
             (chat_id,)
         )
         tool_calls = _fetch_as_dict(cursor)
@@ -991,10 +1013,13 @@ def count_chat_tokens(chat_id=None):
             else:
                 # Tool call
                 t = item['data']
-                res_str = str(t['result'])
-                lines = res_str.split('\n')
-                num_lines = len(lines)
-                num_chars = len(res_str)
+                res_str = t['res_part']
+                if res_str is None:
+                    res_str = ""
+                else:
+                    res_str = str(res_str)
+                num_chars = t['res_len'] if t['res_len'] is not None else 0
+                num_lines = res_str.count('\n') + 1
 
                 if 'data:image' in res_str:
                     clean_res = "[Image Generated]"
@@ -1555,7 +1580,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                                 user_id=p_user_id,
                                                 title="Stellar: Action Required",
                                                 body=prompt_desc,
-                                                url=f"/?chat_id={chat_id}" if chat_id else "/"
+                                                url="/"
                                             )
                                     except Exception as push_err:
                                         logger.error(f"Failed to dispatch interaction push notification: {push_err}")
@@ -2909,7 +2934,7 @@ def refine_stream():
                                      user_id=p_user_id,
                                      title="Stellar: Task Completed",
                                      body=preview_body,
-                                     url=f"/?chat_id={chat_id}" if chat_id else "/"
+                                     url="/"
                                  )
                          except Exception as push_err:
                              logger.error(f"Failed to dispatch completion push notification: {push_err}")
