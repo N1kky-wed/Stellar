@@ -17,7 +17,9 @@ Stellar is a production-grade Flask application powering [stellarai.live](https:
 - [Agent Models & Personas](#agent-models--personas)
 - [Agent Tool Suite](#agent-tool-suite)
 - [Human-in-the-Loop Interactive UI](#request_user_interactionhtml_ui-goal-status-timeout)
-- [Mandate System](#mandate-system)
+- [Live Interrupts & Stream Control](#live-interrupts--stream-control)
+- [PWA & Push Notifications](#pwa--push-notifications)
+- [Talent System](#talent-system)
 - [Persistent Memory & Scheduling](#persistent-memory--scheduling)
 - [Use Cases & Examples](#use-cases--examples)
 - [API Key Management & Account Rotation](#api-key-management--account-rotation)
@@ -51,8 +53,10 @@ Internet ──► Nginx (HTTPS + wildcard *.stellarai.live)
 Key design principles:
 - **Per-user isolation** — every user gets their own Docker network (`stellar_net_<user_id>`) with ICC disabled.
 - **Stateful persistence** — all repo deployments snapshot their file trees to SQLite on stop/restart.
-- **Multi-account Gemini key rotation** — primary + backup API keys are cycled automatically on quota exhaustion.
+- **Smart key rotation** — `GlobalKeyManager` tracks per-key, per-model rate limit blocks with automatic expiry and Pacific-midnight daily resets.
 - **Streaming responses** — all agent responses are streamed to the frontend via Server-Sent Events (SSE).
+- **Zero-leak interrupts** — cooperative `threading.Event`-based cancellation ensures that stopping a generation immediately halts both the LLM stream and in-flight tool calls without orphaned database records.
+- **Live follow-up injection** — users can send additional messages while the agent is still generating, which are injected into the active LLM loop in real time.
 
 ---
 
@@ -434,6 +438,17 @@ Directories are automatically compressed as `.tar.gz` before projection.
 
 ---
 
+### `compress_memory(target, state_document, status, timeout)`
+
+**Context window management.** When the system detects high context usage, the agent calls this tool to archive older tool logs and/or messages.
+
+- **`target`:** `'tool_logs'`, `'chat_messages'`, or `'both'`.
+- **Mechanism:** Sets `hidden = 1` on older records while keeping the most recent entries visible (10 tool calls, 4 messages).
+- **State preservation:** A structured `state_document` (objectives, discoveries, modified files, blockers) is inserted as a hidden message prefixed with `[COMPRESSED MEMORY STATE]`, ensuring the LLM retains critical context even after compression.
+- **Triggered automatically** when `get_refinement_prompt()` injects a context usage warning into the system prompt.
+
+---
+
 ### `request_user_interaction(html_ui, goal, status, timeout)`
 
 **Human-in-the-Loop Stateful UI — Stellar's most powerful interactive capability.** This tool supercharges the agent with a whole new dimension of interactivity by allowing it to render rich, fully interactive HTML widgets directly inside the chat and **pause execution** until the user responds.
@@ -469,19 +484,64 @@ The agent generates a complete, self-contained HTML/CSS/JS widget. The user inte
 
 ---
 
-## Mandate System
+## Live Interrupts & Stream Control
 
-The `mandates/` directory contains operational mandates — instruction files injected into the lab sandbox at `/lab/` and referenced by the agent before undertaking specialized tasks:
+Stellar supports two distinct modes of generation control, both designed for zero data leakage:
 
-| Mandate | Trigger Condition |
+### Stop Button (Hard Cancel)
+
+Clicking "Stop" triggers a cooperative cancellation via `threading.Event`:
+
+1. The `/api/stop_generation` endpoint sets a Redis flag **and** signals the `ACTIVE_CHATS_CANCEL_EVENTS[chat_id]` event.
+2. `gemini_generate` checks `cancel_event.is_set()` at every loop iteration — before each LLM call and before each tool execution.
+3. On cancellation, **no partial response is saved to the database**. The generation thread exits cleanly and the stream closes.
+
+### Live Follow-Up Injection (Soft Interrupt)
+
+Users can send a follow-up message while the agent is still generating. The message is injected into the active LLM loop in real time:
+
+1. **Frontend:** The chat input detects `isProcessing === true` and calls `POST /api/inject_message` instead of starting a new stream. The user's message is saved to the database immediately and rendered in the chat.
+2. **Redis queue:** The message is pushed to `inject_messages:{chat_id}` and picked up by `gemini_generate` at the next checkpoint (after text output or between tool calls).
+3. **Stream segmentation:** On detection, the current partial output is committed to the database as a **hidden** message (`hidden=1`) with its timestamp adjusted to sort before the user's follow-up. The LLM accumulation buffers are flushed, and a `stream_reset` event propagates through `refine_stream` to the frontend.
+4. **Context preservation:** Hidden interrupted responses are excluded from the UI (`get_conversation_history(for_ui=True)` filters `hidden = 0`) but included in the LLM's context window so the model knows what it previously generated.
+5. **Frontend handling:** The `stream_reset` SSE event clears the current placeholder, allowing the model's new response (addressing the follow-up) to render cleanly as a fresh message.
+
+---
+
+## PWA & Push Notifications
+
+Stellar is installable as a Progressive Web App on all platforms (desktop, Android, iOS).
+
+### Installation
+
+- **Automatic prompt:** A native `beforeinstallprompt` event is intercepted. Stellar defers the prompt and shows it once after login, then respects the user's choice and never re-prompts.
+- **Manual install:** An "Install Stellar App" button is available in the user profile modal.
+- **Standalone mode:** The `manifest.json` is configured with `display: standalone` and `scope: /` so the PWA launches as a full-screen app without browser chrome.
+
+### Web Push Notifications
+
+Background push notifications are delivered via the Web Push protocol (VAPID):
+
+1. **Service Worker** (`static/service-worker.js`) — registers on first load, handles `push` events, and displays native OS notifications even when the tab is closed.
+2. **Subscription flow:** On notification opt-in, the frontend requests a `PushSubscription` from the browser and sends it to `POST /api/push/subscribe`, which stores it in the `push_subscriptions` table.
+3. **Server-side dispatch:** `send_push_notification(user_id, title, body, url)` in `app.py` uses `pywebpush` with VAPID credentials (`vapid_private.pem`) to push notifications to all of a user's registered devices.
+4. **Triggers:** Notifications are dispatched when a long-running generation completes (if the user has been waiting >20 seconds), and on scheduled task completion.
+
+---
+
+## Talent System
+
+Operational guidelines (formerly "mandates") are stored in the `talents` database table rather than the filesystem. Each talent defines technical standards, preferred libraries, code structure requirements, and quality gates that the agent follows for specialized tasks.
+
+| Talent | Trigger Condition |
 |---|---|
-| `FRONTEND_DESIGN_MANDATE.md` | Before building any web UI, component, or dashboard |
-| `GENERATIVE_AI_MANDATE.md` | Before writing any Gemini/GenAI integration code |
-| `GAME_DEVELOPMENT_MANDATE.md` | Before building 3D rendering engines or game mechanics |
-| `MOBILE_DEVELOPMENT_MANDATE.md` | Before building Android APKs or React Native apps |
-| `RED_TEAM_MANDATE.md` | Before any security research, pen-testing, or vulnerability analysis |
+| Frontend Design | Before building any web UI, component, or dashboard |
+| Generative AI | Before writing any Gemini/GenAI integration code |
+| Game Development | Before building 3D rendering engines or game mechanics |
+| Mobile Development | Before building Android APKs or React Native apps |
+| Red Team | Before any security research, pen-testing, or vulnerability analysis |
 
-These mandates define technical standards, preferred libraries, code structure requirements, and quality gates that the agent must follow. They are the equivalent of an engineering style guide, automatically enforced at runtime.
+Talents are injected into the lab sandbox at `/lab/` before the agent begins specialized work. They can be managed via the admin interface.
 
 ---
 
@@ -617,17 +677,24 @@ Stellar is designed for high availability across multiple Gemini API accounts.
 - `PRIMARY_API_KEY` — used first for all requests.
 - `BACKUP_API_KEYS` — a list of additional keys tried in order on `429`, `403`, `503`, or `500` errors.
 
-All tools in `agent_tools.py` implement the same retry loop:
+### `GlobalKeyManager`
+
+A thread-safe singleton (`KEY_MANAGER`) tracks rate-limit blocks per key, per model:
+
+- **Model-scoped blocking:** When a key hits a quota error on a specific model, it is blocked only for that model. Other models can still use the same key.
+- **Global blocking:** `403` / `permission_denied` errors block the key across all models.
+- **Auto-expiry:** Blocks expire after a parsed duration (extracted from API error messages) or a default of 60 seconds.
+- **Pacific midnight reset:** A background thread calls `KEY_MANAGER.blocked_until.clear()` at midnight Pacific Time daily, coinciding with Google's quota reset cycle.
+
 ```python
-for current_key in keys_to_try:
-    try:
-        # ... API call
-    except Exception as e:
-        if is_quota_error(e):
-            continue  # Try next key
-        return error
-return "All keys exhausted"
+# The manager is checked before every API call
+is_blocked, reason = KEY_MANAGER.is_key_blocked(current_key, model_id)
+if is_blocked:
+    # Skip to the next key in the rotation
+    continue
 ```
+
+All tools in `agent_tools.py` implement the same rotation pattern, and `gemini_generate` handles mid-conversation key switches by reconstructing the chat history with the new key's client.
 
 ### Credential Store for Subagents
 
@@ -678,15 +745,24 @@ The application uses a single SQLite file (`stellar_local.db`) in WAL journal mo
 | Table | Purpose |
 |---|---|
 | `users` | User accounts: `id`, `username` (email), `is_approved`, `display_name`, `password_hash` |
-| `chats` | Chat sessions per user |
-| `messages` | All chat messages (role, content, model_id, tool calls) |
-| `tool_calls` | Stores full tool input/output for paginated retrieval by `read_tool_output` |
+| `chats` | Chat sessions per user. Includes `is_temp` flag for ephemeral sessions. |
+| `messages` | All chat messages: `message_type` (user/stellar), `message_content`, `hidden` (boolean), `visualization_html`, `attached_files` (JSON). Hidden messages are excluded from the UI but included in LLM context. |
+| `tool_calls` | Full tool input/output for paginated retrieval by `read_tool_output`. Includes `hidden` flag for memory compression. |
 | `repo_history` | Deployment history: `process_id`, `project_name`, `subdomain`, `files_snapshot` (JSON), `status` |
 | `scheduled_tasks` | Autonomous task queue: `task_prompt`, `execute_at`, `recurring_minutes`, `metadata`, `is_active` |
 | `user_logs_prefs` | Persistent agent memory: `user_id`, `log_entry`, `created_at` |
 | `agent_feedback` | Bug reports filed by `report_process_issue`: `topic`, `issue_description`, `technical_context` |
+| `push_subscriptions` | Web Push subscription endpoints per user/device for background notifications |
+| `talents` | Operational guidelines (formerly mandates): `name`, `content`, `user_id`, `chat_id` |
 
 WAL mode and `busy_timeout=5000` are set on all connections to handle concurrent access from multiple Gunicorn threads.
+
+### Hidden Message Semantics
+
+The `hidden` column on `messages` and `tool_calls` serves dual purposes:
+
+1. **Memory compression:** `compress_memory` sets `hidden=1` on older records to reduce context window usage. Compressed state documents are preserved as hidden messages prefixed with `[COMPRESSED MEMORY STATE]`.
+2. **Interrupted responses:** When a live follow-up interrupts an active generation, the partial response is saved as `hidden=1` so it remains in the LLM's context but never appears in the user's chat history.
 
 ---
 
@@ -713,8 +789,8 @@ Tests mock Docker and external API calls to run without live infrastructure.
 
 ```
 my_app/
-├── app.py                  # Main Flask application, routes, scheduling daemon
-├── agent_tools.py          # All agent tool implementations (14 tools, ~2100 lines)
+├── app.py                  # Main Flask application, routes, scheduling daemon, GlobalKeyManager
+├── agent_tools.py          # All agent tool implementations (15 tools, ~2300 lines)
 ├── prompts.py              # System prompt construction, persona definitions
 ├── dockersetup.py          # Docker image build and network initialization script
 ├── webscrapper.py          # Lightweight web scraping utility
@@ -724,19 +800,18 @@ my_app/
 ├── requirements.txt        # Pinned Python dependencies
 ├── keys.env                # ⚠️ Secret keys and configuration (never commit this)
 ├── encryption.key          # ⚠️ Fernet key file (never commit this)
+├── vapid_private.pem       # ⚠️ VAPID private key for Web Push (never commit this)
 ├── stellar_local.db        # SQLite database (WAL mode)
 ├── deploy/
 │   ├── gunicorn_stellar.service   # systemd unit file
 │   └── nginx_stellar.conf         # Nginx reverse proxy config
-├── mandates/               # Operational mandate files injected into lab sandbox
-│   ├── FRONTEND_DESIGN_MANDATE.md
-│   ├── GENERATIVE_AI_MANDATE.md
-│   ├── GAME_DEVELOPMENT_MANDATE.md
-│   ├── MOBILE_DEVELOPMENT_MANDATE.md
-│   └── RED_TEAM_MANDATE.md
 ├── credentials/            # Gemini CLI OAuth credentials per account
 │   └── account_X/
-├── static/                 # Frontend static assets
+├── static/
+│   ├── main.css            # Core stylesheet
+│   ├── main.js             # Core frontend logic (SSE, chat, interrupts)
+│   ├── manifest.json       # PWA manifest
+│   └── service-worker.js   # Push notification and offline caching
 ├── templates/              # Jinja2 HTML templates
 ├── uploads/                # User-uploaded files (per chat session)
 ├── outputs/                # Generated files (images, PDFs, presentations)
