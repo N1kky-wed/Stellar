@@ -345,6 +345,7 @@ class GlobalKeyManager:
             return False, None
 
 KEY_MANAGER = GlobalKeyManager()
+ACTIVE_CHATS_CANCEL_EVENTS = {}
 
 def get_seconds_until_pacific_midnight():
     try:
@@ -1394,7 +1395,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
         return False
 
 
-def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None, chat_id=None, disabled_tools=None, gemini_files_data=None):
+def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None, chat_id=None, disabled_tools=None, gemini_files_data=None, cancel_event=None):
     from flask import g
     g.model_id = model_id # Set ground-truth model for tools
     display_name = model_display_name or MODEL_NAMES.get(model_id)
@@ -1445,6 +1446,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     current_key_index = 0
 
     for attempt in range(1, attempts + 1):
+        if cancel_event and cancel_event.is_set():
+            logger.info("gemini_generate loop aborted due to cancellation.")
+            return
         current_key = keys_to_try[current_key_index]
         if not current_key:
             yield {'status': 'Error: No valid API key available.', 'error': True}
@@ -1664,6 +1668,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     # We have function calls! Let's animate and execute
                     function_responses = []
                     for fc in function_calls:
+                        if cancel_event and cancel_event.is_set():
+                            logger.info("gemini_generate tool execution aborted due to cancellation.")
+                            return
                         func_name = fc.name
                         args_dict = dict(fc.args) if fc.args else {}
                         
@@ -2799,8 +2806,16 @@ def refine_stream():
 
     if not is_running:
         redis_client.setex(f"stream_started:{query_id}", 3600 * 24, "1")
+        
+        cancel_event = threading.Event()
+        if chat_id:
+            old_event = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
+            if old_event:
+                logger.info(f"Dynamic interrupt/cancellation requested for chat_id: {chat_id}. Terminating old thread.")
+                old_event.set()
+            ACTIVE_CHATS_CANCEL_EVENTS[chat_id] = cancel_event
 
-        def generator_task():
+        def generator_task(cancel_event=None):
             from flask import g
             g.user_id = user_id
             g.chat_id = chat_id
@@ -2994,12 +3009,18 @@ def refine_stream():
                         username=username,
                         chat_id=chat_id,
                         disabled_tools=disabled_tools,
-                        gemini_files_data=gemini_files_data
+                        gemini_files_data=gemini_files_data,
+                        cancel_event=cancel_event
                     )
                 
                     model_failed = False
                     current_attempt_result = ""
                     for item in generator_output:
+                        if cancel_event and cancel_event.is_set():
+                            logger.info(f"generator_task for chat {chat_id} aborted mid-stream due to cancellation. Saving partial progress...")
+                            if refined_query_result:
+                                insert_message(chat_id, "stellar", refined_query_result + "\n\n*[Response interrupted by user]*")
+                            return
                         if 'status' in item:
                             status_dict = {'status': item['status'], 'phase': 'refining'}
                             if 'timeout' in item:
@@ -3025,7 +3046,7 @@ def refine_stream():
                     else:
                         # If whole loop failed without even partial result, we keep refined_query_result as is for next iteration
                         pass
-
+ 
                 # FINAL FAIL-SAFE: If everything failed, have Lunarity generate a diagnostic report
                 if not refined_query_result and last_error_details:
                     yield f"data: {json.dumps({'status': 'All models busy or exhausted. Lunarity is generating diagnostic report...', 'phase': 'diagnostic'})}\n\n"
@@ -3038,13 +3059,23 @@ def refine_stream():
                         key=PRIMARY_API_KEY,
                         attempts=1,
                         model_display_name="Lunarity (Diagnostic)",
-                        chat_id=chat_id
+                        chat_id=chat_id,
+                        cancel_event=cancel_event
                     )
                     for item in generator_output:
+                        if cancel_event and cancel_event.is_set():
+                            logger.info(f"generator_task for chat {chat_id} aborted mid-stream during diagnostics. Saving partial progress...")
+                            if refined_query_result:
+                                insert_message(chat_id, "stellar", refined_query_result + "\n\n*[Response interrupted by user]*")
+                            return
                         if 'result' in item:
                             refined_query_result += item['result']
-
+ 
                 if refined_query_result:
+                    if cancel_event and cancel_event.is_set():
+                        logger.info(f"generator_task for chat {chat_id} aborted before database insert. Saving partial progress...")
+                        insert_message(chat_id, "stellar", refined_query_result + "\n\n*[Response interrupted by user]*")
+                        return
                     if check_and_log_stop(query_id, "database insert"): return
                     stellar_message_id = insert_message(
                         chat_id,
@@ -3108,7 +3139,7 @@ def refine_stream():
                 yield f"data: {json.dumps({'status': 'Severe error during refinement stream processing.', 'error': True})}\n\n"
                 llm_error_occurred = True
 
-        background_thread_runner(current_app._get_current_object(), query_id, chat_id, generator_task)
+        background_thread_runner(current_app._get_current_object(), query_id, chat_id, cancel_event, generator_task)
 
     return Response(stream_with_context(stream_consumer(query_id)), mimetype='text/event-stream')
 
@@ -3165,12 +3196,12 @@ def stream_consumer(query_id):
             yield data
     pubsub.close()
 
-def background_thread_runner(app_obj, query_id, chat_id, task_func, *args):
+def background_thread_runner(app_obj, query_id, chat_id, cancel_event, task_func, *args):
     """Wrapper that runs generation streams in the background to decouple from HTTP requests."""
     def run():
         with app_obj.app_context():
             try:
-                for chunk in task_func(*args):
+                for chunk in task_func(cancel_event, *args):
                     redis_client.rpush(f"stream_history:{query_id}", chunk)
                     redis_client.publish(f"stream:{query_id}", chunk)
             except Exception as e:
@@ -3179,6 +3210,8 @@ def background_thread_runner(app_obj, query_id, chat_id, task_func, *args):
                 redis_client.rpush(f"stream_history:{query_id}", err_str)
                 redis_client.publish(f"stream:{query_id}", err_str)
             finally:
+                if chat_id in ACTIVE_CHATS_CANCEL_EVENTS and ACTIVE_CHATS_CANCEL_EVENTS[chat_id] == cancel_event:
+                    ACTIVE_CHATS_CANCEL_EVENTS.pop(chat_id, None)
                 redis_client.rpush(f"stream_history:{query_id}", "__STREAM_END__")
                 redis_client.publish(f"stream:{query_id}", "__STREAM_END__")
                 redis_client.delete(f"chat_active_query:{chat_id}")
