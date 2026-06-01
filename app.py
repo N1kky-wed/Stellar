@@ -1653,6 +1653,13 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             except:
                                 pass
                         if injected_msgs:
+                            # --- Segment the stream backend-only on dynamic injection ---
+                            if accumulated_full_output.strip():
+                                insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*")
+                            accumulated_full_output = ""
+                            output_this_attempt_parts = []
+                            yield {'type': 'stream_reset'}
+
                             inject_text = "\n".join([f"[LIVE USER FOLLOW-UP]: {m['message']}" for m in injected_msgs])
                             inject_notice = (
                                 f"\n\n[SYSTEM: LIVE INTERRUPT] The user just sent follow-up messages while you were generating your response. "
@@ -1847,6 +1854,13 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 except:
                                     pass
                             if injected_msgs:
+                                # --- Segment the stream backend-only on dynamic injection ---
+                                if accumulated_full_output.strip():
+                                    insert_message(chat_id, "stellar", accumulated_full_output.strip() + "\n\n*[Response interrupted by user]*")
+                                accumulated_full_output = ""
+                                output_this_attempt_parts = []
+                                yield {'type': 'stream_reset'}
+
                                 inject_text = "\n".join([f"[LIVE USER FOLLOW-UP]: {m['message']}" for m in injected_msgs])
                                 inject_notice = (
                                     f"\n\n[SYSTEM: LIVE INTERRUPT] The user just sent follow-up messages while you were working. "
@@ -3028,6 +3042,11 @@ def refine_stream():
                             yield f"data: {json.dumps(status_dict)}\n\n"
                         elif 'type' in item and item['type'] == 'generative_ui':
                             yield f"data: {json.dumps(item)}\n\n"
+                        elif 'type' in item and item['type'] == 'stream_reset':
+                            logger.info(f"Dynamic interrupt received for chat {chat_id}: clearing stream accumulation buffers.")
+                            refined_query_result = ""
+                            current_attempt_result = ""
+                            yield f"data: {json.dumps({'type': 'stream_reset'})}\n\n"
                         elif 'result' in item:
                             temp_result = item['result']
                             if isinstance(temp_result, str) and temp_result.startswith(ERROR_CODE):
