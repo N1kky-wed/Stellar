@@ -312,6 +312,88 @@ MODEL_NAMES = {
 }
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
+# -------------------------------------------------------------
+# GLOBAL THREAD-SAFE GEMINI API KEY RATE LIMIT MANAGER
+# -------------------------------------------------------------
+import time
+from threading import Lock
+
+class GlobalKeyManager:
+    def __init__(self):
+        self.lock = Lock()
+        self.blocked_until = {} 
+        self.block_reason = {} 
+        
+    def block_key(self, key_val, model_id, duration_seconds, reason='RPM'):
+        with self.lock:
+            self.blocked_until[(key_val, model_id)] = time.time() + duration_seconds
+            self.block_reason[(key_val, model_id)] = reason
+            
+    def is_key_blocked(self, key_val, model_id):
+        with self.lock:
+            # Check model-specific block first
+            blocked_time = self.blocked_until.get((key_val, model_id), 0)
+            if time.time() < blocked_time:
+                return True, self.block_reason.get((key_val, model_id), 'RPM')
+            
+            # Check global model block
+            if model_id is not None:
+                blocked_time_global = self.blocked_until.get((key_val, None), 0)
+                if time.time() < blocked_time_global:
+                    return True, self.block_reason.get((key_val, None), 'RPM')
+                    
+            return False, None
+
+KEY_MANAGER = GlobalKeyManager()
+
+def get_seconds_until_pacific_midnight():
+    try:
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        year = now_utc.year
+        
+        # DST start: 2nd Sunday in March
+        march_1 = datetime.datetime(year, 3, 1, tzinfo=datetime.timezone.utc)
+        march_1_dow = march_1.weekday()
+        days_to_first_sunday = (6 - march_1_dow) % 7
+        dst_start = march_1 + datetime.timedelta(days=days_to_first_sunday + 7)
+        
+        # DST end: 1st Sunday in November
+        nov_1 = datetime.datetime(year, 11, 1, tzinfo=datetime.timezone.utc)
+        nov_1_dow = nov_1.weekday()
+        days_to_nov_sunday = (6 - nov_1_dow) % 7
+        dst_end = nov_1 + datetime.timedelta(days=days_to_nov_sunday)
+        
+        is_dst = dst_start <= now_utc < dst_end
+        pacific_offset = datetime.timedelta(hours=-7) if is_dst else datetime.timedelta(hours=-8)
+        
+        now_pacific = now_utc + pacific_offset
+        # Next Pacific midnight is tomorrow at 00:00:00 Pacific
+        tomorrow_pacific = datetime.datetime(now_pacific.year, now_pacific.month, now_pacific.day) + datetime.timedelta(days=1)
+        
+        seconds_until_midnight = (tomorrow_pacific - now_pacific).total_seconds()
+        return max(int(seconds_until_midnight), 60)
+    except Exception as e:
+        logger.error(f"Error calculating Pacific midnight offset: {e}")
+        return 14400 # Fallback to 4 hours if datetime calculations fail
+
+def parse_quota_block_duration(error_msg):
+    err_lower = error_msg.lower()
+    if ('requestsperday' in err_lower or 'requests per day' in err_lower or 
+        'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower):
+        # Daily limit: Block until the next Pacific Midnight reset time
+        duration = get_seconds_until_pacific_midnight()
+        return duration, 'RPD'
+    elif ('overloaded' in err_lower or '503' in err_lower or 'service unavailable' in err_lower or 'service_unavailable' in err_lower):
+        # Model overloaded / 503: Block key for 30 seconds to let Google cool down
+        return 30, 'OVERLOAD'
+    elif ('500' in err_lower or 'internal error' in err_lower or 'internal_error' in err_lower):
+        # Internal error / 500: Block key for 10 seconds
+        return 10, 'INTERNAL'
+    # Minute limit / TPM / RPM: Block for 60 seconds
+    return 60, 'RPM'
+# -------------------------------------------------------------
+
+
 def get_fallback_chain(start_model):
     chain = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemma-4-31b-it"]
     if start_model in chain:
@@ -908,6 +990,16 @@ def generate_chat_name(chat_id, first_message_content):
             raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
             keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
             
+            # Filter out globally rate-limited or quota-exhausted keys
+            active_keys = []
+            for k in keys_to_try:
+                is_blocked, _ = KEY_MANAGER.is_key_blocked(k, model_name)
+                if not is_blocked:
+                    active_keys.append(k)
+            if not active_keys:
+                active_keys = keys_to_try
+            keys_to_try = active_keys
+            
             for current_key in keys_to_try:
                 try:
                     client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
@@ -927,7 +1019,15 @@ def generate_chat_name(chat_id, first_message_content):
                     logger.info(f"Chat name updated in DB for chat_id {chat_id} to '{generated_name}'")
                     return # Success
                 except Exception as e:
-                    logger.exception("Error caught: %s", e)
+                    err_str = str(e).lower()
+                    if ('429' in err_str or '403' in err_str or 'resource_exhausted' in err_str or 'quota' in err_str or 'rate limit' in err_str or
+                        'overloaded' in err_str or '503' in err_str or 'service unavailable' in err_str or
+                        '500' in err_str or 'internal error' in err_str or 'internal_error' in err_str):
+                        block_duration, block_reason = parse_quota_block_duration(err_str)
+                        # Scope block to model_name if it is a quota/transient limit, else block globally if 403 / invalid
+                        block_scope = None if ('403' in err_str or 'permission_denied' in err_str or 'invalid' in err_str) else model_name
+                        KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                        logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error during name generation.")
                     logger.warning(f"API error during chat name generation: {e}. Trying next key...")
                     continue
             
@@ -1037,11 +1137,38 @@ def count_chat_tokens(chat_id=None):
         if len(history_for_tokens) <= 1: # Only system prompt
             return 0
          
-        client = genai.Client(api_key=PRIMARY_API_KEY)
-        token_count_response = client.models.count_tokens(
-            model="gemini-3.1-flash-lite", contents=history_for_tokens
-        )
-        t_count = token_count_response.total_tokens
+        raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+        keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+        
+        # Filter out globally rate-limited or quota-exhausted keys
+        active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, "gemini-3.1-flash-lite")[0]]
+        if not active_keys:
+            active_keys = keys_to_try
+            
+        t_count = 0
+        token_counted = False
+        for current_key in active_keys:
+            try:
+                client = genai.Client(api_key=current_key)
+                token_count_response = client.models.count_tokens(
+                    model="gemini-3.1-flash-lite", contents=history_for_tokens
+                )
+                t_count = token_count_response.total_tokens
+                token_counted = True
+                break
+            except Exception as token_e:
+                err_str = str(token_e).lower()
+                if ('429' in err_str or '403' in err_str or 'resource_exhausted' in err_str or 'quota' in err_str or 'rate limit' in err_str or
+                    'overloaded' in err_str or '503' in err_str or 'service unavailable' in err_str or
+                    '500' in err_str or 'internal error' in err_str or 'internal_error' in err_str):
+                    block_duration, block_reason = parse_quota_block_duration(err_str)
+                    block_scope = None if ('403' in err_str or 'permission_denied' in err_str or 'invalid' in err_str) else "gemini-3.1-flash-lite"
+                    KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                    logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error during count_chat_tokens.")
+                logger.warning(f"Failed to count tokens with key (Hash: {hash(current_key)}): {token_e}")
+                
+        if not token_counted:
+            raise ValueError("All API keys failed or rate-limited in count_chat_tokens")
         
         # Save to DB
         try:
@@ -1087,7 +1214,14 @@ def upload_files_to_gemini(context_id, filenames, api_key=None):
     """Uploads local files to Gemini File API and waits for them to become ACTIVE."""
     from google import genai
     import mimetypes
-    api_key = api_key or PRIMARY_API_KEY
+    if not api_key:
+        raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+        keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+        api_key = PRIMARY_API_KEY
+        for k in keys_to_try:
+            if not KEY_MANAGER.is_key_blocked(k, None)[0]:
+                api_key = k
+                break
     client = genai.Client(api_key=api_key)
     session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(context_id))
     
@@ -1287,6 +1421,25 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     # We use a list with dict.fromkeys() to maintain order and remove duplicates.
     raw_keys = [PRIMARY_API_KEY, key] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k] 
+    
+    # Filter out globally rate-limited or quota-exhausted keys to avoid time/resource waste
+    active_keys = []
+    blocked_info = []
+    for k in keys_to_try:
+        is_blocked, reason = KEY_MANAGER.is_key_blocked(k, model_id)
+        if not is_blocked:
+            active_keys.append(k)
+        else:
+            blocked_info.append((k, reason))
+            
+    if not active_keys:
+        # Fallback: if ALL keys are blocked, try them all to avoid complete lockout
+        active_keys = keys_to_try
+    else:
+        if blocked_info:
+            logger.info(f"Skipped {len(blocked_info)} globally blocked/exhausted API key(s) to protect from redundant 429 hits.")
+            
+    keys_to_try = active_keys
     
 
     current_key_index = 0
@@ -1804,23 +1957,35 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
         except Exception as e:
             logger.error(f"Error in gemini_generate (Attempt {attempt}/{attempts}) using model {model_id}: {e}", exc_info=True)
             last_exception = e
-            is_429_error = False
+            is_blockable_error = False
             error_string = str(e).lower()
-            if ('429' in error_string or '403' in error_string or 'permission_denied' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string):
-                 is_429_error = True
+            
+            is_quota_error = ('429' in error_string or '403' in error_string or 'permission_denied' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)
+            is_transient_error = ('overloaded' in error_string or '503' in error_string or 'service unavailable' in error_string or '500' in error_string or 'internal error' in error_string or 'internal_error' in error_string)
+            
+            if is_quota_error or is_transient_error:
+                 is_blockable_error = True
+                 block_duration, block_reason = parse_quota_block_duration(error_string)
+                 block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                 KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                 logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in generation loop.")
 
-            if is_429_error and (current_key_index + 1) < len(keys_to_try):
-                yield {'status': f'Quota exceeded. Switching to backup key...'}
+            if is_blockable_error and (current_key_index + 1) < len(keys_to_try):
+                if is_quota_error:
+                    yield {'status': f'Quota exceeded. Switching to backup key...'}
+                else:
+                    yield {'status': f'Google API encountered transient error ({block_reason}). Switching to backup key...'}
                 current_key_index += 1
-            elif is_429_error:
-                yield {'status': f'Quota exceeded on all keys. Cannot proceed.'}
+            elif is_blockable_error:
+                if is_quota_error:
+                    yield {'status': f'Quota exceeded on all keys. Cannot proceed.'}
+                else:
+                    yield {'status': f'Google API transient errors on all keys. Cannot proceed.'}
                 break
 
             if attempt < attempts:
-                 
                  yield {'status': f"Encountered error, retrying..."}
-                 
-                 if not is_429_error:
+                 if not is_blockable_error:
                     current_key_index = (current_key_index + 1) % len(keys_to_try) if keys_to_try else 0
             else:
                  break
@@ -2812,17 +2977,7 @@ def refine_stream():
                     
                         effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
                 
-                    # --- ADD THIS PROXY OVERRIDE ---
-                    if current_model != model_id:
-                        proxy_msg = (
-                            f"\n\n[CRITICAL SYSTEM OVERRIDE]: The user explicitly requested '{model_id}', but its API key failed. "
-                            f"You are running as a fallback proxy ({current_model}). DO NOT ATTEMPT TO ANSWER THE USER'S PROMPT YOURSELF. "
-                            f"You MUST immediately use the `subagent_tool` with `model_tier='capable'` and `pass_to_user=True` to pass their exact prompt to the subagent. "
-                            f"DO NOT output any conversational text. Return ONLY the function call. "
-                            f"If the subagent responds with [TOOL_REQUEST], you must use the requested tool silently and return the result to the subagent."
-                        )
-                        effective_conv_hist.append(f"System: {proxy_msg}")
-                    # -------------------------------
+
 
                     text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id, model_id=current_model)                
 
@@ -3755,12 +3910,39 @@ def api_count_tokens():
 
     try:
         from google.genai import types
-        client = genai.Client(api_key=PRIMARY_API_KEY)
-        contents = [types.Content(role="user", parts=[types.Part(text=t)]) for t in text_list]
-        token_count_response = client.models.count_tokens(
-            model="gemini-3.1-flash-lite", contents=contents
-        )
-        return jsonify({'token_count': token_count_response.total_tokens}), 200
+        raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
+        keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+        
+        # Filter out globally rate-limited or quota-exhausted keys
+        active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, "gemini-3.1-flash-lite")[0]]
+        if not active_keys:
+            active_keys = keys_to_try
+            
+        t_count = None
+        for current_key in active_keys:
+            try:
+                client = genai.Client(api_key=current_key)
+                contents = [types.Content(role="user", parts=[types.Part(text=t)]) for t in text_list]
+                token_count_response = client.models.count_tokens(
+                    model="gemini-3.1-flash-lite", contents=contents
+                )
+                t_count = token_count_response.total_tokens
+                break
+            except Exception as token_e:
+                err_str = str(token_e).lower()
+                if ('429' in err_str or '403' in err_str or 'resource_exhausted' in err_str or 'quota' in err_str or 'rate limit' in err_str or
+                    'overloaded' in err_str or '503' in err_str or 'service unavailable' in err_str or
+                    '500' in err_str or 'internal error' in err_str or 'internal_error' in err_str):
+                    block_duration, block_reason = parse_quota_block_duration(err_str)
+                    block_scope = None if ('403' in err_str or 'permission_denied' in err_str or 'invalid' in err_str) else "gemini-3.1-flash-lite"
+                    KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                    logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error during api_count_tokens.")
+                logger.warning(f"Failed to count tokens in api_count_tokens: {token_e}")
+                
+        if t_count is None:
+            return jsonify({'error': 'All API keys failed or rate-limited'}), 500
+            
+        return jsonify({'token_count': t_count}), 200
     except Exception as e:
         logger.error(f"Error in api_count_tokens: {e}")
         return jsonify({'error': str(e)}), 500
