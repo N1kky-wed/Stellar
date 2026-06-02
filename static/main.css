@@ -478,6 +478,24 @@
         box-sizing: border-box;
       }
 
+      /* Zero-specificity global button reset to counter disabled Tailwind preflight */
+      :where(button, [type='button'], [type='reset'], [type='submit']) {
+        background-color: transparent;
+        background-image: none;
+        border-style: none;
+        border-width: 0;
+        border-color: currentColor;
+        padding: 0;
+        margin: 0;
+        color: inherit;
+        font-family: inherit;
+        font-size: inherit;
+        line-height: inherit;
+        text-transform: none;
+        -webkit-appearance: button;
+        cursor: pointer;
+      }
+
       .file-upload-label-button {
         background: transparent;
         color: var(--secondary-text-color);

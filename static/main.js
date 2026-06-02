@@ -806,9 +806,9 @@ const defaultAgentSettings = {
           return `SVGBLOCKPLACEHOLDER${svgBlocks.length - 1}SVGBLOCK`;
         });
 
-        // 2. Protect Math - Improved to avoid currency conflicts ($2,000)
+        // 2. Protect Math - Improved to avoid currency conflicts ($2,000) and JS template literals (${var})
         processedText = processedText.replace(
-          /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?!\s)[^$\n]{1,500}?(?<!\s)\$(?!\d))/g,
+          /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?![\s{])[^$\n]{1,500}?(?<!\s)\$(?!\d))/g,
           (match) => {
             let transformed = match;
             if (match.startsWith("$") && !match.startsWith("$$")) {
@@ -4717,19 +4717,26 @@ const defaultAgentSettings = {
           showErrorStatus,
         );
         if (showErrorStatus) {
-          updateStellarMessagePlaceholder(
-            placeholderId,
-            `Error: ${errorMsg || "Failed"}`,
-            true,
-          );
-          setTimeout(() => {
-            const shouldBeIdleAfterError =
-              !isProcessing && stagedFiles.length === 0;
-            setStatus(
-              shouldBeIdleAfterError ? "Idle" : currentStatusText,
-              false,
+          if (errorMsg === "Stopped by user." && placeholderId) {
+            const msgDiv = messagesDiv.querySelector(`.message[data-id="${placeholderId}"]`);
+            if (msgDiv) {
+              msgDiv.remove();
+            }
+          } else {
+            updateStellarMessagePlaceholder(
+              placeholderId,
+              `Error: ${errorMsg || "Failed"}`,
+              true,
             );
-          }, 4000);
+            setTimeout(() => {
+              const shouldBeIdleAfterError =
+                !isProcessing && stagedFiles.length === 0;
+              setStatus(
+                shouldBeIdleAfterError ? "Idle" : currentStatusText,
+                false,
+              );
+            }, 4000);
+          }
         }
 
         const latestUserMessage = [
