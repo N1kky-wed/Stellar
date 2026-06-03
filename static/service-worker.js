@@ -1,6 +1,5 @@
-const CACHE_NAME = 'stellar-static-v9';
+const CACHE_NAME = 'stellar-static-v10';
 const ASSETS_TO_CACHE = [
-  '/',
   '/default.min.css',
   '/custom_select.css',
   '/custom_select.js',
@@ -44,6 +43,7 @@ self.addEventListener('fetch', event => {
 
   // CRITICAL: Always use network-only for API calls, SSE streams, waitlist, login, and Google OAuth
   if (
+    requestUrl.pathname === '/' ||
     requestUrl.pathname.startsWith('/api/') ||
     requestUrl.pathname.startsWith('/login') ||
     requestUrl.pathname === '/check_auth' ||

@@ -422,7 +422,10 @@
                                 clearInterval(interval);
                                 loaderText.style.color = "#00F090";
                                 loaderText.innerText = "ACCESS GRANTED. INITIALIZING...";
-                                setTimeout(() => window.location.href = '/', 1000);
+                                setTimeout(() => {
+                                    window.location.href = '/';
+                                    window.location.reload();
+                                }, 1000);
                             }
                         }, 600);
                     } else {
