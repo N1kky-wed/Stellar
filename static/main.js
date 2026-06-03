@@ -4301,21 +4301,19 @@ const defaultAgentSettings = {
                         contentDiv.appendChild(genUiContainer);
                     }
                     genUiContainer.style.display = "block";
-                    genUiContainer.innerHTML = data.html;
-                    unwrapVisuals(genUiContainer);
-                    processCodeBlocks(genUiContainer);
-                    processGenerativeUI(genUiContainer);
-                    
-                    // Expose the finish hook for this specific interaction
+                    // Expose the finish hook for this specific interaction BEFORE rendering/processing scripts
                     window.stellar.finish = async function(resultData) {
-                        // Automatically provide visual feedback by disabling interactive elements
-                        const interactables = genUiContainer.querySelectorAll('button, input, select, textarea, [role="button"], a');
-                        interactables.forEach(el => {
-                            el.disabled = true;
-                            el.style.opacity = '0.5';
-                            el.style.cursor = 'wait';
-                            el.style.pointerEvents = 'none'; // Prevents clicks on divs/svgs
-                        });
+                        // Automatically provide visual feedback by disabling interactive elements on the next tick
+                        // to prevent Safari from invalidating/aborting the user gesture fetch request.
+                        setTimeout(() => {
+                            const interactables = genUiContainer.querySelectorAll('button, input, select, textarea, [role="button"], a');
+                            interactables.forEach(el => {
+                                el.disabled = true;
+                                el.style.opacity = '0.5';
+                                el.style.cursor = 'wait';
+                                el.style.pointerEvents = 'none'; // Prevents clicks on divs/svgs
+                            });
+                        }, 0);
 
                         try {
                             await fetch("/api/generative_ui/finish", {
@@ -4327,6 +4325,11 @@ const defaultAgentSettings = {
                             console.error("Failed to finish interaction:", e);
                         }
                     };
+
+                    genUiContainer.innerHTML = data.html;
+                    unwrapVisuals(genUiContainer);
+                    processCodeBlocks(genUiContainer);
+                    processGenerativeUI(genUiContainer);
                   }
                 }
 
