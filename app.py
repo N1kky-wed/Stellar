@@ -855,6 +855,63 @@ def insert_message(chat_id, message_type, message_content,
             return None
 
 
+def format_time_delta(td: datetime.timedelta) -> str:
+    """Format a timedelta into a concise human-readable relative time string."""
+    seconds = int(td.total_seconds())
+    if seconds < 60:
+        return "just now"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m later" if minutes > 1 else "1m later"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h later" if hours > 1 else "1h later"
+    days = hours // 24
+    if days < 7:
+        return f"{days}d later" if days > 1 else "1d later"
+    weeks = days // 7
+    if weeks < 4:
+        return f"{weeks}w later" if weeks > 1 else "1w later"
+    months = days // 30
+    return f"{months}mo later" if months > 1 else "1mo later"
+
+
+def build_annotated_history(conversation_history, user_message_id):
+    """Build the conversation history list with relative time annotations and return the last message time."""
+    conv_hist_list = []
+    last_msg_time = None
+    if conversation_history:
+        prev_time = None
+        for msg in conversation_history:
+            if str(msg.get('id')) == str(user_message_id):
+                continue
+            role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
+            content = msg.get('message_content', '')
+            
+            # Calculate time delta for context
+            time_str = msg.get('timestamp')
+            time_annotation = ""
+            if time_str:
+                try:
+                    # DB timestamps are UTC strings, e.g. '2026-06-02 16:19:02'
+                    msg_time = datetime.datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+                    if prev_time is None:
+                        time_annotation = f" (at {msg_time.strftime('%Y-%m-%d %H:%M:%S')} UTC)"
+                    else:
+                        delta = msg_time - prev_time
+                        time_annotation = f" ({format_time_delta(delta)})"
+                    prev_time = msg_time
+                    last_msg_time = msg_time
+                except Exception as te:
+                    logger.error(f"Error parsing timestamp {time_str}: {te}")
+
+            # Strip base64 before passing to LLM context
+            clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
+            conv_hist_list.append(f"{role}{time_annotation}: {clean_content}")
+            
+    return conv_hist_list, last_msg_time
+
+
 def get_conversation_history(chat_id, for_ui=False):
     """Retrieve conversation history for a chat."""
     if not chat_id:
@@ -2885,16 +2942,7 @@ def refine_stream():
 
                 if check_and_log_stop(query_id, "history retrieval"): return
                 conversation_history = get_conversation_history(chat_id)
-                conv_hist_list = []
-                if conversation_history:
-                    for msg in conversation_history:
-                        if str(msg.get('id')) == str(user_message_id):
-                            continue
-                        role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
-                        content = msg.get('message_content', '')
-                        # Strip base64 before passing to LLM context
-                        clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
-                        conv_hist_list.append(f"{role}: {clean_content}")
+                conv_hist_list, last_msg_time = build_annotated_history(conversation_history, user_message_id)
             
                 # Dynamically add tool execution history to context
                 tool_hist_context = get_tool_history(chat_id)
@@ -2955,15 +3003,7 @@ def refine_stream():
                     
                     # Rebuild context after safety drop
                     conversation_history = get_conversation_history(chat_id)
-                    conv_hist_list = []
-                    if conversation_history:
-                        for msg in conversation_history:
-                            if str(msg.get('id')) == str(user_message_id):
-                                continue
-                            role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
-                            content = msg.get('message_content', '')
-                            clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
-                            conv_hist_list.append(f"{role}: {clean_content}")
+                    conv_hist_list, last_msg_time = build_annotated_history(conversation_history, user_message_id)
                     tool_hist_context = get_tool_history(chat_id)
                     if tool_hist_context:
                         conv_hist_list.append(tool_hist_context)
@@ -3033,7 +3073,20 @@ def refine_stream():
                 
 
 
-                    text_prompt = get_refinement_prompt(user_query_from_frontend, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id, model_id=current_model)                
+                    # Calculate time elapsed since last message (in UTC)
+                    time_elapsed_str = ""
+                    if 'last_msg_time' in locals() and last_msg_time:
+                        try:
+                            now_utc = datetime.datetime.utcnow()
+                            elapsed_delta = now_utc - last_msg_time
+                            if elapsed_delta.total_seconds() > 60:  # Only inject if > 1 minute has passed
+                                formatted_elapsed = format_time_delta(elapsed_delta).replace(' later', '')
+                                time_elapsed_str = f"[SYSTEM NOTICE: {formatted_elapsed} has passed since the last message in this conversation.]\n\n"
+                        except Exception as e:
+                            logger.error(f"Error calculating time elapsed: {e}")
+
+                    effective_user_query = f"{time_elapsed_str}{user_query_from_frontend}"
+                    text_prompt = get_refinement_prompt(effective_user_query, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id, model_id=current_model)                
 
                     # Create a copy of multimodal_prompt and add the text_prompt
                     final_prompt = multimodal_prompt.copy()
@@ -5151,14 +5204,26 @@ class TaskSchedulerMonitor:
             g.user_id = user_id
             g.chat_id = chat_id
             
-            from app import get_conversation_history, insert_message, gemini_generate, PRIMARY_API_KEY
+            from app import get_conversation_history, insert_message, gemini_generate, PRIMARY_API_KEY, build_annotated_history
             history = get_conversation_history(chat_id)
-            conv_hist_list = [f"{'User' if m['message_type']=='user' else 'Stellar'}: {m['message_content']}" for m in history[-10:]]
+            conv_hist_list, last_msg_time = build_annotated_history(history[-10:], None)
 
             from prompts import get_refinement_prompt
+            # Calculate time elapsed since last message (in UTC)
+            time_elapsed_str = ""
+            if last_msg_time:
+                try:
+                    now_utc = datetime.datetime.utcnow()
+                    elapsed_delta = now_utc - last_msg_time
+                    if elapsed_delta.total_seconds() > 60:
+                        formatted_elapsed = format_time_delta(elapsed_delta).replace(' later', '')
+                        time_elapsed_str = f"[SYSTEM NOTICE: {formatted_elapsed} has passed since the last message in this conversation.]\n\n"
+                except Exception as e:
+                    logger.error(f"Error calculating time elapsed: {e}")
+
             # Wrap the task prompt in a directive and include the scratchpad metadata
             meta_context = f"\n**TASK SCRATCHPAD (TRANSIENT STATE):**\n{metadata}\n" if metadata else ""
-            directive_prompt = f"### SCHEDULED TASK EXECUTION MANDATE\nYou are executing a pre-authorized scheduled task.{meta_context}\nYou MUST use the necessary tools to fulfill this request immediately. Do not apologize or simulate the action.\n\nTask: {task_prompt}"
+            directive_prompt = f"{time_elapsed_str}### SCHEDULED TASK EXECUTION MANDATE\nYou are executing a pre-authorized scheduled task.{meta_context}\nYou MUST use the necessary tools to fulfill this request immediately. Do not apologize or simulate the action.\n\nTask: {task_prompt}"
             
             system_prompt = get_refinement_prompt(directive_prompt, conv_hist_list, user_id=user_id, model_id=model_id)
 
