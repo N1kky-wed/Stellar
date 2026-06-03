@@ -4689,10 +4689,28 @@ const defaultAgentSettings = {
           (Date.now() - taskStartTime > 10000 ||
             document.visibilityState === "hidden")
         ) {
-          notifyUser(
-            "Stellar Task Complete",
-            "Your request has been processed successfully.",
-          );
+          if ("serviceWorker" in navigator && "PushManager" in window) {
+            navigator.serviceWorker.ready.then(reg => {
+              return reg.pushManager.getSubscription();
+            }).then(sub => {
+              if (!sub) {
+                notifyUser(
+                  "Stellar Task Complete",
+                  "Your request has been processed successfully.",
+                );
+              }
+            }).catch(() => {
+              notifyUser(
+                "Stellar Task Complete",
+                "Your request has been processed successfully.",
+              );
+            });
+          } else {
+            notifyUser(
+              "Stellar Task Complete",
+              "Your request has been processed successfully.",
+            );
+          }
         }
         taskStartTime = null;
         notifiedForLongTask = false;

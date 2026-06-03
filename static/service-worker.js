@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stellar-static-v7';
+const CACHE_NAME = 'stellar-static-v8';
 const ASSETS_TO_CACHE = [
   '/',
   '/default.min.css',
@@ -112,7 +112,14 @@ self.addEventListener('push', event => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      const hasFocusedClient = clientList.some(client => client.focused);
+      if (hasFocusedClient) {
+        console.log('[Service Worker] App is focused. Skipping push notification.');
+        return;
+      }
+      return self.registration.showNotification(data.title, options);
+    })
   );
 });
 
