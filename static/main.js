@@ -4265,36 +4265,6 @@ const defaultAgentSettings = {
                 }
 
                 if (data.type === "generative_ui") {
-                  // Notify user that interaction is required (safeguarded against mobile constructor errors)
-                  try {
-                    if ("Notification" in window && Notification.permission === "granted") {
-                      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-                        navigator.serviceWorker.ready.then(reg => {
-                          reg.showNotification("Stellar", { body: "Interaction required! The model is waiting for your input." });
-                        }).catch(() => {
-                          try { new Notification("Stellar", { body: "Interaction required!" }); } catch(e){}
-                        });
-                      } else {
-                        new Notification("Stellar", { body: "Interaction required! The model is waiting for your input." });
-                      }
-                    } else if ("Notification" in window && Notification.permission !== "denied") {
-                      Notification.requestPermission().then(permission => {
-                        if (permission === "granted") {
-                          if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-                            navigator.serviceWorker.ready.then(reg => {
-                              reg.showNotification("Stellar", { body: "Interaction required! The model is waiting for your input." });
-                            }).catch(() => {
-                              try { new Notification("Stellar", { body: "Interaction required!" }); } catch(e){}
-                            });
-                          } else {
-                            try { new Notification("Stellar", { body: "Interaction required!" }); } catch(e){}
-                          }
-                        }
-                      }).catch(e => console.warn(e));
-                    }
-                  } catch (e) {
-                    console.warn("Notification error ignored to prevent stream crash:", e);
-                  }
 
                   // Render the UI into the placeholder message directly
                   const msgDiv = document.querySelector(`.message[data-id="${placeholderId}"]`);

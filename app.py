@@ -722,6 +722,26 @@ def initialize_database():
             )''')
             print("Created 'push_subscriptions' table.")
 
+        # Migrate push subscriptions to Redis if SQLite contains any
+        try:
+            cursor.execute("SELECT user_id, endpoint, p256dh, auth FROM push_subscriptions")
+            rows = cursor.fetchall()
+            if rows:
+                import redis
+                r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+                migrated = 0
+                for row in rows:
+                    redis_key = f"user_push_subscriptions:{row['user_id']}"
+                    val = json.dumps({"p256dh": row['p256dh'], "auth": row['auth']})
+                    r_client.hset(redis_key, row['endpoint'], val)
+                    migrated += 1
+                if migrated > 0:
+                    print(f"Migrated {migrated} PWA push subscriptions from SQLite to Redis.")
+                    cursor.execute("DELETE FROM push_subscriptions")
+                    db.commit()
+        except Exception as e:
+            print(f"Error migrating push subscriptions to Redis: {e}")
+
         db.commit()
 
 initialize_database()
@@ -4185,14 +4205,13 @@ def favicon():
 # PWA WEB PUSH NOTIFICATION API
 # -------------------------------------------------------------
 def send_push_notification(user_id, title, body, url=None):
-    """Sends a Web Push notification to all active devices registered by the user."""
-    db = get_db()
-    cursor = db.execute(
-        'SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?',
-        (user_id,)
-    )
-    subscriptions = cursor.fetchall()
-    if not subscriptions:
+    """Sends a Web Push notification to all active devices registered by the user in Redis."""
+    import redis
+    r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+    redis_key = f"user_push_subscriptions:{user_id}"
+    
+    subscriptions_dict = r_client.hgetall(redis_key)
+    if not subscriptions_dict:
         return 0
 
     from pywebpush import webpush, WebPushException
@@ -4207,15 +4226,16 @@ def send_push_notification(user_id, title, body, url=None):
     success_count = 0
     expired_endpoints = []
     
-    for sub in subscriptions:
-        sub_info = {
-            "endpoint": sub['endpoint'],
-            "keys": {
-                "p256dh": sub['p256dh'],
-                "auth": sub['auth']
-            }
-        }
+    for endpoint, creds_str in subscriptions_dict.items():
         try:
+            creds = json.loads(creds_str)
+            sub_info = {
+                "endpoint": endpoint,
+                "keys": {
+                    "p256dh": creds['p256dh'],
+                    "auth": creds['auth']
+                }
+            }
             webpush(
                 subscription_info=sub_info,
                 data=payload,
@@ -4224,22 +4244,18 @@ def send_push_notification(user_id, title, body, url=None):
             )
             success_count += 1
         except WebPushException as ex:
-            logger.warning(f"WebPush failed for endpoint {sub['endpoint']}: {ex}")
+            logger.warning(f"WebPush failed for endpoint {endpoint}: {ex}")
             if ex.response is not None and ex.response.status_code in [404, 410]:
-                expired_endpoints.append(sub['endpoint'])
+                expired_endpoints.append(endpoint)
         except Exception as e:
             logger.error(f"Error sending push: {e}")
             
     if expired_endpoints:
         try:
-            db.executemany(
-                'DELETE FROM push_subscriptions WHERE endpoint = ?',
-                [(ep,) for ep in expired_endpoints]
-            )
-            db.commit()
-            logger.info(f"Cleaned up {len(expired_endpoints)} expired push subscriptions.")
+            r_client.hdel(redis_key, *expired_endpoints)
+            logger.info(f"Cleaned up {len(expired_endpoints)} expired push subscriptions from Redis.")
         except Exception as e:
-            logger.error(f"Error cleaning up expired push subscriptions: {e}")
+            logger.error(f"Error cleaning up expired push subscriptions from Redis: {e}")
             
     return success_count
 
@@ -4267,17 +4283,18 @@ def pwa_subscribe():
     if not p256dh or not auth:
         return jsonify({"success": False, "message": "Missing subscription cryptographic keys."}), 400
         
-    db = get_db()
     try:
-        db.execute('''
-            INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth)
-            VALUES (?, ?, ?, ?)
-        ''', (session['user_id'], endpoint, p256dh, auth))
-        db.commit()
+        import redis
+        r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        redis_key = f"user_push_subscriptions:{session['user_id']}"
+        val = json.dumps({"p256dh": p256dh, "auth": auth})
+        
+        # Store in Redis Hash
+        r_client.hset(redis_key, endpoint, val)
         return jsonify({"success": True, "message": "Subscribed to background notifications."}), 200
     except Exception as e:
-        logger.error(f"Error saving PWA subscription: {e}")
-        return jsonify({"success": False, "message": "Database error."}), 500
+        logger.error(f"Error saving PWA subscription to Redis: {e}")
+        return jsonify({"success": False, "message": "Redis database error."}), 500
 
 @app.route('/api/pwa/test_push', methods=['POST'])
 def pwa_test_push():
