@@ -5292,7 +5292,11 @@ const defaultAgentSettings = {
           const data = await response.json();
           if (data.logged_in) {
             currentUsername = data.display_name || data.username;
-            profileIcon.textContent = currentUsername.charAt(0).toUpperCase();
+            if (data.pfp_url) {
+              profileIcon.innerHTML = `<img src="${data.pfp_url}" alt="${currentUsername}">`;
+            } else {
+              profileIcon.textContent = currentUsername.charAt(0).toUpperCase();
+            }
             sidebarUsername.textContent = currentUsername;
             profileUsernameDisplay.textContent = currentUsername;
 

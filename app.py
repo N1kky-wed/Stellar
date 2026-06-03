@@ -218,9 +218,10 @@ def login_google():
         
         email = id_info['email']
         name = data.get('display_name') or id_info.get('name') or email.split('@')[0]
+        picture_url = id_info.get('picture')
         
         db = get_db()
-        cursor = db.execute('SELECT id, username, display_name, role, is_approved, login_count FROM users WHERE username = ?', (email,))
+        cursor = db.execute('SELECT id, username, display_name, pfp_url, role, is_approved, login_count FROM users WHERE username = ?', (email,))
         user = _fetchone_as_dict(cursor)
 
         is_new_user = False
@@ -237,17 +238,18 @@ def login_google():
                 role = 'user'
                 is_approved = 0
 
-            db.execute('INSERT INTO users (username, display_name, role, is_approved) VALUES (?, ?, ?, ?)', (email, name, role, is_approved))
+            db.execute('INSERT INTO users (username, display_name, pfp_url, role, is_approved) VALUES (?, ?, ?, ?, ?)', (email, name, picture_url, role, is_approved))
             db.commit()
             
-            cursor = db.execute('SELECT id, username, display_name, role, is_approved, login_count FROM users WHERE username = ?', (email,))
+            cursor = db.execute('SELECT id, username, display_name, pfp_url, role, is_approved, login_count FROM users WHERE username = ?', (email,))
             user = _fetchone_as_dict(cursor)
         else:
-            # Update display_name if missing or different
-            if user.get('display_name') != name:
-                db.execute('UPDATE users SET display_name = ? WHERE id = ?', (name, user['id']))
+            # Update display_name or pfp_url if missing or different
+            if user.get('display_name') != name or user.get('pfp_url') != picture_url:
+                db.execute('UPDATE users SET display_name = ?, pfp_url = ? WHERE id = ?', (name, picture_url, user['id']))
                 db.commit()
                 user['display_name'] = name
+                user['pfp_url'] = picture_url
         
         # Update login count and last active
         db.execute('UPDATE users SET login_count = login_count + 1, last_active = CURRENT_TIMESTAMP WHERE id = ?', (user['id'],))
@@ -270,6 +272,7 @@ def login_google():
         session['display_name'] = user['display_name']
         session['role'] = user['role']
         session['is_approved'] = bool(user['is_approved'])
+        session['pfp_url'] = user.get('pfp_url')
         session.permanent = True
         
         if user['is_approved']:
@@ -572,6 +575,14 @@ def initialize_database():
             except Exception as e:
                 logger.exception("Error caught: %s", e)
                 print(f"Error adding 'last_active' column: {e}")
+
+        if 'pfp_url' not in users_columns:
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN pfp_url TEXT")
+                print("Added 'pfp_url' column to 'users' table.")
+            except Exception as e:
+                logger.exception("Error caught: %s", e)
+                print(f"Error adding 'pfp_url' column: {e}")
 
         cursor.execute("PRAGMA table_info(chats)")
         chats_columns = [info[1] for info in cursor.fetchall()]
@@ -3832,7 +3843,7 @@ def logout_user():
 def check_auth_status():
     if 'user_id' in session:
         db = get_db()
-        cursor = db.execute('SELECT username, display_name, role, is_approved FROM users WHERE id = ?', (session['user_id'],))
+        cursor = db.execute('SELECT username, display_name, role, is_approved, pfp_url FROM users WHERE id = ?', (session['user_id'],))
         user = _fetchone_as_dict(cursor)
         if user:
             session['is_approved'] = bool(user['is_approved'])
@@ -3841,7 +3852,8 @@ def check_auth_status():
                 "username": user['username'],
                 "display_name": user['display_name'] or user['username'],
                 "role": user['role'],
-                "is_approved": session['is_approved']
+                "is_approved": session['is_approved'],
+                "pfp_url": user.get('pfp_url')
             }), 200
         else:
             return jsonify({"logged_in": False}), 200
@@ -4113,7 +4125,16 @@ def api_check_url():
 @app.route('/api/user/profile', methods=['GET'])
 @require_approval
 def get_user_profile():
-    return jsonify({"success": True, "username": session['username'], "user_id": session['user_id']}), 200
+    db = get_db()
+    cursor = db.execute('SELECT username, display_name, role, pfp_url FROM users WHERE id = ?', (session['user_id'],))
+    user = _fetchone_as_dict(cursor)
+    return jsonify({
+        "success": True,
+        "username": session['username'],
+        "user_id": session['user_id'],
+        "display_name": user.get('display_name') if user else session.get('display_name'),
+        "pfp_url": user.get('pfp_url') if user else session.get('pfp_url')
+    }), 200
 @app.route('/api/user/change_display_name', methods=['POST'])
 @require_approval
 def change_display_name_route():
