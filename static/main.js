@@ -4526,12 +4526,14 @@ const defaultAgentSettings = {
                 }
               } catch (err) {
                 console.error("Error processing stream update:", err);
+                const errMsg = err && err.message ? err.message : String(err);
+                const errStack = err && err.stack ? err.stack.split("\n")[0] : "";
                 updateStellarMessagePlaceholder(
                   placeholderId,
-                  "Error processing stream update.",
+                  "Error processing stream update: " + errMsg + " " + errStack,
                   true,
                 );
-                setStatus("Stream processing error", true);
+                setStatus("Stream error: " + errMsg, true);
               }
             };
 
