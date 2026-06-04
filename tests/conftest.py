@@ -1,5 +1,8 @@
 import sys
 import os
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -22,6 +25,11 @@ class MockRedisClass:
     def set(self, name, value, ex=None, px=None, nx=False, xx=False):
         self.store[name] = value
         return True
+    def setex(self, name, time, value):
+        self.store[name] = value
+        return True
+    def exists(self, name):
+        return name in self.store
     def delete(self, *names):
         for name in names:
             self.store.pop(name, None)
@@ -46,6 +54,26 @@ class MockRedisClass:
         mock_pubsub = MagicMock()
         mock_pubsub.listen.return_value = []
         return mock_pubsub
+    def rpush(self, key, *values):
+        if key not in self.store:
+            self.store[key] = []
+        self.store[key].extend(values)
+        return len(self.store[key])
+    def lpop(self, key):
+        if key in self.store and self.store[key]:
+            return self.store[key].pop(0)
+        return None
+    def lrange(self, key, start, end):
+        if key in self.store:
+            if end == -1:
+                return self.store[key][start:]
+            return self.store[key][start:end+1]
+        return []
+    def scan_iter(self, match=None, count=None, _type=None):
+        import fnmatch
+        for key in self.store.keys():
+            if match is None or fnmatch.fnmatch(key, match):
+                yield key
 
 mock_redis = MagicMock()
 mock_redis.Redis = MockRedisClass
@@ -76,6 +104,7 @@ sys.modules['sqlitecloud'] = MagicMock()
 # --- End Mocks ---
 
 # Setup Env Vars
+os.environ['TESTING'] = 'true'
 os.environ['TAVILY_API_KEY'] = 'test_key'
 os.environ['Admin'] = 'admin'
 os.environ['RTP_API_KEY'] = 'test_key'
@@ -117,3 +146,18 @@ def mock_docker_client():
 @pytest.fixture
 def mock_redis_client():
     return mock_redis.StrictRedis.return_value
+
+@pytest.fixture
+def auth_client(client):
+    from app import get_db
+    with app.app_context():
+        db = get_db()
+        db.execute('INSERT OR IGNORE INTO users (id, username, display_name, role, is_approved) VALUES (1, "testuser@gmail.com", "Test User", "admin", 1)')
+        db.commit()
+    with client.session_transaction() as sess:
+        sess['user_id'] = 1
+        sess['username'] = "testuser@gmail.com"
+        sess['display_name'] = "Test User"
+        sess['role'] = "admin"
+        sess['is_approved'] = True
+    yield client

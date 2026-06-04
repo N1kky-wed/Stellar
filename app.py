@@ -584,6 +584,38 @@ def initialize_database():
                 logger.exception("Error caught: %s", e)
                 print(f"Error adding 'pfp_url' column: {e}")
 
+        if 'designation' not in users_columns:
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN designation TEXT")
+                print("Added 'designation' column to 'users' table.")
+            except Exception as e:
+                logger.exception("Error caught: %s", e)
+                print(f"Error adding 'designation' column: {e}")
+
+        if 'source' not in users_columns:
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN source TEXT")
+                print("Added 'source' column to 'users' table.")
+            except Exception as e:
+                logger.exception("Error caught: %s", e)
+                print(f"Error adding 'source' column: {e}")
+
+        if 'use_case' not in users_columns:
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN use_case TEXT")
+                print("Added 'use_case' column to 'users' table.")
+            except Exception as e:
+                logger.exception("Error caught: %s", e)
+                print(f"Error adding 'use_case' column: {e}")
+
+        if 'waitlist_form_submitted' not in users_columns:
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN waitlist_form_submitted BOOLEAN DEFAULT 0")
+                print("Added 'waitlist_form_submitted' column to 'users' table.")
+            except Exception as e:
+                logger.exception("Error caught: %s", e)
+                print(f"Error adding 'waitlist_form_submitted' column: {e}")
+
         cursor.execute("PRAGMA table_info(chats)")
         chats_columns = [info[1] for info in cursor.fetchall()]
         if 'token_count' not in chats_columns:
@@ -5158,7 +5190,8 @@ def delete_repo_history(history_id):
     db.commit()
 
     return jsonify({'success': True, 'message': 'History entry deleted.'})
-cleanup_stale_containers()
+if os.environ.get('TESTING') != 'true':
+    cleanup_stale_containers()
 
 class TaskSchedulerMonitor:
     def __init__(self, app_instance, interval=60):
@@ -5289,8 +5322,9 @@ class TaskSchedulerMonitor:
                 display_name = MODEL_NAMES.get(model_id, model_id)
                 insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\n\n{final_output}")
 
-task_scheduler = TaskSchedulerMonitor(app)
-task_scheduler.start()
+if os.environ.get('TESTING') != 'true':
+    task_scheduler = TaskSchedulerMonitor(app)
+    task_scheduler.start()
 
 if __name__ == '__main__':    # Ensure Docker images are ready before starting the server
     try:

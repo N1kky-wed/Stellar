@@ -29,7 +29,7 @@ def test_get_updates_success(mock_get, mock_env):
     updates = bot.get_updates()
     
     assert updates == {"ok": True, "result": []}
-    mock_get.assert_called_once_with("https://api.telegram.org/botfake_token/getUpdates", timeout=10)
+    mock_get.assert_called_once_with("https://api.telegram.org/botfake_token/getUpdates", params={"timeout": 10}, timeout=15)
 
 @patch('telegram_bot.requests.post')
 def test_send_message_success(mock_post, mock_env):

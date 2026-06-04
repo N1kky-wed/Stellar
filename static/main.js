@@ -5856,6 +5856,59 @@ const defaultAgentSettings = {
           }
         });
       }
+
+      const exportChatBtn = document.getElementById("exportChatBtn");
+      if (exportChatBtn) {
+        exportChatBtn.addEventListener("click", async () => {
+          if (!currentChatId) {
+            alert("No active chat to export.");
+            return;
+          }
+          setStatus("Exporting chat...");
+          try {
+            const url = `/get_history?chat_id=${currentChatId}`;
+            const response = await fetch(url, { credentials: "include" });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            
+            if (!data.history || data.history.length === 0) {
+              alert("No messages to export in this chat.");
+              setStatus("Idle");
+              return;
+            }
+
+            // Create download
+            const jsonString = JSON.stringify(data.history, null, 2);
+            const blob = new Blob([jsonString], { type: "application/json" });
+            const downloadUrl = URL.createObjectURL(blob);
+            
+            // Get chat name if possible
+            let chatName = "chat_export";
+            const chatItem = document.querySelector(`.chat-item[data-chat-id="${currentChatId}"] span`);
+            if (chatItem) {
+              chatName = chatItem.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+            }
+            
+            const a = document.createElement("a");
+            a.href = downloadUrl;
+            a.download = `${chatName}_${currentChatId}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(downloadUrl);
+            setStatus("Exported successfully");
+            setTimeout(() => {
+              const shouldBeIdle = !isProcessing && stagedFiles.length === 0;
+              if (shouldBeIdle) setStatus("Idle");
+            }, 1500);
+          } catch (err) {
+            console.error("Export failed:", err);
+            alert(`Failed to export chat: ${err.message}`);
+            setStatus("Idle");
+          }
+        });
+      }
+
       if (fileUploadInput) {
         fileUploadInput.addEventListener("change", handleFileUpload);
       }

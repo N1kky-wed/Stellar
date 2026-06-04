@@ -14,7 +14,7 @@ def test_orphan_monitor_cleanup(mock_docker_client):
     container1.labels = {
         'stellar_type': 'repo',
         'stellar_process_id': 'p1',
-        'created_at_ts': str(time.time() - 100) # Older than 60s
+        'created_at_ts': str(time.time() - 60 * 60 * 60 - 100) # Older than 60 hours
     }
 
     container2 = MagicMock()
@@ -66,8 +66,6 @@ def test_cleanup_stale_containers(mock_docker_client):
     mock_docker_client.containers.list.side_effect = lambda all=False, filters=None: (
         [container1] if filters and ('name' in filters or 'label' in filters) else []
     )
-    # The actual implementation calls list twice with different filters and unions them.
-    # Let's adjust the side_effect to match better.
 
     def side_effect(all=False, filters=None):
         if filters and filters.get('label') == 'stellar_type':
@@ -79,7 +77,6 @@ def test_cleanup_stale_containers(mock_docker_client):
     mock_docker_client.containers.list.side_effect = side_effect
 
     with patch('app.client', mock_docker_client):
-        # We need to patch docker.from_env inside the function too, or ensure it uses the mock
         with patch('docker.from_env', return_value=mock_docker_client):
             cleanup_stale_containers()
 
