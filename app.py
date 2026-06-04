@@ -518,6 +518,10 @@ def initialize_database():
                 FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )''')
 
+        # Performance optimization: Add index on chat_id to speed up frequent history lookups
+        # Expected to reduce chat loading time from O(N) full table scan to O(log N) lookup.
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)")
+
         # Migration: Add visualization_html column if it doesn't exist
         cursor.execute("PRAGMA table_info(messages)")
         columns = [info[1] for info in cursor.fetchall()]
@@ -646,6 +650,9 @@ def initialize_database():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
         )''')
+
+        # Performance optimization: Add index on chat_id for tool_calls history retrieval
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tool_calls_chat_id ON tool_calls(chat_id)")
 
         cursor.execute("PRAGMA table_info(tool_calls)")
         tc_columns = [info[1] for info in cursor.fetchall()]
