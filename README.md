@@ -235,13 +235,21 @@ sudo systemctl restart stellar
 
 ### SSH TUI Gateway Service
 
-Stellar includes a fully custom, interactive SSH Terminal User Interface (TUI) gateway running directly on port 22. It provides a secure, text-based dashboard for managing your AI-deployed Docker containers without needing direct host access or a web UI.
+Stellar includes a fully custom, interactive SSH Terminal User Interface (TUI) gateway running on port 2222, seamlessly proxied through the host's port 22 via the `stellar` system user. It provides a secure, text-based dashboard for managing AI-deployed Docker containers without needing direct host access.
 
-**Features:**
-- **Device Authentication:** Secure browser-based authentication. Users visit `https://stellarai.live/auth/ssh` to generate a 6-character short-lived code, which is pasted into the terminal to authenticate the SSH session.
-- **Container Dashboard:** A beautiful Rich-powered interface displaying all active and historical repository deployments, their current live status (Running, Stopped), and their routed subdomains.
-- **Lifecycle Management:** Users can instantly Stop or Restart their deployed containers directly from the terminal using keyboard controls.
-- **Isolated Proxy Strategy:** The gateway safely runs as a proxy via the `stellar` system user, ensuring the core Linux `auth` environment remains strictly separated from standard admin SSH access while keeping port 22 clean.
+**Authentication & Login Flow:**
+Stellar completely replaces traditional SSH public-key authentication with a modern, short-lived device authorization flow tied to the user's web session:
+1. The user initiates a connection via `ssh stellar@stellarai.live`.
+2. The OpenSSH server matches the `stellar` user, disables all tunneling/port-forwarding, and forces the connection into the Python Paramiko SSH server (`ssh_gateway.py`).
+3. The user is presented with an ASCII art prompt requesting a 6-character code.
+4. The user visits `https://stellarai.live/auth/ssh` in their browser. Because this route is protected by `@require_approval`, the user **must be securely logged into their Stellar web account**.
+5. The web app generates a cryptographically random 6-character code, ties it securely to the user's ID, stores it in Redis with a 5-minute TTL, and enforces a strict rate limit.
+6. The user pastes this code into their SSH terminal. The gateway verifies the code against Redis via an internal API. Upon success, the session is instantly authenticated as the correct user without ever exposing server credentials or requiring public SSH keys.
+
+**Dashboard Features:**
+- **Container Management:** A beautiful Rich-powered terminal interface displaying all active and historical repository deployments owned by the user.
+- **Live Telemetry:** View the current container status (Running, Stopped), creation timestamps, and routed subdomains in a clean table format.
+- **Lifecycle Controls:** Users can navigate the list and instantly Stop or Restart their deployed containers directly from the terminal using keyboard controls.
 
 **Usage:**
 ```bash
