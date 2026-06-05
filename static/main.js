@@ -1484,15 +1484,16 @@ const defaultAgentSettings = {
                         });
                         ${scriptContent}
                         
-                        // Re-bind inline on* event attributes to execute within this IIFE's local scope
-                        if (_container) {
-                            _container.querySelectorAll("*").forEach(function(el) {
+                        // Function to bind inline on* events to IIFE scope
+                        function bindEvents(root) {
+                            root.querySelectorAll("*").forEach(function(el) {
                                 var attrs = Array.from(el.attributes);
                                 attrs.forEach(function(attr) {
                                     if (attr.name.indexOf("on") === 0) {
                                         var eventName = attr.name.slice(2);
                                         var handlerStr = attr.value;
                                         el.removeAttribute(attr.name);
+                                        el[attr.name] = null; // Unbind native compiled handler
                                         el.addEventListener(eventName, function(event) {
                                             try {
                                                 eval(handlerStr);
@@ -1500,20 +1501,22 @@ const defaultAgentSettings = {
                                                 console.error("Error executing event handler:", e);
                                                 if (window.stellar && window.stellar.send) {
                                                     const errMsg = e.toString();
-                                                    // Visual feedback for auto-recovery
                                                     const targetEl = event.currentTarget || event.target;
-                                                    const originalHtml = targetEl.innerHTML;
-                                                    const originalBg = targetEl.style.backgroundColor;
-                                                    const originalColor = targetEl.style.color;
                                                     
-                                                    targetEl.innerHTML = "Fixing... <span class='animate-spin' style='display:inline-block; margin-left: 4px;'>⟳</span>";
-                                                    targetEl.style.backgroundColor = "#eab308"; // Yellow warning color
+                                                    // Visual feedback
+                                                    targetEl.style.backgroundColor = "#eab308";
                                                     targetEl.style.color = "#000";
                                                     targetEl.style.opacity = "0.8";
-                                                    targetEl.disabled = true;
+                                                    if (targetEl.tagName === "TR") {
+                                                        const firstTd = targetEl.querySelector("td");
+                                                        if (firstTd) firstTd.innerHTML = "Fixing... <span class='animate-spin' style='display:inline-block;'>⟳</span>";
+                                                    } else {
+                                                        targetEl.innerHTML = "Fixing... <span class='animate-spin' style='display:inline-block; margin-left: 4px;'>⟳</span>";
+                                                        targetEl.disabled = true;
+                                                    }
                                                     
-                                                    // Trigger silent auto-correction prompt
-                                                    window.stellar.send(`[SYSTEM AUTO-FEEDBACK: The user clicked/interacted with an element in your UI, but your JavaScript crashed with the following error: "${errMsg}". Please analyze your code, fix the logic or syntax error, and output the fully corrected HTML block.]`, true);
+                                                    // Ensure we include the container ID so the agent knows what to replace!
+                                                    window.stellar.send(\`[SYSTEM AUTO-FEEDBACK: The user clicked/interacted with an element in your UI, but your JavaScript crashed with the following error: "\${errMsg}". Please analyze your code, fix the logic or syntax error, and output the fully corrected HTML block. Respond ONLY with the newly corrected raw HTML block.]\`, true);
                                                 }
                                             }
                                         });
@@ -1521,8 +1524,25 @@ const defaultAgentSettings = {
                                 });
                             });
                         }
+                        
+                        if (_container) {
+                            // Bind initially existing elements
+                            bindEvents(_container);
+                            
+                            // Setup MutationObserver to bind events on newly injected HTML
+                            var observer = new MutationObserver(function(mutations) {
+                                mutations.forEach(function(mutation) {
+                                    mutation.addedNodes.forEach(function(node) {
+                                        if (node.nodeType === 1) { // ELEMENT_NODE
+                                            bindEvents(node);
+                                        }
+                                    });
+                                });
+                            });
+                            observer.observe(_container, { childList: true, subtree: true });
+                        }
                     })();
-                    `;
+                    \`;
                     inlineScripts.push(scriptContent);
                 }
                 oldScript.remove();
@@ -4015,6 +4035,40 @@ const defaultAgentSettings = {
 
         try {
           let htmlContent = "";
+          
+          const autofixMatch = finalContent.match(/data-autofix-replace="([^"]+)"/);
+          if (autofixMatch) {
+              const replaceId = autofixMatch[1];
+              const targetContainer = document.getElementById(replaceId);
+              if (targetContainer) {
+                  const targetMsgDiv = targetContainer.closest('.message');
+                  if (targetMsgDiv) {
+                      placeholderDiv.style.display = "none";
+                      if (messageDbId) deleteMessageFromServer(messageDbId, placeholderDiv);
+                      
+                      const strippedContent = finalContent.replace(/<div[^>]*data-autofix-replace=[^>]*><\/div>/g, "").trim();
+                      const oldContentDiv = targetMsgDiv.querySelector('.message-content');
+                      
+                      let newHtml = marked.parse(strippedContent);
+                      newHtml = wrapTables(newHtml);
+                      oldContentDiv.innerHTML = newHtml;
+                      
+                      unwrapVisuals(oldContentDiv);
+                      processCodeBlocks(oldContentDiv);
+                      processGenerativeUI(oldContentDiv);
+                      renderMath(oldContentDiv);
+                      
+                      const prevUserMsg = placeholderDiv.previousElementSibling;
+                      if (prevUserMsg && prevUserMsg.classList.contains("user-msg") && prevUserMsg.innerText.includes("SYSTEM AUTO-FEEDBACK")) {
+                          prevUserMsg.style.display = "none";
+                          const uid = prevUserMsg.dataset.id;
+                          if (uid) deleteMessageFromServer(uid, prevUserMsg);
+                      }
+                      return;
+                  }
+              }
+          }
+          
           let spec = robustParseSpecial(finalContent, "PRESENTATION_DATA:");
           if (spec && spec.json) {
             htmlContent = marked.parse(spec.before || "");
