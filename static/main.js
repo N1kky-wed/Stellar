@@ -1498,6 +1498,23 @@ const defaultAgentSettings = {
                                                 eval(handlerStr);
                                             } catch(e) {
                                                 console.error("Error executing event handler:", e);
+                                                if (window.stellar && window.stellar.send) {
+                                                    const errMsg = e.toString();
+                                                    // Visual feedback for auto-recovery
+                                                    const targetEl = event.currentTarget || event.target;
+                                                    const originalHtml = targetEl.innerHTML;
+                                                    const originalBg = targetEl.style.backgroundColor;
+                                                    const originalColor = targetEl.style.color;
+                                                    
+                                                    targetEl.innerHTML = "Fixing... <span class='animate-spin' style='display:inline-block; margin-left: 4px;'>⟳</span>";
+                                                    targetEl.style.backgroundColor = "#eab308"; // Yellow warning color
+                                                    targetEl.style.color = "#000";
+                                                    targetEl.style.opacity = "0.8";
+                                                    targetEl.disabled = true;
+                                                    
+                                                    // Trigger silent auto-correction prompt
+                                                    window.stellar.send(`[SYSTEM AUTO-FEEDBACK: The user clicked/interacted with an element in your UI, but your JavaScript crashed with the following error: "${errMsg}". Please analyze your code, fix the logic or syntax error, and output the fully corrected HTML block.]`, true);
+                                                }
                                             }
                                         });
                                     }
