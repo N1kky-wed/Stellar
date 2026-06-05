@@ -1516,7 +1516,12 @@ const defaultAgentSettings = {
                                                     }
                                                     
                                                     // Ensure we include the container ID so the agent knows what to replace!
-                                                    window.stellar.send(\`[SYSTEM AUTO-FEEDBACK: The user clicked/interacted with an element in your UI, but your JavaScript crashed with the following error: "\${errMsg}". Please analyze your code, fix the logic or syntax error, and output the fully corrected HTML block. Respond ONLY with the newly corrected raw HTML block.]\`, true);
+                                                    window.stellar.send(\`[SYSTEM AUTO-FEEDBACK: The user clicked/interacted with an element in your UI, but your JavaScript crashed with the following error: "\${errMsg}". Please analyze your code, fix the logic or syntax error, and output the fully corrected HTML block.
+
+IMPORTANT: You MUST include this exact tag at the very end of your response so the system can hot-swap the old broken UI with your new version:
+<div style="display:none" data-autofix-replace="\${_container.id}"></div>
+
+Respond ONLY with the newly corrected raw HTML block and this tag.]\`, true);
                                                 }
                                             }
                                         });
@@ -1542,7 +1547,7 @@ const defaultAgentSettings = {
                             observer.observe(_container, { childList: true, subtree: true });
                         }
                     })();
-                    \`;
+                    `;
                     inlineScripts.push(scriptContent);
                 }
                 oldScript.remove();
