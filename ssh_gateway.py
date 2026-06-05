@@ -181,12 +181,19 @@ def get_user_repos(user_id: int) -> list:
     return repos
 
 
+def get_container(client, process_id: str, app_type: str):
+    """Retrieve Docker container checking both the specific and fallback names."""
+    try:
+        return client.containers.get(f"stellar-{app_type}-{process_id}")
+    except docker.errors.NotFound:
+        return client.containers.get(f"stellar-repo-{process_id}")
+
+
 def get_container_status(process_id: str, app_type: str = 'repo') -> str:
     """Get live Docker container status."""
     try:
         client = docker.from_env()
-        container_name = f"stellar-{app_type}-{process_id}"
-        container = client.containers.get(container_name)
+        container = get_container(client, process_id, app_type)
         return container.status
     except docker.errors.NotFound:
         return 'not_found'
@@ -574,12 +581,11 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
     Attach an interactive shell to a Docker container.
     Pipes SSH channel ↔ Docker exec PTY bidirectionally.
     """
-    container_name = f"stellar-{app_type}-{process_id}"
-    audit.info(f"SHELL_ATTACH | user_id={user_id} | container={container_name}")
-
     try:
         client = docker.from_env()
-        container = client.containers.get(container_name)
+        container = get_container(client, process_id, app_type)
+        container_name = container.name
+        audit.info(f"SHELL_ATTACH | user_id={user_id} | container={container_name}")
 
         if container.status != 'running':
             send_raw(channel, "\r\n\x1b[31m  Container is not running. Start it first.\x1b[0m\r\n")
@@ -684,12 +690,11 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
 # ============================================================
 def view_container_logs(channel, server: StellarSSHServer, process_id: str, app_type: str, user_id: int):
     """Stream Docker container logs to the SSH channel."""
-    container_name = f"stellar-{app_type}-{process_id}"
-    audit.info(f"LOGS_VIEW | user_id={user_id} | container={container_name}")
-
     try:
         client = docker.from_env()
-        container = client.containers.get(container_name)
+        container = get_container(client, process_id, app_type)
+        container_name = container.name
+        audit.info(f"LOGS_VIEW | user_id={user_id} | container={container_name}")
 
         send_raw(channel, CLEAR_SCREEN)
         send_raw(channel, TUI.log_viewer_header(container_name, server.term_width))
@@ -725,11 +730,11 @@ def view_container_logs(channel, server: StellarSSHServer, process_id: str, app_
 # ============================================================
 def restart_container(process_id: str, app_type: str, user_id: int) -> str:
     """Restart a Docker container."""
-    container_name = f"stellar-{app_type}-{process_id}"
-    audit.info(f"CONTAINER_RESTART | user_id={user_id} | container={container_name}")
     try:
         client = docker.from_env()
-        container = client.containers.get(container_name)
+        container = get_container(client, process_id, app_type)
+        container_name = container.name
+        audit.info(f"CONTAINER_RESTART | user_id={user_id} | container={container_name}")
         container.restart(timeout=10)
         return f"✓ {container_name} restarted successfully"
     except docker.errors.NotFound:
@@ -740,11 +745,11 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
 
 def stop_container(process_id: str, app_type: str, user_id: int) -> str:
     """Stop a Docker container."""
-    container_name = f"stellar-{app_type}-{process_id}"
-    audit.info(f"CONTAINER_STOP | user_id={user_id} | container={container_name}")
     try:
         client = docker.from_env()
-        container = client.containers.get(container_name)
+        container = get_container(client, process_id, app_type)
+        container_name = container.name
+        audit.info(f"CONTAINER_STOP | user_id={user_id} | container={container_name}")
         container.stop(timeout=10)
         return f"✓ {container_name} stopped"
     except docker.errors.NotFound:
@@ -755,11 +760,11 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
 
 def start_container(process_id: str, app_type: str, user_id: int) -> str:
     """Start a stopped Docker container."""
-    container_name = f"stellar-{app_type}-{process_id}"
-    audit.info(f"CONTAINER_START | user_id={user_id} | container={container_name}")
     try:
         client = docker.from_env()
-        container = client.containers.get(container_name)
+        container = get_container(client, process_id, app_type)
+        container_name = container.name
+        audit.info(f"CONTAINER_START | user_id={user_id} | container={container_name}")
         container.start()
         return f"✓ {container_name} started"
     except docker.errors.NotFound:
