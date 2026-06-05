@@ -235,8 +235,20 @@ sudo systemctl restart stellar
 
 ### SSH TUI Gateway Service
 
-The `stellar-ssh.service` provides a secure, text-based SSH interface on port 22 for Docker container management and browser-based device authentication.
+Stellar includes a fully custom, interactive SSH Terminal User Interface (TUI) gateway running directly on port 22. It provides a secure, text-based dashboard for managing your AI-deployed Docker containers without needing direct host access or a web UI.
 
+**Features:**
+- **Device Authentication:** Secure browser-based authentication. Users visit `https://stellarai.live/auth/ssh` to generate a 6-character short-lived code, which is pasted into the terminal to authenticate the SSH session.
+- **Container Dashboard:** A beautiful Rich-powered interface displaying all active and historical repository deployments, their current live status (Running, Stopped), and their routed subdomains.
+- **Lifecycle Management:** Users can instantly Stop or Restart their deployed containers directly from the terminal using keyboard controls.
+- **Isolated Proxy Strategy:** The gateway safely runs as a proxy via the `stellar` system user, ensuring the core Linux `auth` environment remains strictly separated from standard admin SSH access while keeping port 22 clean.
+
+**Usage:**
+```bash
+ssh stellar@stellarai.live
+```
+
+**Service Deployment:**
 ```bash
 sudo cp stellar-ssh.service /etc/systemd/system/
 sudo systemctl daemon-reload
