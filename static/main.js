@@ -81,10 +81,10 @@ window.stellar.triggerAutofix = function(containerElement, targetEl, error) {
     // Send feedback to LLM
     window.stellar.send(`[SYSTEM AUTO-FEEDBACK: The user clicked/interacted with an element in your UI, but your JavaScript crashed with the following error: "${errMsg}". Please analyze your code, fix the logic or syntax error, and output the fully corrected HTML block.
 
-IMPORTANT: You MUST include this exact tag at the very end of your response so the system can hot-swap the old broken UI with your new version:
+IMPORTANT: If you originally used the request_user_interaction tool to present this UI, you MUST invoke the request_user_interaction tool again with your corrected HTML UI so the interaction flow can resume. In all cases, you MUST include this exact tag at the very end of your response so the system can hot-swap the old broken UI with your new version:
 <div style="display:none" data-autofix-replace="${container.id}"></div>
 
-Respond ONLY with the newly corrected raw HTML block and this tag.]`, true);
+Respond ONLY with the newly corrected raw HTML block/tool call and this tag.]`, true);
 };
 
 // Global error handler
