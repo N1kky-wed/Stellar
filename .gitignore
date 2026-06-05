@@ -29,3 +29,9 @@ deployments/
 vapid_private.pem
 
 unified_keys_report.json
+
+# SSH Gateway
+ssh_gateway_host_key
+ssh_gateway_host_key.pub
+logs/
+

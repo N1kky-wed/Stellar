@@ -1,0 +1,28 @@
+[Unit]
+Description=Stellar SSH Gateway - TUI Container Access
+After=network.target redis-server.service docker.service
+Wants=redis-server.service docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/home/stellaradmin/my_app
+Environment=SSH_GATEWAY_SECRET=stellar-ssh-internal-2024
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /home/stellaradmin/my_app/ssh_gateway.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+# Resource limits
+LimitNOFILE=4096
+TasksMax=200
+
+[Install]
+WantedBy=multi-user.target

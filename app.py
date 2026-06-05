@@ -36,6 +36,7 @@ from cryptography.fernet import Fernet
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 import redis
+import secrets
 from prompts import (
     get_refinement_prompt
 )
@@ -3870,6 +3871,343 @@ def logout_user():
     session.pop('current_chat_id', None)
     session.clear()
     return jsonify({"success": True, "message": "Logged out successfully."}), 200
+
+# ===================== SSH Authentication Code Routes =====================
+
+_SSH_CODE_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+_SSH_CODE_LENGTH = 6
+_SSH_CODE_TTL = 300  # 5 minutes
+_SSH_MAX_CODES_PER_USER = 5
+_SSH_VERIFY_FAIL_LIMIT = 10
+_SSH_VERIFY_FAIL_WINDOW = 900  # 15 minutes
+
+_SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stellar &mdash; SSH Authentication</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0e17;
+    color: #e0e6f0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .container {
+    background: linear-gradient(145deg, #111827, #0d1321);
+    border: 1px solid rgba(0, 210, 255, 0.12);
+    border-radius: 20px;
+    padding: 48px 40px;
+    max-width: 460px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 0 60px rgba(0, 210, 255, 0.06), 0 4px 24px rgba(0,0,0,0.4);
+  }
+  .logo {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #00d2ff, #7b68ee);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .subtitle {
+    color: #7a8ba8;
+    font-size: 14px;
+    margin-bottom: 36px;
+  }
+  .btn {
+    background: linear-gradient(135deg, #00d2ff, #5b8def);
+    color: #fff;
+    border: none;
+    padding: 14px 36px;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: 100%;
+    letter-spacing: 0.3px;
+  }
+  .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .code-display {
+    display: none;
+    margin-top: 32px;
+    padding: 28px 20px;
+    background: rgba(0, 210, 255, 0.04);
+    border: 1px solid rgba(0, 210, 255, 0.15);
+    border-radius: 16px;
+  }
+  .code-value {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: 8px;
+    color: #00d2ff;
+    margin: 12px 0;
+    text-shadow: 0 0 20px rgba(0, 210, 255, 0.3);
+  }
+  .timer {
+    color: #7a8ba8;
+    font-size: 14px;
+    margin-top: 12px;
+  }
+  .timer span { color: #f0c040; font-weight: 600; font-family: monospace; }
+  .copy-btn {
+    margin-top: 16px;
+    background: rgba(0, 210, 255, 0.1);
+    border: 1px solid rgba(0, 210, 255, 0.25);
+    color: #00d2ff;
+    padding: 10px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .copy-btn:hover { background: rgba(0, 210, 255, 0.18); }
+  .instructions {
+    margin-top: 20px;
+    color: #7a8ba8;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .instructions code {
+    background: rgba(0, 210, 255, 0.08);
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-family: monospace;
+    color: #5b8def;
+  }
+  .error {
+    color: #ff6b6b;
+    margin-top: 14px;
+    font-size: 14px;
+    display: none;
+  }
+  .steps {
+    text-align: left;
+    margin: 24px 0 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .steps li {
+    position: relative;
+    padding-left: 32px;
+    margin-bottom: 14px;
+    color: #8b9fc0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .steps li::before {
+    content: attr(data-step);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 22px; height: 22px;
+    background: rgba(0, 210, 255, 0.12);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #00d2ff;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="logo">&#x2728; Stellar</div>
+  <div class="subtitle">SSH Terminal Authentication</div>
+
+  <ol class="steps">
+    <li data-step="1">Open a terminal and run <code>ssh stellarai.live -p 2222</code></li>
+    <li data-step="2">Click the button below to generate your access code</li>
+    <li data-step="3">Paste the code into the SSH prompt to connect</li>
+  </ol>
+
+  <button class="btn" id="genBtn" onclick="generateCode()" style="margin-top:28px;">Generate SSH Code</button>
+  <div class="error" id="errMsg"></div>
+
+  <div class="code-display" id="codeBox">
+    <div style="color:#7a8ba8;font-size:12px;text-transform:uppercase;letter-spacing:1.5px;">Your Access Code</div>
+    <div class="code-value" id="codeValue">------</div>
+    <button class="copy-btn" id="copyBtn" onclick="copyCode()">&#128203; Copy Code</button>
+    <div class="timer">Expires in <span id="countdown">5:00</span></div>
+    <div class="instructions">Paste this code in your SSH terminal to authenticate.</div>
+  </div>
+</div>
+<script>
+let rawCode = '';
+let timerInterval = null;
+
+async function generateCode() {
+  const btn = document.getElementById('genBtn');
+  const errMsg = document.getElementById('errMsg');
+  errMsg.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  try {
+    const res = await fetch('/api/ssh/generate-code', { method: 'POST', credentials: 'same-origin' });
+    const data = await res.json();
+    if (!res.ok) {
+      errMsg.textContent = data.error || 'Failed to generate code.';
+      errMsg.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Generate SSH Code';
+      return;
+    }
+    rawCode = data.code;
+    document.getElementById('codeValue').textContent = data.code;
+    document.getElementById('codeBox').style.display = 'block';
+    btn.textContent = 'Generate New Code';
+    btn.disabled = false;
+    startTimer(300);
+  } catch (e) {
+    errMsg.textContent = 'Network error. Please try again.';
+    errMsg.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Generate SSH Code';
+  }
+}
+
+function startTimer(seconds) {
+  if (timerInterval) clearInterval(timerInterval);
+  let remaining = seconds;
+  const el = document.getElementById('countdown');
+  function tick() {
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    el.textContent = m + ':' + String(s).padStart(2, '0');
+    if (remaining <= 0) {
+      clearInterval(timerInterval);
+      document.getElementById('codeBox').style.display = 'none';
+      document.getElementById('genBtn').textContent = 'Generate SSH Code';
+    }
+    remaining--;
+  }
+  tick();
+  timerInterval = setInterval(tick, 1000);
+}
+
+function copyCode() {
+  navigator.clipboard.writeText(rawCode.replace('-', '')).then(function() {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = '✔ Copied!';
+    setTimeout(function() { btn.innerHTML = '&#128203; Copy Code'; }, 2000);
+  });
+}
+</script>
+</body>
+</html>'''
+
+@app.route('/auth/ssh', methods=['GET'])
+@require_approval
+def ssh_auth_page():
+    return _SSH_AUTH_PAGE_HTML, 200, {'Content-Type': 'text/html'}
+
+@app.route('/api/ssh/generate-code', methods=['POST'])
+@require_approval
+def ssh_generate_code():
+    user_id = session['user_id']
+    username = session.get('username', '')
+    display_name = session.get('display_name', username)
+
+    # Rate limit: max active codes per user
+    user_code_key = f'ssh_auth_code:user:{user_id}'
+    active_count = redis_client.get(user_code_key)
+    if active_count and int(active_count) >= _SSH_MAX_CODES_PER_USER:
+        return jsonify({'error': 'Too many active codes. Please wait for existing codes to expire.'}), 429
+
+    # Generate a unique 6-char code
+    for _ in range(20):
+        code = ''.join(secrets.choice(_SSH_CODE_CHARSET) for _ in range(_SSH_CODE_LENGTH))
+        code_key = f'ssh_auth_code:{code}'
+        if not redis_client.exists(code_key):
+            break
+    else:
+        return jsonify({'error': 'Could not generate a unique code. Please try again.'}), 500
+
+    # Store code data in Redis
+    code_data = json.dumps({
+        'user_id': user_id,
+        'username': username,
+        'display_name': display_name,
+        'created_at': time.time()
+    })
+    redis_client.setex(code_key, _SSH_CODE_TTL, code_data)
+
+    # Increment active code counter for this user
+    pipe = redis_client.pipeline()
+    pipe.incr(user_code_key)
+    pipe.expire(user_code_key, _SSH_CODE_TTL)
+    pipe.execute()
+
+    # Format as XXX-XXX for display
+    display_code = f'{code[:3]}-{code[3:]}'
+    return jsonify({'code': display_code}), 200
+
+@app.route('/api/ssh/verify-code', methods=['POST'])
+def ssh_verify_code():
+    # Verify shared secret
+    gateway_secret = os.environ.get('SSH_GATEWAY_SECRET', 'stellar-ssh-internal-2024')
+    data = request.get_json(silent=True)
+    if not data or data.get('secret') != gateway_secret:
+        return jsonify({'valid': False, 'error': 'Unauthorized'}), 403
+
+    # Rate limit failed attempts per IP
+    client_ip = request.remote_addr or 'unknown'
+    fail_key = f'ssh_verify_fail:{client_ip}'
+    fail_count = redis_client.get(fail_key)
+    if fail_count and int(fail_count) >= _SSH_VERIFY_FAIL_LIMIT:
+        return jsonify({'valid': False, 'error': 'Too many failed attempts. Try again later.'}), 429
+
+    raw_code = data.get('code', '').upper().replace('-', '').replace(' ', '')
+    if not raw_code or len(raw_code) != _SSH_CODE_LENGTH:
+        return jsonify({'valid': False}), 200
+
+    code_key = f'ssh_auth_code:{raw_code}'
+    code_data = redis_client.get(code_key)
+    if not code_data:
+        # Track failed attempt
+        pipe = redis_client.pipeline()
+        pipe.incr(fail_key)
+        pipe.expire(fail_key, _SSH_VERIFY_FAIL_WINDOW)
+        pipe.execute()
+        return jsonify({'valid': False}), 200
+
+    # Valid code - delete it (one-time use) and decrement user counter
+    redis_client.delete(code_key)
+    try:
+        parsed = json.loads(code_data)
+        user_code_key = f"ssh_auth_code:user:{parsed['user_id']}"
+        redis_client.decr(user_code_key)
+        # Clean up if counter goes to 0 or below
+        remaining = redis_client.get(user_code_key)
+        if remaining and int(remaining) <= 0:
+            redis_client.delete(user_code_key)
+    except (json.JSONDecodeError, KeyError):
+        parsed = {}
+
+    return jsonify({
+        'valid': True,
+        'user_id': parsed.get('user_id'),
+        'username': parsed.get('username'),
+        'display_name': parsed.get('display_name')
+    }), 200
+
+# ==================== End SSH Authentication Routes =======================
 
 @app.route('/check_auth', methods=['GET'])
 def check_auth_status():
