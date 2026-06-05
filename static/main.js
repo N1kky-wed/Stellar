@@ -4143,6 +4143,16 @@ const defaultAgentSettings = {
                       let newHtml = marked.parse(strippedContent);
                       newHtml = wrapTables(newHtml);
                       oldContentDiv.innerHTML = newHtml;
+
+                      const originalMessageId = targetMsgDiv.dataset.id;
+                      if (originalMessageId) {
+                          fetch("/update_message", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              credentials: "include",
+                              body: JSON.stringify({ id: originalMessageId, content: strippedContent }),
+                          }).catch(err => console.error("Failed to persist autofix update to server database:", err));
+                      }
                       
                       unwrapVisuals(oldContentDiv);
                       processCodeBlocks(oldContentDiv);
