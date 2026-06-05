@@ -548,10 +548,22 @@ def read_line(channel, prompt: str, mask: bool = False, max_len: int = 20) -> st
                 buffer.pop()
                 send_raw(channel, '\x08 \x08')
             continue
-        if isinstance(key, str) and len(key) == 1 and key.isprintable():
-            if len(buffer) < max_len:
-                buffer.append(key)
-                send_raw(channel, '*' if mask else key)
+
+        # Handle characters (including pasted strings or rapid typing)
+        if isinstance(key, str) and key not in ('UP', 'DOWN', 'LEFT', 'RIGHT', 'ESC'):
+            for char in key:
+                if char in ('\r', '\n'):
+                    send_raw(channel, '\r\n')
+                    return ''.join(buffer)
+                if char in ('\x7f', '\x08'):
+                    if buffer:
+                        buffer.pop()
+                        send_raw(channel, '\x08 \x08')
+                    continue
+                if char.isprintable():
+                    if len(buffer) < max_len:
+                        buffer.append(char)
+                        send_raw(channel, '*' if mask else char)
 
 
 # ============================================================
