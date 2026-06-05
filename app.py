@@ -1314,9 +1314,8 @@ def change_user_password(user_id, current_password, new_password):
         return False, "User not found."
 
     is_valid_password = check_password_hash(user['password_hash'], current_password)
-    is_admin_override = (current_password == adminpass) and adminpass is not None
 
-    if not (is_valid_password or is_admin_override):
+    if not is_valid_password:
         return False, "Invalid current password."
 
     new_password_hash = generate_password_hash(new_password)

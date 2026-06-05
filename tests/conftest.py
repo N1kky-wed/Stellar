@@ -101,6 +101,26 @@ sys.modules['twilio.base.exceptions'] = MagicMock()
 # Mock sqlitecloud just in case
 sys.modules['sqlitecloud'] = MagicMock()
 
+# Mock google modules
+mock_google = MagicMock()
+sys.modules['google'] = mock_google
+sys.modules['google.oauth2'] = mock_google
+sys.modules['google.oauth2.id_token'] = mock_google
+sys.modules['google.auth'] = mock_google
+sys.modules['google.auth.transport'] = mock_google
+sys.modules['google.auth.transport.requests'] = mock_google
+sys.modules['google.genai'] = mock_google
+sys.modules['google.genai.types'] = mock_google
+
+# Mock cryptography
+mock_crypto = MagicMock()
+sys.modules['cryptography'] = mock_crypto
+sys.modules['cryptography.fernet'] = mock_crypto
+sys.modules['cryptography.hazmat'] = mock_crypto
+sys.modules['cryptography.hazmat.primitives'] = mock_crypto
+sys.modules['cryptography.hazmat.primitives.asymmetric'] = mock_crypto
+
+
 # --- End Mocks ---
 
 # Setup Env Vars
