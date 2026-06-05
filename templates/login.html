@@ -423,9 +423,10 @@
                                 loaderText.style.color = "#00F090";
                                 loaderText.innerText = "ACCESS GRANTED. INITIALIZING...";
                                 setTimeout(() => {
-                                    window.location.href = '/';
-                                    window.location.reload();
-                                }, 1000);
+                                     const urlParams = new URLSearchParams(window.location.search);
+                                     const redirectUrl = urlParams.get('redirect') || '/';
+                                     window.location.href = redirectUrl;
+                                 }, 1000);
                             }
                         }, 600);
                     } else {

@@ -53,6 +53,12 @@ const defaultAgentSettings = {
               
               if (agentSettings.notifications_enabled && Notification.permission === "granted") {
                 subscribeUserToPush();
+              } else {
+                reg.pushManager.getSubscription().then(sub => {
+                  if (sub) {
+                    sub.unsubscribe().then(() => console.log("[PWA] Unsubscribed from push notifications locally."));
+                  }
+                });
               }
               
               reg.addEventListener("updatefound", () => {

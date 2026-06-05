@@ -50,7 +50,7 @@ from rich import box
 # Configuration
 # ============================================================
 SSH_HOST = '0.0.0.0'
-SSH_PORT = 22
+SSH_PORT = 2222
 HOST_KEY_PATH = '/home/stellaradmin/my_app/ssh_gateway_host_key'
 DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stellar_local.db')
 LOG_DIR = '/home/stellaradmin/my_app/logs'
@@ -101,7 +101,11 @@ RESET_STYLE = '\x1b[0m'
 def send_raw(channel, text):
     """Send raw text to SSH channel."""
     try:
-        data = text.encode('utf-8') if isinstance(text, str) else text
+        if isinstance(text, str):
+            text = text.replace('\r\n', '\n').replace('\n', '\r\n')
+            data = text.encode('utf-8')
+        else:
+            data = text
         channel.sendall(data)
     except Exception:
         pass
@@ -261,6 +265,7 @@ class StellarSSHServer(paramiko.ServerInterface):
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
     def check_auth_none(self, username):
+        self.username = username
         # Accept none-auth; real auth happens in TUI
         return paramiko.AUTH_SUCCESSFUL
 
@@ -315,14 +320,14 @@ class StellarSSHServer(paramiko.ServerInterface):
 class TUI:
     """Renders beautiful terminal UI screens via Rich."""
 
-    LOGO = (
-        "  _____ _____ _____ _     _      ___  ____  \n"
-        " / ____|_   _| ____| |   | |    / _ \\|  _ \\ \n"
-        "| (___   | | |  _| | |   | |   | |_| | |_) |\n"
-        " \\___ \\  | | | |___| |___| |___|  _  |  _ < \n"
-        " ____) | | | |_____|_____|_____|_| |_|_| \\_\\\n"
-        "|_____/  |_|                                  \n"
-    )
+    LOGO = r"""
+   _____ _______ ______ _      _               _____  
+  / ____|__   __|  ____| |    | |      /\     |  __ \ 
+ | (___    | |  | |__  | |    | |     /  \    | |__) |
+  \___ \   | |  |  __| | |    | |    / /\ \   |  _  / 
+  ____) |  | |  | |____| |____| |___/ ____ \  | | \ \ 
+ |_____/   |_|  |______|______|______/_/    \_\_|  \_\
+"""
 
     @staticmethod
     def _render(width: int, callback) -> str:
@@ -342,14 +347,10 @@ class TUI:
     def auth_screen(width: int, height: int, error_msg: str = "") -> str:
         def draw(c):
             c.print()
-            c.print(Text(TUI.LOGO, style="bold cyan"), justify="center")
+            c.print(Align.center(Text(TUI.LOGO, style="bold cyan")))
             c.print(Align.center(Text("SSH Terminal Gateway", style="bold white on dark_blue")))
             c.print()
-            auth_text = (
-                "[bold yellow]1.[/bold yellow] Visit [bold underline cyan]https://stellarai.live/auth/ssh[/bold underline cyan]\n"
-                "[bold yellow]2.[/bold yellow] Click [bold]Generate SSH Code[/bold]\n"
-                "[bold yellow]3.[/bold yellow] Paste the code below"
-            )
+            auth_text = "[bold yellow]Visit[/bold yellow] [bold underline cyan]https://stellarai.live/auth/ssh[/bold underline cyan] [bold yellow]· Generate Code · Paste it below[/bold yellow]"
             c.print(Align.center(Panel(
                 auth_text,
                 title="[bold white]Authentication Required[/bold white]",
@@ -791,6 +792,14 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             return
 
         channel.settimeout(SESSION_IDLE_TIMEOUT)
+        real_ip = server.username if (server.username and client_addr == '127.0.0.1') else client_addr
+        
+        # Now check if this real_ip is blocked!
+        if real_ip != '127.0.0.1' and client_addr == '127.0.0.1':
+            if rate_limiter.is_ip_blocked(real_ip):
+                send_raw(channel, "\r\n\x1b[31m  ✗ Your IP is blocked due to too many failed attempts.\x1b[0m\r\n")
+                time.sleep(2)
+                return
 
         # ---- PHASE 1: Authentication ----
         auth_attempts = 0
@@ -807,7 +816,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             # Read code
             code = read_line(channel, "  Enter code: ")
             if code is None:
-                audit.info(f"AUTH_DISCONNECT | ip={client_addr} | phase=code_entry")
+                audit.info(f"AUTH_DISCONNECT | ip={real_ip} | phase=code_entry")
                 return
 
             # Verify
@@ -816,18 +825,18 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 break
             else:
                 auth_attempts += 1
-                rate_limiter.record_auth_failure(client_addr)
-                audit.info(f"AUTH_FAIL | ip={client_addr} | attempt={auth_attempts} | code_prefix={code[:2] if code else '??'}****")
+                rate_limiter.record_auth_failure(real_ip)
+                audit.info(f"AUTH_FAIL | ip={real_ip} | attempt={auth_attempts} | code_prefix={code[:2] if code else '??'}****")
 
         if not user_info:
             send_raw(channel, "\r\n\x1b[31m  ✗ Too many failed attempts. Disconnecting.\x1b[0m\r\n")
-            audit.info(f"AUTH_LOCKOUT | ip={client_addr} | attempts={MAX_AUTH_ATTEMPTS}")
+            audit.info(f"AUTH_LOCKOUT | ip={real_ip} | attempts={MAX_AUTH_ATTEMPTS}")
             time.sleep(2)
             return
 
         user_id = user_info['user_id']
         username = user_info.get('display_name') or user_info.get('username', 'User')
-        audit.info(f"SESSION_START | ip={client_addr} | user_id={user_id} | username={username}")
+        audit.info(f"SESSION_START | ip={real_ip} | user_id={user_id} | username={username}")
 
         # ---- PHASE 2: Dashboard ----
         selected_index = 0
@@ -935,15 +944,16 @@ def handle_connection(client_socket, client_addr):
     ip = client_addr[0]
 
     # Rate limit check
-    if rate_limiter.is_ip_blocked(ip):
-        audit.info(f"CONNECTION_BLOCKED | ip={ip} | reason=auth_failures")
-        client_socket.close()
-        return
+    if ip != '127.0.0.1':
+        if rate_limiter.is_ip_blocked(ip):
+            audit.info(f"CONNECTION_BLOCKED | ip={ip} | reason=auth_failures")
+            client_socket.close()
+            return
 
-    if not rate_limiter.check_connection_rate(ip):
-        audit.info(f"CONNECTION_BLOCKED | ip={ip} | reason=rate_limit")
-        client_socket.close()
-        return
+        if not rate_limiter.check_connection_rate(ip):
+            audit.info(f"CONNECTION_BLOCKED | ip={ip} | reason=rate_limit")
+            client_socket.close()
+            return
 
     with sessions_lock:
         if active_sessions >= MAX_CONCURRENT_SESSIONS:

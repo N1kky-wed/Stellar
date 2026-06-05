@@ -5,7 +5,7 @@ from google.auth.transport import requests as google_requests
 import threading
 from werkzeug.utils import secure_filename
 import queue
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, g, session, current_app, make_response, has_request_context
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, g, session, current_app, make_response, has_request_context, redirect
 from flask_session import Session
 import os
 import re
@@ -3887,170 +3887,408 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stellar &mdash; SSH Authentication</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap">
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0a0e17;
-    color: #e0e6f0;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-  }
-  .container {
-    background: linear-gradient(145deg, #111827, #0d1321);
-    border: 1px solid rgba(0, 210, 255, 0.12);
-    border-radius: 20px;
-    padding: 48px 40px;
-    max-width: 460px;
-    width: 100%;
-    text-align: center;
-    box-shadow: 0 0 60px rgba(0, 210, 255, 0.06), 0 4px 24px rgba(0,0,0,0.4);
-  }
-  .logo {
-    font-size: 28px;
-    font-weight: 700;
-    background: linear-gradient(135deg, #00d2ff, #7b68ee);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 8px;
-    letter-spacing: -0.5px;
-  }
-  .subtitle {
-    color: #7a8ba8;
-    font-size: 14px;
-    margin-bottom: 36px;
-  }
-  .btn {
-    background: linear-gradient(135deg, #00d2ff, #5b8def);
-    color: #fff;
-    border: none;
-    padding: 14px 36px;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    width: 100%;
-    letter-spacing: 0.3px;
-  }
-  .btn:hover { opacity: 0.9; transform: translateY(-1px); }
-  .btn:active { transform: translateY(0); }
-  .btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    transform: none;
-  }
-  .code-display {
-    display: none;
-    margin-top: 32px;
-    padding: 28px 20px;
-    background: rgba(0, 210, 255, 0.04);
-    border: 1px solid rgba(0, 210, 255, 0.15);
-    border-radius: 16px;
-  }
-  .code-value {
-    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-    font-size: 42px;
-    font-weight: 700;
-    letter-spacing: 8px;
-    color: #00d2ff;
-    margin: 12px 0;
-    text-shadow: 0 0 20px rgba(0, 210, 255, 0.3);
-  }
-  .timer {
-    color: #7a8ba8;
-    font-size: 14px;
-    margin-top: 12px;
-  }
-  .timer span { color: #f0c040; font-weight: 600; font-family: monospace; }
-  .copy-btn {
-    margin-top: 16px;
-    background: rgba(0, 210, 255, 0.1);
-    border: 1px solid rgba(0, 210, 255, 0.25);
-    color: #00d2ff;
-    padding: 10px 28px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .copy-btn:hover { background: rgba(0, 210, 255, 0.18); }
-  .instructions {
-    margin-top: 20px;
-    color: #7a8ba8;
-    font-size: 13px;
-    line-height: 1.6;
-  }
-  .instructions code {
-    background: rgba(0, 210, 255, 0.08);
-    padding: 2px 8px;
-    border-radius: 5px;
-    font-family: monospace;
-    color: #5b8def;
-  }
-  .error {
-    color: #ff6b6b;
-    margin-top: 14px;
-    font-size: 14px;
-    display: none;
-  }
-  .steps {
-    text-align: left;
-    margin: 24px 0 0 0;
-    padding: 0;
-    list-style: none;
-  }
-  .steps li {
-    position: relative;
-    padding-left: 32px;
-    margin-bottom: 14px;
-    color: #8b9fc0;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-  .steps li::before {
-    content: attr(data-step);
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 22px; height: 22px;
-    background: rgba(0, 210, 255, 0.12);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700; color: #00d2ff;
-  }
+    :root {
+        --bg-base: #010103;
+        --surface: rgba(10, 10, 15, 0.75);
+        --border: rgba(255, 255, 255, 0.08);
+        --accent-lunarity: #4285F4;
+        --accent-emerald: #00F090;
+        --text-muted: #9ca3af;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body, html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background-color: var(--bg-base);
+        font-family: 'Inter', sans-serif;
+        overflow: hidden;
+        color: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        perspective: 1500px;
+    }
+
+    /* --- Mask Wrapper (Holds the Seamless Flashlight) --- */
+    .code-mask-wrapper {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100vw; height: 100vh;
+        z-index: 0;
+        pointer-events: none;
+        
+        --mouse-x: 50vw;
+        --mouse-y: 50vh;
+        
+        -webkit-mask-image: radial-gradient(
+            280px circle at var(--mouse-x) var(--mouse-y), 
+            rgba(0,0,0,1) 0%, 
+            rgba(0,0,0,0.8) 15%,
+            rgba(0,0,0,0.5) 35%,
+            rgba(0,0,0,0.3) 50%,
+            rgba(0,0,0,0.2) 65%,
+            rgba(0,0,0,0.15) 80%,
+            rgba(0,0,0,0.12) 90%,
+            rgba(0,0,0,0.1) 100%
+        );
+        mask-image: radial-gradient(
+            280px circle at var(--mouse-x) var(--mouse-y), 
+            rgba(0,0,0,1) 0%, 
+            rgba(0,0,0,0.8) 15%,
+            rgba(0,0,0,0.5) 35%,
+            rgba(0,0,0,0.3) 50%,
+            rgba(0,0,0,0.2) 65%,
+            rgba(0,0,0,0.15) 80%,
+            rgba(0,0,0,0.12) 90%,
+            rgba(0,0,0,0.1) 100%
+        );
+    }
+
+    .code-mask-wrapper::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+            ellipse 450px 700px at center, 
+            var(--bg-base) 15%, 
+            rgba(1, 1, 3, 0.9) 40%, 
+            transparent 75%
+        );
+        pointer-events: none;
+    }
+
+    /* --- Scrolling Code Canvas --- */
+    .code-canvas {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px; 
+        line-height: 1.3; 
+        color: rgba(66, 133, 244, 0.55); 
+        white-space: pre;
+        width: 110vw;
+        margin-left: -5vw;
+        will-change: transform;
+        animation: scrollMemoryDump 100s linear infinite;
+    }
+
+    @keyframes scrollMemoryDump {
+        0% { transform: translateY(0); }
+        100% { transform: translateY(-50%); }
+    }
+
+    /* --- Main UI Wrapper --- */
+    .gateway-wrapper {
+        position: relative;
+        z-index: 10;
+        width: 100%;
+        max-width: 480px;
+        padding: 20px;
+        box-sizing: border-box;
+        transform-style: preserve-3d;
+        will-change: transform;
+    }
+
+    .auth-card {
+        background: var(--surface);
+        backdrop-filter: blur(40px);
+        -webkit-backdrop-filter: blur(40px);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 50px 40px;
+        box-shadow: 
+            0 0 50px 2px rgba(0, 0, 0, 0.8),      
+            0 40px 80px -20px rgba(0, 0, 0, 1),     
+            inset 0 1px 0 rgba(255, 255, 255, 0.1); 
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transform: translateZ(0);
+    }
+
+    .auth-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 2px;
+        background: linear-gradient(90deg, transparent, var(--accent-lunarity), transparent);
+    }
+
+    .logo-mark {
+        font-size: 3rem;
+        font-weight: 900;
+        letter-spacing: 8px;
+        margin-bottom: 6px;
+        text-align: center;
+        background: linear-gradient(135deg, #FFFFFF 20%, #a5c0f3 60%, #4285F4 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        filter: drop-shadow(0 4px 15px rgba(66, 133, 244, 0.3));
+    }
+
+    .subtitle {
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        margin-bottom: 24px;
+        line-height: 1.6;
+        text-align: center;
+        letter-spacing: 0.5px;
+    }
+    .subtitle code {
+        background: rgba(66, 133, 244, 0.15);
+        border: 1px solid rgba(66, 133, 244, 0.2);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'JetBrains Mono', monospace;
+        color: #7da5f5;
+        font-size: 0.8rem;
+    }
+
+    /* Steps */
+    .steps {
+        text-align: left;
+        width: 100%;
+        margin-bottom: 24px;
+        list-style: none;
+    }
+    .steps li {
+        position: relative;
+        padding-left: 32px;
+        margin-bottom: 12px;
+        color: #b3c0d4;
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+    .steps li::before {
+        content: attr(data-step);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 22px; height: 22px;
+        background: rgba(66, 133, 244, 0.15);
+        border: 1px solid rgba(66, 133, 244, 0.3);
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 11px; font-weight: 700; color: #4285F4;
+    }
+    .steps code {
+        background: rgba(66, 133, 244, 0.15);
+        border: 1px solid rgba(66, 133, 244, 0.2);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'JetBrains Mono', monospace;
+        color: #7da5f5;
+        font-size: 0.8rem;
+    }
+
+    /* Button */
+    .btn {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        color: #FFF;
+        border-radius: 12px;
+        padding: 16px 20px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        width: 100%;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(66, 133, 244, 0.5); 
+        transform: translateY(-2px);
+        box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.6);
+    }
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .error-text {
+        color: #FF2A4D;
+        margin-top: 12px;
+        font-size: 0.85rem;
+        text-align: center;
+        display: none;
+    }
+
+    /* Code Display Box */
+    .code-display {
+        display: none;
+        width: 100%;
+        margin-top: 24px;
+        padding: 24px;
+        background: rgba(66, 133, 244, 0.04);
+        border: 1px solid rgba(66, 133, 244, 0.15);
+        border-radius: 16px;
+        text-align: center;
+    }
+    .code-label {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+    }
+    .code-value {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 2.5rem;
+        font-weight: 900;
+        letter-spacing: 6px;
+        color: #4285F4;
+        margin: 10px 0;
+        text-shadow: 0 0 20px rgba(66, 133, 244, 0.4);
+    }
+    .timer {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        margin-top: 10px;
+    }
+    .timer span { color: #FFD200; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    
+    .copy-btn {
+        margin-top: 12px;
+        background: rgba(66, 133, 244, 0.1);
+        border: 1px solid rgba(66, 133, 244, 0.25);
+        color: #7da5f5;
+        padding: 8px 24px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .copy-btn:hover { background: rgba(66, 133, 244, 0.18); }
+    
+    .instructions {
+        margin-top: 14px;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        line-height: 1.5;
+    }
+
+    /* Persona Nodes */
+    .persona-status {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+    }
+
+    .persona {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.6rem;
+        color: var(--text-muted);
+        letter-spacing: 1px;
+    }
+
+    .dot { width: 5px; height: 5px; border-radius: 50%; }
+    .dot.obs { background: #888890; box-shadow: 0 0 8px #888890; }
+    .dot.cri { background: #FF2A4D; box-shadow: 0 0 8px #FF2A4D; }
+    .dot.lun { background: #4285F4; box-shadow: 0 0 8px #4285F4; }
+    .dot.eme { background: #00F090; box-shadow: 0 0 8px #00F090; }
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="logo">&#x2728; Stellar</div>
-  <div class="subtitle">SSH Terminal Authentication</div>
 
-  <ol class="steps">
-    <li data-step="1">Open a terminal and run <code>ssh stellarai.live</code></li>
-    <li data-step="2">Click the button below to generate your access code</li>
-    <li data-step="3">Paste the code into the SSH prompt to connect</li>
-  </ol>
+    <div class="code-mask-wrapper" id="maskWrapper" data-nosnippet>
+        <div class="code-canvas" id="codeCanvas" aria-hidden="true"></div>
+    </div>
 
-  <button class="btn" id="genBtn" onclick="generateCode()" style="margin-top:28px;">Generate SSH Code</button>
-  <div class="error" id="errMsg"></div>
+    <main class="gateway-wrapper" id="gatewayWrapper">
+        <div class="auth-card">
+            <div class="logo-mark">STELLAR</div>
+            <div class="subtitle" style="margin-bottom: 30px;">
+                Open a terminal, run <code>ssh stellar@stellarai.live</code>, generate your access code below, and paste it to connect.
+            </div>
 
-  <div class="code-display" id="codeBox">
-    <div style="color:#7a8ba8;font-size:12px;text-transform:uppercase;letter-spacing:1.5px;">Your Access Code</div>
-    <div class="code-value" id="codeValue">------</div>
-    <button class="copy-btn" id="copyBtn" onclick="copyCode()">&#128203; Copy Code</button>
-    <div class="timer">Expires in <span id="countdown">5:00</span></div>
-    <div class="instructions">Paste this code in your SSH terminal to authenticate.</div>
-  </div>
-</div>
+            <button class="btn" id="genBtn" onclick="generateCode()">Generate SSH Code</button>
+            <div class="error-text" id="errMsg"></div>
+
+            <div class="code-display" id="codeBox">
+                <div class="code-label">Your Access Code</div>
+                <div class="code-value" id="codeValue">------</div>
+                <button class="copy-btn" id="copyBtn" onclick="copyCode()" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
+                    <svg class="copy-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span>Copy Code</span>
+                </button>
+                <div class="timer">Expires in <span id="countdown">5:00</span></div>
+                <div class="instructions">Paste this code in your SSH terminal to authenticate.</div>
+            </div>
+
+            <div class="persona-status">
+                <div class="persona"><div class="dot obs"></div> OBSIDIAN</div>
+                <div class="persona"><div class="dot cri"></div> CRIMSON</div>
+                <div class="persona"><div class="dot lun"></div> LUNARITY</div>
+                <div class="persona"><div class="dot eme"></div> EMERALD</div>
+            </div>
+        </div>
+    </main>
+
 <script>
 let rawCode = '';
 let timerInterval = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const maskWrapper = document.getElementById('maskWrapper');
+    const codeCanvas = document.getElementById('codeCanvas');
+    const snippets = [
+        "def provision_docker_cluster(node_id):",
+        "ledger = db.query('SELECT * FROM ground_truth')",
+        "raise StateDriftException('Ledger mismatch')",
+        "container = client.containers.run(network='bridge')",
+        "async function mountPagedMemory(stream) {",
+        "return chunks.map(chunk => compressMetadata(chunk));",
+        "def proxy_wildcard(path):",
+        "container_ip = redis.get(f'route:{host}')",
+        "[OBSIDIAN] Adversarial security audit...",
+        "INSERT INTO interactions (agent_id) VALUES ('obsidian');",
+        "0x0000000000000000", "0xFFFFFFFFFFFFFFFF", "sys.stdout.write"
+    ];
+
+    let baseDump = "";
+    for (let i = 0; i < 150; i++) { 
+        let line = "";
+        while (line.length < 350) { line += snippets[Math.floor(Math.random() * snippets.length)] + "  "; }
+        baseDump += line + "\\n";
+    }
+    codeCanvas.textContent = baseDump + baseDump;
+
+    const wrapper = document.getElementById('gatewayWrapper');
+    let mouseX = 0, mouseY = 0, targetX = 0, targetY = 0;
+
+    document.addEventListener('mousemove', (e) => {
+        maskWrapper.style.setProperty('--mouse-x', `${e.clientX}px`);
+        maskWrapper.style.setProperty('--mouse-y', `${e.clientY}px`);
+        
+        mouseX = (e.clientX - window.innerWidth/2) / 75;
+        mouseY = (e.clientY - window.innerHeight/2) / 75;
+    });
+
+    function animate3D() {
+        if (Math.abs(mouseX - targetX) > 0.001) targetX += (mouseX - targetX) * 0.04;
+        if (Math.abs(mouseY - targetY) > 0.001) targetY += (mouseY - targetY) * 0.04;
+        
+        wrapper.style.transform = `rotateY(${targetX}deg) rotateX(${-targetY}deg)`;
+        requestAnimationFrame(animate3D);
+    }
+    animate3D();
+});
 
 async function generateCode() {
   const btn = document.getElementById('genBtn');
@@ -4104,8 +4342,14 @@ function startTimer(seconds) {
 function copyCode() {
   navigator.clipboard.writeText(rawCode.replace('-', '')).then(function() {
     const btn = document.getElementById('copyBtn');
-    btn.textContent = '✔ Copied!';
-    setTimeout(function() { btn.innerHTML = '&#128203; Copy Code'; }, 2000);
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = `
+      <svg class="copy-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#00F090" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+      <span style="color: #00F090;">Copied!</span>
+    `;
+    setTimeout(function() { btn.innerHTML = originalHTML; }, 2000);
   });
 }
 </script>
@@ -4113,8 +4357,26 @@ function copyCode() {
 </html>'''
 
 @app.route('/auth/ssh', methods=['GET'])
-@require_approval
 def ssh_auth_page():
+    if 'user_id' not in session:
+        return redirect('/?redirect=/auth/ssh')
+    
+    # Check if approved
+    if not session.get('is_approved'):
+        db = get_db()
+        cursor = db.execute('SELECT is_approved FROM users WHERE id = ?', (session['user_id'],))
+        row = cursor.fetchone()
+        if row and row[0]:
+            session['is_approved'] = True
+        else:
+            session['is_approved'] = False
+            # Render waitlist page
+            with open('templates/waitlist.html', 'r') as f:
+                content = f.read()
+            response = make_response(content)
+            response.headers['Content-Type'] = 'text/html'
+            return response
+            
     return _SSH_AUTH_PAGE_HTML, 200, {'Content-Type': 'text/html'}
 
 @app.route('/api/ssh/generate-code', methods=['POST'])
@@ -4679,8 +4941,21 @@ def pwa_subscribe():
         r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
         redis_key = f"user_push_subscriptions:{session['user_id']}"
         val = json.dumps({"p256dh": p256dh, "auth": auth})
+        import hashlib
+        # Track endpoint ownership to prevent cross-account leakage
+        endpoint_hash = hashlib.md5(endpoint.encode('utf-8')).hexdigest()
+        owner_key = f"pwa_endpoint_owner:{endpoint_hash}"
+        old_owner = r_client.get(owner_key)
         
-        # Store in Redis Hash
+        current_user_str = str(session['user_id'])
+        if old_owner and old_owner != current_user_str:
+            # Remove this endpoint from the previous user's subscriptions
+            r_client.hdel(f"user_push_subscriptions:{old_owner}", endpoint)
+            
+        # Register the new owner (30 day TTL)
+        r_client.set(owner_key, current_user_str, ex=60*60*24*30)
+        
+        # Store in Redis Hash for current user
         r_client.hset(redis_key, endpoint, val)
         return jsonify({"success": True, "message": "Subscribed to background notifications."}), 200
     except Exception as e:

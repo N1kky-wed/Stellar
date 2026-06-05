@@ -42,7 +42,8 @@ Internet ──► Nginx (HTTPS + wildcard *.stellarai.live)
          Flask App (app.py)
          ├── Google OAuth / Firebase Auth
          ├── SQLite (WAL mode) ──── stellar_local.db
-         ├── Redis (session / repo state)
+         ├── Redis (session / repo state / push subscriptions)
+         ├── SSH TUI Gateway (stellar-ssh.service / port 22)
          ├── Agent Prompt Engine (prompts.py)
          └── Tool Execution Layer (agent_tools.py)
               ├── lab_execute  ──► stellar-lab-core Docker containers (per user/chat)
@@ -57,6 +58,7 @@ Key design principles:
 - **Streaming responses** — all agent responses are streamed to the frontend via Server-Sent Events (SSE).
 - **Zero-leak interrupts** — cooperative `threading.Event`-based cancellation ensures that stopping a generation immediately halts both the LLM stream and in-flight tool calls without orphaned database records.
 - **Live follow-up injection** — users can send additional messages while the agent is still generating, which are injected into the active LLM loop in real time.
+- **Time-Aware Context** — The backend tracks relative time deltas between messages, providing the agent with a temporal understanding of the conversation flow.
 
 ---
 
@@ -229,6 +231,17 @@ The service runs Gunicorn with:
 **To apply backend code changes:**
 ```bash
 sudo systemctl restart stellar
+```
+
+### SSH TUI Gateway Service
+
+The `stellar-ssh.service` provides a secure, text-based SSH interface on port 22 for Docker container management and browser-based device authentication.
+
+```bash
+sudo cp stellar-ssh.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable stellar-ssh
+sudo systemctl start stellar-ssh
 ```
 
 ### Nginx Configuration
@@ -523,7 +536,7 @@ Stellar is installable as a Progressive Web App on all platforms (desktop, Andro
 Background push notifications are delivered via the Web Push protocol (VAPID):
 
 1. **Service Worker** (`static/service-worker.js`) — registers on first load, handles `push` events, and displays native OS notifications even when the tab is closed.
-2. **Subscription flow:** On notification opt-in, the frontend requests a `PushSubscription` from the browser and sends it to `POST /api/push/subscribe`, which stores it in the `push_subscriptions` table.
+2. **Subscription flow:** On notification opt-in, the frontend requests a `PushSubscription` from the browser and sends it to `POST /api/push/subscribe`, which securely stores it in Redis (eliminating duplicate local notifications).
 3. **Server-side dispatch:** `send_push_notification(user_id, title, body, url)` in `app.py` uses `pywebpush` with VAPID credentials (`vapid_private.pem`) to push notifications to all of a user's registered devices.
 4. **Triggers:** Notifications are dispatched when a long-running generation completes (if the user has been waiting >20 seconds), and on scheduled task completion.
 
