@@ -248,6 +248,7 @@ Stellar completely replaces traditional SSH public-key authentication with a mod
 
 **Dashboard Features:**
 - **Container Management:** A beautiful Rich-powered terminal interface displaying all active and historical repository deployments owned by the user.
+- **Interactive Docker Shells:** (The core feature) Users can select any running container and press `ENTER` to instantly drop into a fully interactive root `bash` PTY shell inside their sandboxed Docker container, effectively replacing the need to run `docker exec` on the host.
 - **Live Telemetry:** View the current container status (Running, Stopped), creation timestamps, and routed subdomains in a clean table format.
 - **Lifecycle Controls:** Users can navigate the list and instantly Stop or Restart their deployed containers directly from the terminal using keyboard controls.
 
