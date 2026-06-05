@@ -15,6 +15,108 @@ window.stellar.send = function(prompt, silent = false) {
     }
 };
 
+window.stellar.currentProcessingContainer = null;
+
+// Global tracking of the last interacted element
+let lastInteractedElement = null;
+document.addEventListener('click', (e) => {
+    lastInteractedElement = e.target;
+}, true);
+document.addEventListener('submit', (e) => {
+    lastInteractedElement = e.target;
+}, true);
+document.addEventListener('change', (e) => {
+    lastInteractedElement = e.target;
+}, true);
+
+// Centralized autofix trigger
+window.stellar.triggerAutofix = function(containerElement, targetEl, error) {
+    if (!window.stellar || !window.stellar.send) return;
+    
+    let container = containerElement;
+    if (typeof containerElement === 'string') {
+        container = document.getElementById(containerElement);
+    }
+    if (!container) return;
+    
+    // Prevent multiple concurrent fixes for the same container
+    if (container.dataset.autofixTriggered === "true") return;
+    container.dataset.autofixTriggered = "true";
+    
+    const errMsg = error ? error.toString() : "Unknown JavaScript error";
+    console.warn("Autofix triggered for container:", container.id, "Error:", errMsg);
+    
+    // Provide visual feedback
+    if (targetEl) {
+        targetEl.style.backgroundColor = "#eab308";
+        targetEl.style.color = "#000";
+        targetEl.style.opacity = "0.8";
+        if (targetEl.tagName === "TR") {
+            const firstTd = targetEl.querySelector("td");
+            if (firstTd) firstTd.innerHTML = "Fixing... <span class='animate-spin' style='display:inline-block;'>⟳</span>";
+        } else {
+            targetEl.innerHTML = "Fixing... <span class='animate-spin' style='display:inline-block; margin-left: 4px;'>⟳</span>";
+            targetEl.disabled = true;
+        }
+    } else {
+        const firstBtn = container.querySelector('button, .btn, a');
+        if (firstBtn) {
+            firstBtn.style.backgroundColor = "#eab308";
+            firstBtn.style.color = "#000";
+            firstBtn.innerHTML = "Fixing... <span class='animate-spin' style='display:inline-block; margin-left: 4px;'>⟳</span>";
+        } else {
+            const feedbackDiv = document.createElement("div");
+            feedbackDiv.style.padding = "10px";
+            feedbackDiv.style.margin = "10px 0";
+            feedbackDiv.style.backgroundColor = "rgba(234, 179, 8, 0.1)";
+            feedbackDiv.style.border = "1px solid #eab308";
+            feedbackDiv.style.borderRadius = "8px";
+            feedbackDiv.style.color = "#eab308";
+            feedbackDiv.style.fontSize = "12px";
+            feedbackDiv.innerHTML = "Self-correcting UI error... <span class='animate-spin' style='display:inline-block; margin-left: 4px;'>⟳</span>";
+            container.appendChild(feedbackDiv);
+        }
+    }
+    
+    // Send feedback to LLM
+    window.stellar.send(`[SYSTEM AUTO-FEEDBACK: The user clicked/interacted with an element in your UI, but your JavaScript crashed with the following error: "${errMsg}". Please analyze your code, fix the logic or syntax error, and output the fully corrected HTML block.
+
+IMPORTANT: You MUST include this exact tag at the very end of your response so the system can hot-swap the old broken UI with your new version:
+<div style="display:none" data-autofix-replace="${container.id}"></div>
+
+Respond ONLY with the newly corrected raw HTML block and this tag.]`, true);
+};
+
+// Global error handler
+window.addEventListener('error', (event) => {
+    handleGlobalError(event.error || event.message);
+});
+
+// Global unhandled promise rejection handler
+window.addEventListener('unhandledrejection', (event) => {
+    handleGlobalError(event.reason);
+});
+
+function handleGlobalError(error) {
+    if (!error) return;
+    
+    // Case 1: Initial load / execution error
+    if (window.stellar.currentProcessingContainer) {
+        window.stellar.triggerAutofix(window.stellar.currentProcessingContainer, null, error);
+        return;
+    }
+    
+    // Case 2: Interaction / click error
+    if (lastInteractedElement) {
+        const genUiContainer = lastInteractedElement.closest('[id^="gen-ui-"]');
+        if (genUiContainer) {
+            window.stellar.triggerAutofix(genUiContainer, lastInteractedElement, error);
+            lastInteractedElement = null; // Clear to prevent double triggers
+        }
+    }
+}
+
+
 const defaultAgentSettings = {
   logs_and_preferences: true,
         generate_image: true,
@@ -1499,29 +1601,8 @@ const defaultAgentSettings = {
                                                 eval(handlerStr);
                                             } catch(e) {
                                                 console.error("Error executing event handler:", e);
-                                                if (window.stellar && window.stellar.send) {
-                                                    const errMsg = e.toString();
-                                                    const targetEl = event.currentTarget || event.target;
-                                                    
-                                                    // Visual feedback
-                                                    targetEl.style.backgroundColor = "#eab308";
-                                                    targetEl.style.color = "#000";
-                                                    targetEl.style.opacity = "0.8";
-                                                    if (targetEl.tagName === "TR") {
-                                                        const firstTd = targetEl.querySelector("td");
-                                                        if (firstTd) firstTd.innerHTML = "Fixing... <span class='animate-spin' style='display:inline-block;'>⟳</span>";
-                                                    } else {
-                                                        targetEl.innerHTML = "Fixing... <span class='animate-spin' style='display:inline-block; margin-left: 4px;'>⟳</span>";
-                                                        targetEl.disabled = true;
-                                                    }
-                                                    
-                                                    // Ensure we include the container ID so the agent knows what to replace!
-                                                    window.stellar.send(\`[SYSTEM AUTO-FEEDBACK: The user clicked/interacted with an element in your UI, but your JavaScript crashed with the following error: "\${errMsg}". Please analyze your code, fix the logic or syntax error, and output the fully corrected HTML block.
-
-IMPORTANT: You MUST include this exact tag at the very end of your response so the system can hot-swap the old broken UI with your new version:
-<div style="display:none" data-autofix-replace="\${_container.id}"></div>
-
-Respond ONLY with the newly corrected raw HTML block and this tag.]\`, true);
+                                                if (window.stellar && window.stellar.triggerAutofix) {
+                                                    window.stellar.triggerAutofix(_container, event.currentTarget || event.target, e);
                                                 }
                                             }
                                         });
@@ -1555,12 +1636,17 @@ Respond ONLY with the newly corrected raw HTML block and this tag.]\`, true);
         });
 
         Promise.all(externalScriptPromises).then(() => {
-            inlineScripts.forEach(scriptContent => {
-                const newScript = document.createElement("script");
-                newScript.textContent = scriptContent;
-                document.body.appendChild(newScript);
-            });
-        });
+             inlineScripts.forEach(scriptContent => {
+                 const newScript = document.createElement("script");
+                 newScript.textContent = scriptContent;
+                 if (window.stellar) window.stellar.currentProcessingContainer = containerElement;
+                 try {
+                     document.body.appendChild(newScript);
+                 } finally {
+                     if (window.stellar) window.stellar.currentProcessingContainer = null;
+                 }
+             });
+         });
 
         // 1. Lazy load images
         const suiImages = containerElement.querySelectorAll('.sui-img, [class*="sui-"] img');
