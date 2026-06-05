@@ -5,7 +5,7 @@ Stellar SSH Gateway
 Secure SSH-based TUI for managing Docker container deployments.
 
 Flow:
-  1. User connects: ssh -p 2222 stellarai.live
+  1. User connects: ssh stellarai.live
   2. Sees auth screen → visits https://stellarai.live/auth/ssh
   3. Generates one-time code, pastes into SSH terminal
   4. Authenticated → TUI dashboard with repo list
@@ -50,7 +50,7 @@ from rich import box
 # Configuration
 # ============================================================
 SSH_HOST = '0.0.0.0'
-SSH_PORT = 2222
+SSH_PORT = 22
 HOST_KEY_PATH = '/home/stellaradmin/my_app/ssh_gateway_host_key'
 DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stellar_local.db')
 LOG_DIR = '/home/stellaradmin/my_app/logs'
@@ -939,7 +939,6 @@ def handle_connection(client_socket, client_addr):
 
     try:
         transport = paramiko.Transport(client_socket)
-        transport.set_gss_host(socket.getfqdn(""))
 
         # Security: Set strict banner, timeouts
         transport.banner_timeout = 15

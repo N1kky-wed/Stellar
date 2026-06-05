@@ -4032,7 +4032,7 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
   <div class="subtitle">SSH Terminal Authentication</div>
 
   <ol class="steps">
-    <li data-step="1">Open a terminal and run <code>ssh stellarai.live -p 2222</code></li>
+    <li data-step="1">Open a terminal and run <code>ssh stellarai.live</code></li>
     <li data-step="2">Click the button below to generate your access code</li>
     <li data-step="3">Paste the code into the SSH prompt to connect</li>
   </ol>
