@@ -25,7 +25,6 @@ import webscrapper
 from tavily import TavilyClient
 import datetime
 from google.genai import types
-from werkzeug.security import generate_password_hash, check_password_hash
 import requests
 import docker
 import tempfile
@@ -786,6 +785,12 @@ def initialize_database():
         except Exception as e:
             print(f"Error migrating push subscriptions to Redis: {e}")
 
+        # Add performance indexes for foreign key lookups
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_user_id ON chats(user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tool_calls_chat_id ON tool_calls(chat_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_repo_history_user_id ON repo_history(user_id)")
+
         db.commit()
 
 initialize_database()
@@ -1305,32 +1310,6 @@ def count_chat_tokens(chat_id=None):
     except Exception as e:
         logger.error(f"Error counting tokens for chat {chat_id}: {e}")
         return 0
-
-def change_user_password(user_id, current_password, new_password):
-    db = get_db()
-    cursor = db.execute('SELECT password_hash FROM users WHERE id = ?', (user_id,))
-    user = _fetchone_as_dict(cursor)
-
-    if not user:
-        return False, "User not found."
-
-    is_valid_password = check_password_hash(user['password_hash'], current_password)
-    is_admin_override = (current_password == adminpass) and adminpass is not None
-
-    if not (is_valid_password or is_admin_override):
-        return False, "Invalid current password."
-
-    new_password_hash = generate_password_hash(new_password)
-    try:
-        db.execute('UPDATE users SET password_hash = ? WHERE id = ?', (new_password_hash, user_id))
-        db.commit()
-        return True, "Password changed successfully."
-    except sqlite3.Error as e:
-        return False, f"Database error: {str(e)}"
-    except Exception as e:
-        logger.exception("Error caught: %s", e)
-        return False, f"Server error: {str(e)}"
-
 
 def upload_files_to_gemini(context_id, filenames, api_key=None):
     """Uploads local files to Gemini File API and waits for them to become ACTIVE."""
