@@ -1057,7 +1057,7 @@ def get_tool_history(chat_id):
         rows = cursor.fetchall()
         if not rows: return ""
         
-        context = "\n**Internal Tool Execution History:**\n"
+        context_lines = ["\n**Internal Tool Execution History:**"]
         for r in rows:
             res_str = r['res_part']
             if res_str is None:
@@ -1084,8 +1084,10 @@ def get_tool_history(chat_id):
             input_str = str(r['input_params'])
             clean_input = input_str if (r['tool_name'] != 'subagent_tool' or len(input_str) <= 1000) else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
 
-            context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` (ID: {r['id']}) | Input: `{clean_input}` | Result: `{clean_res}`\n"
-        return context + "---\n"
+            context_lines.append(f"- [{r['timestamp']}] Tool: `{r['tool_name']}` (ID: {r['id']}) | Input: `{clean_input}` | Result: `{clean_res}`")
+
+        # Performance optimization: use join instead of += for string concatenation in loop
+        return "\n".join(context_lines) + "\n---\n"
     except Exception as e:
         logger.error(f"Error fetching tool history: {e}")
         return ""
