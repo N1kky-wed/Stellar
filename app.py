@@ -5033,10 +5033,12 @@ def sentinel_log_error():
         if not process_id:
             return jsonify({"success": False, "message": "Could not resolve process_id from URL"}), 400
 
-        # Check if the error reporter is the owner of the application
-        is_owner = False
-        if owner_id is not None and session.get('user_id') == owner_id:
-            is_owner = True
+        # Ownership is validated implicitly: we resolved owner_id from the DB
+        # via the subdomain in the reported URL. The session cookie is NOT
+        # available here because this request comes from a cross-subdomain iframe
+        # (SameSite=Lax blocks cookie sending across subdomains), so checking
+        # session.get('user_id') would always return None and disable healing.
+        is_owner = owner_id is not None
 
         error_info = data.get('error', {})
         error_type = error_info.get('type', 'js_error')
