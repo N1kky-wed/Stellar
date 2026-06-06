@@ -1113,7 +1113,7 @@ def get_tool_history(chat_id):
                     clean_res = res_str
 
             input_str = str(r['input_params'])
-            clean_input = input_str if (r['tool_name'] != 'subagent_tool' or len(input_str) <= 1000) else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
+            clean_input = input_str if len(input_str) <= 1000 else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
 
             context_lines.append(f"- [{r['timestamp']}] Tool: `{r['tool_name']}` (ID: {r['id']}) | Input: `{clean_input}` | Result: `{clean_res}`")
 
@@ -1292,7 +1292,7 @@ def count_chat_tokens(chat_id=None):
                     clean_res = res_str
 
                 input_str = str(t['input_params'])
-                clean_input = input_str if (t['tool_name'] != 'subagent_tool' or len(input_str) <= 1000) else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
+                clean_input = input_str if len(input_str) <= 1000 else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
 
                 tool_hist_entry = f"- [{t['timestamp']}] Tool: `{t['tool_name']}` (ID: {t['id']}) | Input: `{clean_input}` | Result: `{clean_res}`"
                 history_for_tokens.append(types.Content(role="user", parts=[types.Part(text=tool_hist_entry)]))
@@ -1861,16 +1861,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 if func_name == "logs_and_preferences":
                                     args_dict['user_id'] = str(getattr(g, 'user_id', 'global'))
                                     
-                                if func_name == "subagent_tool":
-                                    prompt_text = ""
-                                    if isinstance(current_effective_prompt, list):
-                                        # Use getattr to safely get 'text' and filter out None values to avoid TypeError in join
-                                        prompt_parts = [getattr(p, 'text', None) for p in current_effective_prompt]
-                                        prompt_text = "\\n".join([str(p) for p in prompt_parts if p is not None])
-                                    elif isinstance(current_effective_prompt, str):
-                                        prompt_text = current_effective_prompt
-                                    args_dict['current_effective_prompt'] = prompt_text
-
                                 if func_name == "request_user_interaction":
                                     interaction_id = str(uuid.uuid4())
                                     html_ui = args_dict.get('html_ui', '')
@@ -2054,14 +2044,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             accumulated_full_output = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', accumulated_full_output, flags=re.IGNORECASE)
 
             for tool in called_tools_results:
-                if tool['name'] == 'subagent_tool':
-                    if not tool.get('args', {}).get('pass_to_user', True):
-                        continue
-                    
-                    # --- ADD THIS HIDDEN TAG INTERCEPTOR ---
-                    if isinstance(tool['result'], str) and '[TOOL_REQUEST]' in tool['result']:
-                        continue # Hide from UI! But it's already in function_responses for the Main Agent.
-                    # ---------------------------------------
                 elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'request_user_interaction', 'obtain_talent']:
                     continue
 
@@ -2410,7 +2392,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 image='stellar-python-sandbox:3.12',
                 command='sleep infinity',
                 working_dir='/app',
-                volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}, '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
+                volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
                 ports={'5000/tcp': ('0.0.0.0', 0)},
                 name=f"stellar-{app_type}-{process_id}",
                 remove=False,
@@ -5383,7 +5365,7 @@ def run_code():
 
             container = client.containers.run(
                 image=config['image'], command=config['command'](main_code_filename_with_ext),
-                working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}, '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
+                working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
                 ports=ports_to_publish, mem_limit='1024m',
                 name=f"stellar-sandbox-{run_id}", remove=False, detach=True,
                 init=True, network=user_network,
