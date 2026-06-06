@@ -88,3 +88,5 @@ pytest
 pytest-flask
 pytest-mock
 python-pptx
+rich
+paramiko
