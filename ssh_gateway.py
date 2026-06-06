@@ -514,7 +514,7 @@ class TUI:
         return TUI._render(width, height, Align(content, vertical="middle", align="center"), theme)
 
     @staticmethod
-    def dashboard(repos: list, selected: int, username: str, width: int, height: int, status_msg: str = "", theme: dict = None, search_query: str = "", filter_state: str = "All", sort_state: str = "Name", mode: str = "NORMAL") -> str:
+    def dashboard(repos: list, selected: int, username: str, width: int, height: int, status_msg: str = "", theme: dict = None, search_query: str = "", filter_state: str = "All", sort_state: str = "Name", mode: str = "NORMAL", status_map: dict = None) -> str:
         if not theme: theme = TUI.THEMES[0]
         
         header_table = Table.grid(expand=True)
@@ -565,7 +565,9 @@ class TUI:
                 is_sel = (i == selected)
                 marker = f"[bold {theme['accent']}]▸[/bold {theme['accent']}]" if is_sel else " "
                 
-                status_raw = get_container_status(repo['process_id'], repo.get('app_type', 'repo'))
+                status_raw = status_map.get(repo['process_id']) if status_map else None
+                if not status_raw:
+                    status_raw = get_container_status(repo['process_id'], repo.get('app_type', 'repo'))
                 if status_raw == 'running':
                     status_icon_sel = "[bold green]●[/bold green]"
                     status_icon_dim = "[dim green]●[/dim green]"
@@ -947,23 +949,40 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
 # ============================================================
 # Theme Persistence
 # ============================================================
-THEME_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.ssh_theme.json')
-
-def load_theme():
+def load_theme(user_id=None):
+    if not user_id:
+        return {"theme_idx": 0, "border_idx": 0}
+    
+    safe_user_id = str(user_id).replace('/', '_').replace('\\', '_')
+    theme_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'.ssh_theme_{safe_user_id}.json')
     try:
-        if os.path.exists(THEME_CONFIG_PATH):
-            with open(THEME_CONFIG_PATH, 'r') as f:
+        if os.path.exists(theme_path):
+            with open(theme_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to load theme for user {user_id}: {e}")
     return {"theme_idx": 0, "border_idx": 0}
 
-def save_theme(theme_idx, border_idx):
+def save_theme(user_id, theme_idx, border_idx):
+    if not user_id:
+        return
+    
+    safe_user_id = str(user_id).replace('/', '_').replace('\\', '_')
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    theme_path = os.path.join(dir_path, f'.ssh_theme_{safe_user_id}.json')
+    temp_path = os.path.join(dir_path, f'.ssh_theme_{safe_user_id}.tmp')
+    
     try:
-        with open(THEME_CONFIG_PATH, 'w') as f:
+        with open(temp_path, 'w', encoding='utf-8') as f:
             json.dump({"theme_idx": theme_idx, "border_idx": border_idx}, f)
-    except:
-        pass
+        os.replace(temp_path, theme_path)
+    except Exception as e:
+        logger.error(f"Failed to save theme for user {user_id}: {e}")
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
 
 # ============================================================
 # Session Handler (main per-connection logic)
@@ -1028,8 +1047,6 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             elif key == " ": # Spacebar toggle
                 is_default = not is_default
             elif key == "ENTER":
-                if is_default:
-                    save_theme(selected_theme, selected_border)
                 break
             elif key == "ESC":
                 selected_theme, selected_border = 0, 0
@@ -1096,6 +1113,19 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         username = user_info.get('display_name') or user_info.get('username', 'User')
         audit.info(f"SESSION_START | ip={real_ip} | user_id={user_id} | username={username}")
 
+        # Load or save user-scoped theme preferences
+        if is_default:
+            save_theme(user_id, selected_theme, selected_border)
+        else:
+            saved = load_theme(user_id)
+            selected_theme = saved.get("theme_idx", 0)
+            selected_border = saved.get("border_idx", 0)
+            
+        base_theme = TUI.THEMES[selected_theme].copy()
+        b_val = TUI.BORDER_COLORS[selected_border]["value"]
+        if b_val: base_theme["border"] = b_val
+        active_theme = base_theme
+
         # ---- PHASE 2: Dashboard ----
         selected_index = 0
         status_msg = f"Welcome, {username}!"
@@ -1108,11 +1138,14 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         
         last_activity = time.time()
         
-        def get_filtered_sorted_repos():
+        repos = []
+        status_map = {}
+
+        def get_filtered_sorted_repos(status_map):
             all_repos = get_user_repos(user_id)
             f_repos = []
             for r in all_repos:
-                r_status = get_container_status(r['process_id'], r.get('app_type', 'repo'))
+                r_status = status_map.get(r['process_id'], 'not_found')
                 
                 # Text Search
                 if search_query and search_query.lower() not in r['name'].lower():
@@ -1132,11 +1165,28 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             if current_sort == "Name":
                 f_repos.sort(key=lambda x: x['name'].lower())
             elif current_sort == "Status":
-                f_repos.sort(key=lambda x: get_container_status(x['process_id'], x.get('app_type', 'repo')))
+                f_repos.sort(key=lambda x: status_map.get(x['process_id'], 'not_found'))
             elif current_sort == "Created":
                 f_repos.sort(key=lambda x: x.get('created', ''), reverse=True)
                 
             return f_repos
+
+        def redraw():
+            nonlocal status_msg
+            draw(TUI.dashboard(
+                repos, selected_index, username, 
+                server.term_width, server.term_height, 
+                status_msg, theme=active_theme, 
+                search_query=search_query, 
+                filter_state=filter_states[filter_idx], 
+                sort_state=sort_states[sort_idx], 
+                mode=mode, status_map=status_map
+            ))
+            status_msg = ""
+
+        needs_refresh = True
+        last_refresh_time = 0
+        REFRESH_INTERVAL = 3.0 # seconds
 
         while True:
             # Check idle timeout
@@ -1146,19 +1196,26 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 time.sleep(2)
                 break
 
-            repos = get_filtered_sorted_repos()
-            if selected_index >= len(repos):
-                selected_index = max(0, len(repos) - 1)
-
-            draw(TUI.dashboard(repos, selected_index, username, server.term_width, server.term_height, status_msg, theme=active_theme, search_query=search_query, filter_state=filter_states[filter_idx], sort_state=sort_states[sort_idx], mode=mode))
-            status_msg = ""  # Clear one-shot status
+            # Refresh data if cooldown has expired or explicitly requested
+            if needs_refresh or (time.time() - last_refresh_time > REFRESH_INTERVAL):
+                try:
+                    all_repos = get_user_repos(user_id)
+                    status_map = {r['process_id']: get_container_status(r['process_id'], r.get('app_type', 'repo')) for r in all_repos}
+                    repos = get_filtered_sorted_repos(status_map)
+                except Exception as e:
+                    logger.error(f"Error querying deployments: {e}")
+                needs_refresh = False
+                last_refresh_time = time.time()
+                if selected_index >= len(repos):
+                    selected_index = max(0, len(repos) - 1)
+                redraw()
 
             # Read keypress
             key = read_key(channel, timeout=0.1)
             if not key:
                 if server.resize_event.is_set():
                     server.resize_event.clear()
-                    draw(TUI.dashboard(repos, selected_index, username, server.term_width, server.term_height, status_msg, theme=active_theme, search_query=search_query, filter_state=filter_states[filter_idx], sort_state=sort_states[sort_idx], mode=mode))
+                    redraw()
                 continue
 
             last_activity = time.time()
@@ -1166,40 +1223,97 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             if mode == "SEARCH":
                 if key == 'ESC':
                     mode = "NORMAL"
+                    redraw()
                 elif key == 'BACKSPACE':
                     search_query = search_query[:-1]
+                    repos = get_filtered_sorted_repos(status_map)
                     selected_index = 0
+                    redraw()
                 elif key in ('ENTER', '\n', '\r'):
                     mode = "NORMAL"
+                    redraw()
                 elif isinstance(key, str) and len(key) == 1 and key.isprintable():
                     search_query += key
+                    repos = get_filtered_sorted_repos(status_map)
                     selected_index = 0
+                    redraw()
                 continue
 
             # Normal Mode Controls
             if key == 'UP':
                 if repos and selected_index > 0:
                     selected_index -= 1
+                    redraw()
             elif key == 'DOWN':
                 if repos and selected_index < len(repos) - 1:
                     selected_index += 1
+                    redraw()
             elif key in ('q', 'Q', 'CTRL_C', 'CTRL_D', 'EOF'):
                 break
             elif key == '/':
                 mode = "SEARCH"
+                redraw()
             elif key in ('f', 'F'):
                 filter_idx = (filter_idx + 1) % len(filter_states)
+                repos = get_filtered_sorted_repos(status_map)
                 selected_index = 0
+                redraw()
             elif key in ('o', 'O'):
                 sort_idx = (sort_idx + 1) % len(sort_states)
+                repos = get_filtered_sorted_repos(status_map)
                 selected_index = 0
+                redraw()
             elif key in ('t', 'T'):
-                # Quick theme switch
-                selected_theme = (selected_theme + 1) % len(TUI.THEMES)
+                # Run the interactive theme picker inside the session
+                t_sel_theme = selected_theme
+                t_sel_border = selected_border
+                t_is_default = False
+                t_focus = "theme"
+                
+                draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default))
+                
+                while True:
+                    t_key = read_key(channel, timeout=5.0)
+                    if not t_key:
+                        if server.resize_event.is_set():
+                            server.resize_event.clear()
+                            draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default))
+                        continue
+                    
+                    t_needs_redraw = True
+                    if t_key == "RIGHT" and t_focus == "theme":
+                        t_focus = "border"
+                    elif t_key == "LEFT" and t_focus == "border":
+                        t_focus = "theme"
+                    elif t_key == "UP":
+                        if t_focus == "theme" and t_sel_theme > 0: t_sel_theme -= 1
+                        elif t_focus == "border" and t_sel_border > 0: t_sel_border -= 1
+                    elif t_key == "DOWN":
+                        if t_focus == "theme" and t_sel_theme < len(TUI.THEMES) - 1: t_sel_theme += 1
+                        elif t_focus == "border" and t_sel_border < len(TUI.BORDER_COLORS) - 1: t_sel_border += 1
+                    elif t_key == " ":
+                        t_is_default = not t_is_default
+                    elif t_key == "ENTER":
+                        selected_theme = t_sel_theme
+                        selected_border = t_sel_border
+                        if t_is_default:
+                            save_theme(user_id, selected_theme, selected_border)
+                        break
+                    elif t_key == "ESC":
+                        break
+                    elif t_key in ('CTRL_C', 'CTRL_D', 'EOF'):
+                        break
+                    else:
+                        t_needs_redraw = False
+                        
+                    if t_needs_redraw:
+                        draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default))
+                
                 base_theme = TUI.THEMES[selected_theme].copy()
                 b_val = TUI.BORDER_COLORS[selected_border]["value"]
                 if b_val: base_theme["border"] = b_val
                 active_theme = base_theme
+                redraw()
             elif key == 'ENTER':
                 if repos:
                     repo = repos[selected_index]
@@ -1212,15 +1326,17 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                         attach_container_shell(channel, server, repo['process_id'], app_type, user_id)
                         send_raw(channel, '\x1b[?1049h\x1b[?25l') # Re-enter alt screen
                         status_msg = f"Disconnected from {repo['name']}"
+                        needs_refresh = True
                     elif live_status in ('exited', 'created'):
                         status_msg = start_container(repo['process_id'], app_type, user_id)
+                        needs_refresh = True
                     else:
                         status_msg = f"Cannot connect: container is {live_status}"
+                        redraw()
             elif key in ('l', 'L'):
                 if repos:
                     repo = repos[selected_index]
                     app_type = repo.get('app_type', 'repo')
-                    # Implement actual logs fetch logic (mocked in preview, needs real docker logic here)
                     try:
                         client = docker.from_env()
                         container = get_container(client, repo['process_id'], app_type)
@@ -1235,16 +1351,19 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                                 server.resize_event.clear()
                     except Exception as e:
                         status_msg = f"Could not fetch logs: {e}"
+                    redraw()
             elif key in ('r', 'R'):
                 if repos:
                     repo = repos[selected_index]
                     status_msg = f"Restarting {repo['name']}..."
-                    draw(TUI.dashboard(repos, selected_index, username, server.term_width, server.term_height, status_msg, theme=active_theme))
+                    redraw()
                     status_msg = restart_container(repo['process_id'], repo.get('app_type', 'repo'), user_id)
+                    needs_refresh = True
             elif key in ('s', 'S'):
                 if repos:
                     repo = repos[selected_index]
                     status_msg = stop_container(repo['process_id'], repo.get('app_type', 'repo'), user_id)
+                    needs_refresh = True
 
         # ---- PHASE 3: Goodbye ----
         draw(TUI.goodbye_screen(username, server.term_width, server.term_height, theme=active_theme))
