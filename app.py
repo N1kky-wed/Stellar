@@ -1627,6 +1627,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     
                     if is_quota and (current_key_index + 1) < len(keys_to_try):
                         logger.warning(f"Quota exceeded for key index {current_key_index}. Switching to backup key...")
+                        block_duration, block_reason = parse_quota_block_duration(error_string)
+                        block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                        KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                        logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in inner loop.")
                         current_key_index += 1
                         current_key = keys_to_try[current_key_index]
                         
@@ -1680,6 +1684,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         # If we hit 3 network errors, try switching keys before giving up on this attempt
                         if consecutive_network_errors == 3 and (current_key_index + 1) < len(keys_to_try):
                              logger.warning(f"Persistent network issues with key {current_key_index}. Switching to backup key...")
+                             block_duration, block_reason = parse_quota_block_duration(error_string)
+                             block_scope = model_id
+                             KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                             logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to persistent network issues in inner loop.")
                              current_key_index += 1
                              current_key = keys_to_try[current_key_index]
                              consecutive_network_errors = 0 # Reset for the new key
@@ -1861,7 +1869,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                                 user_id=p_user_id,
                                                 title="Stellar: Action Required",
                                                 body=prompt_desc,
-                                                url="/"
+                                                url=f"/?chat_id={chat_id}"
                                             )
                                     except Exception as push_err:
                                         logger.error(f"Failed to dispatch interaction push notification: {push_err}")
@@ -3256,7 +3264,7 @@ def refine_stream():
                                      user_id=p_user_id,
                                      title="Stellar: Task Completed",
                                      body=preview_body,
-                                     url="/"
+                                     url=f"/?chat_id={chat_id}"
                                  )
                          except Exception as push_err:
                              logger.error(f"Failed to dispatch completion push notification: {push_err}")
@@ -4465,7 +4473,8 @@ def check_auth_status():
                 "display_name": user['display_name'] or user['username'],
                 "role": user['role'],
                 "is_approved": session['is_approved'],
-                "pfp_url": user.get('pfp_url')
+                "pfp_url": user.get('pfp_url'),
+                "current_chat_id": session.get('current_chat_id')
             }), 200
         else:
             return jsonify({"logged_in": False}), 200
@@ -5095,6 +5104,13 @@ def test_sentinel_overlay():
 
 @app.route('/')
 def index():
+    chat_id = request.args.get('chat_id')
+    if chat_id:
+        try:
+            session['current_chat_id'] = int(chat_id)
+        except ValueError:
+            pass
+
     def serve_no_cache(filename):
         with open(filename, 'r') as f:
             content = f.read()

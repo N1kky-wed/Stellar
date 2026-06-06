@@ -122,16 +122,22 @@ def web_search(
         # 1. Google Quick Search
         if action == "google_quick":
             if not query: return json.dumps({"error": "Missing 'query' for google_quick"})
-            from app import PRIMARY_API_KEY, BACKUP_API_KEYS
+            from app import PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER, parse_quota_block_duration
             raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
             keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+            
+            model_id = 'gemini-3.1-flash-lite'
+            active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, model_id)[0]]
+            if not active_keys:
+                active_keys = keys_to_try
+            keys_to_try = active_keys
             
             last_error = None
             for current_key in keys_to_try:
                 try:
                     client = genai.Client(api_key=current_key)
                     response = client.models.generate_content(
-                        model='gemini-3.1-flash-lite',
+                        model=model_id,
                         contents=f"Please answer this concisely using Google Search: {query}",
                         config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
                     )
@@ -140,6 +146,10 @@ def web_search(
                     logger.error(f"Error in google_quick tool: {e}", exc_info=True)
                     error_string = str(e).lower()
                     if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
+                        block_duration, block_reason = parse_quota_block_duration(error_string)
+                        block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                        KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                        logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in google_quick.")
                         last_error = e
                         continue
                     return json.dumps({"error": f"Error: {str(e)}"})
@@ -521,7 +531,7 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
         aspect_ratio: Supported ratios: '1:1', '3:4', '4:3', '9:16', '16:9'.
         reference_images: List of filenames from the chat context to use as reference/conditioning (up to 14).
     """
-    from app import PRIMARY_API_KEY, UPLOAD_FOLDER, BACKUP_API_KEYS
+    from app import PRIMARY_API_KEY, UPLOAD_FOLDER, BACKUP_API_KEYS, KEY_MANAGER, parse_quota_block_duration
     session = _get_effective_session()
     import os
     import mimetypes
@@ -529,6 +539,11 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
     
     raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+    
+    active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, model)[0]]
+    if not active_keys:
+        active_keys = keys_to_try
+    keys_to_try = active_keys
     
     # Ensure aspect_ratio is one of the strictly supported API values
     valid_ratios = ["1:1", "3:4", "4:3", "9:16", "16:9"]
@@ -602,6 +617,10 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
             logger.error(f"Error in generate_image tool: {e}", exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
+                block_duration, block_reason = parse_quota_block_duration(error_string)
+                block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model
+                KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in generate_image.")
                 last_error = e
                 continue
             return f"Error generating image: {str(e)}"
@@ -670,11 +689,17 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
     from pptx import Presentation
     from pptx.util import Inches
     from io import BytesIO
-    from app import PRIMARY_API_KEY, BACKUP_API_KEYS
+    from app import PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER, parse_quota_block_duration
     from pydantic import BaseModel, Field
     
     raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+
+    model_id = 'gemini-2.5-flash'
+    active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, model_id)[0]]
+    if not active_keys:
+        active_keys = keys_to_try
+    keys_to_try = active_keys
 
     class Slide(BaseModel):
         title: str = Field(description="Main title for the slide.")
@@ -697,7 +722,7 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
         try:
             client = genai.Client(api_key=current_key)
             resp = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=model_id,
                 contents=slide_plan_prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -710,6 +735,10 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
             logger.error(f"Error in make_presentation tool: {e}", exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
+                block_duration, block_reason = parse_quota_block_duration(error_string)
+                block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in make_presentation.")
                 last_error = e
                 continue
             return f"Failed to plan presentation: {str(e)}"
@@ -824,9 +853,23 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
     from app import PRIMARY_API_KEY
     from pydantic import BaseModel, Field
 
-    from app import PRIMARY_API_KEY, BACKUP_API_KEYS
+    from app import PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER, parse_quota_block_duration
     raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+    
+    model_id = 'gemini-2.5-flash'
+    active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, model_id)[0]]
+    if not active_keys:
+        active_keys = keys_to_try
+    keys_to_try = active_keys
+
+    slide_plan_prompt = (
+        f"We want to regenerate slide {slide_index + 1} of a presentation on '{topic}'.\n"
+        f"Style: {style}.\n"
+        f"Context: {additional_context}.\n"
+        f"Feedback for regeneration: '{feedback}'.\n"
+        "Plan the updated slide layout. Include specific sections, diagrams, or icons in the background description."
+    )
     
     slide_data = None
     img_bytes = None
@@ -853,7 +896,7 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
                 contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
 
             resp = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=model_id,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -895,6 +938,10 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
             logger.error(f"Error in regenerate_presentation_slide tool: {e}", exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
+                block_duration, block_reason = parse_quota_block_duration(error_string)
+                block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in regenerate_presentation_slide.")
                 last_error = e
                 continue
             return f"Failed to re-plan or generate slide: {str(e)}"
@@ -1665,9 +1712,14 @@ def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "
     if not video_url:
         return "Error: 'video_url' is required for the 'analyze' action."
 
-    from app import PRIMARY_API_KEY, BACKUP_API_KEYS
+    from app import PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER, parse_quota_block_duration
     raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+    
+    active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, model_id)[0]]
+    if not active_keys:
+        active_keys = keys_to_try
+    keys_to_try = active_keys
     
     part = types.Part(
         file_data=types.FileData(
@@ -1704,6 +1756,10 @@ def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "
             logger.error(f"Error in analyze_youtube_video tool: {e}", exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
+                block_duration, block_reason = parse_quota_block_duration(error_string)
+                block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
+                logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in analyze_youtube_video.")
                 last_error = e
                 continue
             return f"Error analyzing YouTube video: {str(e)}"

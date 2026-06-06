@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stellar-static-v10';
+const CACHE_NAME = 'stellar-static-v12';
 const ASSETS_TO_CACHE = [
   '/default.min.css',
   '/custom_select.css',
@@ -47,6 +47,11 @@ self.addEventListener('fetch', event => {
     requestUrl.pathname.startsWith('/api/') ||
     requestUrl.pathname.startsWith('/login') ||
     requestUrl.pathname === '/check_auth' ||
+    requestUrl.pathname === '/get_history' ||
+    requestUrl.pathname === '/image-proxy' ||
+    requestUrl.pathname.startsWith('/view/') ||
+    requestUrl.pathname.startsWith('/download/') ||
+    requestUrl.pathname.startsWith('/auth/') ||
     requestUrl.pathname.includes('stream') ||
     requestUrl.pathname === '/upload_files' ||
     event.request.method !== 'GET'

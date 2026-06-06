@@ -199,7 +199,7 @@ Affected Line: {affected_line}
 Please provide the corrected file contents to heal the application.
 """
 
-        publish_log("info", "Consulting Gemini for code synthesis...", stage="Synthesizing Patch")
+        publish_log("info", "Consulting Stellar for code synthesis...", stage="Synthesizing Patch")
 
         from app import PRIMARY_API_KEY, BACKUP_API_KEYS
         raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
