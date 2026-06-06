@@ -48,7 +48,6 @@ Internet ──► Nginx (HTTPS + wildcard *.stellarai.live)
          └── Tool Execution Layer (agent_tools.py)
               ├── lab_execute  ──► stellar-lab-core Docker containers (per user/chat)
               ├── repo_control ──► stellar-repo-host Docker containers (per deployment)
-              └── subagent_tool ─► Gemini CLI inside lab containers
 ```
 
 Key design principles:
@@ -83,7 +82,7 @@ docker pull your-registry/stellar-lab-core:latest
 docker pull your-registry/stellar-repo-host:latest
 ```
 
-> The lab image must include: `bash`, `python3`, `pip`, `curl`, `git`, `gemini` CLI (for subagent_tool), and any common data science / web scraping libraries.
+> The lab image must include: `bash`, `python3`, `pip`, `curl`, `git`, and any common data science / web scraping libraries.
 
 ---
 
@@ -184,7 +183,6 @@ Stellar uses Docker extensively. All AI-executed code runs inside isolated conta
 - **Naming:** `stellar-lab-u<user_id>-c<chat_id>` — one per user/chat session.
 - **Mounts:**
   - `/lab` → `sandbox_runs/lab_workspace_u<uid>_c<cid>/` (host workspace, persisted across turns)
-  - `/cred_store` → `credentials/` (read-only credential store for Gemini CLI inside subagents)
 - **Lifecycle:** Started on first `lab_execute` call, persists until explicitly cleaned up or expired.
 - **Mandate Injection:** Operational mandate files (`mandates/*.md`) are automatically injected into `/lab` so the agent reads them before executing specialized tasks.
 
@@ -368,18 +366,6 @@ lab_execute(
 
 ---
 
-### `subagent_tool(task_description, mode, status, timeout, ...)`
-
-**Gemini CLI delegation.** Spawns an independent Gemini CLI agent inside a lab or repo container to handle a subtask concurrently.
-
-- **Modes:** `delegation` (execute a task) or `summarization` (compress long context).
-- **Account rotation:** The subagent script automatically cycles through all credential accounts (`/cred_store/account_X/`) if it hits quota limits — up to 5 retries.
-- **`pass_to_user`:** If `True`, the subagent's raw output is streamed directly to the chat; the main agent should not repeat it. If `False`, the output is used silently for background processing.
-- **`container_id`:** Optionally run the subagent inside a specific repo deployment container.
-
----
-
-### `make_presentation(topic, status, timeout, num_slides, style, additional_context)`
 
 **End-to-end AI-generated PowerPoint presentations.**
 
@@ -731,20 +717,6 @@ if is_blocked:
 All tools in `agent_tools.py` implement the same rotation pattern, and `gemini_generate` handles mid-conversation key switches by reconstructing the chat history with the new key's client.
 
 ### Credential Store for Subagents
-
-The `credentials/` directory holds account-specific `google_accounts.json` and `oauth_creds.json` files for the Gemini CLI used inside subagent containers:
-
-```
-credentials/
-├── account_0/
-│   ├── google_accounts.json
-│   └── oauth_creds.json
-├── account_1/
-│   └── ...
-```
-
-The `subagent_tool` bash script automatically rotates through these accounts if it detects quota exhaustion in the CLI output.
-
 ### Manual Account Switching
 
 To switch the active CLI account on the host machine:
