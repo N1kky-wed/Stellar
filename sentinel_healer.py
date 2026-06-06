@@ -158,18 +158,38 @@ def heal_application(process_id, error_id, r_client):
         publish_log("info", "Created temporary backup snapshot of the workspace.")
 
         # Read workspace files as context for Gemini
+        exclude_dirs = {
+            '.git', 'venv', '__pycache__', '.pytest_cache', 'node_modules',
+            'bower_components', '.next', 'dist', 'build', 'out', 'coverage',
+            '.gemini', 'outputs', 'tmp', 'temp', 'sandbox_runs', '.antigravitycli'
+        }
         workspace_context = ""
+        total_chars = 0
+        MAX_TOTAL_CHARS = 500000 # Keep context safe from 250k token limit (~1 token ≈ 3-4 chars)
+
         for root, dirs, files in os.walk(host_dir):
-            dirs[:] = [d for d in dirs if d not in ['.git', 'venv', '__pycache__', '.pytest_cache']]
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+            if total_chars >= MAX_TOTAL_CHARS:
+                break
             for file in files:
+                if total_chars >= MAX_TOTAL_CHARS:
+                    break
                 ext = os.path.splitext(file)[1]
                 if ext in ['.py', '.js', '.html', '.css', '.json', '.txt']:
                     full_path = os.path.join(root, file)
                     rel_path = os.path.relpath(full_path, host_dir)
                     try:
+                        # Skip files larger than 100KB to prevent quota blowout
+                        if os.path.getsize(full_path) > 100000:
+                            logger.info(f"Skipping large file in context: {rel_path}")
+                            continue
                         with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
                             content = f.read()
+                        if total_chars + len(content) > MAX_TOTAL_CHARS:
+                            allowed_len = MAX_TOTAL_CHARS - total_chars
+                            content = content[:allowed_len] + "\n... [TRUNCATED DUE TO SIZE LIMIT] ..."
                         workspace_context += f"\n--- File: {rel_path} ---\n{content}\n"
+                        total_chars += len(content)
                     except Exception as fe:
                         logger.warning(f"Could not read {rel_path} for workspace context: {fe}")
 
