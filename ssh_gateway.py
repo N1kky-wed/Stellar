@@ -1089,8 +1089,14 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 elif key in ('CTRL_C', 'CTRL_D', 'EOF'):
                     send_raw(channel, '\x1b[?1049l\x1b[?25h')
                     return
-                elif isinstance(key, str) and key.isdigit():
-                    code += key
+                elif isinstance(key, str):
+                    for char in key.upper():
+                        if char in (" ", "-"):
+                            continue
+                        if char.isalnum() and len(code) < 6:
+                            code += char
+                        if len(code) == 6:
+                            break
 
             # Verify
             draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, theme=active_theme))
