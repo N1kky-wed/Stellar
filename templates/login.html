@@ -317,6 +317,24 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // Clean up any stale service workers or cached pages to bypass the SW update/cache trap
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    for (let registration of registrations) {
+                        registration.unregister().then(success => {
+                            if (success) console.log('[Auth Cache Clean] Unregistered service worker');
+                        });
+                    }
+                });
+            }
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    for (let name of names) {
+                        caches.delete(name).then(() => console.log('[Auth Cache Clean] Cleared cache:', name));
+                    }
+                });
+            }
+
             // Firebase Configuration
             const firebaseConfig = {
                 apiKey: "AIzaSyBudjAFQDp8vIQ_9V6fp9lg2295qdS1vGU",
