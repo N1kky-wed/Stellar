@@ -788,6 +788,35 @@ def initialize_database():
         except Exception as e:
             print(f"Error migrating push subscriptions to Redis: {e}")
 
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sentinel_app_errors'")
+        if cursor.fetchone() is None:
+            cursor.execute('''CREATE TABLE sentinel_app_errors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                process_id TEXT NOT NULL,
+                error_type TEXT,
+                error_message TEXT,
+                stack_trace TEXT,
+                affected_file TEXT,
+                affected_line INTEGER,
+                status TEXT DEFAULT 'open',
+                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP)
+            )''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentinel_errors_process_id ON sentinel_app_errors(process_id)")
+            print("Created 'sentinel_app_errors' table.")
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sentinel_app_patches'")
+        if cursor.fetchone() is None:
+            cursor.execute('''CREATE TABLE sentinel_app_patches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                error_id INTEGER NOT NULL,
+                patch_diff TEXT,
+                status TEXT NOT NULL,
+                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+                FOREIGN KEY (error_id) REFERENCES sentinel_app_errors(id) ON DELETE CASCADE
+            )''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentinel_patches_error_id ON sentinel_app_patches(error_id)")
+            print("Created 'sentinel_app_patches' table.")
+
         # Add performance indexes for foreign key lookups
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_user_id ON chats(user_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)")
@@ -824,6 +853,8 @@ def get_current_chat_id(user_id):
         cursor = db.execute('SELECT id FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))
         if cursor.fetchone():
             return chat_id
+        else:
+            chat_id = None
 
     cursor = db.execute('SELECT id FROM chats WHERE user_id = ? AND is_temp = 0 ORDER BY created_at DESC LIMIT 1', (user_id,))
     last_chat = cursor.fetchone()
@@ -2682,21 +2713,31 @@ def stop_and_cleanup_app_by_process_id(process_id, app_type='repo'):
 def get_history_route():
     try:
         chat_id = request.args.get('chat_id')
-        if not chat_id and 'current_chat_id' in session:
-            chat_id = session['current_chat_id']
-        elif not chat_id:
-            chat_id = get_current_chat_id(session['user_id'])
-            session['current_chat_id'] = chat_id
-            session.modified = True
+        db = get_db()
+        
+        if chat_id:
+            try:
+                chat_id_int = int(chat_id)
+            except ValueError:
+                return jsonify({'status': 'Failed: Invalid chat ID format', 'history': []}), 400
+            cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id_int, session['user_id']))
+            if not cursor.fetchone():
+                return jsonify({'status': 'Failed: Chat not found or unauthorized', 'history': []}), 403
+        else:
+            chat_id = session.get('current_chat_id')
+            if chat_id:
+                cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, session['user_id']))
+                if not cursor.fetchone():
+                    session.pop('current_chat_id', None)
+                    chat_id = None
             
+            if not chat_id:
+                chat_id = get_current_chat_id(session['user_id'])
+                session['current_chat_id'] = chat_id
+                session.modified = True
+                
         if not chat_id:
             return jsonify({'status': 'Failed: No active chat ID found', 'history': []}), 400
-
-        db = get_db()
-        cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, session['user_id']))
-        check_chat_ownership = cursor.fetchone()
-        if not check_chat_ownership:
-            return jsonify({'status': 'Failed: Chat not found or unauthorized', 'history': []}), 403
 
         history = get_conversation_history(chat_id, for_ui=True)
         # Filter out hidden compressed state docs — they're for LLM context only, not the UI
@@ -3872,9 +3913,21 @@ def logout_user():
     session.clear()
     response = jsonify({"success": True, "message": "Logged out successfully."})
     # Explicitly expire the session cookie so browser drops it immediately
+    # 1. Delete cookie on configured domain (if any)
     response.delete_cookie(
         app.config.get('SESSION_COOKIE_NAME', 'stellar_session_main'),
         domain=app.config.get('SESSION_COOKIE_DOMAIN'),
+        path='/'
+    )
+    # 2. Delete cookie on parent wildcard domain to clean up stale cookies from prior configurations
+    response.delete_cookie(
+        app.config.get('SESSION_COOKIE_NAME', 'stellar_session_main'),
+        domain='.stellarai.live',
+        path='/'
+    )
+    # 3. Delete cookie on exact host (no domain parameter)
+    response.delete_cookie(
+        app.config.get('SESSION_COOKIE_NAME', 'stellar_session_main'),
         path='/'
     )
     return response, 200
@@ -4990,13 +5043,14 @@ def pwa_test_push():
 
 # ─── Sentinel Healer Routes ───────────────────────────────────────────────────
 
-def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=True):
+def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=True, error_message=None, affected_file=None, affected_line=None):
     """Queue a backend crash to the Sentinel healer via Redis."""
     try:
         db = get_db()
+        msg = error_message if error_message else error_type
         cursor = db.execute(
-            "INSERT INTO sentinel_app_errors (process_id, error_type, error_message, stack_trace, status) VALUES (?, ?, ?, ?, 'open')",
-            (process_id, error_type, error_type, stack_trace)
+            "INSERT INTO sentinel_app_errors (process_id, error_type, error_message, stack_trace, affected_file, affected_line, status) VALUES (?, ?, ?, ?, ?, ?, 'open')",
+            (process_id, error_type, msg, stack_trace, affected_file, affected_line)
         )
         error_id = cursor.lastrowid
         db.commit()
@@ -5006,8 +5060,10 @@ def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=True):
             logger.info(f"Sentinel: Queued healing task for app {process_id}, error_id={error_id}")
         else:
             logger.info(f"Sentinel: Logged error for app {process_id} (error_id={error_id}) but skipped healing (non-owner visitor).")
+        return error_id
     except Exception as e:
         logger.error(f"Sentinel: Failed to log backend crash for {process_id}: {e}")
+        return None
 
 @app.route('/api/sentinel/log_error', methods=['POST'])
 def sentinel_log_error():
@@ -5033,7 +5089,7 @@ def sentinel_log_error():
             pass
 
         if not process_id:
-            return jsonify({"success": False, "message": "Could not resolve process_id from URL"}), 400
+            return jsonify({"error": "No deployment mapping found"}), 404
 
         # Ownership is validated implicitly: we resolved owner_id from the DB
         # via the subdomain in the reported URL. The session cookie is NOT
@@ -5046,10 +5102,15 @@ def sentinel_log_error():
         error_type = error_info.get('type', 'js_error')
         error_message = error_info.get('message', 'Unknown JS error')
         stack_trace = error_info.get('stack', '')
+        affected_file = error_info.get('source')
+        affected_line = error_info.get('line')
         full_trace = f"JS Error: {error_message}\nSource: {error_info.get('source','')}\nLine: {error_info.get('line','')}\nStack:\n{stack_trace}"
 
-        log_backend_crash(process_id, error_type, full_trace, trigger_heal=is_owner)
-        return jsonify({"success": True})
+        error_id = log_backend_crash(
+            process_id, error_type, full_trace, trigger_heal=is_owner,
+            error_message=error_message, affected_file=affected_file, affected_line=affected_line
+        )
+        return jsonify({"status": "success", "error_id": error_id})
     except Exception as e:
         logger.error(f"Sentinel log_error route failed: {e}")
         return jsonify({"success": False}), 500

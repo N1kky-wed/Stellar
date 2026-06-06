@@ -52,6 +52,55 @@ def get_diff(old_content, new_content, filename):
     )
     return "".join(diff)
 
+def detect_startup_command(host_dir):
+    # Check if server.js exists
+    if os.path.exists(os.path.join(host_dir, 'server.js')):
+        return "node server.js"
+    # Check if package.json exists
+    if os.path.exists(os.path.join(host_dir, 'package.json')):
+        try:
+            with open(os.path.join(host_dir, 'package.json'), 'r') as f:
+                data = json.load(f)
+            if 'scripts' in data and 'start' in data['scripts']:
+                return "npm start"
+        except Exception:
+            pass
+        return "node server.js"
+    # Check if app.py exists
+    if os.path.exists(os.path.join(host_dir, 'app.py')):
+        return "python app.py"
+    # Fallback search
+    try:
+        files = os.listdir(host_dir)
+        if 'app.py' in files:
+            return "python app.py"
+        if 'server.js' in files:
+            return "node server.js"
+    except Exception:
+        pass
+    return "python app.py"
+
+def stop_application_server(container, cmd):
+    from app import logger
+    try:
+        kws = ['node', 'npm'] if ('node' in cmd or 'npm' in cmd) else ['app.py', 'python', 'flask']
+        kws_str = ", ".join([f"'{kw}'" for kw in kws])
+        kill_script = (
+            f"import os, signal; my_pid = os.getpid(); "
+            f"[os.kill(int(p), signal.SIGKILL) for p in os.listdir('/proc') "
+            f"if p.isdigit() and int(p) != my_pid and "
+            f"any(kw in open(f'/proc/{{p}}/cmdline').read('\\x00') for kw in [{kws_str}])]"
+        )
+        container.exec_run(["python3", "-c", kill_script], user='root')
+    except Exception as e:
+        logger.warning(f"Process PID kill script failed: {e}")
+        
+    container.exec_run("pkill -9 python || true", user='root')
+    container.exec_run("pkill -f 'python app.py' || true", user='root')
+    container.exec_run("pkill -9 node || true", user='root')
+    container.exec_run("pkill -f 'node server.js' || true", user='root')
+    container.exec_run("pkill -f 'npm' || true", user='root')
+
 # Pydantic models for structured output
 class EditBlock(BaseModel):
     search_text: str = Field(description="The exact block of text to find in the original file. Provide enough context lines to ensure uniqueness.")
@@ -144,25 +193,43 @@ def heal_application(process_id, error_id, r_client):
         if not host_dir:
             raise ValueError(f"Could not find host directory mount for container {container_name}")
 
-        # Ensure we have permissions to the host directory
+        # Resolve dynamic port and startup command
+        port = 5000
+        try:
+            cursor = db.execute("SELECT files_snapshot FROM repo_history WHERE process_id = ?", (process_id,))
+            repo_row = cursor.fetchone()
+            if repo_row and repo_row['files_snapshot']:
+                snap = json.loads(repo_row['files_snapshot'])
+                port = int(snap.get('port', 5000))
+        except Exception as e:
+            logger.warning(f"Failed to fetch port for process {process_id}: {e}")
+            
+        # Ensure we have permissions to the host directory before detecting startup command
         import subprocess
         try:
             subprocess.run(["sudo", "chown", "-R", "stellaradmin:www-data", host_dir], check=True, capture_output=True)
         except Exception as perm_err:
             logger.warning(f"Failed to chown host directory: {perm_err}")
 
-        # Create workspace backup directory
-        os.makedirs(SANDBOX_DIR, exist_ok=True)
-        backup_dir = os.path.join(SANDBOX_DIR, f"backup_{process_id}_{error_id}")
-        shutil.copytree(host_dir, backup_dir, dirs_exist_ok=True)
-        publish_log("info", "Created temporary backup snapshot of the workspace.")
+        startup_cmd = detect_startup_command(host_dir)
+        logger.info(f"Detected app startup command: '{startup_cmd}' on internal port {port}")
 
-        # Read workspace files as context for Gemini
+        # Define directories to exclude from context and backups
         exclude_dirs = {
             '.git', 'venv', '__pycache__', '.pytest_cache', 'node_modules',
             'bower_components', '.next', 'dist', 'build', 'out', 'coverage',
             '.gemini', 'outputs', 'tmp', 'temp', 'sandbox_runs', '.antigravitycli'
         }
+
+        # Create workspace backup directory (ignoring heavy/git/dependency folders)
+        os.makedirs(SANDBOX_DIR, exist_ok=True)
+        backup_dir = os.path.join(SANDBOX_DIR, f"backup_{process_id}_{error_id}")
+        shutil.copytree(
+            host_dir, backup_dir,
+            ignore=shutil.ignore_patterns(*exclude_dirs),
+            dirs_exist_ok=True
+        )
+        publish_log("info", "Created temporary backup snapshot of the workspace.")
         workspace_context = ""
         total_chars = 0
         MAX_TOTAL_CHARS = 500000 # Keep context safe from 250k token limit (~1 token ≈ 3-4 chars)
@@ -350,12 +417,10 @@ Please provide the corrected file contents to heal the application.
 
         # Restart server process inside container
         publish_log("info", "Restarting application server inside container...")
-        container.exec_run("python3 -c \"import os, signal; my_pid = os.getpid(); [os.kill(int(p), signal.SIGKILL) for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid and any(kw in open(f'/proc/{p}/cmdline').read('\x00') for kw in ['app.py', 'python', 'flask'])]\"", user='root')
-        container.exec_run("pkill -9 python || true", user='root')
-        container.exec_run("pkill -f 'python app.py' || true", user='root')
+        stop_application_server(container, startup_cmd)
         time.sleep(1)
         
-        container.exec_run(["sh", "-c", "python app.py > app.log 2>&1"], detach=True)
+        container.exec_run(["sh", "-c", f"{startup_cmd} > app.log 2>&1"], detach=True)
 
         # Health check
         is_ready = False
@@ -363,7 +428,7 @@ Please provide the corrected file contents to heal the application.
         for i in range(1, 11):
             time.sleep(1)
             try:
-                exec_result = container.exec_run("curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/")
+                exec_result = container.exec_run(f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{port}/")
                 if exec_result.exit_code == 0:
                     status_code = int(exec_result.output.decode().strip())
                     if 0 < status_code < 500:
@@ -423,8 +488,10 @@ Please provide the corrected file contents to heal the application.
                 except Exception as perm_err:
                     logger.warning(f"Failed to chown host directory during rollback: {perm_err}")
 
-                # Inode-safe contents restoration
+                # Inode-safe contents restoration (preserving heavy excluded dirs)
                 for item in os.listdir(host_dir):
+                    if item in exclude_dirs:
+                        continue
                     item_path = os.path.join(host_dir, item)
                     if os.path.isdir(item_path):
                         shutil.rmtree(item_path)
@@ -432,6 +499,8 @@ Please provide the corrected file contents to heal the application.
                         os.remove(item_path)
 
                 for item in os.listdir(backup_dir):
+                    if item in exclude_dirs:
+                        continue
                     s_path = os.path.join(backup_dir, item)
                     d_path = os.path.join(host_dir, item)
                     if os.path.isdir(s_path):
@@ -443,11 +512,9 @@ Please provide the corrected file contents to heal the application.
                 
                 # Restart original application server in container
                 if container:
-                    container.exec_run("python3 -c \"import os, signal; my_pid = os.getpid(); [os.kill(int(p), signal.SIGKILL) for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid and any(kw in open(f'/proc/{p}/cmdline').read('\x00') for kw in ['app.py', 'python', 'flask'])]\"", user='root')
-                    container.exec_run("pkill -9 python || true", user='root')
-                    container.exec_run("pkill -f 'python app.py' || true", user='root')
+                    stop_application_server(container, startup_cmd)
                     time.sleep(1)
-                    container.exec_run(["sh", "-c", "python app.py > app.log 2>&1"], detach=True)
+                    container.exec_run(["sh", "-c", f"{startup_cmd} > app.log 2>&1"], detach=True)
                     publish_log("info", "Original application server restarted.")
             except Exception as restore_err:
                 logger.error(f"Restore from backup failed: {restore_err}", exc_info=True)
