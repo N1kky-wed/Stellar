@@ -425,7 +425,10 @@
                                 setTimeout(() => {
                                      const urlParams = new URLSearchParams(window.location.search);
                                      const redirectUrl = urlParams.get('redirect') || '/';
-                                     window.location.href = redirectUrl;
+                                     // Use replace() so login page isn't in back-stack,
+                                     // then force reload() to bypass any SW/browser cache.
+                                     window.location.replace(redirectUrl);
+                                     window.location.reload();
                                  }, 1000);
                             }
                         }, 600);
