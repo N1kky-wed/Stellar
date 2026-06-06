@@ -128,7 +128,6 @@ const defaultAgentSettings = {
         analyze_youtube_video: true,
         send_self_email: true,
         schedule_task: true,
-        subagent_tool: true,
         notifications_enabled: true,
       };
       let agentSettings =
