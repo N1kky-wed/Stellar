@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stellar Sentinel — Self-Healing in Progress</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #050508;
+            --card-bg: rgba(10, 10, 18, 0.8);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary: #10b981;
+            --primary-glow: rgba(16, 185, 129, 0.2);
+            --secondary: #6366f1;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.08) 0px, transparent 50%);
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* --- Main UI Wrapper --- */
+        .gateway-wrapper {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 550px;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* Glassmorphic Container */
+        .sentinel-container {
+            width: 100%;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 40px 30px;
+            box-shadow: 
+                0 20px 50px rgba(0, 0, 0, 0.5),      
+                inset 0 1px 0 rgba(255, 255, 255, 0.05); 
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        /* Animated Pulsing Shield */
+        .shield-wrapper {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pulse-ring {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            border: 2px solid var(--primary);
+            border-radius: 50%;
+            opacity: 0;
+            animation: ring-pulse 3s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+        }
+
+        .pulse-ring-2 {
+            animation-delay: 1.5s;
+        }
+
+        .shield-icon-holder {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+            z-index: 2;
+        }
+
+        .shield-svg {
+            width: 32px;
+            height: 32px;
+            fill: var(--primary);
+            filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.4));
+        }
+
+        @keyframes ring-pulse {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(1.4); opacity: 0; }
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #ffffff 40%, #a7f3d0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            color: var(--secondary);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            padding: 4px 12px;
+            border-radius: 100px;
+            margin-bottom: 20px;
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.1);
+            animation: breathe 3s ease-in-out infinite;
+        }
+
+        @keyframes breathe {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
+        }
+
+        .description {
+            font-size: 13.5px;
+            color: var(--text-muted);
+            max-width: 450px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+
+        /* Premium Diagnostic Console */
+        .console-box {
+            width: 100%;
+            background: rgba(5, 5, 8, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 14px;
+            padding: 16px;
+            text-align: left;
+            font-family: 'Fira Code', 'JetBrains Mono', monospace;
+            font-size: 11.5px;
+            color: #34d399;
+            height: 180px;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
+        }
+
+        .console-line {
+            line-height: 1.6;
+            margin-bottom: 6px;
+            opacity: 0.9;
+            word-break: break-all;
+        }
+
+        .console-line.system {
+            color: var(--text-muted);
+        }
+
+        .console-line.success {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .console-line.error {
+            color: #ef4444;
+        }
+
+        /* Scrollbar styles */
+        .console-box::-webkit-scrollbar {
+            width: 6px;
+        }
+        .console-box::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .console-box::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .loader-dots {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            background-color: var(--primary);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+    </style>
+</head>
+<body>
+
+    <main class="gateway-wrapper" id="gatewayWrapper">
+        <div class="sentinel-container">
+            <div class="shield-wrapper">
+                <div class="pulse-ring"></div>
+                <div class="pulse-ring pulse-ring-2"></div>
+                <div class="shield-icon-holder">
+                    <svg class="shield-svg" viewBox="0 0 24 24">
+                        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+                    </svg>
+                </div>
+            </div>
+
+            <h1>Stellar Sentinel</h1>
+            <div class="status-badge" id="status-badge">Auto-Healing App</div>
+            <p class="description">
+                We detected an issue in your deployment (<strong>{{ app_name }}</strong>). Sentinel has enqueued it and is currently generating a stateful hot-patch. Please wait while the application heals.
+            </p>
+
+            <div class="console-box" id="console">
+                <div class="console-line system">> Initializing connection to healing telemetry...</div>
+            </div>
+
+            <div class="loader-dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const processId = "{{ process_id }}";
+        const consoleBox = document.getElementById("console");
+        const statusBadge = document.getElementById("status-badge");
+
+        function log(message, type = "normal") {
+            const line = document.createElement("div");
+            line.className = "console-line " + type;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            consoleBox.appendChild(line);
+            consoleBox.scrollTop = consoleBox.scrollHeight;
+        }
+
+        // Establish Server-Sent Events stream
+        let intentionalClose = false;
+        let reconnectAttempts = 0;
+
+        function connectSSE() {
+            const eventSource = new EventSource(`/api/sentinel/stream/${processId}`);
+
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.message) {
+                        let logType = "normal";
+                        if (data.event === "healed") logType = "success";
+                        if (data.event === "failed") logType = "error";
+                        log(data.message, logType);
+                    }
+
+                    if (data.stage) {
+                        statusBadge.textContent = data.stage;
+                    }
+
+                    if (data.event === "healed") {
+                        intentionalClose = true;
+                        eventSource.close();
+                        statusBadge.textContent = "✓ Application Healed";
+                        statusBadge.style.color = "#10b981";
+                        statusBadge.style.borderColor = "rgba(16, 185, 129, 0.4)";
+                        statusBadge.style.background = "rgba(16, 185, 129, 0.1)";
+                        log("Patch applied successfully. Reloading in 3 seconds...", "success");
+                        setTimeout(() => { window.location.reload(); }, 3000);
+                    }
+
+                    if (data.event === "failed") {
+                        intentionalClose = true;
+                        eventSource.close();
+                        statusBadge.textContent = "Healing Suspended";
+                        statusBadge.style.color = "#ef4444";
+                        statusBadge.style.borderColor = "rgba(239, 68, 68, 0.4)";
+                        statusBadge.style.background = "rgba(239, 68, 68, 0.1)";
+                        log("Healing loop terminated. Application restored to baseline snapshot.", "error");
+                    }
+                } catch (e) {
+                    console.error("Failed to parse SSE payload", e);
+                }
+            };
+
+            eventSource.onerror = function(err) {
+                if (intentionalClose) return; // Suppressed — we closed it on purpose
+                eventSource.close();
+                reconnectAttempts++;
+                if (reconnectAttempts <= 5) {
+                    log(`Telemetry connection dropped. Reconnecting (${reconnectAttempts}/5)...`, "system");
+                    setTimeout(connectSSE, 2000);
+                } else {
+                    log("Could not reconnect to healer. Reloading page...", "error");
+                    setTimeout(() => { window.location.reload(); }, 3000);
+                }
+            };
+        }
+
+        connectSSE();
+    </script>
+</body>
+</html>

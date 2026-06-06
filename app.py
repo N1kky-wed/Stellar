@@ -5,7 +5,7 @@ from google.auth.transport import requests as google_requests
 import threading
 from werkzeug.utils import secure_filename
 import queue
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, g, session, current_app, make_response, has_request_context, redirect
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, g, session, current_app, make_response, has_request_context, redirect, render_template
 from flask_session import Session
 import os
 import re
@@ -290,6 +290,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=7)
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_DOMAIN'] = '.stellarai.live'
 
 app.config['SESSION_TYPE'] = 'redis'
 app.config['SESSION_USE_SIGNER'] = True
@@ -4958,6 +4959,140 @@ def pwa_test_push():
     else:
         return jsonify({"success": False, "message": "No active push subscriptions found for this user."}), 404
 
+
+# ─── Sentinel Healer Routes ───────────────────────────────────────────────────
+
+def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=True):
+    """Queue a backend crash to the Sentinel healer via Redis."""
+    try:
+        db = get_db()
+        cursor = db.execute(
+            "INSERT INTO sentinel_app_errors (process_id, error_type, error_message, stack_trace, status) VALUES (?, ?, ?, ?, 'open')",
+            (process_id, error_type, error_type, stack_trace)
+        )
+        error_id = cursor.lastrowid
+        db.commit()
+        if trigger_heal:
+            payload = json.dumps({"process_id": process_id, "error_id": error_id})
+            redis_client.lpush("sentinel:queue", payload)
+            logger.info(f"Sentinel: Queued healing task for app {process_id}, error_id={error_id}")
+        else:
+            logger.info(f"Sentinel: Logged error for app {process_id} (error_id={error_id}) but skipped healing (non-owner visitor).")
+    except Exception as e:
+        logger.error(f"Sentinel: Failed to log backend crash for {process_id}: {e}")
+
+@app.route('/api/sentinel/log_error', methods=['POST'])
+def sentinel_log_error():
+    """Receives a JS error report from the telemetry hook injected into proxied apps."""
+    try:
+        data = request.get_json(force=True)
+        process_id = None
+        owner_id = None
+        url = data.get('url', '')
+
+        # Extract subdomain from the reported URL to find process_id and owner_id
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            subdomain = parsed.hostname.split('.')[0] if parsed.hostname else None
+            if subdomain:
+                db = get_db()
+                row = db.execute("SELECT process_id, user_id FROM repo_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (subdomain,)).fetchone()
+                if row:
+                    process_id = row['process_id']
+                    owner_id = row['user_id']
+        except Exception:
+            pass
+
+        if not process_id:
+            return jsonify({"success": False, "message": "Could not resolve process_id from URL"}), 400
+
+        # Check if the error reporter is the owner of the application
+        is_owner = False
+        if owner_id is not None and session.get('user_id') == owner_id:
+            is_owner = True
+
+        error_info = data.get('error', {})
+        error_type = error_info.get('type', 'js_error')
+        error_message = error_info.get('message', 'Unknown JS error')
+        stack_trace = error_info.get('stack', '')
+        full_trace = f"JS Error: {error_message}\nSource: {error_info.get('source','')}\nLine: {error_info.get('line','')}\nStack:\n{stack_trace}"
+
+        log_backend_crash(process_id, error_type, full_trace, trigger_heal=is_owner)
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"Sentinel log_error route failed: {e}")
+        return jsonify({"success": False}), 500
+
+@app.route('/api/sentinel/status')
+def sentinel_status():
+    """Polled by the telemetry hook to check if healing is active for a given app URL."""
+    try:
+        url = request.args.get('url', '')
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        subdomain = parsed.hostname.split('.')[0] if parsed.hostname else None
+        if not subdomain:
+            return jsonify({"healing": False})
+        db = get_db()
+        row = db.execute("SELECT process_id FROM repo_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (subdomain,)).fetchone()
+        if not row:
+            return jsonify({"healing": False})
+        healing = redis_client.get(f"sentinel:healing:{row['process_id']}")
+        return jsonify({"healing": bool(healing)})
+    except Exception as e:
+        return jsonify({"healing": False})
+
+
+@app.route('/api/sentinel/stream/<process_id>')
+def sentinel_stream(process_id):
+    """SSE endpoint for the healing overlay to receive live progress logs."""
+    def event_stream():
+        log_history_key = f"sentinel:log_history:{process_id}"
+
+        # Subscribe to live channel FIRST (before replaying history) to avoid
+        # missing any events published between history replay and subscribe
+        pubsub = redis_client.pubsub()
+        pubsub.subscribe(f"sentinel:logs:{process_id}")
+
+        try:
+            yield f"data: {json.dumps({'event': 'connected', 'message': 'Connected to Sentinel Healer'})}\n\n"
+
+            # Replay all historical log entries (handles late-connecting clients)
+            history = redis_client.lrange(log_history_key, 0, -1)
+            terminal_seen = False
+            for entry in history:
+                data = entry.decode('utf-8') if isinstance(entry, bytes) else entry
+                yield f"data: {data}\n\n"
+                try:
+                    if json.loads(data).get('event') in ['healed', 'failed']:
+                        terminal_seen = True
+                except Exception:
+                    pass
+
+            if terminal_seen:
+                return  # Already done — no need to subscribe to live channel
+
+            # Now drain live pub/sub for any events published during/after replay
+            for message in pubsub.listen():
+                if message['type'] == 'message':
+                    data = message['data'].decode('utf-8') if isinstance(message['data'], bytes) else message['data']
+                    yield f"data: {data}\n\n"
+                    try:
+                        if json.loads(data).get('event') in ['healed', 'failed']:
+                            break
+                    except Exception:
+                        pass
+        finally:
+            pubsub.unsubscribe(f"sentinel:logs:{process_id}")
+            pubsub.close()
+
+    return Response(stream_with_context(event_stream()), mimetype="text/event-stream")
+
+@app.route('/test-sentinel-overlay')
+def test_sentinel_overlay():
+    return render_template('sentinel_healing_overlay.html', app_name="TestApp", status_text="Testing", process_id="test-id")
+
 @app.route('/')
 def index():
     def serve_no_cache(filename):
@@ -5572,6 +5707,10 @@ def update_last_active():
 
 @app.before_request
 def intercept_subdomains():
+    # Don't intercept sentinel API calls — they must reach the main app
+    if request.path.startswith('/api/sentinel/'):
+        return None
+
     host = request.headers.get('Host', '')
     domain_parts = host.split(':')[0].split('.')
 
@@ -5593,6 +5732,14 @@ def intercept_subdomains():
 
         # Fallback to process_id (uuid) if it's a temporary run_code container
         process_id = row['process_id'] if row else subdomain
+
+        # Check if Sentinel is currently healing this application
+        try:
+            healing_status = redis_client.get(f"sentinel:healing:{process_id}")
+            if healing_status:
+                return render_template('sentinel_healing_overlay.html', app_name=subdomain, status_text=healing_status, process_id=process_id)
+        except Exception as redis_err:
+            logger.error(f"Failed to check sentinel healing status in Redis: {redis_err}")
         
         app_info = None
         with active_apps_lock:
@@ -5634,12 +5781,15 @@ def intercept_subdomains():
         resp = None
         try:
             logger.debug(f"Proxying request for {subdomain} ({process_id}) to port {target_port}")
+            # Strip the main session cookie to prevent user containers from hijacking the user's session
+            proxy_cookies = {k: v for k, v in request.cookies.items() if k != 'stellar_session_main'}
+            proxy_headers = {key: value for (key, value) in request.headers if key.lower() not in ['host', 'cookie']}
             resp = requests.request(
                 method=request.method,
                 url=target_url,
-                headers={key: value for (key, value) in request.headers if key.lower() != 'host'},
+                headers=proxy_headers,
                 data=request.get_data(),
-                cookies=request.cookies,
+                cookies=proxy_cookies,
                 allow_redirects=False,
                 stream=True,
                 timeout=3600
@@ -5652,6 +5802,82 @@ def intercept_subdomains():
             headers.append(('Cache-Control', 'no-cache, no-store, must-revalidate'))
             headers.append(('Pragma', 'no-cache'))
             headers.append(('Expires', '0'))
+
+            # Check if the response is a server error — trigger Sentinel if so
+            if resp.status_code >= 500:
+                container_logs = ""
+                try:
+                    import docker
+                    d_client = docker.from_env()
+                    container = d_client.containers.get(f"stellar-repo-{process_id}")
+                    container_logs = container.logs(tail=100, stdout=True, stderr=True).decode('utf-8', 'replace')
+                except Exception as docker_err:
+                    container_logs = f"Failed to retrieve container logs: {docker_err}"
+                body_snippet = resp.text[:2000] if 'text/html' in resp.headers.get('Content-Type', '').lower() else ""
+                log_backend_crash(process_id, f"HTTP Server Error {resp.status_code}",
+                    f"HTTP STATUS {resp.status_code}\n\nCONTAINER LOGS:\n{container_logs}\n\nHTTP RESPONSE:\n{body_snippet}")
+
+            # Inject Sentinel telemetry JS hook into HTML responses
+            content_type = resp.headers.get('Content-Type', '')
+            if 'text/html' in content_type.lower():
+                html_content = resp.text
+                script_tag = """<script id="sentinel-telemetry-hook">
+(function() {
+    var SENTINEL_KEY = 'sentinel_reported_' + window.location.pathname;
+    var reportedErrors = {};
+    var errorCount = 0;
+    // Use sessionStorage to survive reloads — don't re-report on a just-healed page
+    var healingReported = sessionStorage.getItem(SENTINEL_KEY) === '1';
+    setInterval(function() { errorCount = 0; }, 10000);
+    // Clear the flag after 30s so future real errors can still be caught
+    if (healingReported) setTimeout(function() { sessionStorage.removeItem(SENTINEL_KEY); healingReported = false; }, 30000);
+    function pollForOverlay() {
+        var attempts = 0;
+        var interval = setInterval(function() {
+            attempts++;
+            fetch('/api/sentinel/status?url=' + encodeURIComponent(window.location.href))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.healing) { clearInterval(interval); window.location.reload(); }
+                })
+                .catch(function(){});
+            if (attempts > 20) clearInterval(interval);
+        }, 1500);
+    }
+    function reportError(errorData) {
+        if (healingReported || errorCount >= 5) return;
+        // Ignore cross-origin errors (CDN scripts, browser extensions) — source is null or empty
+        var src = errorData.source || '';
+        if (!src || src === 'null' || (src.indexOf(window.location.origin) === -1 && src.indexOf('://') !== -1)) return;
+        var hash = errorData.message + (errorData.line || '') + src;
+        if (reportedErrors[hash] && (Date.now() - reportedErrors[hash] < 30000)) return;
+        reportedErrors[hash] = Date.now();
+        errorCount++;
+        healingReported = true;
+        sessionStorage.setItem(SENTINEL_KEY, '1');
+        fetch('/api/sentinel/log_error', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: window.location.href, error: errorData, user_agent: navigator.userAgent })
+        }).then(function(r) {
+            if (r.ok) pollForOverlay();
+        }).catch(function(){});
+    }
+    window.onerror = function(message, source, lineno, colno, error) {
+        reportError({ type: 'js_error', message: message, source: source || '', line: lineno, col: colno, stack: error ? error.stack : '' });
+    };
+    window.onunhandledrejection = function(event) {
+        if (!event.reason) return;
+        reportError({ type: 'promise_rejection', message: event.reason.message || String(event.reason), stack: event.reason.stack || '', source: window.location.href });
+    };
+})();
+</script>"""
+
+                if "</head>" in html_content:
+                    html_content = html_content.replace("</head>", f"{script_tag}</head>", 1)
+                else:
+                    html_content = script_tag + html_content
+                return Response(html_content, resp.status_code, headers)
 
             # FIX: Stream the response back in chunks instead of buffering with resp.content
             def generate():
@@ -5674,7 +5900,19 @@ def intercept_subdomains():
                     resp.close()
                 except:
                     pass
-            logger.error(f"Dynamic proxy error for app {process_id}: {e}")            
+            logger.error(f"Dynamic proxy error for app {process_id}: {e}")
+
+            # Log connection failure to Sentinel
+            try:
+                import docker
+                d_client = docker.from_env()
+                container = d_client.containers.get(f"stellar-repo-{process_id}")
+                container_logs = container.logs(tail=100, stdout=True, stderr=True).decode('utf-8', 'replace')
+            except Exception as docker_err:
+                container_logs = f"Failed to retrieve container logs: {docker_err}"
+            log_backend_crash(process_id, f"Connection Failure: {str(e)}",
+                f"PROXY ERROR: {str(e)}\n\nCONTAINER LOGS:\n{container_logs}")
+
             # Passive Health Check: If connection is refused/reset, invalidate local cache
             # The port might be stale. Removing it forces a Redis re-fetch on the next request.
             if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
@@ -5917,6 +6155,14 @@ class TaskSchedulerMonitor:
 if os.environ.get('TESTING') != 'true':
     task_scheduler = TaskSchedulerMonitor(app)
     task_scheduler.start()
+
+    try:
+        from sentinel_healer import start_sentinel_healer, stop_sentinel_healer
+        start_sentinel_healer()
+        atexit.register(stop_sentinel_healer)
+        logger.info("Successfully started Sentinel Healer background worker.")
+    except Exception as e:
+        logger.error(f"Failed to start Sentinel Healer: {e}")
 
 if __name__ == '__main__':    # Ensure Docker images are ready before starting the server
     try:

@@ -4139,10 +4139,17 @@ const defaultAgentSettings = {
                       
                       const strippedContent = finalContent.replace(/<div[^>]*data-autofix-replace=[^>]*><\/div>/g, "").trim();
                       const oldContentDiv = targetMsgDiv.querySelector('.message-content');
-                      
-                      let newHtml = marked.parse(strippedContent);
-                      newHtml = wrapTables(newHtml);
-                      oldContentDiv.innerHTML = newHtml;
+
+                      // If the corrected content is raw HTML (gen UI block), set innerHTML directly
+                      // to preserve onclick attrs and script tags. marked.parse() mangles raw HTML.
+                      const looksLikeRawHtml = /^\s*<[a-zA-Z]/.test(strippedContent) || /<script[\s>]|<div[\s>]/i.test(strippedContent);
+                      if (looksLikeRawHtml) {
+                          oldContentDiv.innerHTML = strippedContent;
+                      } else {
+                          let newHtml = marked.parse(strippedContent);
+                          newHtml = wrapTables(newHtml);
+                          oldContentDiv.innerHTML = newHtml;
+                      }
 
                       const originalMessageId = targetMsgDiv.dataset.id;
                       if (originalMessageId) {
