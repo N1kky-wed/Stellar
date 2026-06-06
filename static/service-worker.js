@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stellar-static-v12';
+const CACHE_NAME = 'stellar-static-v13';
 const ASSETS_TO_CACHE = [
   '/default.min.css',
   '/custom_select.css',

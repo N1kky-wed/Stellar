@@ -893,6 +893,24 @@ const defaultAgentSettings = {
         gfm: true, // Ensures GitHub Flavored Markdown is enabled
       });
 
+      // Disable indented code blocks, keeping fenced code blocks intact
+      marked.use({
+        tokenizer: {
+          code(src) {
+            if (src.trim().startsWith('```') || src.trim().startsWith('~~~')) {
+              return false;
+            }
+            const trimmed = src.trim();
+            const looksLikeHtml = (trimmed.startsWith('<') || trimmed.startsWith('<!--')) && 
+                                  (trimmed.includes('<div') || trimmed.includes('<svg') || trimmed.includes('<style') || trimmed.includes('<span') || trimmed.includes('<iframe') || trimmed.includes('<table') || trimmed.includes('</') || trimmed.includes('/>') || trimmed.includes('-->'));
+            if (looksLikeHtml) {
+              return { type: 'html', raw: src, text: src };
+            }
+            return false;
+          }
+        }
+      });
+
       // --- Protect Math and SVG Blocks from Marked.js Escaping ---
       const originalMarkedParse = marked.parse;
       marked.parse = function (text, options) {
@@ -900,9 +918,15 @@ const defaultAgentSettings = {
         const mathBlocks = [];
         const svgBlocks = [];
 
-        // 0. Unwrap Generative UI accidentally placed in code blocks by the LLM
-        let processedText = text.replace(/```(?:html|xml|css)\s*?\n([\s\S]*?)\n\s*```/gi, (match, codeContent) => {
-            if (/class=["'][^"']*?sui-[^"']*?["']/i.test(codeContent)) {
+        // 0. Unwrap Generative UI/HTML placed in code blocks by the LLM, unless it contains the raw-code comment
+        let processedText = text.replace(/```(?:html|xml|css|svg)?\s*?\n([\s\S]*?)\n\s*```/gi, (match, codeContent) => {
+            if (codeContent.includes('<!--raw-code-->')) {
+                return match;
+            }
+            const hasLang = match.match(/^```(html|xml|css|svg)\b/i);
+            const trimmed = codeContent.trim();
+            const looksLikeHtml = trimmed.startsWith('<') && (trimmed.includes('<div') || trimmed.includes('<svg') || trimmed.includes('<style') || trimmed.includes('<span') || trimmed.includes('<iframe'));
+            if (hasLang || looksLikeHtml) {
                 return codeContent;
             }
             return match;
@@ -1362,12 +1386,11 @@ const defaultAgentSettings = {
           const isWebVisual = ["html", "xml", "css", "svg"].includes(lang);
 
           const trimmedCode = rawCode.trim();
-          const looksLikeHtml = trimmedCode.startsWith('<') && (trimmedCode.includes('<div') || trimmedCode.includes('<svg') || trimmedCode.includes('<style') || trimmedCode.includes('<span'));
-          
           const isRawCode = rawCode.includes('<!--raw-code-->');
 
-          // CRITICAL: Wrap HTML/XML/CSS/SVG in an iframe to prevent CSS bleeding and allow scripts to run cleanly.
-          if (!isRawCode && (isWebVisual || looksLikeHtml || /class=["'][^"']*?sui-[^"']*?["']/i.test(rawCode))) {
+          // Only iframe when explicitly opted-in via <!--raw-code--> comment.
+          // Auto-detecting looksLikeHtml causes gen-ui HTML blocks to be incorrectly sandboxed.
+          if (isRawCode) {
               const iframe = document.createElement("iframe");
               iframe.className = "code-preview-iframe";
               iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups");
@@ -3256,6 +3279,107 @@ const defaultAgentSettings = {
         }
       }
 
+      function wrapNakedHtmlBlocks(text) {
+        if (!text) return text;
+        
+        function processNakedHtmlInSegment(segment) {
+          const blockStartRegex = /^(?:[ \t]*)(<div|<style|<script|<section|<svg|<table|<iframe|<form|<canvas|<article|<aside|<header|<footer|<main|<!--)/im;
+          let result = "";
+          let remaining = segment;
+          
+          while (remaining) {
+            const match = remaining.match(blockStartRegex);
+            if (!match) {
+              result += remaining;
+              break;
+            }
+            
+            const matchIndex = match.index;
+            result += remaining.substring(0, matchIndex);
+            
+            const htmlStart = remaining.substring(matchIndex);
+            const tagMatch = match[1].toLowerCase();
+            
+            let closingTag = "";
+            let isNestedTag = false;
+            let tagName = "";
+            
+            if (tagMatch.startsWith("<!--")) {
+              closingTag = "-->";
+            } else {
+              const tagParts = tagMatch.match(/<([a-zA-Z0-9]+)/);
+              if (tagParts) {
+                tagName = tagParts[1].toLowerCase();
+                closingTag = "</" + tagName + ">";
+                isNestedTag = ["div", "section", "article", "aside", "header", "footer", "main", "form", "table"].includes(tagName);
+              }
+            }
+            
+            if (!closingTag) {
+              result += htmlStart;
+              break;
+            }
+            
+            let closeIndex = -1;
+            if (isNestedTag) {
+              let depth = 0;
+              const openPattern = new RegExp("<" + tagName + "[\\s>]", "gi");
+              const closePattern = new RegExp("</" + tagName + ">", "gi");
+              
+              let currentPos = 0;
+              while (currentPos < htmlStart.length) {
+                openPattern.lastIndex = currentPos;
+                const nextOpen = openPattern.exec(htmlStart);
+                
+                closePattern.lastIndex = currentPos;
+                const nextClose = closePattern.exec(htmlStart);
+                
+                if (!nextClose) {
+                  closeIndex = htmlStart.length;
+                  break;
+                }
+                
+                if (nextOpen && nextOpen.index < nextClose.index) {
+                  depth++;
+                  currentPos = nextOpen.index + nextOpen[0].length;
+                } else {
+                  depth--;
+                  if (depth === 0) {
+                    closeIndex = nextClose.index + nextClose[0].length;
+                    break;
+                  }
+                  currentPos = nextClose.index + nextClose[0].length;
+                }
+              }
+            } else {
+              const idx = htmlStart.toLowerCase().indexOf(closingTag);
+              if (idx !== -1) {
+                closeIndex = idx + closingTag.length;
+              } else {
+                closeIndex = htmlStart.length;
+              }
+            }
+            
+            if (closeIndex === -1) {
+              closeIndex = htmlStart.length;
+            }
+            
+            const rawHtmlBlock = htmlStart.substring(0, closeIndex);
+            result += "\n```html\n" + rawHtmlBlock.trim() + "\n```\n";
+            remaining = htmlStart.substring(closeIndex);
+          }
+          return result;
+        }
+
+        const parts = text.split(/(```[\s\S]*?```)/g);
+        for (let i = 0; i < parts.length; i++) {
+          if (i % 2 === 0) {
+            parts[i] = processNakedHtmlInSegment(parts[i]);
+          }
+        }
+        return parts.join("");
+      }
+
       function appendStellarMessage(markdownText, id, timestamp = null) {
         const msg = document.createElement("div");
         msg.classList.add("message", "stellar-msg");
@@ -3264,10 +3388,7 @@ const defaultAgentSettings = {
         contentDiv.classList.add("message-content");
         msg.rawMarkdownData = markdownText;
         try {
-          const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(markdownText) || /<script[\s>]|<div[\s>]/i.test(markdownText);
-          if (looksLikeRawHtml && !markdownText.trim().startsWith("```")) {
-              markdownText = "```html\n" + markdownText.trim() + "\n```";
-          }
+          markdownText = wrapNakedHtmlBlocks(markdownText);
           let htmlContent = marked.parse(markdownText || "");
           htmlContent = wrapTables(htmlContent);
           contentDiv.innerHTML = htmlContent;
@@ -4127,11 +4248,7 @@ const defaultAgentSettings = {
                       const strippedContent = finalContent.replace(/<div[^>]*data-autofix-replace=[^>]*><\/div>/g, "").trim();
                       const oldContentDiv = targetMsgDiv.querySelector('.message-content');
 
-                      const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(strippedContent) || /<script[\s>]|<div[\s>]/i.test(strippedContent);
-                      let contentToParse = strippedContent;
-                      if (looksLikeRawHtml && !contentToParse.trim().startsWith("```")) {
-                          contentToParse = "```html\n" + contentToParse.trim() + "\n```";
-                      }
+                      let contentToParse = wrapNakedHtmlBlocks(strippedContent);
                       let newHtml = marked.parse(contentToParse);
                       newHtml = wrapTables(newHtml);
                       oldContentDiv.innerHTML = newHtml;
@@ -4184,11 +4301,7 @@ const defaultAgentSettings = {
                 contentDiv.appendChild(extraDiv);
               }
             } else {
-              const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(finalContent) || /<script[\s>]|<div[\s>]/i.test(finalContent);
-              let contentToParse = finalContent || "";
-              if (looksLikeRawHtml && !contentToParse.trim().startsWith("```")) {
-                  contentToParse = "```html\n" + contentToParse.trim() + "\n```";
-              }
+              let contentToParse = wrapNakedHtmlBlocks(finalContent || "");
               htmlContent = marked.parse(contentToParse);
               htmlContent = wrapTables(htmlContent);
               contentDiv.innerHTML = htmlContent;
@@ -4354,10 +4467,7 @@ const defaultAgentSettings = {
         contentDiv.classList.add("message-content");
         msg.rawMarkdownData = markdownText;
         try {
-          const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(markdownText) || /<script[\s>]|<div[\s>]/i.test(markdownText);
-          if (looksLikeRawHtml && !markdownText.trim().startsWith("```")) {
-              markdownText = "```html\n" + markdownText.trim() + "\n```";
-          }
+          markdownText = wrapNakedHtmlBlocks(markdownText);
           let htmlContent = marked.parse(markdownText || "");
           htmlContent = wrapTables(htmlContent);
           contentDiv.innerHTML = htmlContent;
@@ -5083,11 +5193,7 @@ const defaultAgentSettings = {
                         contentDiv.appendChild(extraDiv);
                       }
                     } else {
-                      const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(content) || /<script[\s>]|<div[\s>]/i.test(content);
-                      let contentToParse = content || "";
-                      if (looksLikeRawHtml && !contentToParse.trim().startsWith("```")) {
-                          contentToParse = "```html\n" + contentToParse.trim() + "\n```";
-                      }
+                      let contentToParse = wrapNakedHtmlBlocks(content || "");
                       htmlContent = marked.parse(contentToParse);
                       htmlContent = wrapTables(htmlContent);
                       contentDiv.innerHTML = htmlContent;

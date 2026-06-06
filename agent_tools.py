@@ -471,13 +471,9 @@ def schedule_task(task_prompt: str, status: str, timeout: int, action: str = "sc
 
     elif action == "cancel":
         if not task_id: return "Error: 'task_id' is required to cancel a task."
-        cursor = db.execute('UPDATE scheduled_tasks SET is_active = 0 WHERE id = ? AND user_id = ? AND status != "running"', (task_id, u_id))
+        cursor = db.execute('UPDATE scheduled_tasks SET is_active = 0 WHERE id = ? AND user_id = ?', (task_id, u_id))
         db.commit()
         if cursor.rowcount == 0:
-            # Check if it was because it's running
-            check = db.execute('SELECT status FROM scheduled_tasks WHERE id = ?', (task_id,)).fetchone()
-            if check and check[0] == 'running':
-                return f"Error: Task {task_id} is currently running and cannot be cancelled. Wait for it to complete or fail."
             return f"Error: Task {task_id} not found or already inactive."
         return f"Success: Task {task_id} has been cancelled."
 
@@ -504,10 +500,10 @@ def schedule_task(task_prompt: str, status: str, timeout: int, action: str = "sc
         
         params.append(task_id)
         params.append(u_id)
-        cursor = db.execute(f'UPDATE scheduled_tasks SET {", ".join(updates)} WHERE id = ? AND user_id = ? AND status != "running"', tuple(params))
+        cursor = db.execute(f'UPDATE scheduled_tasks SET {", ".join(updates)} WHERE id = ? AND user_id = ?', tuple(params))
         db.commit()
         if cursor.rowcount == 0:
-            return f"Error: Task {task_id} not found, already inactive, or currently running."
+            return f"Error: Task {task_id} not found or already inactive."
         return f"Success: Task {task_id} has been updated."
 
     # Default: Schedule
