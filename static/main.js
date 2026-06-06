@@ -1366,35 +1366,18 @@ const defaultAgentSettings = {
           
           const isRawCode = rawCode.includes('<!--raw-code-->');
 
-          // 0. Rescue Generative UI that marked.parse missed (e.g. due to streaming edges or browser caching)
-          // CRITICAL: Unconditionally unwrap HTML/XML/CSS/SVG so the model has full control natively without hardcoded iframes.
+          // CRITICAL: Wrap HTML/XML/CSS/SVG in an iframe to prevent CSS bleeding and allow scripts to run cleanly.
           if (!isRawCode && (isWebVisual || looksLikeHtml || /class=["'][^"']*?sui-[^"']*?["']/i.test(rawCode))) {
-              const tempDiv = document.createElement("div");
-              tempDiv.innerHTML = rawCode;
+              const iframe = document.createElement("iframe");
+              iframe.className = "code-preview-iframe";
+              iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups");
+              iframe.setAttribute("allow", "autoplay; clipboard-write; encrypted-media; picture-in-picture");
+              iframe.style.width = "100%";
+              iframe.style.height = "700px";
+              iframe.style.border = "none";
+              iframe.srcdoc = rawCode;
               
-              // CRITICAL: Recreate script tags so the browser executes inline JS
-              const scripts = tempDiv.querySelectorAll("script");
-              scripts.forEach(oldScript => {
-                  let scriptContent = oldScript.innerHTML;
-                  if (scriptContent.trim() !== "") {
-                      // Wrap in an IIFE to prevent SyntaxError on multiple injections of the same UI widget
-                      scriptContent = `(function(){\n${scriptContent}\n})();`;
-                  }
-                  
-                  oldScript.remove(); // Remove inert script
-                  
-                  // Delay execution to ensure the UI elements are fully attached to the live DOM
-                  setTimeout(() => {
-                      const newScript = document.createElement("script");
-                      newScript.textContent = scriptContent;
-                      document.body.appendChild(newScript);
-                  }, 100);
-              });
-
-              // Move children out of tempDiv to avoid unnecessary wrapping
-              while (tempDiv.firstChild) {
-                  pre.parentNode.insertBefore(tempDiv.firstChild, pre);
-              }
+              pre.parentNode.insertBefore(iframe, pre);
               pre.remove();
               return;
           }
@@ -3281,6 +3264,10 @@ const defaultAgentSettings = {
         contentDiv.classList.add("message-content");
         msg.rawMarkdownData = markdownText;
         try {
+          const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(markdownText) || /<script[\s>]|<div[\s>]/i.test(markdownText);
+          if (looksLikeRawHtml && !markdownText.trim().startsWith("```")) {
+              markdownText = "```html\n" + markdownText.trim() + "\n```";
+          }
           let htmlContent = marked.parse(markdownText || "");
           htmlContent = wrapTables(htmlContent);
           contentDiv.innerHTML = htmlContent;
@@ -4140,16 +4127,14 @@ const defaultAgentSettings = {
                       const strippedContent = finalContent.replace(/<div[^>]*data-autofix-replace=[^>]*><\/div>/g, "").trim();
                       const oldContentDiv = targetMsgDiv.querySelector('.message-content');
 
-                      // If the corrected content is raw HTML (gen UI block), set innerHTML directly
-                      // to preserve onclick attrs and script tags. marked.parse() mangles raw HTML.
-                      const looksLikeRawHtml = /^\s*<[a-zA-Z]/.test(strippedContent) || /<script[\s>]|<div[\s>]/i.test(strippedContent);
-                      if (looksLikeRawHtml) {
-                          oldContentDiv.innerHTML = strippedContent;
-                      } else {
-                          let newHtml = marked.parse(strippedContent);
-                          newHtml = wrapTables(newHtml);
-                          oldContentDiv.innerHTML = newHtml;
+                      const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(strippedContent) || /<script[\s>]|<div[\s>]/i.test(strippedContent);
+                      let contentToParse = strippedContent;
+                      if (looksLikeRawHtml && !contentToParse.trim().startsWith("```")) {
+                          contentToParse = "```html\n" + contentToParse.trim() + "\n```";
                       }
+                      let newHtml = marked.parse(contentToParse);
+                      newHtml = wrapTables(newHtml);
+                      oldContentDiv.innerHTML = newHtml;
 
                       const originalMessageId = targetMsgDiv.dataset.id;
                       if (originalMessageId) {
@@ -4199,7 +4184,12 @@ const defaultAgentSettings = {
                 contentDiv.appendChild(extraDiv);
               }
             } else {
-              htmlContent = marked.parse(finalContent || "");
+              const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(finalContent) || /<script[\s>]|<div[\s>]/i.test(finalContent);
+              let contentToParse = finalContent || "";
+              if (looksLikeRawHtml && !contentToParse.trim().startsWith("```")) {
+                  contentToParse = "```html\n" + contentToParse.trim() + "\n```";
+              }
+              htmlContent = marked.parse(contentToParse);
               htmlContent = wrapTables(htmlContent);
               contentDiv.innerHTML = htmlContent;
             }
@@ -4364,9 +4354,14 @@ const defaultAgentSettings = {
         contentDiv.classList.add("message-content");
         msg.rawMarkdownData = markdownText;
         try {
+          const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(markdownText) || /<script[\s>]|<div[\s>]/i.test(markdownText);
+          if (looksLikeRawHtml && !markdownText.trim().startsWith("```")) {
+              markdownText = "```html\n" + markdownText.trim() + "\n```";
+          }
           let htmlContent = marked.parse(markdownText || "");
           htmlContent = wrapTables(htmlContent);
           contentDiv.innerHTML = htmlContent;
+          msg.appendChild(contentDiv);
           unwrapVisuals(contentDiv);
           processCodeBlocks(contentDiv);
           processGenerativeUI(contentDiv);
@@ -5088,7 +5083,12 @@ const defaultAgentSettings = {
                         contentDiv.appendChild(extraDiv);
                       }
                     } else {
-                      htmlContent = marked.parse(content || "");
+                      const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(content) || /<script[\s>]|<div[\s>]/i.test(content);
+                      let contentToParse = content || "";
+                      if (looksLikeRawHtml && !contentToParse.trim().startsWith("```")) {
+                          contentToParse = "```html\n" + contentToParse.trim() + "\n```";
+                      }
+                      htmlContent = marked.parse(contentToParse);
                       htmlContent = wrapTables(htmlContent);
                       contentDiv.innerHTML = htmlContent;
                     }
@@ -5228,17 +5228,25 @@ const defaultAgentSettings = {
             if (!currentChatId) {
               selectChat(chats[0].id);
             } else {
-              const activeChatItem = chatList.querySelector(
-                `.chat-item[data-chat-id="${currentChatId}"]`,
-              );
-              if (activeChatItem) {
-                activeChatItem.classList.add("active");
-              } else {
-                selectChat(chats[0].id);
+              try {
+                await selectChat(currentChatId);
+              } catch (selectErr) {
+                console.warn(`Failed to select chat ${currentChatId}, falling back to default:`, selectErr);
+                if (chats[0].id !== currentChatId) {
+                  selectChat(chats[0].id);
+                }
               }
             }
           } else {
-            await createNewChat(true);
+            if (currentChatId) {
+              try {
+                await selectChat(currentChatId);
+              } catch (selectErr) {
+                await createNewChat(true);
+              }
+            } else {
+              await createNewChat(true);
+            }
           }
         } catch (error) {
           setStatus(`Error loading chats: ${error.message}`, true);
@@ -5281,7 +5289,7 @@ const defaultAgentSettings = {
       }
 
       async function selectChat(chatId) {
-        if (currentChatId === chatId) {
+        if (currentChatId === chatId && historyLoaded) {
           sidebar.classList.remove("open");
           return;
         }
@@ -5495,6 +5503,15 @@ const defaultAgentSettings = {
 
             if (data.role === "admin") {
               addAdminControls();
+            }
+
+            // Set currentChatId from URL param first, fallback to check_auth data, then null
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlChatId = urlParams.get('chat_id');
+            if (urlChatId) {
+              currentChatId = parseInt(urlChatId) || null;
+            } else if (!currentChatId && data.current_chat_id) {
+              currentChatId = parseInt(data.current_chat_id) || null;
             }
 
             if (!historyLoaded) {
