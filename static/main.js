@@ -168,7 +168,10 @@ const defaultAgentSettings = {
                 newWorker.addEventListener("statechange", () => {
                   if (newWorker.state === "activated") {
                     console.log("[PWA] New updates activated. Hot-reloading...");
-                    window.location.reload();
+                    // Don't reload during login — SW update mid-auth kills the session
+                    if (!document.querySelector('#googleAuthBtn')) {
+                      window.location.reload();
+                    }
                   }
                 });
               });
@@ -177,7 +180,10 @@ const defaultAgentSettings = {
 
           navigator.serviceWorker.addEventListener("controllerchange", () => {
             console.log("[PWA] SW controller changed. Hot-reloading...");
-            window.location.reload();
+            // Don't reload during login — SW update mid-auth kills the session
+            if (!document.querySelector('#googleAuthBtn')) {
+              window.location.reload();
+            }
           });
         });
       }

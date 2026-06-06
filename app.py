@@ -266,13 +266,15 @@ def login_google():
         except Exception as e:
             logger.error(f"Error during login notification for {email}: {e}")
 
-        # Set session
+        # Set session — write keys directly so Flask-Session marks the session
+        # as modified and emits the Set-Cookie header in the response.
         session['user_id'] = user['id']
         session['username'] = user['username'] # This is the email
         session['display_name'] = user['display_name']
         session['role'] = user['role']
         session['is_approved'] = bool(user['is_approved'])
         session['pfp_url'] = user.get('pfp_url')
+        session.modified = True
         session.permanent = True
         
         if user['is_approved']:
@@ -707,19 +709,17 @@ def initialize_database():
                 user_id INTEGER NOT NULL,
                 chat_id INTEGER NOT NULL,
                 task_prompt TEXT NOT NULL,
-                model_id TEXT NOT NULL,
+                model_id TEXT NOT NULL,  -- STORES THE MODEL THAT CREATED THE TASK
                 execute_at DATETIME,
                 recurring_minutes INTEGER DEFAULT 0,
                 metadata TEXT,
-                status TEXT DEFAULT 'pending',
-                lock_id TEXT,
                 is_active BOOLEAN DEFAULT 1,
                 last_run DATETIME,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )''')
         else:
-            # Migration: Add missing columns if they don't exist
+            # Migration: Add metadata column if it doesn't exist
             cursor.execute("PRAGMA table_info(scheduled_tasks)")
             st_columns = [info[1] for info in cursor.fetchall()]
             if 'metadata' not in st_columns:
@@ -727,19 +727,8 @@ def initialize_database():
                     cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN metadata TEXT")
                     print("Added 'metadata' column to 'scheduled_tasks' table.")
                 except Exception as e:
-                    logger.error(f"Error adding 'metadata' column: {e}")
-            if 'status' not in st_columns:
-                try:
-                    cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN status TEXT DEFAULT 'pending'")
-                    print("Added 'status' column to 'scheduled_tasks' table.")
-                except Exception as e:
-                    logger.error(f"Error adding 'status' column: {e}")
-            if 'lock_id' not in st_columns:
-                try:
-                    cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN lock_id TEXT")
-                    print("Added 'lock_id' column to 'scheduled_tasks' table.")
-                except Exception as e:
-                    logger.error(f"Error adding 'lock_id' column: {e}")
+                    logger.exception("Error caught: %s", e)
+                    print(f"Error adding 'metadata' column to scheduled_tasks: {e}")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_feedback'")
         if cursor.fetchone() is None:
@@ -3867,11 +3856,26 @@ def admin_impersonate():
 
 @app.route('/logout', methods=['POST'])
 def logout_user():
-    session.pop('user_id', None)
-    session.pop('username', None)
-    session.pop('current_chat_id', None)
+    # Explicitly delete the session from Redis so the old session ID
+    # is fully invalidated — session.clear() alone doesn't remove the Redis key.
+    try:
+        session_interface = app.session_interface
+        if hasattr(session_interface, 'redis'):
+            sid = request.cookies.get(app.config.get('SESSION_COOKIE_NAME', 'session'))
+            if sid:
+                prefix = app.config.get('SESSION_KEY_PREFIX', 'session:')
+                app.session_interface.redis.delete(prefix + sid)
+    except Exception as e:
+        logger.warning(f"Could not delete Redis session on logout: {e}")
     session.clear()
-    return jsonify({"success": True, "message": "Logged out successfully."}), 200
+    response = jsonify({"success": True, "message": "Logged out successfully."})
+    # Explicitly expire the session cookie so browser drops it immediately
+    response.delete_cookie(
+        app.config.get('SESSION_COOKIE_NAME', 'stellar_session_main'),
+        domain=app.config.get('SESSION_COOKIE_DOMAIN'),
+        path='/'
+    )
+    return response, 200
 
 # ===================== SSH Authentication Code Routes =====================
 
@@ -6079,17 +6083,6 @@ class TaskSchedulerMonitor:
 
         with self.app_instance.app_context():
             db = get_db()
-            
-            # AUTOMATIC RECOVERY: Reset tasks that have been 'running' for more than 4 hours
-            # These are likely stuck due to a previous crash or unhandled exception.
-            db.execute('''
-                UPDATE scheduled_tasks 
-                SET status = 'failed', lock_id = NULL 
-                WHERE status = 'running' AND is_active = 1
-                AND (execute_at IS NULL OR execute_at <= datetime('now', 'localtime', '-4 hours'))
-            ''')
-            db.commit()
-
             # ATOMIC CLAIM: Try to lock any pending task that is due
             db.execute('''
                 UPDATE scheduled_tasks 
@@ -6115,19 +6108,9 @@ class TaskSchedulerMonitor:
             if task:
                 def run_task_wrapper(t):
                     try:
-                        success = self._execute_ai_task(t['id'], t['user_id'], t['chat_id'], t['task_prompt'], t['model_id'], t['metadata'])
+                        self._execute_ai_task(t['id'], t['user_id'], t['chat_id'], t['task_prompt'], t['model_id'], t['metadata'])
                         with self.app_instance.app_context():
                             db = get_db()
-                            # Re-verify activity status in case it was cancelled mid-run
-                            check = db.execute('SELECT is_active FROM scheduled_tasks WHERE id = ?', (t['id'],)).fetchone()
-                            is_active = check['is_active'] if check else 0
-                            
-                            if not success or is_active == 0:
-                                # Task was cancelled or aborted; clean up lock and exit without rescheduling
-                                db.execute("UPDATE scheduled_tasks SET status = 'cancelled', lock_id = NULL WHERE id = ?", (t['id'],))
-                                db.commit()
-                                return
-
                             if t['recurring_minutes'] > 0:
                                 db.execute('''
                                     UPDATE scheduled_tasks
@@ -6193,7 +6176,7 @@ class TaskSchedulerMonitor:
                 row = cursor.fetchone()
                 if row and row['is_active'] == 0:
                     logger.info(f"Task {task_id} was cancelled during execution. Aborting AI generation.")
-                    return False # Aborted due to cancellation
+                    return # Exit early, discarding any output
 
                 if 'result' in chunk: final_output += chunk['result']
 
@@ -6201,7 +6184,6 @@ class TaskSchedulerMonitor:
                 from app import MODEL_NAMES
                 display_name = MODEL_NAMES.get(model_id, model_id)
                 insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\n\n{final_output}")
-            return True # Successful execution
 
 if os.environ.get('TESTING') != 'true':
     task_scheduler = TaskSchedulerMonitor(app)
