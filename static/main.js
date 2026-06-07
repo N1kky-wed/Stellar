@@ -128,7 +128,7 @@ const defaultAgentSettings = {
         analyze_youtube_video: true,
         send_self_email: true,
         schedule_task: true,
-        subagent_tool: true,
+        request_user_interaction: true,
         notifications_enabled: true,
       };
       let agentSettings =
@@ -168,7 +168,10 @@ const defaultAgentSettings = {
                 newWorker.addEventListener("statechange", () => {
                   if (newWorker.state === "activated") {
                     console.log("[PWA] New updates activated. Hot-reloading...");
-                    window.location.reload();
+                    // Don't reload during login — SW update mid-auth kills the session
+                    if (!document.querySelector('#googleAuthBtn')) {
+                      window.location.reload();
+                    }
                   }
                 });
               });
@@ -177,7 +180,10 @@ const defaultAgentSettings = {
 
           navigator.serviceWorker.addEventListener("controllerchange", () => {
             console.log("[PWA] SW controller changed. Hot-reloading...");
-            window.location.reload();
+            // Don't reload during login — SW update mid-auth kills the session
+            if (!document.querySelector('#googleAuthBtn')) {
+              window.location.reload();
+            }
           });
         });
       }
@@ -893,6 +899,111 @@ const defaultAgentSettings = {
         gfm: true, // Ensures GitHub Flavored Markdown is enabled
       });
 
+      // Disable indented code blocks, keeping fenced code blocks intact
+      marked.use({
+        tokenizer: {
+          code(src) {
+            if (src.trim().startsWith('```') || src.trim().startsWith('~~~')) {
+              return false;
+            }
+            const trimmed = src.trim();
+            const looksLikeHtml = (trimmed.startsWith('<') || trimmed.startsWith('<!--')) && 
+                                  (trimmed.includes('<div') || trimmed.includes('<svg') || trimmed.includes('<style') || trimmed.includes('<span') || trimmed.includes('<iframe') || trimmed.includes('<table') || trimmed.includes('</') || trimmed.includes('/>') || trimmed.includes('-->'));
+            if (looksLikeHtml) {
+              return { type: 'html', raw: src, text: src };
+            }
+            return false;
+          }
+        }
+      });
+
+      // --- Safe Script Deferral Lexical Scanner ---
+      function deferScriptsInHtml(html) {
+        if (!html) return "";
+        let result = "";
+        let i = 0;
+        while (i < html.length) {
+          const scriptOpenMatch = html.slice(i).match(/^<script\b[^>]*>/i);
+          if (scriptOpenMatch) {
+            const openTag = scriptOpenMatch[0];
+            i += openTag.length;
+            
+            let inString = null;
+            let inComment = null;
+            let scriptContent = "";
+            let closed = false;
+            
+            while (i < html.length) {
+              if (!inString && !inComment && html.slice(i).toLowerCase().startsWith("</script>")) {
+                i += 9;
+                try {
+                  const encoded = btoa(unescape(encodeURIComponent(scriptContent)));
+                  const attributesStr = openTag.slice(openTag.indexOf("script") + 6, -1).trim();
+                  const encodedAttrs = btoa(unescape(encodeURIComponent(attributesStr || "")));
+                  result += `<div class="deferred-script" style="display:none;" data-script="${encoded}" data-attributes="${encodedAttrs}"></div>`;
+                } catch (e) {
+                  console.error("Failed to encode script:", e);
+                }
+                closed = true;
+                break;
+              }
+              
+              const char = html[i];
+              const nextChar = html[i+1];
+              
+              if (!inString) {
+                if (inComment === 'single' && char === '\n') {
+                  inComment = null;
+                } else if (inComment === 'multi' && char === '*' && nextChar === '/') {
+                  inComment = null;
+                  scriptContent += "*/";
+                  i += 2;
+                  continue;
+                } else if (!inComment) {
+                  if (char === '/' && nextChar === '/') {
+                    inComment = 'single';
+                    scriptContent += "//";
+                    i += 2;
+                    continue;
+                  } else if (char === '/' && nextChar === '*') {
+                    inComment = 'multi';
+                    scriptContent += "/*";
+                    i += 2;
+                    continue;
+                  }
+                }
+              }
+              
+              if (!inComment) {
+                if (inString) {
+                  if (char === '\\') {
+                    scriptContent += html.slice(i, i+2);
+                    i += 2;
+                    continue;
+                  } else if (char === inString) {
+                    inString = null;
+                  }
+                } else {
+                  if (char === "'" || char === '"' || char === '`') {
+                    inString = char;
+                  }
+                }
+              }
+              
+              scriptContent += char;
+              i++;
+            }
+            if (!closed) {
+              result += openTag + scriptContent;
+            }
+          } else {
+            result += html[i];
+            i++;
+          }
+        }
+        return result;
+      }
+
       // --- Protect Math and SVG Blocks from Marked.js Escaping ---
       const originalMarkedParse = marked.parse;
       marked.parse = function (text, options) {
@@ -900,9 +1011,15 @@ const defaultAgentSettings = {
         const mathBlocks = [];
         const svgBlocks = [];
 
-        // 0. Unwrap Generative UI accidentally placed in code blocks by the LLM
-        let processedText = text.replace(/```(?:html|xml|css)\s*?\n([\s\S]*?)\n\s*```/gi, (match, codeContent) => {
-            if (/class=["'][^"']*?sui-[^"']*?["']/i.test(codeContent)) {
+        // 0. Unwrap Generative UI/HTML placed in code blocks by the LLM, unless it contains the raw-code comment
+        let processedText = text.replace(/```(?:html|xml|css|svg)?\s*?\n([\s\S]*?)\n\s*```/gi, (match, codeContent) => {
+            if (codeContent.includes('<!--raw-code-->')) {
+                return match;
+            }
+            const hasLang = match.match(/^```(html|xml|css|svg)\b/i);
+            const trimmed = codeContent.trim();
+            const looksLikeHtml = trimmed.startsWith('<') && (trimmed.includes('<div') || trimmed.includes('<svg') || trimmed.includes('<style') || trimmed.includes('<span') || trimmed.includes('<iframe'));
+            if (hasLang || looksLikeHtml) {
                 return codeContent;
             }
             return match;
@@ -974,6 +1091,9 @@ const defaultAgentSettings = {
             );
           },
         );
+
+        // 6. Defer any script tags to prevent HTML parser leaks and premature termination
+        html = deferScriptsInHtml(html);
 
         return html;
       };
@@ -1362,12 +1482,11 @@ const defaultAgentSettings = {
           const isWebVisual = ["html", "xml", "css", "svg"].includes(lang);
 
           const trimmedCode = rawCode.trim();
-          const looksLikeHtml = trimmedCode.startsWith('<') && (trimmedCode.includes('<div') || trimmedCode.includes('<svg') || trimmedCode.includes('<style') || trimmedCode.includes('<span'));
-          
           const isRawCode = rawCode.includes('<!--raw-code-->');
 
-          // CRITICAL: Wrap HTML/XML/CSS/SVG in an iframe to prevent CSS bleeding and allow scripts to run cleanly.
-          if (!isRawCode && (isWebVisual || looksLikeHtml || /class=["'][^"']*?sui-[^"']*?["']/i.test(rawCode))) {
+          // Only iframe when explicitly opted-in via <!--raw-code--> comment.
+          // Auto-detecting looksLikeHtml causes gen-ui HTML blocks to be incorrectly sandboxed.
+          if (isRawCode) {
               const iframe = document.createElement("iframe");
               iframe.className = "code-preview-iframe";
               iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups");
@@ -1510,18 +1629,51 @@ const defaultAgentSettings = {
       function processGenerativeUI(containerElement) {
         if (!containerElement) return;
 
-        // 0. Execute any inline scripts (e.g. from raw HTML blocks) to ensure generative UI interactivity works.
-        const rawScripts = containerElement.querySelectorAll("script");
+        // 0. Execute any inline or deferred scripts to ensure generative UI interactivity works.
+        const rawScripts = containerElement.querySelectorAll("script, div.deferred-script");
         const externalScriptPromises = [];
         const inlineScripts = [];
 
         rawScripts.forEach(oldScript => {
-            if (oldScript.src) {
+            let scriptContent = "";
+            let attributesStr = "";
+            let isExternal = false;
+            let extSrc = "";
+            let extType = "";
+            let extCrossOrigin = "";
+
+            if (oldScript.tagName.toLowerCase() === "div" && oldScript.classList.contains("deferred-script")) {
+                try {
+                    scriptContent = decodeURIComponent(escape(atob(oldScript.getAttribute("data-script") || "")));
+                    attributesStr = decodeURIComponent(escape(atob(oldScript.getAttribute("data-attributes") || "")));
+                    if (attributesStr) {
+                        const srcMatch = attributesStr.match(/src=["']([^"']+)["']/i);
+                        if (srcMatch) {
+                            isExternal = true;
+                            extSrc = srcMatch[1];
+                        }
+                        const typeMatch = attributesStr.match(/type=["']([^"']+)["']/i);
+                        if (typeMatch) extType = typeMatch[1];
+                        const crossMatch = attributesStr.match(/crossorigin=["']([^"']+)["']/i);
+                        if (crossMatch) extCrossOrigin = crossMatch[1];
+                    }
+                } catch (e) {
+                    console.error("Failed to decode deferred script:", e);
+                }
+            } else {
+                isExternal = !!oldScript.src;
+                extSrc = oldScript.src || "";
+                extType = oldScript.type || "";
+                extCrossOrigin = oldScript.crossOrigin || "";
+                scriptContent = oldScript.innerHTML || "";
+            }
+
+            if (isExternal) {
                 const p = new Promise((resolve, reject) => {
                     const newScript = document.createElement("script");
-                    newScript.src = oldScript.src;
-                    if (oldScript.type) newScript.type = oldScript.type;
-                    if (oldScript.crossOrigin) newScript.crossOrigin = oldScript.crossOrigin;
+                    newScript.src = extSrc;
+                    if (extType) newScript.type = extType;
+                    if (extCrossOrigin) newScript.crossOrigin = extCrossOrigin;
                     newScript.onload = resolve;
                     newScript.onerror = resolve; // Resolve anyway to continue
                     document.body.appendChild(newScript);
@@ -1529,7 +1681,6 @@ const defaultAgentSettings = {
                 externalScriptPromises.push(p);
                 oldScript.remove();
             } else {
-                let scriptContent = oldScript.innerHTML;
                 if (scriptContent.trim() !== "") {
                     // Assign a unique ID to the container if it doesn't have one
                     if (!containerElement.id) {
@@ -1538,7 +1689,7 @@ const defaultAgentSettings = {
                     
                     // Wrap the script in an IIFE and shadow 'document' with a Proxy 
                     // that restricts DOM queries to this specific message's container!
-                    scriptContent = `
+                    const wrappedScript = `
                     (function() {
                         var _container = window.document.getElementById('${containerElement.id}');
                         var document = new Proxy(window.document, {
@@ -1612,7 +1763,7 @@ const defaultAgentSettings = {
                         }
                     })();
                     `;
-                    inlineScripts.push(scriptContent);
+                    inlineScripts.push(wrappedScript);
                 }
                 oldScript.remove();
             }
@@ -3256,6 +3407,107 @@ const defaultAgentSettings = {
         }
       }
 
+      function wrapNakedHtmlBlocks(text) {
+        if (!text) return text;
+        
+        function processNakedHtmlInSegment(segment) {
+          const blockStartRegex = /^(?:[ \t]*)(<div|<style|<script|<section|<svg|<table|<iframe|<form|<canvas|<article|<aside|<header|<footer|<main|<!--)/im;
+          let result = "";
+          let remaining = segment;
+          
+          while (remaining) {
+            const match = remaining.match(blockStartRegex);
+            if (!match) {
+              result += remaining;
+              break;
+            }
+            
+            const matchIndex = match.index;
+            result += remaining.substring(0, matchIndex);
+            
+            const htmlStart = remaining.substring(matchIndex);
+            const tagMatch = match[1].toLowerCase();
+            
+            let closingTag = "";
+            let isNestedTag = false;
+            let tagName = "";
+            
+            if (tagMatch.startsWith("<!--")) {
+              closingTag = "-->";
+            } else {
+              const tagParts = tagMatch.match(/<([a-zA-Z0-9]+)/);
+              if (tagParts) {
+                tagName = tagParts[1].toLowerCase();
+                closingTag = "</" + tagName + ">";
+                isNestedTag = ["div", "section", "article", "aside", "header", "footer", "main", "form", "table"].includes(tagName);
+              }
+            }
+            
+            if (!closingTag) {
+              result += htmlStart;
+              break;
+            }
+            
+            let closeIndex = -1;
+            if (isNestedTag) {
+              let depth = 0;
+              const openPattern = new RegExp("<" + tagName + "[\\s>]", "gi");
+              const closePattern = new RegExp("</" + tagName + ">", "gi");
+              
+              let currentPos = 0;
+              while (currentPos < htmlStart.length) {
+                openPattern.lastIndex = currentPos;
+                const nextOpen = openPattern.exec(htmlStart);
+                
+                closePattern.lastIndex = currentPos;
+                const nextClose = closePattern.exec(htmlStart);
+                
+                if (!nextClose) {
+                  closeIndex = htmlStart.length;
+                  break;
+                }
+                
+                if (nextOpen && nextOpen.index < nextClose.index) {
+                  depth++;
+                  currentPos = nextOpen.index + nextOpen[0].length;
+                } else {
+                  depth--;
+                  if (depth === 0) {
+                    closeIndex = nextClose.index + nextClose[0].length;
+                    break;
+                  }
+                  currentPos = nextClose.index + nextClose[0].length;
+                }
+              }
+            } else {
+              const idx = htmlStart.toLowerCase().indexOf(closingTag);
+              if (idx !== -1) {
+                closeIndex = idx + closingTag.length;
+              } else {
+                closeIndex = htmlStart.length;
+              }
+            }
+            
+            if (closeIndex === -1) {
+              closeIndex = htmlStart.length;
+            }
+            
+            const rawHtmlBlock = htmlStart.substring(0, closeIndex);
+            result += "\n```html\n" + rawHtmlBlock.trim() + "\n```\n";
+            remaining = htmlStart.substring(closeIndex);
+          }
+          return result;
+        }
+
+        const parts = text.split(/(```[\s\S]*?```)/g);
+        for (let i = 0; i < parts.length; i++) {
+          if (i % 2 === 0) {
+            parts[i] = processNakedHtmlInSegment(parts[i]);
+          }
+        }
+        return parts.join("");
+      }
+
       function appendStellarMessage(markdownText, id, timestamp = null) {
         const msg = document.createElement("div");
         msg.classList.add("message", "stellar-msg");
@@ -3264,10 +3516,7 @@ const defaultAgentSettings = {
         contentDiv.classList.add("message-content");
         msg.rawMarkdownData = markdownText;
         try {
-          const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(markdownText) || /<script[\s>]|<div[\s>]/i.test(markdownText);
-          if (looksLikeRawHtml && !markdownText.trim().startsWith("```")) {
-              markdownText = "```html\n" + markdownText.trim() + "\n```";
-          }
+          markdownText = wrapNakedHtmlBlocks(markdownText);
           let htmlContent = marked.parse(markdownText || "");
           htmlContent = wrapTables(htmlContent);
           contentDiv.innerHTML = htmlContent;
@@ -4127,11 +4376,7 @@ const defaultAgentSettings = {
                       const strippedContent = finalContent.replace(/<div[^>]*data-autofix-replace=[^>]*><\/div>/g, "").trim();
                       const oldContentDiv = targetMsgDiv.querySelector('.message-content');
 
-                      const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(strippedContent) || /<script[\s>]|<div[\s>]/i.test(strippedContent);
-                      let contentToParse = strippedContent;
-                      if (looksLikeRawHtml && !contentToParse.trim().startsWith("```")) {
-                          contentToParse = "```html\n" + contentToParse.trim() + "\n```";
-                      }
+                      let contentToParse = wrapNakedHtmlBlocks(strippedContent);
                       let newHtml = marked.parse(contentToParse);
                       newHtml = wrapTables(newHtml);
                       oldContentDiv.innerHTML = newHtml;
@@ -4184,11 +4429,7 @@ const defaultAgentSettings = {
                 contentDiv.appendChild(extraDiv);
               }
             } else {
-              const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(finalContent) || /<script[\s>]|<div[\s>]/i.test(finalContent);
-              let contentToParse = finalContent || "";
-              if (looksLikeRawHtml && !contentToParse.trim().startsWith("```")) {
-                  contentToParse = "```html\n" + contentToParse.trim() + "\n```";
-              }
+              let contentToParse = wrapNakedHtmlBlocks(finalContent || "");
               htmlContent = marked.parse(contentToParse);
               htmlContent = wrapTables(htmlContent);
               contentDiv.innerHTML = htmlContent;
@@ -4354,10 +4595,7 @@ const defaultAgentSettings = {
         contentDiv.classList.add("message-content");
         msg.rawMarkdownData = markdownText;
         try {
-          const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(markdownText) || /<script[\s>]|<div[\s>]/i.test(markdownText);
-          if (looksLikeRawHtml && !markdownText.trim().startsWith("```")) {
-              markdownText = "```html\n" + markdownText.trim() + "\n```";
-          }
+          markdownText = wrapNakedHtmlBlocks(markdownText);
           let htmlContent = marked.parse(markdownText || "");
           htmlContent = wrapTables(htmlContent);
           contentDiv.innerHTML = htmlContent;
@@ -5083,11 +5321,7 @@ const defaultAgentSettings = {
                         contentDiv.appendChild(extraDiv);
                       }
                     } else {
-                      const looksLikeRawHtml = /^\s*(<[a-zA-Z]|<!--|<!DOCTYPE)/i.test(content) || /<script[\s>]|<div[\s>]/i.test(content);
-                      let contentToParse = content || "";
-                      if (looksLikeRawHtml && !contentToParse.trim().startsWith("```")) {
-                          contentToParse = "```html\n" + contentToParse.trim() + "\n```";
-                      }
+                      let contentToParse = wrapNakedHtmlBlocks(content || "");
                       htmlContent = marked.parse(contentToParse);
                       htmlContent = wrapTables(htmlContent);
                       contentDiv.innerHTML = htmlContent;
@@ -5555,6 +5789,194 @@ const defaultAgentSettings = {
         "closeAdminWaitlistBtn",
       );
 
+      const adminTabUsersBtn = document.getElementById("adminTabUsersBtn");
+      const adminTabKeysBtn = document.getElementById("adminTabKeysBtn");
+      const waitlistContent = document.getElementById("waitlistContent");
+      const keysContent = document.getElementById("keysContent");
+      const keysGrid = document.getElementById("keysGrid");
+
+      let activeAdminTab = "users";
+
+      if (adminTabUsersBtn && adminTabKeysBtn) {
+        adminTabUsersBtn.onclick = () => {
+          activeAdminTab = "users";
+          adminTabUsersBtn.style.background = "rgba(255, 255, 255, 0.05)";
+          adminTabUsersBtn.style.borderColor = "rgba(255, 255, 255, 0.1)";
+          adminTabUsersBtn.style.color = "#fff";
+
+          adminTabKeysBtn.style.background = "transparent";
+          adminTabKeysBtn.style.borderColor = "transparent";
+          adminTabKeysBtn.style.color = "#888";
+
+          waitlistContent.style.display = "block";
+          keysContent.style.display = "none";
+          loadWaitlist();
+        };
+
+        adminTabKeysBtn.onclick = () => {
+          activeAdminTab = "keys";
+          adminTabKeysBtn.style.background = "rgba(255, 255, 255, 0.05)";
+          adminTabKeysBtn.style.borderColor = "rgba(255, 255, 255, 0.1)";
+          adminTabKeysBtn.style.color = "#fff";
+
+          adminTabUsersBtn.style.background = "transparent";
+          adminTabUsersBtn.style.borderColor = "transparent";
+          adminTabUsersBtn.style.color = "#888";
+
+          waitlistContent.style.display = "none";
+          keysContent.style.display = "block";
+          loadKeyHealth();
+        };
+      }
+
+      async function loadKeyHealth() {
+        keysGrid.innerHTML =
+          '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">Querying key states...</div>';
+        try {
+          const response = await fetch("/api/admin/keys");
+          const data = await response.json();
+          keysGrid.innerHTML = "";
+          if (data.length === 0) {
+            keysGrid.innerHTML =
+              '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">No API keys configured.</div>';
+          } else {
+            data.forEach((keyData) => {
+              const card = document.createElement("div");
+              card.className = "key-card";
+
+              const globalBlock = keyData.blocks.global || { blocked: false, reason: null, remaining_seconds: 0 };
+              
+              let overallStatus = "active";
+              let badgeClass = "active";
+              let badgeLabel = "Active";
+
+              let hasAnyBlock = globalBlock.blocked;
+              let hasRpm = globalBlock.reason === 'RPM';
+              let hasRpd = globalBlock.reason === 'RPD' || globalBlock.reason === 'INVALID';
+
+              const modelListHtml = [];
+              const modelNamesMap = {
+                "gemini-3.1-flash-lite": "Emerald (Flash-Lite)",
+                "gemma-4-31b-it": "Lunarity (Gemma-4)",
+                "gemini-3-flash-preview": "Crimson (Gemini-3)",
+                "gemini-3.5-flash": "Obsidian (Gemini-3.5)"
+              };
+
+              const orderedModelIds = [
+                "gemini-3.5-flash",
+                "gemini-3-flash-preview",
+                "gemma-4-31b-it",
+                "gemini-3.1-flash-lite"
+              ];
+
+              orderedModelIds.forEach((modelId) => {
+                const status = keyData.blocks[modelId];
+                if (!status) return;
+                
+                const friendlyName = modelNamesMap[modelId] || modelId;
+                let statusClass = "active";
+                let statusLabel = "Active";
+                let remainingHtml = "";
+
+                if (status.blocked) {
+                  hasAnyBlock = true;
+                  if (status.reason === "RPM") {
+                    statusClass = "blocked-rpm";
+                    statusLabel = "Rate Limited (RPM)";
+                    hasRpm = true;
+                  } else if (status.reason === "RPD") {
+                    statusClass = "blocked-rpd";
+                    statusLabel = "Quota Exceeded (RPD)";
+                  } else {
+                    statusClass = "blocked-other";
+                    statusLabel = `Blocked (${status.reason})`;
+                    hasRpm = true;
+                  }
+                  
+                  if (status.remaining_seconds > 0) {
+                    const mins = Math.floor(status.remaining_seconds / 60);
+                    const secs = status.remaining_seconds % 60;
+                    const hours = Math.floor(mins / 60);
+                    const minsRemaining = mins % 60;
+
+                    let timeStr = "";
+                    if (hours > 0) {
+                      timeStr = `${hours}h ${minsRemaining}m`;
+                    } else if (mins > 0) {
+                      timeStr = `${mins}m ${secs}s`;
+                    } else {
+                      timeStr = `${secs}s`;
+                    }
+                    remainingHtml = `<span class="key-model-remaining">(${timeStr} left)</span>`;
+                  }
+                }
+
+                modelListHtml.push(`
+                  <div class="key-model-item">
+                    <span class="key-model-name">${friendlyName}</span>
+                    <div>
+                      <span class="key-model-status ${statusClass}">${statusLabel}</span>
+                      ${remainingHtml}
+                    </div>
+                  </div>
+                `);
+              });
+
+              if (globalBlock.blocked) {
+                overallStatus = "blocked";
+                badgeClass = "blocked";
+                badgeLabel = `Global Block (${globalBlock.reason})`;
+              } else if (hasRpd) {
+                overallStatus = "blocked";
+                badgeClass = "blocked";
+                badgeLabel = "Daily Quota Out";
+              } else if (hasAnyBlock) {
+                overallStatus = "limited";
+                badgeClass = "limited";
+                badgeLabel = "Partially Blocked";
+              }
+
+              let globalRemainingHtml = "";
+              if (globalBlock.blocked && globalBlock.remaining_seconds > 0) {
+                const mins = Math.floor(globalBlock.remaining_seconds / 60);
+                const secs = globalBlock.remaining_seconds % 60;
+                const hours = Math.floor(mins / 60);
+                const minsRemaining = mins % 60;
+
+                let timeStr = "";
+                if (hours > 0) {
+                  timeStr = `${hours}h ${minsRemaining}m`;
+                } else if (mins > 0) {
+                  timeStr = `${mins}m ${secs}s`;
+                } else {
+                  timeStr = `${secs}s`;
+                }
+                globalRemainingHtml = `<div style="font-size: 0.8rem; color: #FF2A4D; margin-top: 5px;">Block expires in: ${timeStr}</div>`;
+              }
+
+              card.innerHTML = `
+                <div class="key-card-header">
+                  <div class="key-info">
+                    <span class="key-name">${keyData.label}</span>
+                    <span class="key-masked">${keyData.masked}</span>
+                    ${globalRemainingHtml}
+                  </div>
+                  <span class="key-status-badge ${badgeClass}">${badgeLabel}</span>
+                </div>
+                <div class="key-models-list">
+                  <div style="font-size: 0.75rem; color: #555; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 5px; margin-bottom: 5px;">Model Statuses</div>
+                  ${modelListHtml.join("")}
+                </div>
+              `;
+              keysGrid.appendChild(card);
+            });
+          }
+        } catch (err) {
+          keysGrid.innerHTML =
+            '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #FF2A4D;">Critical error fetching API keys status.</div>';
+        }
+      }
+
       if (closeAdminWaitlistBtn) {
         closeAdminWaitlistBtn.onclick = () => {
           adminWaitlistModal.style.display = "none";
@@ -5565,7 +5987,11 @@ const defaultAgentSettings = {
       async function openAdminWaitlist() {
         adminWaitlistModal.style.display = "flex";
         document.body.style.overflow = "hidden";
-        loadWaitlist();
+        if (activeAdminTab === "keys") {
+          loadKeyHealth();
+        } else {
+          loadWaitlist();
+        }
       }
 
       function formatMsgTime(tsString) {

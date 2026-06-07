@@ -141,15 +141,15 @@
       <h2 class="voice-prompt">Listening...</h2>
       <div class="visualizer-container">
         <div class="voice-controls">
-          <button id="cancelVoiceBtn" title="Cancel">
-            <svg viewBox="0 0 24 24" fill="currentColor">
+          <button id="cancelVoiceBtn" title="Cancel" aria-label="Cancel voice message">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path
                 d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41z"
               ></path>
             </svg>
           </button>
-          <button id="confirmVoiceBtn" title="Confirm & Send">
-            <svg viewBox="0 0 24 24" fill="currentColor">
+          <button id="confirmVoiceBtn" title="Confirm & Send" aria-label="Confirm and send voice message">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path
                 d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41L9 16.17z"
               ></path>
@@ -219,6 +219,7 @@
           </div>
           <button
             id="closeAdminWaitlistBtn"
+            aria-label="Close admin dashboard"
             style="
               background: rgba(255, 255, 255, 0.03);
               border: 1px solid rgba(255, 255, 255, 0.1);
@@ -237,11 +238,56 @@
             &times;
           </button>
         </div>
+        <!-- Admin Dashboard Tabs -->
+        <div style="display: flex; gap: 15px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px;">
+          <button id="adminTabUsersBtn" style="
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          ">
+            <svg style="width: 18px; height: 18px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+            Users & Waitlist
+          </button>
+          <button id="adminTabKeysBtn" style="
+            background: transparent;
+            border: 1px solid transparent;
+            color: #888;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          ">
+            <svg style="width: 18px; height: 18px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m0 0a2 2 0 01-2 2m2-2h3m-3 4a2 2 0 012 2m0 0a2 2 0 01-2 2m2-2h3M3 12h1m8-9v1m8 8h1M2 9h1m8-9v1m-8 8H2m9 2a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M9 12a3 3 0 106 0 3 3 0 00-6 0z"></path></svg>
+            API Key Health
+          </button>
+        </div>
         <div
           id="waitlistContent"
           style="flex-grow: 1; overflow-y: auto; padding: 25px 10px 40px 0"
         >
           <div id="waitlistGrid" class="tool-grid">
+            <!-- Cards populated by JS -->
+          </div>
+        </div>
+        <div
+          id="keysContent"
+          style="display: none; flex-grow: 1; overflow-y: auto; padding: 25px 10px 40px 0"
+        >
+          <div id="keysGrid" class="tool-grid">
             <!-- Cards populated by JS -->
           </div>
         </div>
@@ -254,8 +300,9 @@
           id="sidebarToggleBtn"
           class="header-icon-btn"
           title="Toggle Sidebar"
+          aria-label="Toggle sidebar"
         >
-          <svg viewBox="0 0 24 24">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -272,9 +319,10 @@
           id="toggleBrowserPaneBtn"
           class="header-icon-btn"
           title="Toggle Browser Preview"
+          aria-label="Toggle browser preview panel"
           style="display: none;"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
             <line x1="8" y1="21" x2="16" y2="21"></line>
             <line x1="12" y1="17" x2="12" y2="21"></line>
@@ -286,6 +334,7 @@
           id="headerTempChatBtn"
           class="header-icon-btn"
           title="Temporary Chat (Incognito)"
+          aria-label="Start temporary incognito chat"
         >
           <svg
             viewBox="0 0 24 24"
@@ -294,6 +343,7 @@
             stroke-width="2"
             stroke-linecap="round"
             stroke-linejoin="round"
+            aria-hidden="true"
           >
             <!-- Hat brim -->
             <path d="M2 12h20" />
@@ -311,8 +361,9 @@
           class="header-icon-btn"
           id="exportChatBtn"
           title="Export current chat as JSON"
+          aria-label="Export current chat as JSON"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -323,8 +374,9 @@
           class="header-icon-btn"
           id="clearHistoryBtn"
           title="Clear current chat history"
+          aria-label="Clear current chat history"
         >
-          <svg viewBox="0 0 24 24">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"
             />
@@ -337,8 +389,8 @@
     <div id="sidebar" style="display: none">
       <div class="sidebar-header">
         <h3>Chats</h3>
-        <button class="sidebar-close-btn" id="sidebarCloseBtn">
-          <svg width="20" height="20">
+        <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close sidebar">
+          <svg width="20" height="20" aria-hidden="true">
             <use xlink:href="#icon-close"></use>
           </svg>
         </button>
@@ -364,8 +416,8 @@
 
     <div id="profileModal" style="display: none">
       <div class="profile-modal-content">
-        <button class="profile-close-btn" id="profileCloseBtn">
-          <svg width="18" height="18">
+        <button class="profile-close-btn" id="profileCloseBtn" aria-label="Close profile modal">
+          <svg width="18" height="18" aria-hidden="true">
             <use xlink:href="#icon-close"></use>
           </svg>
         </button>
@@ -480,6 +532,7 @@
           </div>
           <button
             id="closeLogsPrefsBtn"
+            aria-label="Close memory management"
             style="
               background: none;
               border: none;
@@ -550,8 +603,8 @@
             <h2>Agent Capabilities</h2>
             <p>Orchestrate active nodes and intelligence modules.</p>
           </div>
-          <button class="profile-close-btn" id="agentSettingsCloseBtn">
-            <svg width="18" height="18">
+          <button class="profile-close-btn" id="agentSettingsCloseBtn" aria-label="Close agent settings">
+            <svg width="18" height="18" aria-hidden="true">
               <use xlink:href="#icon-close"></use>
             </svg>
           </button>
@@ -873,11 +926,11 @@
 
           <div class="tool-card">
             <div class="tool-card-header">
-              <div class="tool-card-icon">🤖</div>
-              <div class="tool-card-title">Sub-Agent Orchestration</div>
+              <div class="tool-card-icon">🙋</div>
+              <div class="tool-card-title">Request User Interaction</div>
             </div>
             <div class="tool-card-desc">
-              Delegates complex, high-context, or out-of-scope tasks to specialized sub-agents.
+              Allows the agent to pause execution and prompt the user for input, decisions, or approvals through rich UI modals.
             </div>
             <div class="tool-card-footer">
               <span class="status-label">Tool Status</span>
@@ -887,7 +940,7 @@
               >
                 <input
                   type="checkbox"
-                  id="toolToggle-subagent_tool"
+                  id="toolToggle-request_user_interaction"
                   checked
                   class="toggle-checkbox"
                 />
@@ -895,6 +948,7 @@
               </label>
             </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -963,8 +1017,8 @@
       <div id="messages"></div>
     </div>
 
-    <button id="chatScrollToBottomBtn" title="Scroll to bottom">
-      <svg width="24" height="24">
+    <button id="chatScrollToBottomBtn" title="Scroll to bottom" aria-label="Scroll to bottom of chat">
+      <svg width="24" height="24" aria-hidden="true">
         <use xlink:href="#icon-arrow-down"></use>
       </svg>
     </button>
@@ -995,8 +1049,9 @@
             id="voiceInputBtn"
             class="file-upload-label-button"
             title="Use voice input"
+            aria-label="Start voice input"
           >
-            <svg width="18" height="18">
+            <svg width="18" height="18" aria-hidden="true">
               <use xlink:href="#icon-mic"></use>
             </svg>
           </button>
@@ -1041,8 +1096,8 @@
           </select>
           <button id="sendBtn" title="Send message (Enter)">➤</button>
 
-          <button id="stopBtn" title="Stop generation" style="display: none">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <button id="stopBtn" title="Stop generation" aria-label="Stop text generation" style="display: none">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <use xlink:href="#icon-stop"></use>
             </svg>
           </button>
@@ -1058,8 +1113,8 @@
   <div id="browserPane" style="display: none;">
     <div class="browser-tabs-header">
       <div class="browser-tabs-container" id="browserTabsContainer"></div>
-      <button id="closeBrowserPaneBtn" title="Close Panel">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+      <button id="closeBrowserPaneBtn" title="Close Panel" aria-label="Close browser panel">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg>
       </button>
     </div>
     <div id="browserContentContainer"></div>
@@ -1103,7 +1158,9 @@
     <div id="live-preview-container" style="display: none">
       <div id="live-preview-header">
         <span id="live-preview-title"></span>
-        <button id="live-preview-close-btn" title="Close Preview">×</button>
+        <button id="live-preview-close-btn" title="Close Preview" aria-label="Close live preview">
+          <span aria-hidden="true">×</span>
+        </button>
       </div>
       <div id="live-preview-content">
         <iframe
@@ -1131,6 +1188,6 @@
       </div>
     </div>
 
-    <script src="/static/main.js?v=52"></script>
+    <script src="/static/main.js?v=55"></script>
   </body>
 </html>

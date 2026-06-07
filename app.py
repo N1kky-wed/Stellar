@@ -174,6 +174,19 @@ if VAPID_PRIVATE_KEY_PEM:
 # -------------------------------
 
 app = Flask(__name__)
+
+# Configure local git hooks automatically at startup
+try:
+    if os.path.exists('.git'):
+        hook_path = os.path.join('git-hooks', 'pre-push')
+        if os.path.exists(hook_path):
+            os.chmod(hook_path, 0o755)
+        import subprocess
+        subprocess.run(['git', 'config', 'core.hooksPath', 'git-hooks'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logger.info("Automatically configured local git hooks path.")
+except Exception as e:
+    logger.warning(f"Could not automatically configure git hooks: {e}")
+
 SANDBOX_DIR = 'sandbox_runs'
 os.makedirs(SANDBOX_DIR, exist_ok=True)
 UPLOAD_FOLDER = 'uploads'
@@ -181,7 +194,7 @@ ALLOWED_EXTENSIONS = {'txt', 'pdf','docx','pptx', 'png', 'jpg', 'jpeg', 'gif', '
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-app.secret_key = os.getenv("FLASK_SECRET_KEY")
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or "stellar_fallback_secret_key_dev"
 
 app.config['SESSION_COOKIE_NAME'] = 'stellar_session_main'
 app.config['SESSION_PERMANENT'] = True
@@ -266,13 +279,15 @@ def login_google():
         except Exception as e:
             logger.error(f"Error during login notification for {email}: {e}")
 
-        # Set session
+        # Set session — write keys directly so Flask-Session marks the session
+        # as modified and emits the Set-Cookie header in the response.
         session['user_id'] = user['id']
         session['username'] = user['username'] # This is the email
         session['display_name'] = user['display_name']
         session['role'] = user['role']
         session['is_approved'] = bool(user['is_approved'])
         session['pfp_url'] = user.get('pfp_url')
+        session.modified = True
         session.permanent = True
         
         if user['is_approved']:
@@ -290,7 +305,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(days=7)
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_DOMAIN'] = '.stellarai.live'
+app.config['SESSION_COOKIE_DOMAIN'] = None
 
 app.config['SESSION_TYPE'] = 'redis'
 app.config['SESSION_USE_SIGNER'] = True
@@ -328,12 +343,57 @@ class GlobalKeyManager:
         self.blocked_until = {} 
         self.block_reason = {} 
         
+    def _get_redis_keys(self, key_val, model_id):
+        import hashlib
+        key_hash = hashlib.sha256(key_val.encode('utf-8')).hexdigest()
+        scope = model_id if model_id is not None else "global"
+        return f"stellar:blocked_until:{key_hash}:{scope}", f"stellar:block_reason:{key_hash}:{scope}"
+
     def block_key(self, key_val, model_id, duration_seconds, reason='RPM'):
+        if reason == 'INVALID':
+            model_id = None
+            
         with self.lock:
             self.blocked_until[(key_val, model_id)] = time.time() + duration_seconds
             self.block_reason[(key_val, model_id)] = reason
             
+        try:
+            k_until, k_reason = self._get_redis_keys(key_val, model_id)
+            redis_client.setex(k_until, int(duration_seconds), str(time.time() + duration_seconds))
+            redis_client.setex(k_reason, int(duration_seconds), reason)
+        except Exception as e:
+            logger.error(f"Error writing key block to Redis: {e}")
+            
     def is_key_blocked(self, key_val, model_id):
+        # Try checking Redis first to coordinate between different processes
+        try:
+            k_until, k_reason = self._get_redis_keys(key_val, model_id)
+            blocked_until_val = redis_client.get(k_until)
+            if blocked_until_val:
+                try:
+                    blocked_until_time = float(blocked_until_val)
+                    if time.time() < blocked_until_time:
+                        reason = redis_client.get(k_reason) or 'RPM'
+                        return True, reason
+                except ValueError:
+                    pass
+            
+            # Check global block in Redis
+            if model_id is not None:
+                k_until_g, k_reason_g = self._get_redis_keys(key_val, None)
+                blocked_until_val_g = redis_client.get(k_until_g)
+                if blocked_until_val_g:
+                    try:
+                        blocked_until_time_g = float(blocked_until_val_g)
+                        if time.time() < blocked_until_time_g:
+                            reason = redis_client.get(k_reason_g) or 'RPM'
+                            return True, reason
+                    except ValueError:
+                        pass
+        except Exception as e:
+            logger.error(f"Error reading key block from Redis: {e}")
+
+        # Fallback to local process memory if Redis is unavailable or hasn't cached it
         with self.lock:
             # Check model-specific block first
             blocked_time = self.blocked_until.get((key_val, model_id), 0)
@@ -347,6 +407,87 @@ class GlobalKeyManager:
                     return True, self.block_reason.get((key_val, None), 'RPM')
                     
             return False, None
+
+    def get_key_blocks(self, key_val, models):
+        blocks = {}
+        global_blocked, global_reason = self.is_key_blocked(key_val, None)
+        if global_blocked:
+            remaining = 0
+            try:
+                k_until, _ = self._get_redis_keys(key_val, None)
+                blocked_until_val = redis_client.get(k_until)
+                if blocked_until_val:
+                    remaining = max(0.0, float(blocked_until_val) - time.time())
+            except Exception:
+                pass
+            if remaining == 0:
+                with self.lock:
+                    blocked_time = self.blocked_until.get((key_val, None), 0)
+                    remaining = max(0.0, blocked_time - time.time())
+            blocks["global"] = {
+                "blocked": True,
+                "reason": global_reason or 'RPM',
+                "remaining_seconds": int(remaining)
+            }
+        else:
+            blocks["global"] = {
+                "blocked": False,
+                "reason": None,
+                "remaining_seconds": 0
+            }
+
+        for model in models:
+            model_blocked = False
+            model_reason = None
+            model_remaining = 0.0
+            
+            try:
+                k_until, k_reason = self._get_redis_keys(key_val, model)
+                blocked_until_val = redis_client.get(k_until)
+                if blocked_until_val:
+                    try:
+                        blocked_until_time = float(blocked_until_val)
+                        if time.time() < blocked_until_time:
+                            model_blocked = True
+                            model_reason = redis_client.get(k_reason) or 'RPM'
+                            model_remaining = max(0.0, blocked_until_time - time.time())
+                    except ValueError:
+                        pass
+            except Exception:
+                pass
+                
+            if not model_blocked:
+                with self.lock:
+                    blocked_time = self.blocked_until.get((key_val, model), 0)
+                    if time.time() < blocked_time:
+                        model_blocked = True
+                        model_reason = self.block_reason.get((key_val, model), 'RPM')
+                        model_remaining = max(0.0, blocked_time - time.time())
+            
+            effective_blocked, effective_reason = self.is_key_blocked(key_val, model)
+            if effective_blocked:
+                if model_blocked:
+                    blocks[model] = {
+                        "blocked": True,
+                        "reason": model_reason,
+                        "remaining_seconds": int(model_remaining),
+                        "type": "model_specific"
+                    }
+                else:
+                    blocks[model] = {
+                        "blocked": True,
+                        "reason": global_reason,
+                        "remaining_seconds": int(blocks["global"]["remaining_seconds"]),
+                        "type": "global"
+                    }
+            else:
+                blocks[model] = {
+                    "blocked": False,
+                    "reason": None,
+                    "remaining_seconds": 0,
+                    "type": None
+                }
+        return blocks
 
 KEY_MANAGER = GlobalKeyManager()
 ACTIVE_CHATS_CANCEL_EVENTS = {}
@@ -373,7 +514,7 @@ def get_seconds_until_pacific_midnight():
         
         now_pacific = now_utc + pacific_offset
         # Next Pacific midnight is tomorrow at 00:00:00 Pacific
-        tomorrow_pacific = datetime.datetime(now_pacific.year, now_pacific.month, now_pacific.day) + datetime.timedelta(days=1)
+        tomorrow_pacific = datetime.datetime(now_pacific.year, now_pacific.month, now_pacific.day, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=1)
         
         seconds_until_midnight = (tomorrow_pacific - now_pacific).total_seconds()
         return max(int(seconds_until_midnight), 60)
@@ -383,9 +524,14 @@ def get_seconds_until_pacific_midnight():
 
 def parse_quota_block_duration(error_msg):
     err_lower = error_msg.lower()
-    if ('requestsperday' in err_lower or 'requests per day' in err_lower or 
-        'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower):
-        # Daily limit: Block until the next Pacific Midnight reset time
+    if ('minute' in err_lower or 'queries per minute' in err_lower or 
+        'rpm' in err_lower or 'tpm' in err_lower or 'queriesperminute' in err_lower):
+        # Minute limit / TPM / RPM: Block for 60 seconds
+        return 60, 'RPM'
+    elif ('requestsperday' in err_lower or 'requests per day' in err_lower or 
+          'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower or
+          'exceeded your current quota' in err_lower or 'billing details' in err_lower or 'quota/rate limits' in err_lower):
+        # Daily limit / Quota exhaustion: Block until the next Pacific Midnight reset time
         duration = get_seconds_until_pacific_midnight()
         return duration, 'RPD'
     elif ('overloaded' in err_lower or '503' in err_lower or 'service unavailable' in err_lower or 'service_unavailable' in err_lower):
@@ -786,6 +932,35 @@ def initialize_database():
         except Exception as e:
             print(f"Error migrating push subscriptions to Redis: {e}")
 
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sentinel_app_errors'")
+        if cursor.fetchone() is None:
+            cursor.execute('''CREATE TABLE sentinel_app_errors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                process_id TEXT NOT NULL,
+                error_type TEXT,
+                error_message TEXT,
+                stack_trace TEXT,
+                affected_file TEXT,
+                affected_line INTEGER,
+                status TEXT DEFAULT 'open',
+                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP)
+            )''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentinel_errors_process_id ON sentinel_app_errors(process_id)")
+            print("Created 'sentinel_app_errors' table.")
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sentinel_app_patches'")
+        if cursor.fetchone() is None:
+            cursor.execute('''CREATE TABLE sentinel_app_patches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                error_id INTEGER NOT NULL,
+                patch_diff TEXT,
+                status TEXT NOT NULL,
+                created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+                FOREIGN KEY (error_id) REFERENCES sentinel_app_errors(id) ON DELETE CASCADE
+            )''')
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentinel_patches_error_id ON sentinel_app_patches(error_id)")
+            print("Created 'sentinel_app_patches' table.")
+
         # Add performance indexes for foreign key lookups
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_user_id ON chats(user_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)")
@@ -822,6 +997,8 @@ def get_current_chat_id(user_id):
         cursor = db.execute('SELECT id FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))
         if cursor.fetchone():
             return chat_id
+        else:
+            chat_id = None
 
     cursor = db.execute('SELECT id FROM chats WHERE user_id = ? AND is_temp = 0 ORDER BY created_at DESC LIMIT 1', (user_id,))
     last_chat = cursor.fetchone()
@@ -1055,7 +1232,7 @@ def get_tool_history(chat_id):
         rows = cursor.fetchall()
         if not rows: return ""
         
-        context = "\n**Internal Tool Execution History:**\n"
+        context_lines = ["\n**Internal Tool Execution History:**"]
         for r in rows:
             res_str = r['res_part']
             if res_str is None:
@@ -1080,10 +1257,12 @@ def get_tool_history(chat_id):
                     clean_res = res_str
 
             input_str = str(r['input_params'])
-            clean_input = input_str if (r['tool_name'] != 'subagent_tool' or len(input_str) <= 1000) else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
+            clean_input = input_str if len(input_str) <= 1000 else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
 
-            context += f"- [{r['timestamp']}] Tool: `{r['tool_name']}` (ID: {r['id']}) | Input: `{clean_input}` | Result: `{clean_res}`\n"
-        return context + "---\n"
+            context_lines.append(f"- [{r['timestamp']}] Tool: `{r['tool_name']}` (ID: {r['id']}) | Input: `{clean_input}` | Result: `{clean_res}`")
+
+        # Performance optimization: use join instead of += for string concatenation in loop
+        return "\n".join(context_lines) + "\n---\n"
     except Exception as e:
         logger.error(f"Error fetching tool history: {e}")
         return ""
@@ -1257,7 +1436,7 @@ def count_chat_tokens(chat_id=None):
                     clean_res = res_str
 
                 input_str = str(t['input_params'])
-                clean_input = input_str if (t['tool_name'] != 'subagent_tool' or len(input_str) <= 1000) else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
+                clean_input = input_str if len(input_str) <= 1000 else input_str[:1000] + f"... [Input truncated. Full length: {len(input_str)} chars]"
 
                 tool_hist_entry = f"- [{t['timestamp']}] Tool: `{t['tool_name']}` (ID: {t['id']}) | Input: `{clean_input}` | Result: `{clean_res}`"
                 history_for_tokens.append(types.Content(role="user", parts=[types.Part(text=tool_hist_entry)]))
@@ -1546,6 +1725,17 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
     current_key_index = 0
 
+    def get_next_unblocked_key_index(start_idx):
+        if not keys_to_try:
+            return None
+        for offset in range(1, len(keys_to_try) + 1):
+            idx = (start_idx + offset) % len(keys_to_try)
+            k = keys_to_try[idx]
+            is_blocked, _ = KEY_MANAGER.is_key_blocked(k, model_id)
+            if not is_blocked:
+                return idx
+        return None
+
     for attempt in range(1, attempts + 1):
         if cancel_event and cancel_event.is_set():
             logger.info("gemini_generate loop aborted due to cancellation.")
@@ -1625,14 +1815,20 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     is_quota = any(x in error_string for x in ['429', '403', 'permission_denied', 'resource_exhausted', 'quota', 'rate limit'])
                     is_network = any(x in error_string for x in ['500', '503', 'connection', 'timeout', 'deadline'])
                     
-                    if is_quota and (current_key_index + 1) < len(keys_to_try):
-                        logger.warning(f"Quota exceeded for key index {current_key_index}. Switching to backup key...")
+                    if is_quota:
                         block_duration, block_reason = parse_quota_block_duration(error_string)
                         block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
                         KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                         logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in inner loop.")
-                        current_key_index += 1
-                        current_key = keys_to_try[current_key_index]
+                        
+                        next_key_idx = get_next_unblocked_key_index(current_key_index)
+                        if next_key_idx is not None:
+                            logger.warning(f"Switching from key index {current_key_index} to backup key index {next_key_idx} (circular queue)...")
+                            current_key_index = next_key_idx
+                            current_key = keys_to_try[current_key_index]
+                        else:
+                            logger.error("All available keys in keys_to_try are blocked. Aborting inner loop.")
+                            break
                         
                         
                         client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
@@ -1682,14 +1878,21 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         time.sleep(2 * consecutive_network_errors)
                         
                         # If we hit 3 network errors, try switching keys before giving up on this attempt
-                        if consecutive_network_errors == 3 and (current_key_index + 1) < len(keys_to_try):
-                             logger.warning(f"Persistent network issues with key {current_key_index}. Switching to backup key...")
+                        if consecutive_network_errors == 3:
                              block_duration, block_reason = parse_quota_block_duration(error_string)
                              block_scope = model_id
                              KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                              logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to persistent network issues in inner loop.")
-                             current_key_index += 1
-                             current_key = keys_to_try[current_key_index]
+                             
+                             next_key_idx = get_next_unblocked_key_index(current_key_index)
+                             if next_key_idx is not None:
+                                 logger.warning(f"Persistent network issues with key index {current_key_index}. Switching to backup key index {next_key_idx} (circular queue)...")
+                                 current_key_index = next_key_idx
+                                 current_key = keys_to_try[current_key_index]
+                                 consecutive_network_errors = 0 # Reset for the new key
+                             else:
+                                 logger.error("All available keys in keys_to_try are blocked. Aborting inner loop.")
+                                 break
                              consecutive_network_errors = 0 # Reset for the new key
                         
                         # Re-init chat with (potentially new) key
@@ -1826,16 +2029,6 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 if func_name == "logs_and_preferences":
                                     args_dict['user_id'] = str(getattr(g, 'user_id', 'global'))
                                     
-                                if func_name == "subagent_tool":
-                                    prompt_text = ""
-                                    if isinstance(current_effective_prompt, list):
-                                        # Use getattr to safely get 'text' and filter out None values to avoid TypeError in join
-                                        prompt_parts = [getattr(p, 'text', None) for p in current_effective_prompt]
-                                        prompt_text = "\\n".join([str(p) for p in prompt_parts if p is not None])
-                                    elif isinstance(current_effective_prompt, str):
-                                        prompt_text = current_effective_prompt
-                                    args_dict['current_effective_prompt'] = prompt_text
-
                                 if func_name == "request_user_interaction":
                                     interaction_id = str(uuid.uuid4())
                                     html_ui = args_dict.get('html_ui', '')
@@ -2019,15 +2212,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             accumulated_full_output = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', accumulated_full_output, flags=re.IGNORECASE)
 
             for tool in called_tools_results:
-                if tool['name'] == 'subagent_tool':
-                    if not tool.get('args', {}).get('pass_to_user', True):
-                        continue
-                    
-                    # --- ADD THIS HIDDEN TAG INTERCEPTOR ---
-                    if isinstance(tool['result'], str) and '[TOOL_REQUEST]' in tool['result']:
-                        continue # Hide from UI! But it's already in function_responses for the Main Agent.
-                    # ---------------------------------------
-                elif tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'request_user_interaction', 'obtain_talent']:
+                if tool['name'] in ['web_search', 'send_self_email', 'schedule_task', 'lab_execute', 'host_repo', 'repo_execute', 'repo_control', 'analyze_youtube_video', 'manage_files', 'read_tool_output', 'logs_and_preferences', 'generate_image', 'request_user_interaction', 'obtain_talent']:
                     continue
 
                 if not isinstance(tool['result'], str): continue
@@ -2092,7 +2277,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                  error_msg = f"Content generation stopped by API ({display_name}). Reason: {candidate_finish_reason}, Safety: {candidate_safety_details}"
                  last_exception = ValueError(error_msg)
                  yield {'status': f'Content generation blocked ({candidate_finish_reason}). Retrying...'}
-                 if attempt < attempts or (current_key_index + 1) < len(keys_to_try):
+                 next_key_idx = get_next_unblocked_key_index(current_key_index)
+                 if attempt < attempts or next_key_idx is not None:
+                     if next_key_idx is not None:
+                         current_key_index = next_key_idx
                      continue
                  else:
                      break
@@ -2125,18 +2313,20 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                  KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                  logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in generation loop.")
 
-            if is_blockable_error and (current_key_index + 1) < len(keys_to_try):
-                if is_quota_error:
-                    yield {'status': f'Quota exceeded. Switching to backup key...'}
-                else:
-                    yield {'status': f'Google API encountered transient error ({block_reason}). Switching to backup key...'}
-                current_key_index += 1
-            elif is_blockable_error:
-                if is_quota_error:
-                    yield {'status': f'Quota exceeded on all keys. Cannot proceed.'}
-                else:
-                    yield {'status': f'Google API transient errors on all keys. Cannot proceed.'}
-                break
+            if is_blockable_error:
+                 next_key_idx = get_next_unblocked_key_index(current_key_index)
+                 if next_key_idx is not None:
+                     if is_quota_error:
+                         yield {'status': f'Quota exceeded. Switching to backup key index {next_key_idx} (circular queue)...'}
+                     else:
+                         yield {'status': f'Google API encountered transient error ({block_reason}). Switching to backup key index {next_key_idx} (circular queue)...'}
+                     current_key_index = next_key_idx
+                 else:
+                     if is_quota_error:
+                         yield {'status': f'Quota exceeded on all keys. Cannot proceed.'}
+                     else:
+                         yield {'status': f'Google API transient errors on all keys. Cannot proceed.'}
+                     break
 
             if attempt < attempts:
                  yield {'status': f"Encountered error, retrying..."}
@@ -2375,7 +2565,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 image='stellar-python-sandbox:3.12',
                 command='sleep infinity',
                 working_dir='/app',
-                volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}, '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
+                volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
                 ports={'5000/tcp': ('0.0.0.0', 0)},
                 name=f"stellar-{app_type}-{process_id}",
                 remove=False,
@@ -2678,21 +2868,31 @@ def stop_and_cleanup_app_by_process_id(process_id, app_type='repo'):
 def get_history_route():
     try:
         chat_id = request.args.get('chat_id')
-        if not chat_id and 'current_chat_id' in session:
-            chat_id = session['current_chat_id']
-        elif not chat_id:
-            chat_id = get_current_chat_id(session['user_id'])
-            session['current_chat_id'] = chat_id
-            session.modified = True
+        db = get_db()
+        
+        if chat_id:
+            try:
+                chat_id_int = int(chat_id)
+            except ValueError:
+                return jsonify({'status': 'Failed: Invalid chat ID format', 'history': []}), 400
+            cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id_int, session['user_id']))
+            if not cursor.fetchone():
+                return jsonify({'status': 'Failed: Chat not found or unauthorized', 'history': []}), 403
+        else:
+            chat_id = session.get('current_chat_id')
+            if chat_id:
+                cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, session['user_id']))
+                if not cursor.fetchone():
+                    session.pop('current_chat_id', None)
+                    chat_id = None
             
+            if not chat_id:
+                chat_id = get_current_chat_id(session['user_id'])
+                session['current_chat_id'] = chat_id
+                session.modified = True
+                
         if not chat_id:
             return jsonify({'status': 'Failed: No active chat ID found', 'history': []}), 400
-
-        db = get_db()
-        cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, session['user_id']))
-        check_chat_ownership = cursor.fetchone()
-        if not check_chat_ownership:
-            return jsonify({'status': 'Failed: Chat not found or unauthorized', 'history': []}), 403
 
         history = get_conversation_history(chat_id, for_ui=True)
         # Filter out hidden compressed state docs — they're for LLM context only, not the UI
@@ -3737,6 +3937,40 @@ def send_revocation_email(recipient_email, display_name):
     except Exception as e:
         logger.error(f"FAILURE sending revocation email: {str(e)}")
 
+@app.route('/api/admin/keys', methods=['GET'])
+def get_admin_keys():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    keys_to_report = []
+    
+    if PRIMARY_API_KEY:
+        keys_to_report.append({
+            'label': 'Primary API Key',
+            'value': PRIMARY_API_KEY
+        })
+        
+    for idx, key in enumerate(BACKUP_API_KEYS, start=1):
+        if key:
+            keys_to_report.append({
+                'label': f'Backup API Key {idx}',
+                'value': key
+            })
+            
+    response_data = []
+    for item in keys_to_report:
+        key_val = item['value']
+        masked = key_val[:8] + "..." + key_val[-4:] if len(key_val) > 12 else key_val
+        blocks = KEY_MANAGER.get_key_blocks(key_val, list(MODEL_NAMES.keys()))
+        
+        response_data.append({
+            'label': item['label'],
+            'masked': masked,
+            'blocks': blocks
+        })
+        
+    return jsonify(response_data), 200
+
 @app.route('/api/admin/waitlist', methods=['GET'])
 def get_admin_waitlist():
     if session.get('role') != 'admin':
@@ -3854,11 +4088,38 @@ def admin_impersonate():
 
 @app.route('/logout', methods=['POST'])
 def logout_user():
-    session.pop('user_id', None)
-    session.pop('username', None)
-    session.pop('current_chat_id', None)
+    # Explicitly delete the session from Redis so the old session ID
+    # is fully invalidated — session.clear() alone doesn't remove the Redis key.
+    try:
+        session_interface = app.session_interface
+        if hasattr(session_interface, 'redis'):
+            sid = request.cookies.get(app.config.get('SESSION_COOKIE_NAME', 'session'))
+            if sid:
+                prefix = app.config.get('SESSION_KEY_PREFIX', 'session:')
+                app.session_interface.redis.delete(prefix + sid)
+    except Exception as e:
+        logger.warning(f"Could not delete Redis session on logout: {e}")
     session.clear()
-    return jsonify({"success": True, "message": "Logged out successfully."}), 200
+    response = jsonify({"success": True, "message": "Logged out successfully."})
+    # Explicitly expire the session cookie so browser drops it immediately
+    # 1. Delete cookie on configured domain (if any)
+    response.delete_cookie(
+        app.config.get('SESSION_COOKIE_NAME', 'stellar_session_main'),
+        domain=app.config.get('SESSION_COOKIE_DOMAIN'),
+        path='/'
+    )
+    # 2. Delete cookie on parent wildcard domain to clean up stale cookies from prior configurations
+    response.delete_cookie(
+        app.config.get('SESSION_COOKIE_NAME', 'stellar_session_main'),
+        domain='.stellarai.live',
+        path='/'
+    )
+    # 3. Delete cookie on exact host (no domain parameter)
+    response.delete_cookie(
+        app.config.get('SESSION_COOKIE_NAME', 'stellar_session_main'),
+        path='/'
+    )
+    return response, 200
 
 # ===================== SSH Authentication Code Routes =====================
 
@@ -4971,13 +5232,14 @@ def pwa_test_push():
 
 # ─── Sentinel Healer Routes ───────────────────────────────────────────────────
 
-def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=True):
+def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=True, error_message=None, affected_file=None, affected_line=None):
     """Queue a backend crash to the Sentinel healer via Redis."""
     try:
         db = get_db()
+        msg = error_message if error_message else error_type
         cursor = db.execute(
-            "INSERT INTO sentinel_app_errors (process_id, error_type, error_message, stack_trace, status) VALUES (?, ?, ?, ?, 'open')",
-            (process_id, error_type, error_type, stack_trace)
+            "INSERT INTO sentinel_app_errors (process_id, error_type, error_message, stack_trace, affected_file, affected_line, status) VALUES (?, ?, ?, ?, ?, ?, 'open')",
+            (process_id, error_type, msg, stack_trace, affected_file, affected_line)
         )
         error_id = cursor.lastrowid
         db.commit()
@@ -4987,8 +5249,10 @@ def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=True):
             logger.info(f"Sentinel: Queued healing task for app {process_id}, error_id={error_id}")
         else:
             logger.info(f"Sentinel: Logged error for app {process_id} (error_id={error_id}) but skipped healing (non-owner visitor).")
+        return error_id
     except Exception as e:
         logger.error(f"Sentinel: Failed to log backend crash for {process_id}: {e}")
+        return None
 
 @app.route('/api/sentinel/log_error', methods=['POST'])
 def sentinel_log_error():
@@ -5014,21 +5278,28 @@ def sentinel_log_error():
             pass
 
         if not process_id:
-            return jsonify({"success": False, "message": "Could not resolve process_id from URL"}), 400
+            return jsonify({"error": "No deployment mapping found"}), 404
 
-        # Check if the error reporter is the owner of the application
-        is_owner = False
-        if owner_id is not None and session.get('user_id') == owner_id:
-            is_owner = True
+        # Ownership is validated implicitly: we resolved owner_id from the DB
+        # via the subdomain in the reported URL. The session cookie is NOT
+        # available here because this request comes from a cross-subdomain iframe
+        # (SameSite=Lax blocks cookie sending across subdomains), so checking
+        # session.get('user_id') would always return None and disable healing.
+        is_owner = owner_id is not None
 
         error_info = data.get('error', {})
         error_type = error_info.get('type', 'js_error')
         error_message = error_info.get('message', 'Unknown JS error')
         stack_trace = error_info.get('stack', '')
+        affected_file = error_info.get('source')
+        affected_line = error_info.get('line')
         full_trace = f"JS Error: {error_message}\nSource: {error_info.get('source','')}\nLine: {error_info.get('line','')}\nStack:\n{stack_trace}"
 
-        log_backend_crash(process_id, error_type, full_trace, trigger_heal=is_owner)
-        return jsonify({"success": True})
+        error_id = log_backend_crash(
+            process_id, error_type, full_trace, trigger_heal=is_owner,
+            error_message=error_message, affected_file=affected_file, affected_line=affected_line
+        )
+        return jsonify({"status": "success", "error_id": error_id})
     except Exception as e:
         logger.error(f"Sentinel log_error route failed: {e}")
         return jsonify({"success": False}), 500
@@ -5301,7 +5572,7 @@ def run_code():
 
             container = client.containers.run(
                 image=config['image'], command=config['command'](main_code_filename_with_ext),
-                working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}, '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
+                working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
                 ports=ports_to_publish, mem_limit='1024m',
                 name=f"stellar-sandbox-{run_id}", remove=False, detach=True,
                 init=True, network=user_network,
@@ -6166,7 +6437,9 @@ class TaskSchedulerMonitor:
             if final_output:
                 from app import MODEL_NAMES
                 display_name = MODEL_NAMES.get(model_id, model_id)
-                insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\n\n{final_output}")
+                import re
+                clean_output = re.sub(r'^\s*\*\*Scheduled Execution\s*\([^)]+\):\*\*\s*', '', final_output, flags=re.IGNORECASE)
+                insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\n\n{clean_output}")
 
 if os.environ.get('TESTING') != 'true':
     task_scheduler = TaskSchedulerMonitor(app)

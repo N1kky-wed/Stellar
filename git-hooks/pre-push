@@ -1,0 +1,64 @@
+#!/bin/bash
+
+echo "=================================================="
+echo "🚀 Running Pre-Push Hooks & Validation Checks..."
+echo "=================================================="
+
+# 1. Check Python compilation
+echo "Checking Python files syntax..."
+PY_FILES=$(git ls-files "*.py")
+for file in $PY_FILES; do
+    if [[ "$file" == *"dockerfiles/"* ]]; then
+        continue
+    fi
+    if [ -f "$file" ]; then
+        python3 -m py_compile "$file"
+        if [ $? -ne 0 ]; then
+            echo "❌ Python compilation check failed on $file"
+            exit 1
+        fi
+    fi
+done
+echo "✅ Python files are syntactically valid."
+
+# 2. Check JavaScript syntax
+echo "Checking JavaScript files syntax..."
+JS_FILES=$(git ls-files "*.js")
+for file in $JS_FILES; do
+    if [ -f "$file" ]; then
+        node --check "$file"
+        if [ $? -ne 0 ]; then
+            echo "❌ JavaScript syntax check failed on $file"
+            exit 1
+        fi
+    fi
+done
+echo "✅ JavaScript files are syntactically valid."
+
+# 3. Check HTML and CSS syntax via Prettier (only block on parse errors)
+echo "Checking HTML and CSS files..."
+HTML_CSS_FILES=$(git ls-files "*.html" "*.css")
+if [ ! -z "$HTML_CSS_FILES" ]; then
+    /home/stellaradmin/.nvm/versions/node/v20.20.0/bin/prettier --check $HTML_CSS_FILES > /dev/null 2>&1
+    PRETTIER_EXIT=$?
+    if [ $PRETTIER_EXIT -eq 2 ]; then
+        echo "❌ HTML/CSS syntax check failed with parse errors:"
+        /home/stellaradmin/.nvm/versions/node/v20.20.0/bin/prettier --check $HTML_CSS_FILES
+        exit 1
+    fi
+fi
+echo "✅ HTML and CSS files passed syntax validation."
+
+# 4. Run Pytest unit tests
+echo "Running pytest test suite..."
+venv/bin/pytest
+if [ $? -ne 0 ]; then
+    echo "❌ Pytest unit tests failed."
+    exit 1
+fi
+echo "✅ All unit tests passed successfully."
+
+echo "=================================================="
+echo "🎉 All validation checks passed! Proceeding with push."
+echo "=================================================="
+exit 0

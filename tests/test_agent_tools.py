@@ -99,10 +99,31 @@ def test_logs_and_preferences(auth_client):
     assert "Feedback successfully" in res or "Developer" in res or "stored" in res or "Error" not in res
 
 @patch('agent_tools.requests.get')
-def test_make_presentation(mock_get):
+@patch('agent_tools.genai.Client')
+def test_make_presentation(mock_client, mock_get):
     mock_response = MagicMock()
-    mock_response.content = b"image_content"
-    mock_get.return_value = mock_response
+    mock_response.text = '{"slides": [{"title": "Intro to ML", "summary": "Detailed info", "background_description": "Clean layout"}]}'
+    
+    mock_client_inst = MagicMock()
+    
+    def generate_content_side_effect(model, **kwargs):
+        if model == 'gemini-2.5-flash':
+            return mock_response
+        else:
+            import base64
+            mock_img_resp = MagicMock()
+            mock_part = MagicMock()
+            mock_part.inline_data.data = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
+            mock_part.inline_data.mime_type = "image/png"
+            mock_img_resp.candidates = [MagicMock(content=MagicMock(parts=[mock_part]))]
+            return mock_img_resp
+            
+    mock_client_inst.models.generate_content.side_effect = generate_content_side_effect
+    mock_client.return_value = mock_client_inst
+
+    mock_resp_img = MagicMock()
+    mock_resp_img.content = b"image_content"
+    mock_get.return_value = mock_resp_img
 
     res = agent_tools.make_presentation(
         topic="Introduction to Machine Learning",

@@ -93,9 +93,6 @@
         }
       }
 
-        width: 8px;
-        height: 8px;
-      }
 
       #waitlistContent {
         scrollbar-width: thin;
@@ -785,6 +782,7 @@
       #chatList::-webkit-scrollbar,
       #profileModal::-webkit-scrollbar,
       #waitlistContent::-webkit-scrollbar,
+      #keysContent::-webkit-scrollbar,
       #logsPrefsList::-webkit-scrollbar {
         width: 8px;
         height: 8px;
@@ -803,6 +801,7 @@
       #chatList::-webkit-scrollbar-track,
       #profileModal::-webkit-scrollbar-track,
       #waitlistContent::-webkit-scrollbar-track,
+      #keysContent::-webkit-scrollbar-track,
       #logsPrefsList::-webkit-scrollbar-track {
         background: var(--scrollbar-track-bg);
         border-radius: 0px;
@@ -821,6 +820,7 @@
       #chatList::-webkit-scrollbar-thumb,
       #profileModal::-webkit-scrollbar-thumb,
       #waitlistContent::-webkit-scrollbar-thumb,
+      #keysContent::-webkit-scrollbar-thumb,
       #logsPrefsList::-webkit-scrollbar-thumb {
         background: linear-gradient(
           var(--scrollbar-thumb-start),
@@ -843,6 +843,7 @@
       #chatList::-webkit-scrollbar-thumb:hover,
       #profileModal::-webkit-scrollbar-thumb:hover,
       #waitlistContent::-webkit-scrollbar-thumb:hover,
+      #keysContent::-webkit-scrollbar-thumb:hover,
       #logsPrefsList::-webkit-scrollbar-thumb:hover {
         background: linear-gradient(
           var(--scrollbar-thumb-hover-start),
@@ -3820,6 +3821,7 @@
 
       /* --- END NEW RULES --- */
 
+      .stellar-msg .message-content img {
         height: auto;
         border-radius: 6px;
         display: block;
@@ -3843,23 +3845,49 @@
 
       /* Prevent general SVG styling from breaking UI icons and KaTeX */
       .stellar-msg .message-content .code-controls svg,
-      .stellar-msg .message-content .tool-spinner,
-      .stellar-msg .message-content .katex svg {
-        max-width: none;
-        display: inline-block;
-        margin: 0;
-        border-radius: 0;
-        transform: none;
-        background: none;
+      .stellar-msg .message-content .katex svg,
+      .stellar-msg .message-content svg.shrink-0 {
+        max-width: none !important;
+        display: inline-block !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+        transform: none !important;
+        background: none !important;
       }
+
+      .stellar-msg .message-content .tool-spinner {
+        max-width: none !important;
+        display: inline-block !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+        background: none !important;
+      }
+
+      /* Explicit overrides for common Tailwind width/height utility classes inside messages */
+      .stellar-msg .message-content svg.w-3 { width: 0.75rem !important; }
+      .stellar-msg .message-content svg.w-3\.5 { width: 0.875rem !important; }
+      .stellar-msg .message-content svg.w-4 { width: 1rem !important; }
+      .stellar-msg .message-content svg.w-5 { width: 1.25rem !important; }
+      .stellar-msg .message-content svg.w-6 { width: 1.5rem !important; }
+      .stellar-msg .message-content svg.w-8 { width: 2rem !important; }
+      .stellar-msg .message-content svg.w-10 { width: 2.5rem !important; }
+      .stellar-msg .message-content svg.w-12 { width: 3rem !important; }
+
+      .stellar-msg .message-content svg.h-3 { height: 0.75rem !important; }
+      .stellar-msg .message-content svg.h-3\.5 { height: 0.875rem !important; }
+      .stellar-msg .message-content svg.h-4 { height: 1rem !important; }
+      .stellar-msg .message-content svg.h-5 { height: 1.25rem !important; }
+      .stellar-msg .message-content svg.h-6 { height: 1.5rem !important; }
+      .stellar-msg .message-content svg.h-8 { height: 2rem !important; }
+      .stellar-msg .message-content svg.h-10 { height: 2.5rem !important; }
+      .stellar-msg .message-content svg.h-12 { height: 3rem !important; }
 
       .stellar-msg .message-content .code-controls svg {
         width: 12px;
         height: 12px;
       }
 
-      .stellar-msg .message-content .code-controls svg:hover,
-      .stellar-msg .message-content .tool-spinner:hover {
+      .stellar-msg .message-content .code-controls svg:hover {
         transform: none;
       }
 
@@ -4020,6 +4048,159 @@
         background: var(--model-color-start);
         color: #000;
       }
+
+      /* API Key Health Dashboard Styles */
+      #keysGrid {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 24px !important;
+      }
+      @media (max-width: 1200px) {
+        #keysGrid {
+          grid-template-columns: repeat(2, 1fr) !important;
+        }
+      }
+      @media (max-width: 768px) {
+        #keysGrid {
+          grid-template-columns: 1fr !important;
+        }
+      }
+
+      .key-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 20px;
+        padding: 24px;
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .key-card:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: var(--model-color-border);
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      }
+
+      .key-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+
+      .key-info {
+        flex-grow: 1;
+      }
+
+      .key-name {
+        color: #fff;
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin-bottom: 4px;
+        display: block;
+      }
+
+      .key-masked {
+        color: #888;
+        font-family: monospace;
+        font-size: 0.9rem;
+        display: block;
+        letter-spacing: 0.5px;
+      }
+
+      .key-status-badge {
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .key-status-badge.active {
+        background: rgba(0, 240, 144, 0.1);
+        color: #00F090;
+        border: 1px solid rgba(0, 240, 144, 0.2);
+        box-shadow: 0 0 10px rgba(0, 240, 144, 0.1);
+      }
+
+      .key-status-badge.blocked {
+        background: rgba(255, 42, 77, 0.1);
+        color: #FF2A4D;
+        border: 1px solid rgba(255, 42, 77, 0.2);
+        box-shadow: 0 0 10px rgba(255, 42, 77, 0.1);
+      }
+
+      .key-status-badge.limited {
+        background: rgba(255, 170, 0, 0.1);
+        color: #FFAA00;
+        border: 1px solid rgba(255, 170, 0, 0.2);
+        box-shadow: 0 0 10px rgba(255, 170, 0, 0.1);
+      }
+
+      .key-models-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        background: rgba(0, 0, 0, 0.2);
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.02);
+      }
+
+      .key-model-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.85rem;
+      }
+
+      .key-model-name {
+        color: #ccc;
+        font-weight: 500;
+      }
+
+      .key-model-status {
+        font-weight: 600;
+        font-size: 0.75rem;
+        padding: 3px 8px;
+        border-radius: 4px;
+        text-transform: uppercase;
+      }
+
+      .key-model-status.active {
+        color: #00F090;
+      }
+
+      .key-model-status.blocked-rpm {
+        color: #FFAA00;
+        background: rgba(255, 170, 0, 0.08);
+      }
+
+      .key-model-status.blocked-rpd {
+        color: #FF2A4D;
+        background: rgba(255, 42, 77, 0.08);
+      }
+
+      .key-model-status.blocked-other {
+        color: #ff5e00;
+        background: rgba(255, 94, 0, 0.08);
+      }
+
+      .key-model-remaining {
+        font-size: 0.75rem;
+        color: #666;
+        margin-left: 5px;
+        font-style: italic;
+      }
+
 
       /* Custom Toggle Switch Styles */
       .toggle-item {

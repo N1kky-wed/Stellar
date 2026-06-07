@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stellar-static-v12';
+const CACHE_NAME = 'stellar-static-v14';
 const ASSETS_TO_CACHE = [
   '/default.min.css',
   '/custom_select.css',
@@ -41,11 +41,16 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const requestUrl = new URL(event.request.url);
 
-  // CRITICAL: Always use network-only for API calls, SSE streams, waitlist, login, and Google OAuth
+  // CRITICAL: Always use network-only for API calls, SSE streams, auth flows, and navigation
   if (
     requestUrl.pathname === '/' ||
     requestUrl.pathname.startsWith('/api/') ||
     requestUrl.pathname.startsWith('/login') ||
+    requestUrl.pathname.startsWith('/logout') ||
+    requestUrl.pathname.startsWith('/oauth') ||
+    requestUrl.pathname.startsWith('/callback') ||
+    requestUrl.pathname.startsWith('/register') ||
+    requestUrl.pathname.startsWith('/waitlist') ||
     requestUrl.pathname === '/check_auth' ||
     requestUrl.pathname === '/get_history' ||
     requestUrl.pathname === '/image-proxy' ||
@@ -54,6 +59,7 @@ self.addEventListener('fetch', event => {
     requestUrl.pathname.startsWith('/auth/') ||
     requestUrl.pathname.includes('stream') ||
     requestUrl.pathname === '/upload_files' ||
+    event.request.mode === 'navigate' ||
     event.request.method !== 'GET'
   ) {
     event.respondWith(fetch(event.request));
@@ -86,10 +92,8 @@ self.addEventListener('fetch', event => {
         }
         return response;
       }).catch(err => {
-        // Fallback for offline root page
-        if (event.request.mode === 'navigate') {
-          return caches.match('/');
-        }
+        // Do NOT serve cached '/' for navigation failures — that silently swallows
+        // OAuth redirects and makes post-login appear to do nothing.
         throw err;
       });
     })

@@ -87,7 +87,7 @@ def web_search(
     """Unified Web Search, Extraction, Crawling, and Mapping Tool.
     
     Args:
-        action: 'google_quick', 'tavily_search', 'tavily_extract', 'tavily_crawl', 'tavily_map'.
+        action: 'tavily_search', 'tavily_extract', 'tavily_crawl', 'tavily_map'.
         status: Status update for the user.
         query: Search term or semantic intent.
         url: Root URL for crawl/map.
@@ -119,43 +119,6 @@ def web_search(
         timeout: Wait time in seconds before failing.
     """
     try:
-        # 1. Google Quick Search
-        if action == "google_quick":
-            if not query: return json.dumps({"error": "Missing 'query' for google_quick"})
-            from app import PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER, parse_quota_block_duration
-            raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
-            keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
-            
-            model_id = 'gemini-3.1-flash-lite'
-            active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, model_id)[0]]
-            if not active_keys:
-                active_keys = keys_to_try
-            keys_to_try = active_keys
-            
-            last_error = None
-            for current_key in keys_to_try:
-                try:
-                    client = genai.Client(api_key=current_key)
-                    response = client.models.generate_content(
-                        model=model_id,
-                        contents=f"Please answer this concisely using Google Search: {query}",
-                        config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
-                    )
-                    return json.dumps({"tool": "google_quick", "answer": response.text})
-                except Exception as e:
-                    logger.error(f"Error in google_quick tool: {e}", exc_info=True)
-                    error_string = str(e).lower()
-                    if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
-                        block_duration, block_reason = parse_quota_block_duration(error_string)
-                        block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
-                        KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                        logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in google_quick.")
-                        last_error = e
-                        continue
-                    return json.dumps({"error": f"Error: {str(e)}"})
-            
-            return json.dumps({"error": f"All API keys exhausted. Last error: {str(last_error)}"})
-
         from app import TAVILY_API_KEY, TAVILY_BACKUP_API_KEYS
         tavily_keys = [TAVILY_API_KEY] + [bk for bk in TAVILY_BACKUP_API_KEYS if bk]
         tavily_keys = [k for k in dict.fromkeys(tavily_keys) if k]
@@ -471,13 +434,9 @@ def schedule_task(task_prompt: str, status: str, timeout: int, action: str = "sc
 
     elif action == "cancel":
         if not task_id: return "Error: 'task_id' is required to cancel a task."
-        cursor = db.execute('UPDATE scheduled_tasks SET is_active = 0 WHERE id = ? AND user_id = ? AND status != "running"', (task_id, u_id))
+        cursor = db.execute('UPDATE scheduled_tasks SET is_active = 0 WHERE id = ? AND user_id = ?', (task_id, u_id))
         db.commit()
         if cursor.rowcount == 0:
-            # Check if it was because it's running
-            check = db.execute('SELECT status FROM scheduled_tasks WHERE id = ?', (task_id,)).fetchone()
-            if check and check[0] == 'running':
-                return f"Error: Task {task_id} is currently running and cannot be cancelled. Wait for it to complete or fail."
             return f"Error: Task {task_id} not found or already inactive."
         return f"Success: Task {task_id} has been cancelled."
 
@@ -504,10 +463,10 @@ def schedule_task(task_prompt: str, status: str, timeout: int, action: str = "sc
         
         params.append(task_id)
         params.append(u_id)
-        cursor = db.execute(f'UPDATE scheduled_tasks SET {", ".join(updates)} WHERE id = ? AND user_id = ? AND status != "running"', tuple(params))
+        cursor = db.execute(f'UPDATE scheduled_tasks SET {", ".join(updates)} WHERE id = ? AND user_id = ?', tuple(params))
         db.commit()
         if cursor.rowcount == 0:
-            return f"Error: Task {task_id} not found, already inactive, or currently running."
+            return f"Error: Task {task_id} not found or already inactive."
         return f"Success: Task {task_id} has been updated."
 
     # Default: Schedule
@@ -562,7 +521,14 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
     else:
         img_size = "1K"
     
-    image_config_args = {"aspect_ratio": aspect_ratio, "image_size": img_size}
+    image_config_args = {"aspect_ratio": aspect_ratio}
+    try:
+        if hasattr(types, 'ImageConfig'):
+            valid_fields = getattr(types.ImageConfig, '__pydantic_fields__', {})
+            if 'image_size' in valid_fields:
+                image_config_args["image_size"] = img_size
+    except Exception:
+        pass
     
     # Resolve reference images
     parts = [types.Part.from_text(text=prompt)]
@@ -588,7 +554,7 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                 model=model,
                 contents=parts,
                 config=types.GenerateContentConfig(
-                    image_config=types.ImageConfig(**image_config_args),
+                    image_config=image_config_args,
                     response_modalities=["IMAGE"]
                 )
             )
@@ -612,7 +578,7 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                         f.write(img_data)
                     
                     return f"![Generated Image](https://stellarai.live/view/{filename})"
-            return "Image model returned no visual data."
+            return "Error: Image model returned no visual data. Since image generation failed, please use the web search tool to find relevant images on the web instead."
         except Exception as e:
             logger.error(f"Error in generate_image tool: {e}", exc_info=True)
             error_string = str(e).lower()
@@ -623,10 +589,178 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                 logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in generate_image.")
                 last_error = e
                 continue
-            return f"Error generating image: {str(e)}"
+            return f"Error generating image: {str(e)}. Since image generation failed, please use the web search tool to find relevant images on the web instead."
     
-    return f"Error: All API keys exhausted. Last error: {str(last_error)}"
+    return f"Error: All API keys exhausted. Last error: {str(last_error)}. Since image generation failed, please use the web search tool to find relevant images on the web instead."
 
+
+def report_process_issue(topic: str, issue_description: str, technical_context: str, status: str, timeout: int) -> str:
+    """Reports technical bottlenecks, process failures, or feedback on internal tool execution.
+    Args:
+        topic: A concise label for the issue (e.g., 'SIGKILL', 'Path Alignment', 'Port Latency').
+        issue_description: A detailed explanation of what went wrong and how it impacted the task.
+        technical_context: Raw logs, error codes, environment details, or reproduction steps.
+        status: Status update for the user.
+    """
+    import sqlite3
+    from app import DATABASE_NAME
+    from flask import g, has_request_context, session
+    
+    u_id = None
+    c_id = None
+
+    if has_request_context():
+        u_id = session.get('user_id')
+        c_id = session.get('current_chat_id')
+
+    if not u_id: u_id = getattr(g, 'user_id', None)
+    if not c_id: c_id = getattr(g, 'chat_id', None)
+
+    try:
+        conn = sqlite3.connect(DATABASE_NAME)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+
+        conn.execute('''
+            INSERT INTO agent_feedback (user_id, chat_id, topic, issue_description, technical_context, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (u_id, c_id, topic, issue_description, technical_context, 'open'))
+
+        conn.commit()
+        conn.close()
+
+        import subprocess
+        import os
+        import sys
+        resolver_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.py')
+        log_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.log')
+        with open(log_path, 'a') as log_file:
+            subprocess.Popen([sys.executable, resolver_path], stdout=log_file, stderr=log_file)
+
+        return "Feedback successfully reported and stored for developer review."
+    except Exception as e:
+        logger.exception("Error caught: %s", e)
+        return f"Error reporting feedback: {str(e)}"
+
+def compress_memory(target: str, state_document: str, status: str, timeout: int) -> str:
+    """Compresses the chat's memory by archiving old tool logs and/or messages.
+    Called when the system warns that context window usage is high.
+    Preserves a structured state document so critical context is not lost.
+    
+    Args:
+        target: What to compress. Must be one of: 'tool_logs', 'chat_messages', or 'both'.
+        state_document: A structured summary preserving current objective, key discoveries, modified files, and pending blockers.
+        status: Status update for the user.
+        timeout: Execution timeout in seconds.
+    """
+    import sqlite3
+    try:
+        from flask import g
+        from app import DATABASE_NAME
+        
+        chat_id = getattr(g, 'chat_id', None)
+        if not chat_id:
+            return "Error: No active chat session found."
+        
+        if target not in ['tool_logs', 'chat_messages', 'both']:
+            return f"Error: Invalid target '{target}'. Must be 'tool_logs', 'chat_messages', or 'both'."
+        
+        if not state_document or len(state_document.strip()) < 50:
+            return "Error: state_document is too short. You must write a thorough summary of the current state before compressing."
+        
+        conn = sqlite3.connect(DATABASE_NAME)
+        conn.row_factory = sqlite3.Row
+        tools_archived = 0
+        msgs_archived = 0
+        
+        if target in ['tool_logs', 'both']:
+            # Hide all tool calls EXCEPT the 10 most recent
+            cursor = conn.execute(
+                'SELECT id FROM tool_calls WHERE chat_id = ? AND hidden = 0 ORDER BY id DESC LIMIT 10',
+                (chat_id,)
+            )
+            keep_ids = [row['id'] for row in cursor.fetchall()]
+            
+            if keep_ids:
+                placeholders = ','.join('?' * len(keep_ids))
+                cursor = conn.execute(
+                    f'UPDATE tool_calls SET hidden = 1 WHERE chat_id = ? AND hidden = 0 AND id NOT IN ({placeholders})',
+                    [chat_id] + keep_ids
+                )
+            else:
+                cursor = conn.execute(
+                    'UPDATE tool_calls SET hidden = 1 WHERE chat_id = ? AND hidden = 0',
+                    (chat_id,)
+                )
+            tools_archived = cursor.rowcount
+        
+        if target in ['chat_messages', 'both']:
+            cursor = conn.execute(
+                'SELECT id, message_type, message_content, timestamp FROM messages WHERE chat_id = ? AND hidden = 0 ORDER BY id ASC',
+                (chat_id,)
+            )
+            all_msgs = cursor.fetchall()
+            if len(all_msgs) > 4:
+                msgs_to_archive = all_msgs[:-4]
+                keep_ids = [row['id'] for row in all_msgs[-4:]]
+                
+                archived_messages_text = "\n--- COMPRESSION EVENT ---\n"
+                for m in msgs_to_archive:
+                    role = 'User' if m['message_type'] == 'user' else 'Stellar'
+                    archived_messages_text += f"[{m['timestamp']}] {role}:\n{m['message_content']}\n\n"
+                
+                # Write to lab workspace
+                try:
+                    import re
+                    import os
+                    from app import SANDBOX_DIR
+                    
+                    u_id = getattr(g, 'user_id', None)
+                    if not u_id:
+                        u_cursor = conn.execute('SELECT user_id FROM chats WHERE id = ?', (chat_id,))
+                        u_row = u_cursor.fetchone()
+                        if u_row:
+                            u_id = u_row['user_id']
+                            
+                    clean_uid = re.sub(r'[^a-zA-Z0-9]', '', str(u_id)) if u_id else "anon"
+                    clean_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
+                    workspace_name = f"lab_workspace_u{clean_uid}_c{clean_cid}"
+                    lab_workspace = os.path.abspath(os.path.join(SANDBOX_DIR, workspace_name))
+                    os.makedirs(lab_workspace, exist_ok=True)
+                    
+                    archive_path = os.path.join(lab_workspace, 'chat_history_archive.txt')
+                    with open(archive_path, 'a') as f:
+                        f.write(archived_messages_text)
+                except Exception as lab_err:
+                    logger.error("Failed to write archive to lab: %s", lab_err)
+                
+                placeholders = ','.join('?' * len(keep_ids))
+                cursor = conn.execute(
+                    f'UPDATE messages SET hidden = 1 WHERE chat_id = ? AND hidden = 0 AND id NOT IN ({placeholders})',
+                    [chat_id] + keep_ids
+                )
+                msgs_archived = cursor.rowcount
+        
+        # Insert the state document as a hidden stellar message
+        conn.execute(
+            'INSERT INTO messages (chat_id, message_type, message_content, hidden) VALUES (?, ?, ?, ?)',
+            (chat_id, 'stellar', '[COMPRESSED MEMORY STATE]\n' + state_document, 1)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        # Recalculate and update the token count in the DB so the UI sidebar updates immediately
+        try:
+            from app import count_chat_tokens
+            count_chat_tokens(chat_id)
+        except Exception as update_err:
+            logger.error("Could not update token count after compression: %s", update_err)
+            
+        return f"Memory compressed successfully. Target: {target}. {tools_archived} tool calls archived. {msgs_archived} messages archived. State document preserved. Continue with your task."
+    except Exception as e:
+        logger.exception("Error caught: %s", e)
+        return f"Error compressing memory: {str(e)}"
 
 
 def logs_and_preferences(status: str, timeout: int, write: str = "", user_id: str = "global") -> str:
@@ -741,10 +875,10 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
                 logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in make_presentation.")
                 last_error = e
                 continue
-            return f"Failed to plan presentation: {str(e)}"
+            return f"Error: Failed to plan presentation: {str(e)}. Since presentation generation failed, please perform a web search for relevant images and place them in a nice UI for the user."
             
     if not plan:
-        return f"Error: All API keys exhausted. Last error: {str(last_error)}"
+        return f"Error: All API keys exhausted. Last error: {str(last_error)}. Since presentation generation failed, please perform a web search for relevant images and place them in a nice UI for the user."
         
     slides_data = plan.get('slides', [])
     
@@ -785,6 +919,9 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     images = loop.run_until_complete(fetch_all_images())
+
+    if num_slides > 0 and all(img is None for img in images):
+        return "Error: Image generation model failed to generate slide images. Since presentation image generation failed, please perform a web search for relevant images and place them in a nice UI for the user."
 
     presentation_id = uuid.uuid4().hex[:8]
     output_dir = "outputs"
@@ -944,9 +1081,9 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
                 logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in regenerate_presentation_slide.")
                 last_error = e
                 continue
-            return f"Failed to re-plan or generate slide: {str(e)}"
+            return f"Error: Failed to re-plan or generate slide: {str(e)}. Since slide regeneration failed, please perform a web search for relevant images and place them in a nice UI for the user."
     if not img_bytes:
-        return "Failed to generate image bytes."
+        return "Error: Failed to generate image bytes. Since slide regeneration failed, please perform a web search for relevant images and place them in a nice UI for the user."
 
     output_dir = "outputs"
     pres_dir = os.path.join(output_dir, f"pres_{presentation_id}")
@@ -1063,7 +1200,6 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                     command='sleep infinity',
                     ports={f"{port}/tcp": ('0.0.0.0', 0)},                    name=f"stellar-repo-{process_id}",
                     volumes={
-                        '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'},
                         project_dir: {'bind': '/app', 'mode': 'rw'}
                     },
                     remove=False,
@@ -1300,7 +1436,6 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                 command='sleep infinity',
                 ports={f"{port}/tcp": ('0.0.0.0', 0)},
                 volumes={
-                    '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'},
                     project_dir: {'bind': '/app', 'mode': 'rw'}
                 },
                 name=f"stellar-repo-{process_id}",
@@ -1447,7 +1582,7 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
                 tty=True,
                 init=True,
                 working_dir='/lab',
-                volumes={lab_workspace: {'bind': '/lab', 'mode': 'rw'}, '/home/stellaradmin/my_app/credentials': {'bind': '/cred_store', 'mode': 'ro'}},
+                volumes={lab_workspace: {'bind': '/lab', 'mode': 'rw'}},
                 restart_policy={"Name": "unless-stopped"},
                 network=user_network,
                 labels={
@@ -1958,384 +2093,6 @@ def manage_files(action: str, status: str, timeout: int, file_name: str = None, 
             
     return "Error: Invalid action. Use 'read', 'move', or 'project'."
 
-def subagent_tool(
-    task_description: str,
-    mode: str,
-    status: str,
-    timeout: int,
-    model_tier: str = "capable",
-    container_id: str = None,
-    pass_to_user: bool = True,
-    **kwargs
-) -> str:
-    """
-    Offloads a subtask or summarizes context using the Gemini CLI.
-    Args:
-        task_description: The description of the task or summarization goal.
-        mode: 'summarization' or 'delegation'.
-        status: Status update for the user.
-        model_tier: 'capable' (gemini-3.5-flash) or 'fast' (gemini-3-flash-preview).
-        container_id: Optional. Target a specific container ID or name.
-        pass_to_user: If True, output is forcibly appended to chat. If False, output is hidden from chat for background processing.
-    """
-    current_effective_prompt = kwargs.get('current_effective_prompt', '')
-    import os
-    import base64
-    import docker
-    from flask import g
-    session = _get_effective_session()
-
-    u_id = getattr(g, 'user_id', session.get('user_id'))
-    c_id = getattr(g, 'chat_id', session.get('current_chat_id', 'default'))
-    if not u_id:
-        return "Error: Could not determine User ID."
-
-    import re
-    clean_uid = re.sub(r'[^a-zA-Z0-9]', '', str(u_id))
-    clean_cid = re.sub(r'[^a-zA-Z0-9]', '', str(c_id))
-    
-    # Sanitize container_id input
-    if isinstance(container_id, str):
-        cid_lower = container_id.lower()
-        if "lab" in cid_lower or cid_lower in ["global", "default", "none", "null", ""]:
-            container_id = None
-
-    if container_id and not container_id.startswith('stellar-'):
-        try:
-            from app import get_db
-            db = get_db()
-            cursor = db.execute('SELECT process_id FROM repo_history WHERE (project_name = ? OR process_id = ? OR subdomain = ?) AND user_id = ? ORDER BY id DESC LIMIT 1', (container_id, container_id, container_id, u_id))
-            row = cursor.fetchone()
-            if row:
-                container_id = row['process_id']
-        except Exception:
-            pass
-
-    target_container_name = container_id if container_id else f"stellar-lab-u{clean_uid}-c{clean_cid}"
-
-    if container_id and not container_id.startswith('stellar-'):
-        target_container_name = f"stellar-repo-{container_id}"
-
-    warning_msg = ""
-    try:
-        client = docker.from_env()
-        try:
-            container = client.containers.get(target_container_name)
-            if container.status != 'running':
-                container.start()
-        except docker.errors.NotFound:
-            if target_container_name.startswith("stellar-repo-"):
-                try:
-                    target_container_name = target_container_name.replace("stellar-repo-", "stellar-repo-")
-                    container = client.containers.get(target_container_name)
-                except docker.errors.NotFound:
-                    pass
-            if container_id and "container" not in locals():
-                logger.warning(f"Container {container_id} not found. Continuing task in default lab container.")
-                warning_msg = ""
-                target_container_name = f"stellar-lab-u{clean_uid}-c{clean_cid}"
-                try:
-                    container = client.containers.get(target_container_name)
-                    if container.status != 'running':
-                        container.start()
-                except docker.errors.NotFound:
-                    lab_execute("echo 'Init'", "Initializing Lab for offload", timeout=10)
-                    container = client.containers.get(target_container_name)
-            else:
-                # Fallback if lab container doesn't exist
-                lab_execute("echo 'Init'", "Initializing Lab for offload", timeout=10)
-                container = client.containers.get(target_container_name)
-    except Exception as e:
-        logger.exception("Error caught: %s", e)
-        return f"Gemini Offload Error: Docker unavailable - {e}"
-
-    model = "gemini-3.5-flash" if model_tier == "obsidian" else "gemini-3-flash-preview"
-
-    disabled_tools = "['analyze_youtube_video', 'list_background_processes']"
-    full_prompt = f"You are a subagent working on behalf of the main agent Stellar. You have your own separate internal tools (which may not exactly match the main agent's tools but are equivalent capabilities like lab_execute, web_search, etc.).\n\n"
-    full_prompt += f"CRITICAL: You are PROHIBITED from using the following main-agent tools directly: {disabled_tools}. If you need to perform an action involving these tools, or if you need to execute something at the root level outside your sandbox, you MUST request the main agent to do it for you by including the tag [TOOL_REQUEST] followed by your specific request in your response.\n\n"
-    full_prompt += "Regarding plans: If you need to use Plan Mode, all plan files MUST be written to the designated plans directory: `/root/.gemini/plans/`. Any attempt to write plans elsewhere will result in 'Access denied'.\n\n"
-    full_prompt += f"Task: {task_description}\n\n"
-    if mode == "summarization":
-        full_prompt += "Please summarize the following context concisely but preserving all facts:\n"
-    else:
-        full_prompt += "Please execute the following task given the context:\n"
-
-    full_prompt += f"\nContext:\n{current_effective_prompt}\n"
-
-    import tarfile
-    import io
-    tar_stream = io.BytesIO()
-    with tarfile.open(fileobj=tar_stream, mode='w') as tar:
-        tarinfo = tarfile.TarInfo(name='gemini_prompt.txt')
-        prompt_bytes = full_prompt.encode('utf-8')
-        tarinfo.size = len(prompt_bytes)
-        tar.addfile(tarinfo, io.BytesIO(prompt_bytes))
-    tar_stream.seek(0)
-    container.put_archive('/tmp/', tar_stream)
-
-    script = f'''#!/bin/bash
-CONFIG_DIR="/root/.gemini"
-mkdir -p "$CONFIG_DIR/plans"
-mkdir -p "$CONFIG_DIR"
-
-ACTIVE_ACC=0
-if [ -f /tmp/active_gemini_account ]; then
-    ACTIVE_ACC=$(cat /tmp/active_gemini_account)
-fi
-
-MAX_RETRIES=5
-RETRY_COUNT=0
-
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if [ -d "/cred_store/account_$ACTIVE_ACC" ]; then
-        cp /cred_store/account_$ACTIVE_ACC/*.json "$CONFIG_DIR/" 2>/dev/null
-    fi
-
-    # Run Gemini CLI non-interactively
-    # --skip-trust handles the "folder not trusted" warning
-    # --yolo automatically accepts all tool calls
-    OUTPUT=$(cat /tmp/gemini_prompt.txt | gemini --model {model} --yolo --skip-trust --prompt "" 2>&1)
-    EXIT_CODE=$?
-
-    if echo "$OUTPUT" | grep -iqE "quota|429|exhausted|rate limit"; then
-        ACTIVE_ACC=$((ACTIVE_ACC + 1))
-        if [ ! -d "/cred_store/account_$ACTIVE_ACC" ]; then
-            ACTIVE_ACC=0
-        fi
-        echo $ACTIVE_ACC > /tmp/active_gemini_account
-        RETRY_COUNT=$((RETRY_COUNT + 1))
-        sleep 2
-        continue
-    fi
-
-    if [ $EXIT_CODE -eq 0 ]; then
-        echo "$OUTPUT"
-        exit 0
-    else
-        echo "Gemini CLI failed: $OUTPUT" >&2
-        exit $EXIT_CODE
-    fi
-done
-
-echo "Error: All accounts exhausted quota or failed." >&2
-exit 1
-'''
-    tar_stream_sh = io.BytesIO()
-    with tarfile.open(fileobj=tar_stream_sh, mode='w') as tar:
-        tarinfo = tarfile.TarInfo(name='run_gemini.sh')
-        script_bytes = script.encode('utf-8')
-        tarinfo.size = len(script_bytes)
-        tarinfo.mode = 0o755
-        tar.addfile(tarinfo, io.BytesIO(script_bytes))
-    tar_stream_sh.seek(0)
-    container.put_archive('/tmp/', tar_stream_sh)
-
-    exec_result = container.exec_run("/tmp/run_gemini.sh", environment={"TERM": "xterm-256color"})
-    output = exec_result.output.decode('utf-8', 'replace')
-    
-    # --- OCI RUNTIME ERROR RECOVERY ---
-    if exec_result.exit_code == 128 and ("mount namespace root" in output or "container breakout" in output or "exec failed" in output):
-        logger.warning(f"Detected broken container mount in subagent_tool for {target_container_name}. Recreating...")
-        try:
-            container.stop(timeout=2)
-            container.remove(force=True)
-        except:
-            pass
-        
-        retry_count = kwargs.get('_retry_count', 0)
-        if retry_count < 2:
-            kwargs['_retry_count'] = retry_count + 1
-            time.sleep(1)
-            return subagent_tool(task_description, mode, status, model_tier, container_id, pass_to_user, **kwargs)
-    # ----------------------------------
-    
-    # Strip Gemini CLI verbose warnings
-    output = re.sub(r'Warning: True color \(24-bit\) support not detected\..*\n?', '', output)
-    output = re.sub(r'YOLO mode is enabled\. All tool calls will be automatically approved\.\n?', '', output)
-    output = re.sub(r'Ripgrep is not available\. Falling back to GrepTool\.\n?', '', output)
-    
-    # Strip random preamble and errors from the CLI booting
-    output = re.sub(r'Error: Container .*? not found\.\n?', '', output)
-    output = re.sub(r'Hello! I am Gemini CLI, an autonomous agent specializing in software engineering tasks\. How can I assist you with your project today\?\n?', '', output)
-    output = re.sub(r'Awaiting further instructions\.\n?', '', output)
-    
-    output = output.strip()
-
-    if exec_result.exit_code != 0:
-        return f"{warning_msg}Gemini Offload Error:\n{output}"
-
-    return f"{warning_msg}{output}"
-
-def report_process_issue(topic: str, issue_description: str, technical_context: str, status: str, timeout: int) -> str:
-    """Reports technical bottlenecks, process failures, or feedback on internal tool execution.
-    Args:
-        topic: A concise label for the issue (e.g., 'SIGKILL', 'Path Alignment', 'Port Latency').
-        issue_description: A detailed explanation of what went wrong and how it impacted the task.
-        technical_context: Raw logs, error codes, environment details, or reproduction steps.
-        status: Status update for the user.
-    """
-    import sqlite3
-    from app import DATABASE_NAME
-    from flask import g, has_request_context, session
-    
-    u_id = None
-    c_id = None
-
-    if has_request_context():
-        u_id = session.get('user_id')
-        c_id = session.get('current_chat_id')
-
-    if not u_id: u_id = getattr(g, 'user_id', None)
-    if not c_id: c_id = getattr(g, 'chat_id', None)
-
-    try:
-        conn = sqlite3.connect(DATABASE_NAME)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA busy_timeout=5000;")
-
-        conn.execute('''
-            INSERT INTO agent_feedback (user_id, chat_id, topic, issue_description, technical_context, status)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (u_id, c_id, topic, issue_description, technical_context, 'open'))
-
-        conn.commit()
-        conn.close()
-
-        import subprocess
-        import os
-        import sys
-        resolver_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.py')
-        log_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.log')
-        with open(log_path, 'a') as log_file:
-            subprocess.Popen([sys.executable, resolver_path], stdout=log_file, stderr=log_file)
-
-        return "Feedback successfully reported and stored for developer review."
-    except Exception as e:
-        logger.exception("Error caught: %s", e)
-        return f"Error reporting feedback: {str(e)}"
-
-def compress_memory(target: str, state_document: str, status: str, timeout: int) -> str:
-    """Compresses the chat's memory by archiving old tool logs and/or messages.
-    Called when the system warns that context window usage is high.
-    Preserves a structured state document so critical context is not lost.
-    
-    Args:
-        target: What to compress. Must be one of: 'tool_logs', 'chat_messages', or 'both'.
-        state_document: A structured summary preserving current objective, key discoveries, modified files, and pending blockers.
-        status: Status update for the user.
-        timeout: Execution timeout in seconds.
-    """
-    import sqlite3
-    try:
-        from flask import g
-        from app import DATABASE_NAME
-        
-        chat_id = getattr(g, 'chat_id', None)
-        if not chat_id:
-            return "Error: No active chat session found."
-        
-        if target not in ['tool_logs', 'chat_messages', 'both']:
-            return f"Error: Invalid target '{target}'. Must be 'tool_logs', 'chat_messages', or 'both'."
-        
-        if not state_document or len(state_document.strip()) < 50:
-            return "Error: state_document is too short. You must write a thorough summary of the current state before compressing."
-        
-        conn = sqlite3.connect(DATABASE_NAME)
-        conn.row_factory = sqlite3.Row
-        tools_archived = 0
-        msgs_archived = 0
-        
-        if target in ['tool_logs', 'both']:
-            # Hide all tool calls EXCEPT the 10 most recent
-            cursor = conn.execute(
-                'SELECT id FROM tool_calls WHERE chat_id = ? AND hidden = 0 ORDER BY id DESC LIMIT 10',
-                (chat_id,)
-            )
-            keep_ids = [row['id'] for row in cursor.fetchall()]
-            
-            if keep_ids:
-                placeholders = ','.join('?' * len(keep_ids))
-                cursor = conn.execute(
-                    f'UPDATE tool_calls SET hidden = 1 WHERE chat_id = ? AND hidden = 0 AND id NOT IN ({placeholders})',
-                    [chat_id] + keep_ids
-                )
-            else:
-                cursor = conn.execute(
-                    'UPDATE tool_calls SET hidden = 1 WHERE chat_id = ? AND hidden = 0',
-                    (chat_id,)
-                )
-            tools_archived = cursor.rowcount
-        
-        if target in ['chat_messages', 'both']:
-            cursor = conn.execute(
-                'SELECT id, message_type, message_content, timestamp FROM messages WHERE chat_id = ? AND hidden = 0 ORDER BY id ASC',
-                (chat_id,)
-            )
-            all_msgs = cursor.fetchall()
-            if len(all_msgs) > 4:
-                msgs_to_archive = all_msgs[:-4]
-                keep_ids = [row['id'] for row in all_msgs[-4:]]
-                
-                archived_messages_text = "\n--- COMPRESSION EVENT ---\n"
-                for m in msgs_to_archive:
-                    role = 'User' if m['message_type'] == 'user' else 'Stellar'
-                    archived_messages_text += f"[{m['timestamp']}] {role}:\n{m['message_content']}\n\n"
-                
-                # Write to lab workspace
-                try:
-                    import re
-                    import os
-                    from app import SANDBOX_DIR
-                    
-                    u_id = getattr(g, 'user_id', None)
-                    if not u_id:
-                        u_cursor = conn.execute('SELECT user_id FROM chats WHERE id = ?', (chat_id,))
-                        u_row = u_cursor.fetchone()
-                        if u_row:
-                            u_id = u_row['user_id']
-                            
-                    clean_uid = re.sub(r'[^a-zA-Z0-9]', '', str(u_id)) if u_id else "anon"
-                    clean_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
-                    workspace_name = f"lab_workspace_u{clean_uid}_c{clean_cid}"
-                    lab_workspace = os.path.abspath(os.path.join(SANDBOX_DIR, workspace_name))
-                    os.makedirs(lab_workspace, exist_ok=True)
-                    
-                    archive_path = os.path.join(lab_workspace, 'chat_history_archive.txt')
-                    with open(archive_path, 'a') as f:
-                        f.write(archived_messages_text)
-                except Exception as lab_err:
-                    logger.error("Failed to write archive to lab: %s", lab_err)
-                
-                placeholders = ','.join('?' * len(keep_ids))
-                cursor = conn.execute(
-                    f'UPDATE messages SET hidden = 1 WHERE chat_id = ? AND hidden = 0 AND id NOT IN ({placeholders})',
-                    [chat_id] + keep_ids
-                )
-                msgs_archived = cursor.rowcount
-        
-        # Insert the state document as a hidden stellar message
-        conn.execute(
-            'INSERT INTO messages (chat_id, message_type, message_content, hidden) VALUES (?, ?, ?, ?)',
-            (chat_id, 'stellar', '[COMPRESSED MEMORY STATE]\n' + state_document, 1)
-        )
-        
-        conn.commit()
-        conn.close()
-        
-        # Recalculate and update the token count in the DB so the UI sidebar updates immediately
-        try:
-            from app import count_chat_tokens
-            count_chat_tokens(chat_id)
-        except Exception as update_err:
-            logger.error("Could not update token count after compression: %s", update_err)
-            
-        return f"Memory compressed successfully. Target: {target}. {tools_archived} tool calls archived. {msgs_archived} messages archived. State document preserved. Continue with your task."
-    except Exception as e:
-        logger.exception("Error caught: %s", e)
-        return f"Error compressing memory: {str(e)}"
-
-# Define the tools list for Gemini
 
 available_tools = [
     request_user_interaction,
@@ -2351,7 +2108,7 @@ available_tools = [
     lab_execute,
     read_tool_output,
     logs_and_preferences,
-    subagent_tool,
+
     report_process_issue,
     obtain_talent,
     compress_memory

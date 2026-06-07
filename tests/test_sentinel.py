@@ -125,32 +125,41 @@ def test_healer_workflow_success(mock_genai_client_class, mock_docker_env, setup
     mock_exec_res_health.exit_code = 0
     mock_exec_res_health.output = b"200"
 
-    mock_container.exec_run.side_effect = [
-        mock_exec_res_syntax, # Syntax check for JS
-        MagicMock(), # Stop process
-        MagicMock(), # Stop process
-        MagicMock(), # Stop process
-        MagicMock(), # Spawn new process
-        mock_exec_res_health # Health check curl
-    ]
+    def dynamic_exec_run(cmd, *args, **kwargs):
+        cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        if "node" in cmd_str and "-c" in cmd_str:
+            return mock_exec_res_syntax
+        if "python3" in cmd_str and "py_compile" in cmd_str:
+            return mock_exec_res_syntax
+        if "curl" in cmd_str:
+            return mock_exec_res_health
+        return MagicMock()
+    mock_container.exec_run.side_effect = dynamic_exec_run
 
     # Mock Gemini Client API response
     mock_client_instance = MagicMock()
     mock_genai_client_class.return_value = mock_client_instance
     
+    mock_chat = MagicMock()
+    mock_client_instance.chats.create.return_value = mock_chat
+    
     mock_response = MagicMock()
-    # Mock return value JSON
-    mock_response.text = json.dumps({
+    mock_chat.send_message.return_value = mock_response
+    
+    mock_part = MagicMock()
+    mock_part.text = json.dumps({
         "patches": [
             {
                 "file_path": "main.js",
-                "content": "const x = 42; console.log(x);",
+                "full_content": "const x = 42; console.log(x);",
                 "explanation": "Declare variable x before logging it."
             }
         ],
         "root_cause": "x was referenced without declaration."
     })
-    mock_client_instance.models.generate_content.return_value = mock_response
+    mock_candidate = MagicMock()
+    mock_candidate.content.parts = [mock_part]
+    mock_response.candidates = [mock_candidate]
 
     # Mock Redis client
     mock_redis = MagicMock()

@@ -35,3 +35,8 @@ ssh_gateway_host_key
 ssh_gateway_host_key.pub
 logs/
 
+
+# Scratch / temp files
+scratch/
+test_marked.js
+diff_app.txt
