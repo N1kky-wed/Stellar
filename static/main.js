@@ -1005,6 +1005,19 @@ const defaultAgentSettings = {
           },
         );
 
+        // 6. Defer any script tags to prevent HTML parser leaks and premature termination
+        const scriptRegex = /<script\b([^>]*?)>([\s\S]*?)(?<!\\)<\/script>/gi;
+        html = html.replace(scriptRegex, (match, attributes, scriptContent) => {
+          try {
+            const encoded = btoa(unescape(encodeURIComponent(scriptContent)));
+            const encodedAttrs = btoa(unescape(encodeURIComponent(attributes || "")));
+            return `<div class="deferred-script" style="display:none;" data-script="${encoded}" data-attributes="${encodedAttrs}"></div>`;
+          } catch (e) {
+            console.error("Failed to defer script block:", e);
+            return match;
+          }
+        });
+
         return html;
       };
 
@@ -1539,18 +1552,51 @@ const defaultAgentSettings = {
       function processGenerativeUI(containerElement) {
         if (!containerElement) return;
 
-        // 0. Execute any inline scripts (e.g. from raw HTML blocks) to ensure generative UI interactivity works.
-        const rawScripts = containerElement.querySelectorAll("script");
+        // 0. Execute any inline or deferred scripts to ensure generative UI interactivity works.
+        const rawScripts = containerElement.querySelectorAll("script, div.deferred-script");
         const externalScriptPromises = [];
         const inlineScripts = [];
 
         rawScripts.forEach(oldScript => {
-            if (oldScript.src) {
+            let scriptContent = "";
+            let attributesStr = "";
+            let isExternal = false;
+            let extSrc = "";
+            let extType = "";
+            let extCrossOrigin = "";
+
+            if (oldScript.tagName.toLowerCase() === "div" && oldScript.classList.contains("deferred-script")) {
+                try {
+                    scriptContent = decodeURIComponent(escape(atob(oldScript.getAttribute("data-script") || "")));
+                    attributesStr = decodeURIComponent(escape(atob(oldScript.getAttribute("data-attributes") || "")));
+                    if (attributesStr) {
+                        const srcMatch = attributesStr.match(/src=["']([^"']+)["']/i);
+                        if (srcMatch) {
+                            isExternal = true;
+                            extSrc = srcMatch[1];
+                        }
+                        const typeMatch = attributesStr.match(/type=["']([^"']+)["']/i);
+                        if (typeMatch) extType = typeMatch[1];
+                        const crossMatch = attributesStr.match(/crossorigin=["']([^"']+)["']/i);
+                        if (crossMatch) extCrossOrigin = crossMatch[1];
+                    }
+                } catch (e) {
+                    console.error("Failed to decode deferred script:", e);
+                }
+            } else {
+                isExternal = !!oldScript.src;
+                extSrc = oldScript.src || "";
+                extType = oldScript.type || "";
+                extCrossOrigin = oldScript.crossOrigin || "";
+                scriptContent = oldScript.innerHTML || "";
+            }
+
+            if (isExternal) {
                 const p = new Promise((resolve, reject) => {
                     const newScript = document.createElement("script");
-                    newScript.src = oldScript.src;
-                    if (oldScript.type) newScript.type = oldScript.type;
-                    if (oldScript.crossOrigin) newScript.crossOrigin = oldScript.crossOrigin;
+                    newScript.src = extSrc;
+                    if (extType) newScript.type = extType;
+                    if (extCrossOrigin) newScript.crossOrigin = extCrossOrigin;
                     newScript.onload = resolve;
                     newScript.onerror = resolve; // Resolve anyway to continue
                     document.body.appendChild(newScript);
@@ -1558,7 +1604,6 @@ const defaultAgentSettings = {
                 externalScriptPromises.push(p);
                 oldScript.remove();
             } else {
-                let scriptContent = oldScript.innerHTML;
                 if (scriptContent.trim() !== "") {
                     // Assign a unique ID to the container if it doesn't have one
                     if (!containerElement.id) {
@@ -1567,7 +1612,7 @@ const defaultAgentSettings = {
                     
                     // Wrap the script in an IIFE and shadow 'document' with a Proxy 
                     // that restricts DOM queries to this specific message's container!
-                    scriptContent = `
+                    const wrappedScript = `
                     (function() {
                         var _container = window.document.getElementById('${containerElement.id}');
                         var document = new Proxy(window.document, {
@@ -1641,7 +1686,7 @@ const defaultAgentSettings = {
                         }
                     })();
                     `;
-                    inlineScripts.push(scriptContent);
+                    inlineScripts.push(wrappedScript);
                 }
                 oldScript.remove();
             }
