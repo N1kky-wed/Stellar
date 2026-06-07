@@ -521,7 +521,14 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
     else:
         img_size = "1K"
     
-    image_config_args = {"aspect_ratio": aspect_ratio, "image_size": img_size}
+    image_config_args = {"aspect_ratio": aspect_ratio}
+    try:
+        if hasattr(types, 'ImageConfig'):
+            valid_fields = getattr(types.ImageConfig, '__pydantic_fields__', {})
+            if 'image_size' in valid_fields:
+                image_config_args["image_size"] = img_size
+    except Exception:
+        pass
     
     # Resolve reference images
     parts = [types.Part.from_text(text=prompt)]
@@ -547,7 +554,7 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                 model=model,
                 contents=parts,
                 config=types.GenerateContentConfig(
-                    image_config=types.ImageConfig(**image_config_args),
+                    image_config=image_config_args,
                     response_modalities=["IMAGE"]
                 )
             )

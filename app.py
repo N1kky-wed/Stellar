@@ -174,6 +174,19 @@ if VAPID_PRIVATE_KEY_PEM:
 # -------------------------------
 
 app = Flask(__name__)
+
+# Configure local git hooks automatically at startup
+try:
+    if os.path.exists('.git'):
+        hook_path = os.path.join('git-hooks', 'pre-push')
+        if os.path.exists(hook_path):
+            os.chmod(hook_path, 0o755)
+        import subprocess
+        subprocess.run(['git', 'config', 'core.hooksPath', 'git-hooks'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logger.info("Automatically configured local git hooks path.")
+except Exception as e:
+    logger.warning(f"Could not automatically configure git hooks: {e}")
+
 SANDBOX_DIR = 'sandbox_runs'
 os.makedirs(SANDBOX_DIR, exist_ok=True)
 UPLOAD_FOLDER = 'uploads'
@@ -181,7 +194,7 @@ ALLOWED_EXTENSIONS = {'txt', 'pdf','docx','pptx', 'png', 'jpg', 'jpeg', 'gif', '
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-app.secret_key = os.getenv("FLASK_SECRET_KEY")
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or "stellar_fallback_secret_key_dev"
 
 app.config['SESSION_COOKIE_NAME'] = 'stellar_session_main'
 app.config['SESSION_PERMANENT'] = True

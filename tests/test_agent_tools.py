@@ -99,10 +99,18 @@ def test_logs_and_preferences(auth_client):
     assert "Feedback successfully" in res or "Developer" in res or "stored" in res or "Error" not in res
 
 @patch('agent_tools.requests.get')
-def test_make_presentation(mock_get):
+@patch('agent_tools.genai.Client')
+def test_make_presentation(mock_client, mock_get):
     mock_response = MagicMock()
-    mock_response.content = b"image_content"
-    mock_get.return_value = mock_response
+    mock_response.text = '{"slides": [{"title": "Intro to ML", "summary": "Detailed info", "background_description": "Clean layout"}]}'
+    
+    mock_client_inst = MagicMock()
+    mock_client_inst.models.generate_content.return_value = mock_response
+    mock_client.return_value = mock_client_inst
+
+    mock_resp_img = MagicMock()
+    mock_resp_img.content = b"image_content"
+    mock_get.return_value = mock_resp_img
 
     res = agent_tools.make_presentation(
         topic="Introduction to Machine Learning",
