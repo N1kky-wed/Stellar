@@ -3847,6 +3847,7 @@
       .stellar-msg .message-content .code-controls svg,
       .stellar-msg .message-content .tool-spinner,
       .stellar-msg .message-content .stellar-welcome-dashboard svg,
+      .stellar-msg .message-content .web-presentation-app svg,
       .stellar-msg .message-content .katex svg {
         max-width: none;
         display: inline-block;
@@ -3856,14 +3857,23 @@
         background: none;
       }
 
-      .stellar-msg .message-content .stellar-welcome-dashboard svg.w-4 {
+      .stellar-msg .message-content .stellar-welcome-dashboard svg.w-4,
+      .stellar-msg .message-content .web-presentation-app svg.w-4 {
         width: 1rem !important;
       }
-      .stellar-msg .message-content .stellar-welcome-dashboard svg.h-4 {
+      .stellar-msg .message-content .stellar-welcome-dashboard svg.h-4,
+      .stellar-msg .message-content .web-presentation-app svg.h-4 {
         height: 1rem !important;
       }
-      .stellar-msg .message-content .stellar-welcome-dashboard svg.mr-2 {
+      .stellar-msg .message-content .stellar-welcome-dashboard svg.mr-2,
+      .stellar-msg .message-content .web-presentation-app svg.mr-2 {
         margin-right: 0.5rem !important;
+      }
+      .stellar-msg .message-content .web-presentation-app svg.w-3\.5 {
+        width: 0.875rem !important;
+      }
+      .stellar-msg .message-content .web-presentation-app svg.h-3\.5 {
+        height: 0.875rem !important;
       }
 
       .stellar-msg .message-content .code-controls svg {
