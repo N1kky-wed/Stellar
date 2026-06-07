@@ -93,9 +93,6 @@
         }
       }
 
-        width: 8px;
-        height: 8px;
-      }
 
       #waitlistContent {
         scrollbar-width: thin;
@@ -3824,6 +3821,7 @@
 
       /* --- END NEW RULES --- */
 
+      .stellar-msg .message-content img {
         height: auto;
         border-radius: 6px;
         display: block;
