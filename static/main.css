@@ -4024,6 +4024,22 @@
       }
 
       /* API Key Health Dashboard Styles */
+      #keysGrid {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 24px !important;
+      }
+      @media (max-width: 1200px) {
+        #keysGrid {
+          grid-template-columns: repeat(2, 1fr) !important;
+        }
+      }
+      @media (max-width: 768px) {
+        #keysGrid {
+          grid-template-columns: 1fr !important;
+        }
+      }
+
       .key-card {
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.05);
