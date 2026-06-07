@@ -5765,7 +5765,6 @@ const defaultAgentSettings = {
                   } else if (status.reason === "RPD") {
                     statusClass = "blocked-rpd";
                     statusLabel = "Quota Exceeded (RPD)";
-                    hasRpd = true;
                   } else {
                     statusClass = "blocked-other";
                     statusLabel = `Blocked (${status.reason})`;

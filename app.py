@@ -350,7 +350,7 @@ class GlobalKeyManager:
         return f"stellar:blocked_until:{key_hash}:{scope}", f"stellar:block_reason:{key_hash}:{scope}"
 
     def block_key(self, key_val, model_id, duration_seconds, reason='RPM'):
-        if reason in ('RPD', 'INVALID'):
+        if reason == 'INVALID':
             model_id = None
             
         with self.lock:
