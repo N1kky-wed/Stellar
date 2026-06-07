@@ -1725,6 +1725,17 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
     current_key_index = 0
 
+    def get_next_unblocked_key_index(start_idx):
+        if not keys_to_try:
+            return None
+        for offset in range(1, len(keys_to_try) + 1):
+            idx = (start_idx + offset) % len(keys_to_try)
+            k = keys_to_try[idx]
+            is_blocked, _ = KEY_MANAGER.is_key_blocked(k, model_id)
+            if not is_blocked:
+                return idx
+        return None
+
     for attempt in range(1, attempts + 1):
         if cancel_event and cancel_event.is_set():
             logger.info("gemini_generate loop aborted due to cancellation.")
@@ -1804,14 +1815,20 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     is_quota = any(x in error_string for x in ['429', '403', 'permission_denied', 'resource_exhausted', 'quota', 'rate limit'])
                     is_network = any(x in error_string for x in ['500', '503', 'connection', 'timeout', 'deadline'])
                     
-                    if is_quota and (current_key_index + 1) < len(keys_to_try):
-                        logger.warning(f"Quota exceeded for key index {current_key_index}. Switching to backup key...")
+                    if is_quota:
                         block_duration, block_reason = parse_quota_block_duration(error_string)
                         block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
                         KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                         logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in inner loop.")
-                        current_key_index += 1
-                        current_key = keys_to_try[current_key_index]
+                        
+                        next_key_idx = get_next_unblocked_key_index(current_key_index)
+                        if next_key_idx is not None:
+                            logger.warning(f"Switching from key index {current_key_index} to backup key index {next_key_idx} (circular queue)...")
+                            current_key_index = next_key_idx
+                            current_key = keys_to_try[current_key_index]
+                        else:
+                            logger.error("All available keys in keys_to_try are blocked. Aborting inner loop.")
+                            break
                         
                         
                         client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
@@ -1861,14 +1878,21 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         time.sleep(2 * consecutive_network_errors)
                         
                         # If we hit 3 network errors, try switching keys before giving up on this attempt
-                        if consecutive_network_errors == 3 and (current_key_index + 1) < len(keys_to_try):
-                             logger.warning(f"Persistent network issues with key {current_key_index}. Switching to backup key...")
+                        if consecutive_network_errors == 3:
                              block_duration, block_reason = parse_quota_block_duration(error_string)
                              block_scope = model_id
                              KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                              logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to persistent network issues in inner loop.")
-                             current_key_index += 1
-                             current_key = keys_to_try[current_key_index]
+                             
+                             next_key_idx = get_next_unblocked_key_index(current_key_index)
+                             if next_key_idx is not None:
+                                 logger.warning(f"Persistent network issues with key index {current_key_index}. Switching to backup key index {next_key_idx} (circular queue)...")
+                                 current_key_index = next_key_idx
+                                 current_key = keys_to_try[current_key_index]
+                                 consecutive_network_errors = 0 # Reset for the new key
+                             else:
+                                 logger.error("All available keys in keys_to_try are blocked. Aborting inner loop.")
+                                 break
                              consecutive_network_errors = 0 # Reset for the new key
                         
                         # Re-init chat with (potentially new) key
@@ -2253,7 +2277,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                  error_msg = f"Content generation stopped by API ({display_name}). Reason: {candidate_finish_reason}, Safety: {candidate_safety_details}"
                  last_exception = ValueError(error_msg)
                  yield {'status': f'Content generation blocked ({candidate_finish_reason}). Retrying...'}
-                 if attempt < attempts or (current_key_index + 1) < len(keys_to_try):
+                 next_key_idx = get_next_unblocked_key_index(current_key_index)
+                 if attempt < attempts or next_key_idx is not None:
+                     if next_key_idx is not None:
+                         current_key_index = next_key_idx
                      continue
                  else:
                      break
@@ -2286,18 +2313,20 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                  KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                  logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in generation loop.")
 
-            if is_blockable_error and (current_key_index + 1) < len(keys_to_try):
-                if is_quota_error:
-                    yield {'status': f'Quota exceeded. Switching to backup key...'}
-                else:
-                    yield {'status': f'Google API encountered transient error ({block_reason}). Switching to backup key...'}
-                current_key_index += 1
-            elif is_blockable_error:
-                if is_quota_error:
-                    yield {'status': f'Quota exceeded on all keys. Cannot proceed.'}
-                else:
-                    yield {'status': f'Google API transient errors on all keys. Cannot proceed.'}
-                break
+            if is_blockable_error:
+                 next_key_idx = get_next_unblocked_key_index(current_key_index)
+                 if next_key_idx is not None:
+                     if is_quota_error:
+                         yield {'status': f'Quota exceeded. Switching to backup key index {next_key_idx} (circular queue)...'}
+                     else:
+                         yield {'status': f'Google API encountered transient error ({block_reason}). Switching to backup key index {next_key_idx} (circular queue)...'}
+                     current_key_index = next_key_idx
+                 else:
+                     if is_quota_error:
+                         yield {'status': f'Quota exceeded on all keys. Cannot proceed.'}
+                     else:
+                         yield {'status': f'Google API transient errors on all keys. Cannot proceed.'}
+                     break
 
             if attempt < attempts:
                  yield {'status': f"Encountered error, retrying..."}
