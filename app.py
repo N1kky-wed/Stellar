@@ -6276,7 +6276,9 @@ class TaskSchedulerMonitor:
             if final_output:
                 from app import MODEL_NAMES
                 display_name = MODEL_NAMES.get(model_id, model_id)
-                insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\n\n{final_output}")
+                import re
+                clean_output = re.sub(r'^\s*\*\*Scheduled Execution\s*\([^)]+\):\*\*\s*', '', final_output, flags=re.IGNORECASE)
+                insert_message(chat_id, "stellar", f"**Scheduled Execution ({display_name}):**\n\n{clean_output}")
 
 if os.environ.get('TESTING') != 'true':
     task_scheduler = TaskSchedulerMonitor(app)
