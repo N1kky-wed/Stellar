@@ -719,3 +719,17 @@ def test_run_code(mock_docker_client, auth_client):
     content = b"".join(response.response)
     assert b'fake_container_id_123' in content
     assert b'hello stdout' in content
+
+
+def test_get_admin_keys(auth_client):
+    response = auth_client.get('/api/admin/keys')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert isinstance(data, list)
+    if len(data) > 0:
+        key_data = data[0]
+        assert 'label' in key_data
+        assert 'masked' in key_data
+        assert 'blocks' in key_data
+        assert 'global' in key_data['blocks']
+

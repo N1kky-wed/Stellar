@@ -5667,6 +5667,187 @@ const defaultAgentSettings = {
         "closeAdminWaitlistBtn",
       );
 
+      const adminTabUsersBtn = document.getElementById("adminTabUsersBtn");
+      const adminTabKeysBtn = document.getElementById("adminTabKeysBtn");
+      const waitlistContent = document.getElementById("waitlistContent");
+      const keysContent = document.getElementById("keysContent");
+      const keysGrid = document.getElementById("keysGrid");
+
+      let activeAdminTab = "users";
+
+      if (adminTabUsersBtn && adminTabKeysBtn) {
+        adminTabUsersBtn.onclick = () => {
+          activeAdminTab = "users";
+          adminTabUsersBtn.style.background = "rgba(255, 255, 255, 0.05)";
+          adminTabUsersBtn.style.borderColor = "rgba(255, 255, 255, 0.1)";
+          adminTabUsersBtn.style.color = "#fff";
+
+          adminTabKeysBtn.style.background = "transparent";
+          adminTabKeysBtn.style.borderColor = "transparent";
+          adminTabKeysBtn.style.color = "#888";
+
+          waitlistContent.style.display = "block";
+          keysContent.style.display = "none";
+          loadWaitlist();
+        };
+
+        adminTabKeysBtn.onclick = () => {
+          activeAdminTab = "keys";
+          adminTabKeysBtn.style.background = "rgba(255, 255, 255, 0.05)";
+          adminTabKeysBtn.style.borderColor = "rgba(255, 255, 255, 0.1)";
+          adminTabKeysBtn.style.color = "#fff";
+
+          adminTabUsersBtn.style.background = "transparent";
+          adminTabUsersBtn.style.borderColor = "transparent";
+          adminTabUsersBtn.style.color = "#888";
+
+          waitlistContent.style.display = "none";
+          keysContent.style.display = "block";
+          loadKeyHealth();
+        };
+      }
+
+      async function loadKeyHealth() {
+        keysGrid.innerHTML =
+          '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">Querying key states...</div>';
+        try {
+          const response = await fetch("/api/admin/keys");
+          const data = await response.json();
+          keysGrid.innerHTML = "";
+          if (data.length === 0) {
+            keysGrid.innerHTML =
+              '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">No API keys configured.</div>';
+          } else {
+            data.forEach((keyData) => {
+              const card = document.createElement("div");
+              card.className = "key-card";
+
+              const globalBlock = keyData.blocks.global || { blocked: false, reason: null, remaining_seconds: 0 };
+              
+              let overallStatus = "active";
+              let badgeClass = "active";
+              let badgeLabel = "Active";
+
+              let hasAnyBlock = globalBlock.blocked;
+              let hasRpm = globalBlock.reason === 'RPM';
+              let hasRpd = globalBlock.reason === 'RPD' || globalBlock.reason === 'INVALID';
+
+              const modelListHtml = [];
+              const modelNamesMap = {
+                "gemini-3.1-flash-lite": "Emerald (Flash-Lite)",
+                "gemma-4-31b-it": "Lunarity (Gemma-4)",
+                "gemini-3-flash-preview": "Crimson (Gemini-3)",
+                "gemini-3.5-flash": "Obsidian (Gemini-3.5)"
+              };
+
+              Object.entries(keyData.blocks).forEach(([modelId, status]) => {
+                if (modelId === "global") return;
+                
+                const friendlyName = modelNamesMap[modelId] || modelId;
+                let statusClass = "active";
+                let statusLabel = "Active";
+                let remainingHtml = "";
+
+                if (status.blocked) {
+                  hasAnyBlock = true;
+                  if (status.reason === "RPM") {
+                    statusClass = "blocked-rpm";
+                    statusLabel = "Rate Limited (RPM)";
+                    hasRpm = true;
+                  } else if (status.reason === "RPD") {
+                    statusClass = "blocked-rpd";
+                    statusLabel = "Quota Exceeded (RPD)";
+                    hasRpd = true;
+                  } else {
+                    statusClass = "blocked-other";
+                    statusLabel = `Blocked (${status.reason})`;
+                    hasRpm = true;
+                  }
+                  
+                  if (status.remaining_seconds > 0) {
+                    const mins = Math.floor(status.remaining_seconds / 60);
+                    const secs = status.remaining_seconds % 60;
+                    const hours = Math.floor(mins / 60);
+                    const minsRemaining = mins % 60;
+
+                    let timeStr = "";
+                    if (hours > 0) {
+                      timeStr = `${hours}h ${minsRemaining}m`;
+                    } else if (mins > 0) {
+                      timeStr = `${mins}m ${secs}s`;
+                    } else {
+                      timeStr = `${secs}s`;
+                    }
+                    remainingHtml = `<span class="key-model-remaining">(${timeStr} left)</span>`;
+                  }
+                }
+
+                modelListHtml.push(`
+                  <div class="key-model-item">
+                    <span class="key-model-name">${friendlyName}</span>
+                    <div>
+                      <span class="key-model-status ${statusClass}">${statusLabel}</span>
+                      ${remainingHtml}
+                    </div>
+                  </div>
+                `);
+              });
+
+              if (globalBlock.blocked) {
+                overallStatus = "blocked";
+                badgeClass = "blocked";
+                badgeLabel = `Global Block (${globalBlock.reason})`;
+              } else if (hasRpd) {
+                overallStatus = "blocked";
+                badgeClass = "blocked";
+                badgeLabel = "Daily Quota Out";
+              } else if (hasAnyBlock) {
+                overallStatus = "limited";
+                badgeClass = "limited";
+                badgeLabel = "Partially Blocked";
+              }
+
+              let globalRemainingHtml = "";
+              if (globalBlock.blocked && globalBlock.remaining_seconds > 0) {
+                const mins = Math.floor(globalBlock.remaining_seconds / 60);
+                const secs = globalBlock.remaining_seconds % 60;
+                const hours = Math.floor(mins / 60);
+                const minsRemaining = mins % 60;
+
+                let timeStr = "";
+                if (hours > 0) {
+                  timeStr = `${hours}h ${minsRemaining}m`;
+                } else if (mins > 0) {
+                  timeStr = `${mins}m ${secs}s`;
+                } else {
+                  timeStr = `${secs}s`;
+                }
+                globalRemainingHtml = `<div style="font-size: 0.8rem; color: #FF2A4D; margin-top: 5px;">Block expires in: ${timeStr}</div>`;
+              }
+
+              card.innerHTML = `
+                <div class="key-card-header">
+                  <div class="key-info">
+                    <span class="key-name">${keyData.label}</span>
+                    <span class="key-masked">${keyData.masked}</span>
+                    ${globalRemainingHtml}
+                  </div>
+                  <span class="key-status-badge ${badgeClass}">${badgeLabel}</span>
+                </div>
+                <div class="key-models-list">
+                  <div style="font-size: 0.75rem; color: #555; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 5px; margin-bottom: 5px;">Model Statuses</div>
+                  ${modelListHtml.join("")}
+                </div>
+              `;
+              keysGrid.appendChild(card);
+            });
+          }
+        } catch (err) {
+          keysGrid.innerHTML =
+            '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #FF2A4D;">Critical error fetching API keys status.</div>';
+        }
+      }
+
       if (closeAdminWaitlistBtn) {
         closeAdminWaitlistBtn.onclick = () => {
           adminWaitlistModal.style.display = "none";
@@ -5677,7 +5858,11 @@ const defaultAgentSettings = {
       async function openAdminWaitlist() {
         adminWaitlistModal.style.display = "flex";
         document.body.style.overflow = "hidden";
-        loadWaitlist();
+        if (activeAdminTab === "keys") {
+          loadKeyHealth();
+        } else {
+          loadWaitlist();
+        }
       }
 
       function formatMsgTime(tsString) {

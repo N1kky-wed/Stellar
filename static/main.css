@@ -4021,6 +4021,143 @@
         color: #000;
       }
 
+      /* API Key Health Dashboard Styles */
+      .key-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 20px;
+        padding: 24px;
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .key-card:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: var(--model-color-border);
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      }
+
+      .key-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+
+      .key-info {
+        flex-grow: 1;
+      }
+
+      .key-name {
+        color: #fff;
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin-bottom: 4px;
+        display: block;
+      }
+
+      .key-masked {
+        color: #888;
+        font-family: monospace;
+        font-size: 0.9rem;
+        display: block;
+        letter-spacing: 0.5px;
+      }
+
+      .key-status-badge {
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .key-status-badge.active {
+        background: rgba(0, 240, 144, 0.1);
+        color: #00F090;
+        border: 1px solid rgba(0, 240, 144, 0.2);
+        box-shadow: 0 0 10px rgba(0, 240, 144, 0.1);
+      }
+
+      .key-status-badge.blocked {
+        background: rgba(255, 42, 77, 0.1);
+        color: #FF2A4D;
+        border: 1px solid rgba(255, 42, 77, 0.2);
+        box-shadow: 0 0 10px rgba(255, 42, 77, 0.1);
+      }
+
+      .key-status-badge.limited {
+        background: rgba(255, 170, 0, 0.1);
+        color: #FFAA00;
+        border: 1px solid rgba(255, 170, 0, 0.2);
+        box-shadow: 0 0 10px rgba(255, 170, 0, 0.1);
+      }
+
+      .key-models-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        background: rgba(0, 0, 0, 0.2);
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.02);
+      }
+
+      .key-model-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.85rem;
+      }
+
+      .key-model-name {
+        color: #ccc;
+        font-weight: 500;
+      }
+
+      .key-model-status {
+        font-weight: 600;
+        font-size: 0.75rem;
+        padding: 3px 8px;
+        border-radius: 4px;
+        text-transform: uppercase;
+      }
+
+      .key-model-status.active {
+        color: #00F090;
+      }
+
+      .key-model-status.blocked-rpm {
+        color: #FFAA00;
+        background: rgba(255, 170, 0, 0.08);
+      }
+
+      .key-model-status.blocked-rpd {
+        color: #FF2A4D;
+        background: rgba(255, 42, 77, 0.08);
+      }
+
+      .key-model-status.blocked-other {
+        color: #ff5e00;
+        background: rgba(255, 94, 0, 0.08);
+      }
+
+      .key-model-remaining {
+        font-size: 0.75rem;
+        color: #666;
+        margin-left: 5px;
+        font-style: italic;
+      }
+
+
       /* Custom Toggle Switch Styles */
       .toggle-item {
         display: flex;

@@ -395,6 +395,87 @@ class GlobalKeyManager:
                     
             return False, None
 
+    def get_key_blocks(self, key_val, models):
+        blocks = {}
+        global_blocked, global_reason = self.is_key_blocked(key_val, None)
+        if global_blocked:
+            remaining = 0
+            try:
+                k_until, _ = self._get_redis_keys(key_val, None)
+                blocked_until_val = redis_client.get(k_until)
+                if blocked_until_val:
+                    remaining = max(0.0, float(blocked_until_val) - time.time())
+            except Exception:
+                pass
+            if remaining == 0:
+                with self.lock:
+                    blocked_time = self.blocked_until.get((key_val, None), 0)
+                    remaining = max(0.0, blocked_time - time.time())
+            blocks["global"] = {
+                "blocked": True,
+                "reason": global_reason or 'RPM',
+                "remaining_seconds": int(remaining)
+            }
+        else:
+            blocks["global"] = {
+                "blocked": False,
+                "reason": None,
+                "remaining_seconds": 0
+            }
+
+        for model in models:
+            model_blocked = False
+            model_reason = None
+            model_remaining = 0.0
+            
+            try:
+                k_until, k_reason = self._get_redis_keys(key_val, model)
+                blocked_until_val = redis_client.get(k_until)
+                if blocked_until_val:
+                    try:
+                        blocked_until_time = float(blocked_until_val)
+                        if time.time() < blocked_until_time:
+                            model_blocked = True
+                            model_reason = redis_client.get(k_reason) or 'RPM'
+                            model_remaining = max(0.0, blocked_until_time - time.time())
+                    except ValueError:
+                        pass
+            except Exception:
+                pass
+                
+            if not model_blocked:
+                with self.lock:
+                    blocked_time = self.blocked_until.get((key_val, model), 0)
+                    if time.time() < blocked_time:
+                        model_blocked = True
+                        model_reason = self.block_reason.get((key_val, model), 'RPM')
+                        model_remaining = max(0.0, blocked_time - time.time())
+            
+            effective_blocked, effective_reason = self.is_key_blocked(key_val, model)
+            if effective_blocked:
+                if model_blocked:
+                    blocks[model] = {
+                        "blocked": True,
+                        "reason": model_reason,
+                        "remaining_seconds": int(model_remaining),
+                        "type": "model_specific"
+                    }
+                else:
+                    blocks[model] = {
+                        "blocked": True,
+                        "reason": global_reason,
+                        "remaining_seconds": int(blocks["global"]["remaining_seconds"]),
+                        "type": "global"
+                    }
+            else:
+                blocks[model] = {
+                    "blocked": False,
+                    "reason": None,
+                    "remaining_seconds": 0,
+                    "type": None
+                }
+        return blocks
+
 KEY_MANAGER = GlobalKeyManager()
 ACTIVE_CHATS_CANCEL_EVENTS = {}
 
@@ -3809,6 +3890,40 @@ def send_revocation_email(recipient_email, display_name):
         logger.info(f"SUCCESS: Revocation email sent successfully to {recipient_email}.")
     except Exception as e:
         logger.error(f"FAILURE sending revocation email: {str(e)}")
+
+@app.route('/api/admin/keys', methods=['GET'])
+def get_admin_keys():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    keys_to_report = []
+    
+    if PRIMARY_API_KEY:
+        keys_to_report.append({
+            'label': 'Primary API Key',
+            'value': PRIMARY_API_KEY
+        })
+        
+    for idx, key in enumerate(BACKUP_API_KEYS, start=1):
+        if key:
+            keys_to_report.append({
+                'label': f'Backup API Key {idx}',
+                'value': key
+            })
+            
+    response_data = []
+    for item in keys_to_report:
+        key_val = item['value']
+        masked = key_val[:8] + "..." + key_val[-4:] if len(key_val) > 12 else key_val
+        blocks = KEY_MANAGER.get_key_blocks(key_val, list(MODEL_NAMES.keys()))
+        
+        response_data.append({
+            'label': item['label'],
+            'masked': masked,
+            'blocks': blocks
+        })
+        
+    return jsonify(response_data), 200
 
 @app.route('/api/admin/waitlist', methods=['GET'])
 def get_admin_waitlist():

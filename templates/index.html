@@ -238,11 +238,56 @@
             &times;
           </button>
         </div>
+        <!-- Admin Dashboard Tabs -->
+        <div style="display: flex; gap: 15px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px;">
+          <button id="adminTabUsersBtn" style="
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          ">
+            <svg style="width: 18px; height: 18px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+            Users & Waitlist
+          </button>
+          <button id="adminTabKeysBtn" style="
+            background: transparent;
+            border: 1px solid transparent;
+            color: #888;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          ">
+            <svg style="width: 18px; height: 18px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m0 0a2 2 0 01-2 2m2-2h3m-3 4a2 2 0 012 2m0 0a2 2 0 01-2 2m2-2h3M3 12h1m8-9v1m8 8h1M2 9h1m8-9v1m-8 8H2m9 2a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M9 12a3 3 0 106 0 3 3 0 00-6 0z"></path></svg>
+            API Key Health
+          </button>
+        </div>
         <div
           id="waitlistContent"
           style="flex-grow: 1; overflow-y: auto; padding: 25px 10px 40px 0"
         >
           <div id="waitlistGrid" class="tool-grid">
+            <!-- Cards populated by JS -->
+          </div>
+        </div>
+        <div
+          id="keysContent"
+          style="display: none; flex-grow: 1; overflow-y: auto; padding: 25px 10px 40px 0"
+        >
+          <div id="keysGrid" class="tool-grid">
             <!-- Cards populated by JS -->
           </div>
         </div>
