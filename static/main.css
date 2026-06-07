@@ -3897,6 +3897,20 @@
         display: inline-block;
         width: 44px;
         height: 24px;
+        flex-shrink: 0;
+      }
+
+      .admin-badge {
+        background: rgba(0, 240, 144, 0.1);
+        color: #00F090;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        flex-shrink: 0;
+        white-space: nowrap;
       }
 
       .admin-toggle input {
@@ -3952,6 +3966,8 @@
         gap: 16px;
         position: relative;
         overflow: hidden;
+        width: 100%;
+        box-sizing: border-box;
       }
 
       .user-card:hover {
@@ -3964,11 +3980,14 @@
       .user-card-header {
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
       }
 
       .user-info {
         flex-grow: 1;
+        min-width: 0;
       }
 
       .user-name {
@@ -3977,12 +3996,18 @@
         font-size: 1.1rem;
         margin-bottom: 4px;
         display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .user-email {
         color: #888;
         font-size: 0.85rem;
         display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .user-stats {
@@ -5953,5 +5978,15 @@ header, .sidebar, .input-container, .message, .card, .glass-card, .chat-containe
     justify-content: flex-end;
     align-items: center;
     gap: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-modal-inner {
+    padding: 16px !important;
+  }
+  .tool-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
   }
 }

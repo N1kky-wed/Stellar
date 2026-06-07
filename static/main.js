@@ -6078,10 +6078,7 @@ const defaultAgentSettings = {
               card.className = "user-card";
 
               const rawName = user.display_name || user.username.split("@")[0];
-              const name =
-                rawName.length > 10
-                  ? rawName.substring(0, 10) + "..."
-                  : rawName;
+              const name = rawName;
               const email = user.username;
               const lastActive = formatDateTime(user.last_active || "Never");
               const chats = user.num_chats || 0;
@@ -6091,7 +6088,7 @@ const defaultAgentSettings = {
               const isSelf = user.username === sidebarUsername.textContent; // Using sidebarUsername as it holds current user's name/email
               const isAdmin = user.role === "admin";
               const toggleHtml = isAdmin
-                ? `<span style="background: rgba(0, 240, 144, 0.1); color: #00F090; padding: 4px 10px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Admin</span>`
+                ? `<span class="admin-badge">Admin</span>`
                 : `<label class="admin-toggle" title="${user.is_approved ? "Disable Access" : "Enable Access"}">
                                   <input type="checkbox" ${user.is_approved ? "checked" : ""} onchange="toggleUserAccess(${user.id}, this.checked)">
                                   <span class="admin-slider"></span>
