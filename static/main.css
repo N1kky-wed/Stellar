@@ -3847,20 +3847,33 @@
       .stellar-msg .message-content .code-controls svg,
       .stellar-msg .message-content .tool-spinner,
       .stellar-msg .message-content .katex svg,
-      .stellar-msg .message-content svg[class*="w-"],
-      .stellar-msg .message-content svg[class*="h-"],
-      .stellar-msg .message-content svg[style*="width"],
-      .stellar-msg .message-content svg[style*="height"],
       .stellar-msg .message-content svg.shrink-0 {
-        max-width: none;
-        width: revert;
-        height: revert;
-        display: inline-block;
-        margin: 0;
-        border-radius: 0;
-        transform: none;
-        background: none;
+        max-width: none !important;
+        display: inline-block !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+        transform: none !important;
+        background: none !important;
       }
+
+      /* Explicit overrides for common Tailwind width/height utility classes inside messages */
+      .stellar-msg .message-content svg.w-3 { width: 0.75rem !important; }
+      .stellar-msg .message-content svg.w-3\.5 { width: 0.875rem !important; }
+      .stellar-msg .message-content svg.w-4 { width: 1rem !important; }
+      .stellar-msg .message-content svg.w-5 { width: 1.25rem !important; }
+      .stellar-msg .message-content svg.w-6 { width: 1.5rem !important; }
+      .stellar-msg .message-content svg.w-8 { width: 2rem !important; }
+      .stellar-msg .message-content svg.w-10 { width: 2.5rem !important; }
+      .stellar-msg .message-content svg.w-12 { width: 3rem !important; }
+
+      .stellar-msg .message-content svg.h-3 { height: 0.75rem !important; }
+      .stellar-msg .message-content svg.h-3\.5 { height: 0.875rem !important; }
+      .stellar-msg .message-content svg.h-4 { height: 1rem !important; }
+      .stellar-msg .message-content svg.h-5 { height: 1.25rem !important; }
+      .stellar-msg .message-content svg.h-6 { height: 1.5rem !important; }
+      .stellar-msg .message-content svg.h-8 { height: 2rem !important; }
+      .stellar-msg .message-content svg.h-10 { height: 2.5rem !important; }
+      .stellar-msg .message-content svg.h-12 { height: 3rem !important; }
 
       .stellar-msg .message-content .code-controls svg {
         width: 12px;
