@@ -350,13 +350,12 @@ lab_execute(
 
 ### `web_search(action, status, timeout, ...)`
 
-**Unified OSINT and web intelligence suite** powered by Tavily and Google Search.
+**Unified OSINT and web intelligence suite** powered by Tavily.
 
 **Actions:**
 
 | Action | Description |
 |---|---|
-| `google_quick` | Fast answer via Gemini + Google Search grounding |
 | `tavily_search` | Deep semantic search with optional AI summary, image extraction, and date filtering |
 | `tavily_extract` | Full-page markdown/HTML extraction of up to 20 URLs simultaneously |
 | `tavily_crawl` | Recursive site crawling with configurable depth and path filters |

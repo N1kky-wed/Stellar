@@ -330,12 +330,57 @@ class GlobalKeyManager:
         self.blocked_until = {} 
         self.block_reason = {} 
         
+    def _get_redis_keys(self, key_val, model_id):
+        import hashlib
+        key_hash = hashlib.sha256(key_val.encode('utf-8')).hexdigest()
+        scope = model_id if model_id is not None else "global"
+        return f"stellar:blocked_until:{key_hash}:{scope}", f"stellar:block_reason:{key_hash}:{scope}"
+
     def block_key(self, key_val, model_id, duration_seconds, reason='RPM'):
+        if reason in ('RPD', 'INVALID'):
+            model_id = None
+            
         with self.lock:
             self.blocked_until[(key_val, model_id)] = time.time() + duration_seconds
             self.block_reason[(key_val, model_id)] = reason
             
+        try:
+            k_until, k_reason = self._get_redis_keys(key_val, model_id)
+            redis_client.setex(k_until, int(duration_seconds), str(time.time() + duration_seconds))
+            redis_client.setex(k_reason, int(duration_seconds), reason)
+        except Exception as e:
+            logger.error(f"Error writing key block to Redis: {e}")
+            
     def is_key_blocked(self, key_val, model_id):
+        # Try checking Redis first to coordinate between different processes
+        try:
+            k_until, k_reason = self._get_redis_keys(key_val, model_id)
+            blocked_until_val = redis_client.get(k_until)
+            if blocked_until_val:
+                try:
+                    blocked_until_time = float(blocked_until_val)
+                    if time.time() < blocked_until_time:
+                        reason = redis_client.get(k_reason) or 'RPM'
+                        return True, reason
+                except ValueError:
+                    pass
+            
+            # Check global block in Redis
+            if model_id is not None:
+                k_until_g, k_reason_g = self._get_redis_keys(key_val, None)
+                blocked_until_val_g = redis_client.get(k_until_g)
+                if blocked_until_val_g:
+                    try:
+                        blocked_until_time_g = float(blocked_until_val_g)
+                        if time.time() < blocked_until_time_g:
+                            reason = redis_client.get(k_reason_g) or 'RPM'
+                            return True, reason
+                    except ValueError:
+                        pass
+        except Exception as e:
+            logger.error(f"Error reading key block from Redis: {e}")
+
+        # Fallback to local process memory if Redis is unavailable or hasn't cached it
         with self.lock:
             # Check model-specific block first
             blocked_time = self.blocked_until.get((key_val, model_id), 0)
@@ -386,8 +431,9 @@ def get_seconds_until_pacific_midnight():
 def parse_quota_block_duration(error_msg):
     err_lower = error_msg.lower()
     if ('requestsperday' in err_lower or 'requests per day' in err_lower or 
-        'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower):
-        # Daily limit: Block until the next Pacific Midnight reset time
+        'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower or
+        'exceeded your current quota' in err_lower or 'billing details' in err_lower or 'quota/rate limits' in err_lower):
+        # Daily limit / Quota exhaustion: Block until the next Pacific Midnight reset time
         duration = get_seconds_until_pacific_midnight()
         return duration, 'RPD'
     elif ('overloaded' in err_lower or '503' in err_lower or 'service unavailable' in err_lower or 'service_unavailable' in err_lower):

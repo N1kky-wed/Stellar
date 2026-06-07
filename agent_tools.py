@@ -87,7 +87,7 @@ def web_search(
     """Unified Web Search, Extraction, Crawling, and Mapping Tool.
     
     Args:
-        action: 'google_quick', 'tavily_search', 'tavily_extract', 'tavily_crawl', 'tavily_map'.
+        action: 'tavily_search', 'tavily_extract', 'tavily_crawl', 'tavily_map'.
         status: Status update for the user.
         query: Search term or semantic intent.
         url: Root URL for crawl/map.
@@ -119,43 +119,6 @@ def web_search(
         timeout: Wait time in seconds before failing.
     """
     try:
-        # 1. Google Quick Search
-        if action == "google_quick":
-            if not query: return json.dumps({"error": "Missing 'query' for google_quick"})
-            from app import PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER, parse_quota_block_duration
-            raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
-            keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
-            
-            model_id = 'gemini-3.1-flash-lite'
-            active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, model_id)[0]]
-            if not active_keys:
-                active_keys = keys_to_try
-            keys_to_try = active_keys
-            
-            last_error = None
-            for current_key in keys_to_try:
-                try:
-                    client = genai.Client(api_key=current_key)
-                    response = client.models.generate_content(
-                        model=model_id,
-                        contents=f"Please answer this concisely using Google Search: {query}",
-                        config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
-                    )
-                    return json.dumps({"tool": "google_quick", "answer": response.text})
-                except Exception as e:
-                    logger.error(f"Error in google_quick tool: {e}", exc_info=True)
-                    error_string = str(e).lower()
-                    if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
-                        block_duration, block_reason = parse_quota_block_duration(error_string)
-                        block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
-                        KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                        logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in google_quick.")
-                        last_error = e
-                        continue
-                    return json.dumps({"error": f"Error: {str(e)}"})
-            
-            return json.dumps({"error": f"All API keys exhausted. Last error: {str(last_error)}"})
-
         from app import TAVILY_API_KEY, TAVILY_BACKUP_API_KEYS
         tavily_keys = [TAVILY_API_KEY] + [bk for bk in TAVILY_BACKUP_API_KEYS if bk]
         tavily_keys = [k for k in dict.fromkeys(tavily_keys) if k]
