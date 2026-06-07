@@ -785,6 +785,7 @@
       #chatList::-webkit-scrollbar,
       #profileModal::-webkit-scrollbar,
       #waitlistContent::-webkit-scrollbar,
+      #keysContent::-webkit-scrollbar,
       #logsPrefsList::-webkit-scrollbar {
         width: 8px;
         height: 8px;
@@ -803,6 +804,7 @@
       #chatList::-webkit-scrollbar-track,
       #profileModal::-webkit-scrollbar-track,
       #waitlistContent::-webkit-scrollbar-track,
+      #keysContent::-webkit-scrollbar-track,
       #logsPrefsList::-webkit-scrollbar-track {
         background: var(--scrollbar-track-bg);
         border-radius: 0px;
@@ -821,6 +823,7 @@
       #chatList::-webkit-scrollbar-thumb,
       #profileModal::-webkit-scrollbar-thumb,
       #waitlistContent::-webkit-scrollbar-thumb,
+      #keysContent::-webkit-scrollbar-thumb,
       #logsPrefsList::-webkit-scrollbar-thumb {
         background: linear-gradient(
           var(--scrollbar-thumb-start),
@@ -843,6 +846,7 @@
       #chatList::-webkit-scrollbar-thumb:hover,
       #profileModal::-webkit-scrollbar-thumb:hover,
       #waitlistContent::-webkit-scrollbar-thumb:hover,
+      #keysContent::-webkit-scrollbar-thumb:hover,
       #logsPrefsList::-webkit-scrollbar-thumb:hover {
         background: linear-gradient(
           var(--scrollbar-thumb-hover-start),

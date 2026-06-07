@@ -511,9 +511,13 @@ def get_seconds_until_pacific_midnight():
 
 def parse_quota_block_duration(error_msg):
     err_lower = error_msg.lower()
-    if ('requestsperday' in err_lower or 'requests per day' in err_lower or 
-        'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower or
-        'exceeded your current quota' in err_lower or 'billing details' in err_lower or 'quota/rate limits' in err_lower):
+    if ('minute' in err_lower or 'queries per minute' in err_lower or 
+        'rpm' in err_lower or 'tpm' in err_lower or 'queriesperminute' in err_lower):
+        # Minute limit / TPM / RPM: Block for 60 seconds
+        return 60, 'RPM'
+    elif ('requestsperday' in err_lower or 'requests per day' in err_lower or 
+          'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower or
+          'exceeded your current quota' in err_lower or 'billing details' in err_lower or 'quota/rate limits' in err_lower):
         # Daily limit / Quota exhaustion: Block until the next Pacific Midnight reset time
         duration = get_seconds_until_pacific_midnight()
         return duration, 'RPD'
