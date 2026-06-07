@@ -5740,8 +5740,16 @@ const defaultAgentSettings = {
                 "gemini-3.5-flash": "Obsidian (Gemini-3.5)"
               };
 
-              Object.entries(keyData.blocks).forEach(([modelId, status]) => {
-                if (modelId === "global") return;
+              const orderedModelIds = [
+                "gemini-3.5-flash",
+                "gemini-3-flash-preview",
+                "gemma-4-31b-it",
+                "gemini-3.1-flash-lite"
+              ];
+
+              orderedModelIds.forEach((modelId) => {
+                const status = keyData.blocks[modelId];
+                if (!status) return;
                 
                 const friendlyName = modelNamesMap[modelId] || modelId;
                 let statusClass = "active";
