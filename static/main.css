@@ -3845,7 +3845,6 @@
 
       /* Prevent general SVG styling from breaking UI icons and KaTeX */
       .stellar-msg .message-content .code-controls svg,
-      .stellar-msg .message-content .tool-spinner,
       .stellar-msg .message-content .katex svg,
       .stellar-msg .message-content svg.shrink-0 {
         max-width: none !important;
@@ -3853,6 +3852,14 @@
         margin: 0 !important;
         border-radius: 0 !important;
         transform: none !important;
+        background: none !important;
+      }
+
+      .stellar-msg .message-content .tool-spinner {
+        max-width: none !important;
+        display: inline-block !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
         background: none !important;
       }
 
@@ -3880,8 +3887,7 @@
         height: 12px;
       }
 
-      .stellar-msg .message-content .code-controls svg:hover,
-      .stellar-msg .message-content .tool-spinner:hover {
+      .stellar-msg .message-content .code-controls svg:hover {
         transform: none;
       }
 
