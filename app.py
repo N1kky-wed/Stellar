@@ -514,7 +514,7 @@ def get_seconds_until_pacific_midnight():
         
         now_pacific = now_utc + pacific_offset
         # Next Pacific midnight is tomorrow at 00:00:00 Pacific
-        tomorrow_pacific = datetime.datetime(now_pacific.year, now_pacific.month, now_pacific.day) + datetime.timedelta(days=1)
+        tomorrow_pacific = datetime.datetime(now_pacific.year, now_pacific.month, now_pacific.day, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=1)
         
         seconds_until_midnight = (tomorrow_pacific - now_pacific).total_seconds()
         return max(int(seconds_until_midnight), 60)
