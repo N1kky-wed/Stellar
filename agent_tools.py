@@ -624,6 +624,174 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
     return f"Error: All API keys exhausted. Last error: {str(last_error)}"
 
 
+def report_process_issue(topic: str, issue_description: str, technical_context: str, status: str, timeout: int) -> str:
+    """Reports technical bottlenecks, process failures, or feedback on internal tool execution.
+    Args:
+        topic: A concise label for the issue (e.g., 'SIGKILL', 'Path Alignment', 'Port Latency').
+        issue_description: A detailed explanation of what went wrong and how it impacted the task.
+        technical_context: Raw logs, error codes, environment details, or reproduction steps.
+        status: Status update for the user.
+    """
+    import sqlite3
+    from app import DATABASE_NAME
+    from flask import g, has_request_context, session
+    
+    u_id = None
+    c_id = None
+
+    if has_request_context():
+        u_id = session.get('user_id')
+        c_id = session.get('current_chat_id')
+
+    if not u_id: u_id = getattr(g, 'user_id', None)
+    if not c_id: c_id = getattr(g, 'chat_id', None)
+
+    try:
+        conn = sqlite3.connect(DATABASE_NAME)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+
+        conn.execute('''
+            INSERT INTO agent_feedback (user_id, chat_id, topic, issue_description, technical_context, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (u_id, c_id, topic, issue_description, technical_context, 'open'))
+
+        conn.commit()
+        conn.close()
+
+        import subprocess
+        import os
+        import sys
+        resolver_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.py')
+        log_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.log')
+        with open(log_path, 'a') as log_file:
+            subprocess.Popen([sys.executable, resolver_path], stdout=log_file, stderr=log_file)
+
+        return "Feedback successfully reported and stored for developer review."
+    except Exception as e:
+        logger.exception("Error caught: %s", e)
+        return f"Error reporting feedback: {str(e)}"
+
+def compress_memory(target: str, state_document: str, status: str, timeout: int) -> str:
+    """Compresses the chat's memory by archiving old tool logs and/or messages.
+    Called when the system warns that context window usage is high.
+    Preserves a structured state document so critical context is not lost.
+    
+    Args:
+        target: What to compress. Must be one of: 'tool_logs', 'chat_messages', or 'both'.
+        state_document: A structured summary preserving current objective, key discoveries, modified files, and pending blockers.
+        status: Status update for the user.
+        timeout: Execution timeout in seconds.
+    """
+    import sqlite3
+    try:
+        from flask import g
+        from app import DATABASE_NAME
+        
+        chat_id = getattr(g, 'chat_id', None)
+        if not chat_id:
+            return "Error: No active chat session found."
+        
+        if target not in ['tool_logs', 'chat_messages', 'both']:
+            return f"Error: Invalid target '{target}'. Must be 'tool_logs', 'chat_messages', or 'both'."
+        
+        if not state_document or len(state_document.strip()) < 50:
+            return "Error: state_document is too short. You must write a thorough summary of the current state before compressing."
+        
+        conn = sqlite3.connect(DATABASE_NAME)
+        conn.row_factory = sqlite3.Row
+        tools_archived = 0
+        msgs_archived = 0
+        
+        if target in ['tool_logs', 'both']:
+            # Hide all tool calls EXCEPT the 10 most recent
+            cursor = conn.execute(
+                'SELECT id FROM tool_calls WHERE chat_id = ? AND hidden = 0 ORDER BY id DESC LIMIT 10',
+                (chat_id,)
+            )
+            keep_ids = [row['id'] for row in cursor.fetchall()]
+            
+            if keep_ids:
+                placeholders = ','.join('?' * len(keep_ids))
+                cursor = conn.execute(
+                    f'UPDATE tool_calls SET hidden = 1 WHERE chat_id = ? AND hidden = 0 AND id NOT IN ({placeholders})',
+                    [chat_id] + keep_ids
+                )
+            else:
+                cursor = conn.execute(
+                    'UPDATE tool_calls SET hidden = 1 WHERE chat_id = ? AND hidden = 0',
+                    (chat_id,)
+                )
+            tools_archived = cursor.rowcount
+        
+        if target in ['chat_messages', 'both']:
+            cursor = conn.execute(
+                'SELECT id, message_type, message_content, timestamp FROM messages WHERE chat_id = ? AND hidden = 0 ORDER BY id ASC',
+                (chat_id,)
+            )
+            all_msgs = cursor.fetchall()
+            if len(all_msgs) > 4:
+                msgs_to_archive = all_msgs[:-4]
+                keep_ids = [row['id'] for row in all_msgs[-4:]]
+                
+                archived_messages_text = "\n--- COMPRESSION EVENT ---\n"
+                for m in msgs_to_archive:
+                    role = 'User' if m['message_type'] == 'user' else 'Stellar'
+                    archived_messages_text += f"[{m['timestamp']}] {role}:\n{m['message_content']}\n\n"
+                
+                # Write to lab workspace
+                try:
+                    import re
+                    import os
+                    from app import SANDBOX_DIR
+                    
+                    u_id = getattr(g, 'user_id', None)
+                    if not u_id:
+                        u_cursor = conn.execute('SELECT user_id FROM chats WHERE id = ?', (chat_id,))
+                        u_row = u_cursor.fetchone()
+                        if u_row:
+                            u_id = u_row['user_id']
+                            
+                    clean_uid = re.sub(r'[^a-zA-Z0-9]', '', str(u_id)) if u_id else "anon"
+                    clean_cid = re.sub(r'[^a-zA-Z0-9]', '', str(chat_id))
+                    workspace_name = f"lab_workspace_u{clean_uid}_c{clean_cid}"
+                    lab_workspace = os.path.abspath(os.path.join(SANDBOX_DIR, workspace_name))
+                    os.makedirs(lab_workspace, exist_ok=True)
+                    
+                    archive_path = os.path.join(lab_workspace, 'chat_history_archive.txt')
+                    with open(archive_path, 'a') as f:
+                        f.write(archived_messages_text)
+                except Exception as lab_err:
+                    logger.error("Failed to write archive to lab: %s", lab_err)
+                
+                placeholders = ','.join('?' * len(keep_ids))
+                cursor = conn.execute(
+                    f'UPDATE messages SET hidden = 1 WHERE chat_id = ? AND hidden = 0 AND id NOT IN ({placeholders})',
+                    [chat_id] + keep_ids
+                )
+                msgs_archived = cursor.rowcount
+        
+        # Insert the state document as a hidden stellar message
+        conn.execute(
+            'INSERT INTO messages (chat_id, message_type, message_content, hidden) VALUES (?, ?, ?, ?)',
+            (chat_id, 'stellar', '[COMPRESSED MEMORY STATE]\n' + state_document, 1)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        # Recalculate and update the token count in the DB so the UI sidebar updates immediately
+        try:
+            from app import count_chat_tokens
+            count_chat_tokens(chat_id)
+        except Exception as update_err:
+            logger.error("Could not update token count after compression: %s", update_err)
+            
+        return f"Memory compressed successfully. Target: {target}. {tools_archived} tool calls archived. {msgs_archived} messages archived. State document preserved. Continue with your task."
+    except Exception as e:
+        logger.exception("Error caught: %s", e)
+        return f"Error compressing memory: {str(e)}"
+
 
 def logs_and_preferences(status: str, timeout: int, write: str = "", user_id: str = "global") -> str:
     """Stores user preferences, previous errors, and resolution strategies. Memory is automatically provided to your context.
