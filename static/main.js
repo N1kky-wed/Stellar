@@ -917,6 +917,93 @@ const defaultAgentSettings = {
         }
       });
 
+      // --- Safe Script Deferral Lexical Scanner ---
+      function deferScriptsInHtml(html) {
+        if (!html) return "";
+        let result = "";
+        let i = 0;
+        while (i < html.length) {
+          const scriptOpenMatch = html.slice(i).match(/^<script\b[^>]*>/i);
+          if (scriptOpenMatch) {
+            const openTag = scriptOpenMatch[0];
+            i += openTag.length;
+            
+            let inString = null;
+            let inComment = null;
+            let scriptContent = "";
+            let closed = false;
+            
+            while (i < html.length) {
+              if (!inString && !inComment && html.slice(i).toLowerCase().startsWith("</script>")) {
+                i += 9;
+                try {
+                  const encoded = btoa(unescape(encodeURIComponent(scriptContent)));
+                  const attributesStr = openTag.slice(openTag.indexOf("script") + 6, -1).trim();
+                  const encodedAttrs = btoa(unescape(encodeURIComponent(attributesStr || "")));
+                  result += `<div class="deferred-script" style="display:none;" data-script="${encoded}" data-attributes="${encodedAttrs}"></div>`;
+                } catch (e) {
+                  console.error("Failed to encode script:", e);
+                }
+                closed = true;
+                break;
+              }
+              
+              const char = html[i];
+              const nextChar = html[i+1];
+              
+              if (!inString) {
+                if (inComment === 'single' && char === '\n') {
+                  inComment = null;
+                } else if (inComment === 'multi' && char === '*' && nextChar === '/') {
+                  inComment = null;
+                  scriptContent += "*/";
+                  i += 2;
+                  continue;
+                } else if (!inComment) {
+                  if (char === '/' && nextChar === '/') {
+                    inComment = 'single';
+                    scriptContent += "//";
+                    i += 2;
+                    continue;
+                  } else if (char === '/' && nextChar === '*') {
+                    inComment = 'multi';
+                    scriptContent += "/*";
+                    i += 2;
+                    continue;
+                  }
+                }
+              }
+              
+              if (!inComment) {
+                if (inString) {
+                  if (char === '\\') {
+                    scriptContent += html.slice(i, i+2);
+                    i += 2;
+                    continue;
+                  } else if (char === inString) {
+                    inString = null;
+                  }
+                } else {
+                  if (char === "'" || char === '"' || char === '`') {
+                    inString = char;
+                  }
+                }
+              }
+              
+              scriptContent += char;
+              i++;
+            }
+            if (!closed) {
+              result += openTag + scriptContent;
+            }
+          } else {
+            result += html[i];
+            i++;
+          }
+        }
+        return result;
+      }
+
       // --- Protect Math and SVG Blocks from Marked.js Escaping ---
       const originalMarkedParse = marked.parse;
       marked.parse = function (text, options) {
@@ -1006,17 +1093,7 @@ const defaultAgentSettings = {
         );
 
         // 6. Defer any script tags to prevent HTML parser leaks and premature termination
-        const scriptRegex = /<script\b([^>]*?)>([\s\S]*?)(?<!\\)<\/script>/gi;
-        html = html.replace(scriptRegex, (match, attributes, scriptContent) => {
-          try {
-            const encoded = btoa(unescape(encodeURIComponent(scriptContent)));
-            const encodedAttrs = btoa(unescape(encodeURIComponent(attributes || "")));
-            return `<div class="deferred-script" style="display:none;" data-script="${encoded}" data-attributes="${encodedAttrs}"></div>`;
-          } catch (e) {
-            console.error("Failed to defer script block:", e);
-            return match;
-          }
-        });
+        html = deferScriptsInHtml(html);
 
         return html;
       };
