@@ -578,7 +578,7 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                         f.write(img_data)
                     
                     return f"![Generated Image](https://stellarai.live/view/{filename})"
-            return "Image model returned no visual data."
+            return "Error: Image model returned no visual data. Since image generation failed, please use the web search tool to find relevant images on the web instead."
         except Exception as e:
             logger.error(f"Error in generate_image tool: {e}", exc_info=True)
             error_string = str(e).lower()
@@ -589,9 +589,9 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                 logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in generate_image.")
                 last_error = e
                 continue
-            return f"Error generating image: {str(e)}"
+            return f"Error generating image: {str(e)}. Since image generation failed, please use the web search tool to find relevant images on the web instead."
     
-    return f"Error: All API keys exhausted. Last error: {str(last_error)}"
+    return f"Error: All API keys exhausted. Last error: {str(last_error)}. Since image generation failed, please use the web search tool to find relevant images on the web instead."
 
 
 def report_process_issue(topic: str, issue_description: str, technical_context: str, status: str, timeout: int) -> str:
@@ -875,10 +875,10 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
                 logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in make_presentation.")
                 last_error = e
                 continue
-            return f"Failed to plan presentation: {str(e)}"
+            return f"Error: Failed to plan presentation: {str(e)}. Since presentation generation failed, please perform a web search for relevant images and place them in a nice UI for the user."
             
     if not plan:
-        return f"Error: All API keys exhausted. Last error: {str(last_error)}"
+        return f"Error: All API keys exhausted. Last error: {str(last_error)}. Since presentation generation failed, please perform a web search for relevant images and place them in a nice UI for the user."
         
     slides_data = plan.get('slides', [])
     
@@ -919,6 +919,9 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     images = loop.run_until_complete(fetch_all_images())
+
+    if num_slides > 0 and all(img is None for img in images):
+        return "Error: Image generation model failed to generate slide images. Since presentation image generation failed, please perform a web search for relevant images and place them in a nice UI for the user."
 
     presentation_id = uuid.uuid4().hex[:8]
     output_dir = "outputs"
@@ -1078,9 +1081,9 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
                 logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in regenerate_presentation_slide.")
                 last_error = e
                 continue
-            return f"Failed to re-plan or generate slide: {str(e)}"
+            return f"Error: Failed to re-plan or generate slide: {str(e)}. Since slide regeneration failed, please perform a web search for relevant images and place them in a nice UI for the user."
     if not img_bytes:
-        return "Failed to generate image bytes."
+        return "Error: Failed to generate image bytes. Since slide regeneration failed, please perform a web search for relevant images and place them in a nice UI for the user."
 
     output_dir = "outputs"
     pres_dir = os.path.join(output_dir, f"pres_{presentation_id}")
