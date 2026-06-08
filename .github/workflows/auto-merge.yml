@@ -12,6 +12,8 @@ jobs:
       pull-requests: write
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Enable auto-merge
         run: gh pr merge --auto --squash "${{ github.event.pull_request.number }}"
         env:
