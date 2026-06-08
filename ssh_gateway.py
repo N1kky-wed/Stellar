@@ -34,16 +34,19 @@ import select
 import signal
 import sqlite3
 import secrets
+import shutil
 from io import StringIO
 from datetime import datetime
 
 import redis
 import docker
-from rich.console import Console
+from rich.console import Console, Group
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 from rich.align import Align
+from rich.rule import Rule
+from rich.columns import Columns
 from rich import box
 
 # ============================================================
@@ -317,180 +320,358 @@ class StellarSSHServer(paramiko.ServerInterface):
 # ============================================================
 # TUI Renderer (uses Rich → StringIO → channel)
 # ============================================================
+from rich.columns import Columns
+from rich.console import Group
+
 class TUI:
     """Renders beautiful terminal UI screens via Rich."""
 
-    LOGO = r"""
-   _____ _______ ______ _      _               _____  
-  / ____|__   __|  ____| |    | |      /\     |  __ \ 
- | (___    | |  | |__  | |    | |     /  \    | |__) |
-  \___ \   | |  |  __| | |    | |    / /\ \   |  _  / 
-  ____) |  | |  | |____| |____| |___/ ____ \  | | \ \ 
- |_____/   |_|  |______|______|______/_/    \_\_|  \_\
+    THEMES = [
+        {
+            "name": "Stellar Classic",
+            "bg": "#0E0E0E",
+            "border": "#444444",
+            "primary": "#E38B68",
+            "accent": "#6ECFFF",
+            "text": "white",
+            "dim": "#888888"
+        },
+        {
+            "name": "Midnight Cyan",
+            "bg": "#001A33",
+            "border": "#007ACC",
+            "primary": "#00FFFF",
+            "accent": "white",
+            "text": "white",
+            "dim": "#6699CC"
+        },
+        {
+            "name": "Matrix Green",
+            "bg": "black",
+            "border": "green",
+            "primary": "bright_green",
+            "accent": "#CCFF00",
+            "text": "green",
+            "dim": "dark_green"
+        },
+        {
+            "name": "Monochrome",
+            "bg": "black",
+            "border": "white",
+            "primary": "white",
+            "accent": "grey74",
+            "text": "white",
+            "dim": "grey50"
+        }
+    ]
+
+    BORDER_COLORS = [
+        {"name": "Theme Default", "value": None},
+        {"name": "Bright Blue", "value": "bright_blue"},
+        {"name": "Cyan", "value": "cyan"},
+        {"name": "Green", "value": "green"},
+        {"name": "Magenta", "value": "magenta"},
+        {"name": "Red", "value": "red"},
+        {"name": "White", "value": "white"}
+    ]
+
+    @staticmethod
+    def get_logo(theme: dict) -> str:
+        return f"[bold {theme['primary']}]Stellar[/bold {theme['primary']}] [{theme['dim']}]Code[/{theme['dim']}]"
+
+    @staticmethod
+    def get_big_logo(theme: dict) -> str:
+        c = theme['primary']
+        return f"""
+ [bold {c}]███████╗████████╗███████╗██╗     ██╗      █████╗ ██████╗ [/bold {c}]
+ [bold {c}]██╔════╝╚══██╔══╝██╔════╝██║     ██║     ██╔══██╗██╔══██╗[/bold {c}]
+ [bold {c}]███████╗   ██║   █████╗  ██║     ██║     ███████║██████╔╝[/bold {c}]
+ [bold {c}]╚════██║   ██║   ██╔══╝  ██║     ██║     ██╔══██║██╔══██╗[/bold {c}]
+ [bold {c}]███████║   ██║   ███████╗███████╗███████╗██║  ██║██║  ██║[/bold {c}]
+ [bold {c}]╚══════╝   ╚═╝   ╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝[/bold {c}]
 """
 
     @staticmethod
-    def _render(width: int, callback) -> str:
-        """Render rich output to string."""
+    def _render(width: int, height: int, content, theme: dict) -> str:
+        """Wrap content in a themed box and render to string, filling the screen."""
+        from rich.align import Align
         buf = StringIO()
         console = Console(
             file=buf,
-            width=max(40, width),
+            width=width,
             force_terminal=True,
             color_system="256",
             highlight=False,
+            legacy_windows=False
         )
-        callback(console)
+        
+        # Wrap everything in the master "app box"
+        panel = Panel(
+            content,
+            style=f"{theme['text']} on {theme['bg']}",
+            border_style=theme['border'],
+            box=box.DOUBLE,
+            padding=(1, 2),
+            expand=True,
+            height=height
+        )
+        console.print(panel)
         return buf.getvalue()
 
     @staticmethod
-    def auth_screen(width: int, height: int, error_msg: str = "") -> str:
-        def draw(c):
-            c.print()
-            c.print(Align.center(Text(TUI.LOGO, style="bold cyan")))
-            c.print(Align.center(Text("SSH Terminal Gateway", style="bold white on dark_blue")))
-            c.print()
-            auth_text = "[bold yellow]Visit[/bold yellow] [bold underline cyan]https://stellarai.live/auth/ssh[/bold underline cyan] [bold yellow]· Generate Code · Paste it below[/bold yellow]"
-            c.print(Align.center(Panel(
-                auth_text,
-                title="[bold white]Authentication Required[/bold white]",
-                border_style="bright_blue",
-                width=min(58, width - 4),
-                padding=(1, 2),
-            )))
-            if error_msg:
-                c.print()
-                c.print(Align.center(Text(f"✗ {error_msg}", style="bold red")))
-            c.print()
-
-        return TUI._render(width, draw)
-
-    @staticmethod
-    def dashboard(repos: list, selected: int, username: str, width: int, height: int, status_msg: str = "") -> str:
-        def draw(c):
-            # Header
-            c.print(Panel(
-                Align.center(Text(f"  Stellar — {username}'s Deployments", style="bold white")),
-                style="bright_blue",
-                box=box.DOUBLE,
-            ))
-
-            if not repos:
-                c.print()
-                c.print(Align.center(Panel(
-                    "[dim italic]No deployments found. Deploy something with Stellar first![/dim italic]",
-                    border_style="dim",
-                    width=min(60, width - 4),
-                )))
+    def theme_picker(selected_theme: int, selected_border: int, focus: str, width: int, height: int, is_default: bool = False) -> str:
+        base_theme = TUI.THEMES[selected_theme]
+        border_override = TUI.BORDER_COLORS[selected_border]["value"]
+        
+        theme = base_theme.copy()
+        if border_override:
+            theme["border"] = border_override
+        
+        # Left side: Lists
+        list_text = Text()
+        list_text.append("\n  Select Theme:\n\n", style=f"bold {theme['text']}")
+        for i, t in enumerate(TUI.THEMES):
+            if i == selected_theme:
+                marker = "▸" if focus == "theme" else " "
+                list_text.append(f"    {marker} {t['name']}\n", style=f"bold {theme['accent']}")
             else:
-                table = Table(
-                    box=box.ROUNDED,
-                    show_header=True,
-                    header_style="bold cyan",
-                    border_style="bright_blue",
-                    width=min(78, width - 4),
-                    pad_edge=True,
-                )
-                table.add_column("", width=2, no_wrap=True)
-                table.add_column("Project", style="white", min_width=12, ratio=3)
-                table.add_column("Status", justify="center", width=12, no_wrap=True)
-                table.add_column("Subdomain", style="dim cyan", ratio=2)
-                table.add_column("Type", justify="center", width=8)
-                table.add_column("Created", style="dim", width=10)
+                list_text.append(f"      {t['name']}\n", style=theme['dim'])
+                
+        list_text.append("\n  Select Border Color:\n\n", style=f"bold {theme['text']}")
+        for i, b in enumerate(TUI.BORDER_COLORS):
+            if i == selected_border:
+                marker = "▸" if focus == "border" else " "
+                color_style = b["value"] if b["value"] else theme['text']
+                list_text.append(f"    {marker} {b['name']}\n", style=f"bold {color_style}")
+            else:
+                color_style = b["value"] if b["value"] else theme['dim']
+                list_text.append(f"      {b['name']}\n", style=color_style)
 
-                for i, repo in enumerate(repos):
-                    is_sel = (i == selected)
-                    marker = "▸" if is_sel else " "
-                    row_style = "reverse bold" if is_sel else ""
+        checkbox = "[x]" if is_default else "[ ]"
+        list_text.append(f"\n  {checkbox} Set as Default\n", style=f"bold {theme['accent']}" if is_default else theme['dim'])
 
-                    live_status = get_container_status(repo['process_id'], repo.get('app_type', 'repo'))
-                    if live_status == 'running':
-                        status_text = Text("● Running", style="bold green")
-                    elif live_status == 'exited':
-                        status_text = Text("○ Stopped", style="bold red")
-                    elif live_status == 'not_found':
-                        status_text = Text("✗ Removed", style="dim red")
-                    else:
-                        status_text = Text(f"? {live_status}", style="yellow")
+        list_text.append(f"\n  ↑↓ Navigate | ←→ Switch List | Space Toggle Default | Enter Confirm", style=theme['dim'])
 
-                    table.add_row(
-                        Text(marker, style="bold cyan" if is_sel else ""),
-                        Text(repo['name'], style=row_style),
-                        status_text,
-                        Text(repo['subdomain'], style=row_style if is_sel else "dim cyan"),
-                        Text(repo['app_type'], style=row_style if is_sel else ""),
-                        Text(repo['created'], style=row_style if is_sel else "dim"),
-                    )
+        # Right side: Preview Box
+        preview_header = Text.from_markup(f"{TUI.get_logo(theme)}\n[{theme['dim']}]──────────────────────────────[/{theme['dim']}]\n")
+        
+        preview_table = Table(
+            box=box.ROUNDED,
+            show_header=True,
+            header_style=f"bold {theme['primary']}",
+            border_style=theme['border'],
+            expand=True,
+            padding=(0, 1)
+        )
+        preview_table.add_column("Project", style=theme['text'])
+        preview_table.add_column("Status")
+        
+        preview_table.add_row(f"[bold {theme['text']}]▸ Project Alpha[/bold {theme['text']}]", f"[green]●[/green] [{theme['text']}]Running[/{theme['text']}]")
+        preview_table.add_row("", "")
+        preview_table.add_row(f"  Project Beta", f"[red]○[/red] [{theme['dim']}]Stopped[/{theme['dim']}]")
 
-                c.print(Align.center(table))
+        preview_group = Group(preview_header, preview_table)
 
-            c.print()
+        preview_panel = Panel(
+            preview_group,
+            title=f"Preview",
+            title_align="left",
+            style=f"{theme['text']} on {theme['bg']}",
+            border_style=theme['border'],
+            box=box.ROUNDED,
+            width=40,
+            padding=(1, 2)
+        )
 
-            # Status message
-            if status_msg:
-                c.print(Align.center(Text(status_msg, style="bold yellow")))
-                c.print()
-
-            # Controls
-            controls = Text()
-            controls.append(" ↑↓ ", style="bold black on white")
-            controls.append(" Navigate  ", style="dim")
-            controls.append(" Enter ", style="bold black on cyan")
-            controls.append(" Connect  ", style="dim")
-            controls.append(" L ", style="bold black on yellow")
-            controls.append(" Logs  ", style="dim")
-            controls.append(" R ", style="bold black on green")
-            controls.append(" Restart  ", style="dim")
-            controls.append(" S ", style="bold black on red")
-            controls.append(" Stop  ", style="dim")
-            controls.append(" Q ", style="bold black on white")
-            controls.append(" Quit", style="dim")
-            c.print(Align.center(controls))
-
-        return TUI._render(width, draw)
+        cols = Columns([list_text, preview_panel], expand=True)
+        from rich.align import Align
+        return TUI._render(width, height, Align(cols, vertical="middle"), theme)
 
     @staticmethod
-    def connecting_screen(repo_name: str, width: int) -> str:
-        def draw(c):
-            c.print()
-            c.print(Align.center(Panel(
-                f"[bold cyan]Connecting to [bold white]{repo_name}[/bold white]...[/bold cyan]\n\n"
-                "[dim]Press [bold]Ctrl+D[/bold] or type [bold]exit[/bold] to return to dashboard[/dim]",
-                border_style="bright_blue",
-                width=min(55, width - 4),
-                padding=(1, 2),
-            )))
-
-        return TUI._render(width, draw)
+    def auth_screen(width: int, height: int, typed_code: str = "", error_msg: str = "", theme: dict = None) -> str:
+        if not theme: theme = TUI.THEMES[0]
+        content = Text.from_markup(TUI.get_big_logo(theme) + "\n", justify="center")
+        content.append("\nAuthentication required\n", style=f"bold {theme['text']}")
+        content.append(f"Visit ", style=theme['dim'])
+        content.append("https://stellarai.live/auth/ssh", style=f"bold underline {theme['accent']}")
+        content.append(f"\nto generate your one-time access code.\n\n", style=theme['dim'])
+        
+        # Format code
+        display_chars = []
+        for i in range(6):
+            if i < len(typed_code):
+                display_chars.append(f"[bold {theme['accent']}]{typed_code[i]}[/bold {theme['accent']}]")
+            else:
+                display_chars.append(f"[{theme['dim']}]_[/{theme['dim']}]")
+                
+        formatted = f"{display_chars[0]} {display_chars[1]} {display_chars[2]} [{theme['dim']}]-[/{theme['dim']}] {display_chars[3]} {display_chars[4]} {display_chars[5]}"
+        content.append(Text.from_markup(f"Enter Code: {formatted}"))
+        
+        if error_msg:
+            content.append(f"\n\n[bold red]![/bold red] {error_msg}")
+            
+        from rich.align import Align
+        return TUI._render(width, height, Align(content, vertical="middle", align="center"), theme)
 
     @staticmethod
-    def log_viewer_header(repo_name: str, width: int) -> str:
-        def draw(c):
-            c.print(Panel(
-                Align.center(Text(f"  Logs: {repo_name}", style="bold white")),
-                style="yellow",
-                box=box.HEAVY,
-            ))
-            c.print(Align.center(Text(" Press Q or Ctrl+C to return to dashboard ", style="dim")))
-            c.print()
+    def dashboard(repos: list, selected: int, username: str, width: int, height: int, status_msg: str = "", theme: dict = None, search_query: str = "", filter_state: str = "All", sort_state: str = "Name", mode: str = "NORMAL", status_map: dict = None) -> str:
+        if not theme: theme = TUI.THEMES[0]
+        
+        header_table = Table.grid(expand=True)
+        header_table.add_column(justify="left")
+        header_table.add_column(justify="right")
+        
+        user_info = Text.from_markup(f"  {TUI.get_logo(theme)} [{theme['dim']}]›[/{theme['dim']}] [{theme['text']}]{username}[/{theme['text']}]")
+        
+        filters_disp = Text()
+        filters_disp.append(f"Filter: {filter_state}  ", style=f"bold {theme['accent']}" if filter_state != "All" else theme['dim'])
+        filters_disp.append(f"Sort: {sort_state}  ", style=f"bold {theme['accent']}" if sort_state != "Name" else theme['dim'])
+        
+        header_table.add_row(user_info, filters_disp)
 
-        return TUI._render(width, draw)
+        # Persistent Search Box
+        search_border = theme['accent'] if mode == "SEARCH" else theme['border']
+        search_content = Text()
+        search_content.append("Search: ", style=f"bold {theme['text']}")
+        if mode == "SEARCH":
+            search_content.append(f" {search_query}", style=theme['text'])
+            search_content.append("█", style=theme['accent'])
+        elif search_query:
+            search_content.append(f" {search_query}", style=theme['text'])
+        else:
+            search_content.append(" Type / to search...", style=theme['dim'])
+            
+        search_panel = Panel(
+            search_content,
+            box=box.ROUNDED,
+            border_style=search_border,
+            padding=(0, 2),
+            expand=True
+        )
+        
+        header = Group(header_table, Text("\n"), search_panel, Text("\n"))
+
+        if not repos:
+            empty_msg = f"No deployments found matching current filters." if (search_query or filter_state != "All") else f"No active deployments found."
+            table_or_empty = Text.from_markup(f"  [italic {theme['dim']}]{empty_msg}[/italic {theme['dim']}]\n")
+        else:
+            table = Table(
+                box=box.ROUNDED,
+                show_header=True,
+                header_style=f"bold {theme['primary']}",
+                border_style=theme['border'],
+                expand=True,
+                padding=(0, 2)
+            )
+            table.add_column(" ")
+            table.add_column("Project")
+            table.add_column("Status", justify="left")
+            table.add_column("Subdomain", style=theme['dim'])
+            table.add_column("Type", style=theme['dim'])
+            table.add_column("Created", style=theme['dim'])
+
+            for i, repo in enumerate(repos):
+                is_sel = (i == selected)
+                marker = f"[bold {theme['accent']}]▸[/bold {theme['accent']}]" if is_sel else " "
+                
+                status_raw = status_map.get(repo['process_id']) if status_map else None
+                if not status_raw:
+                    status_raw = get_container_status(repo['process_id'], repo.get('app_type', 'repo'))
+                if status_raw == 'running':
+                    status_icon_sel = "[bold green]●[/bold green]"
+                    status_icon_dim = "[dim green]●[/dim green]"
+                elif status_raw == 'exited':
+                    status_icon_sel = "[bold red]○[/bold red]"
+                    status_icon_dim = "[dim red]○[/dim red]"
+                else:
+                    status_icon_sel = "[bold yellow]◌[/bold yellow]"
+                    status_icon_dim = "[dim yellow]◌[/dim yellow]"
+                
+                if is_sel:
+                    status_disp = f"{status_icon_sel} [{theme['text']}]{status_raw}[/{theme['text']}]"
+                else:
+                    status_disp = f"[{theme['dim']}]{status_icon_dim} {status_raw}[/{theme['dim']}]"
+                
+                name_style = f"bold {theme['text']}" if is_sel else theme['text']
+                name_disp = f"[{name_style}]{repo['name']}[/{name_style}]"
+                
+                sub_style = theme['text'] if is_sel else theme['dim']
+                sub_disp = f"[{sub_style}]{repo['subdomain']}[/{sub_style}]"
+                
+                type_disp = f"[{sub_style}]{repo.get('app_type', 'repo')}[/{sub_style}]"
+                
+                created = repo.get('created', '-')
+                if len(created) > 10: created = created[:10]
+                created_disp = f"[{sub_style}]{created}[/{sub_style}]"
+
+                table.add_row(marker, name_disp, status_disp, sub_disp, type_disp, created_disp)
+                # Add gap row if not the last item
+                if i < len(repos) - 1:
+                    table.add_row("", "", "", "", "", "")
+
+            from rich.align import Align
+            table_or_empty = Align.center(table)
+
+        nav_footer = Table.grid(expand=True)
+        nav_footer.add_column(justify="left")
+        nav_footer.add_column(justify="right")
+
+        if mode == "SEARCH":
+            controls = Text.from_markup(f"  [bold {theme['text']}]ESC[/bold {theme['text']}] [{theme['dim']}]Exit Search[/{theme['dim']}]   [bold {theme['text']}]Backspace[/bold {theme['text']}] [{theme['dim']}]Delete[/{theme['dim']}]")
+        else:
+            controls = Text.from_markup(
+                f"\n  [bold {theme['text']}]↑↓[/bold {theme['text']}] [{theme['dim']}]Nav[/{theme['dim']}]  "
+                f"[bold {theme['text']}]Enter[/bold {theme['text']}] [{theme['dim']}]Open[/{theme['dim']}]  "
+                f"[bold {theme['text']}]/[/bold {theme['text']}] [{theme['dim']}]Search[/{theme['dim']}]  "
+                f"[bold {theme['text']}]F[/bold {theme['text']}] [{theme['dim']}]Filter[/{theme['dim']}]  "
+                f"[bold {theme['text']}]O[/bold {theme['text']}] [{theme['dim']}]Sort[/{theme['dim']}]  "
+                f"[bold {theme['text']}]L[/bold {theme['text']}] [{theme['dim']}]Logs[/{theme['dim']}]  "
+                f"[bold {theme['text']}]R/S[/bold {theme['text']}] [{theme['dim']}]Restart/Stop[/{theme['dim']}]  "
+                f"[bold {theme['text']}]T[/bold {theme['text']}] [{theme['dim']}]Theme[/{theme['dim']}]  "
+                f"[bold {theme['text']}]Q[/bold {theme['text']}] [{theme['dim']}]Quit[/{theme['dim']}]"
+            )
+        
+        mode_disp = f"[{theme['accent']}]{mode} MODE[/{theme['accent']}]  " if mode != "NORMAL" else ""
+        nav_footer.add_row(controls, Text.from_markup(mode_disp))
+
+        status_disp = Text.from_markup(f"\n  [bold yellow]![/bold yellow] [{theme['text']}]{status_msg}[/{theme['text']}]") if status_msg else Text("")
+
+        from rich.align import Align
+        group = Group(header, table_or_empty, Align.center(nav_footer), Align.center(status_disp))
+        
+        return TUI._render(width, height, group, theme)
 
     @staticmethod
-    def goodbye_screen(username: str, width: int) -> str:
-        def draw(c):
-            c.print()
-            c.print(Align.center(Panel(
-                f"[bold white]Goodbye, {username}![/bold white]\n\n"
-                "[dim]Session ended. Reconnect anytime with:[/dim]\n"
-                "[bold cyan]ssh -p 2222 stellarai.live[/bold cyan]",
-                border_style="bright_blue",
-                width=min(50, width - 4),
-                padding=(1, 2),
-            )))
-            c.print()
+    def connecting_screen(repo_name: str, width: int, height: int, theme: dict = None) -> str:
+        if not theme: theme = TUI.THEMES[0]
+        content = Text.from_markup(f"\n\n[{theme['dim']}]Connecting to[/{theme['dim']}] [bold {theme['text']}]{repo_name}[/bold {theme['text']}]\n\n", justify="center")
+        from rich.align import Align
+        return TUI._render(width, height, Align(content, vertical="middle", align="center"), theme)
 
-        return TUI._render(width, draw)
+    @staticmethod
+    def logs_screen(repo_name: str, logs: list, width: int, height: int, theme: dict = None) -> str:
+        if not theme: theme = TUI.THEMES[0]
+        
+        header = Text.from_markup(f"  {TUI.get_logo(theme)} [{theme['dim']}]› Logs ›[/{theme['dim']}] [{theme['text']}]{repo_name}[/{theme['text']}]\n")
+        
+        log_text = Text()
+        for log in logs[-15:]: # Show last 15 lines safely within the box
+            log_text.append(f"{log}\n", style=theme['text'])
+            
+        table_or_empty = Panel(log_text, box=box.ROUNDED, border_style=theme['border'], padding=(1, 2), expand=True)
+
+        nav = Text.from_markup(f"\n  [bold {theme['text']}]Q / ESC[/bold {theme['text']}] [{theme['dim']}]Back to Dashboard[/{theme['dim']}]")
+        
+        from rich.align import Align
+        group = Group(header, table_or_empty, Align.center(nav))
+        return TUI._render(width, height, group, theme)
+
+    @staticmethod
+    def goodbye_screen(username: str, width: int, height: int, theme: dict = None) -> str:
+        if not theme: theme = TUI.THEMES[0]
+        content = Text.from_markup(f"\n\n[{theme['dim']}]Goodbye,[/{theme['dim']}] [bold {theme['text']}]{username}[/bold {theme['text']}][{theme['dim']}]. Session terminated.[/{theme['dim']}]\n\n", justify="center")
+        from rich.align import Align
+        return TUI._render(width, height, Align(content, vertical="middle", align="center"), theme)
 
 
 # ============================================================
@@ -775,12 +956,56 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
 
 
 # ============================================================
+# Theme Persistence
+# ============================================================
+def load_theme(user_id=None):
+    if not user_id:
+        return {"theme_idx": 0, "border_idx": 0}
+    
+    safe_user_id = str(user_id).replace('/', '_').replace('\\', '_')
+    theme_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'.ssh_theme_{safe_user_id}.json')
+    try:
+        if os.path.exists(theme_path):
+            with open(theme_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load theme for user {user_id}: {e}")
+    return {"theme_idx": 0, "border_idx": 0}
+
+def save_theme(user_id, theme_idx, border_idx):
+    if not user_id:
+        return
+    
+    import tempfile
+    safe_user_id = str(user_id).replace('/', '_').replace('\\', '_')
+    dir_path = os.path.dirname(os.path.abspath(__file__))
+    theme_path = os.path.join(dir_path, f'.ssh_theme_{safe_user_id}.json')
+    
+    temp_path = None
+    try:
+        fd, temp_path = tempfile.mkstemp(
+            prefix=f'.ssh_theme_{safe_user_id}.',
+            suffix='.tmp',
+            dir=dir_path
+        )
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump({"theme_idx": theme_idx, "border_idx": border_idx}, f)
+        os.replace(temp_path, theme_path)
+    except Exception as e:
+        logger.error(f"Failed to save theme for user {user_id}: {e}")
+        try:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
+
+# ============================================================
 # Session Handler (main per-connection logic)
 # ============================================================
 def handle_session(channel, server: StellarSSHServer, client_addr: str):
     """
     Main session handler for one SSH connection.
-    Runs: Auth → Dashboard → Container Shell/Logs → Goodbye
+    Runs: Theme Picker → Splash/Auth → Dashboard → Container Shell/Logs → Goodbye
     """
     global active_sessions
     user_info = None
@@ -794,12 +1019,69 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         channel.settimeout(SESSION_IDLE_TIMEOUT)
         real_ip = server.username if (server.username and client_addr == '127.0.0.1') else client_addr
         
-        # Now check if this real_ip is blocked!
+        # Rate limit check
         if real_ip != '127.0.0.1' and client_addr == '127.0.0.1':
             if rate_limiter.is_ip_blocked(real_ip):
                 send_raw(channel, "\r\n\x1b[31m  ✗ Your IP is blocked due to too many failed attempts.\x1b[0m\r\n")
                 time.sleep(2)
                 return
+
+        send_raw(channel, '\x1b[?1049h\x1b[?25l')  # Enter alt screen, hide cursor
+
+        def draw(content: str):
+            send_raw(channel, '\x1b[H\x1b[0J' + content)
+
+        # ---- PHASE 0: Theme Picker ----
+        saved = load_theme()
+        selected_theme = saved.get("theme_idx", 0)
+        selected_border = saved.get("border_idx", 0)
+        is_default = False
+        focus = "theme"
+        theme_picked = False
+        
+        draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default))
+        
+        while True:
+            key = read_key(channel, timeout=5.0)
+            if not key:
+                if server.resize_event.is_set():
+                    server.resize_event.clear()
+                    draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default))
+                continue
+            
+            needs_redraw = True
+            if key == "RIGHT" and focus == "theme":
+                focus = "border"
+            elif key == "LEFT" and focus == "border":
+                focus = "theme"
+            elif key == "UP":
+                if focus == "theme" and selected_theme > 0: selected_theme -= 1
+                elif focus == "border" and selected_border > 0: selected_border -= 1
+            elif key == "DOWN":
+                if focus == "theme" and selected_theme < len(TUI.THEMES) - 1: selected_theme += 1
+                elif focus == "border" and selected_border < len(TUI.BORDER_COLORS) - 1: selected_border += 1
+            elif key == " ": # Spacebar toggle
+                is_default = not is_default
+            elif key == "ENTER":
+                theme_picked = True
+                break
+            elif key == "ESC":
+                selected_theme, selected_border = 0, 0
+                theme_picked = False
+                break
+            elif key in ('CTRL_C', 'CTRL_D', 'EOF'):
+                send_raw(channel, '\x1b[?1049l\x1b[?25h')
+                return
+            else:
+                needs_redraw = False
+                
+            if needs_redraw:
+                draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default))
+        
+        base_theme = TUI.THEMES[selected_theme].copy()
+        b_val = TUI.BORDER_COLORS[selected_border]["value"]
+        if b_val: base_theme["border"] = b_val
+        active_theme = base_theme
 
         # ---- PHASE 1: Authentication ----
         auth_attempts = 0
@@ -809,17 +1091,33 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 remaining = MAX_AUTH_ATTEMPTS - auth_attempts
                 error_msg = f"Invalid code. {remaining} attempt{'s' if remaining > 1 else ''} remaining."
 
-            # Render auth screen
-            send_raw(channel, CLEAR_SCREEN + SHOW_CURSOR)
-            send_raw(channel, TUI.auth_screen(server.term_width, server.term_height, error_msg))
-
-            # Read code
-            code = read_line(channel, "  Enter code: ")
-            if code is None:
-                audit.info(f"AUTH_DISCONNECT | ip={real_ip} | phase=code_entry")
-                return
+            code = ""
+            while len(code) < 6:
+                draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, error_msg=error_msg, theme=active_theme))
+                
+                key = read_key(channel, timeout=5.0)
+                if not key:
+                    if server.resize_event.is_set():
+                        server.resize_event.clear()
+                        draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, error_msg=error_msg, theme=active_theme))
+                    continue
+                    
+                if key == 'BACKSPACE':
+                    code = code[:-1]
+                elif key in ('CTRL_C', 'CTRL_D', 'EOF'):
+                    send_raw(channel, '\x1b[?1049l\x1b[?25h')
+                    return
+                elif isinstance(key, str):
+                    for char in key.upper():
+                        if char in (" ", "-"):
+                            continue
+                        if char.isalnum() and len(code) < 6:
+                            code += char
+                        if len(code) == 6:
+                            break
 
             # Verify
+            draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, theme=active_theme))
             user_info = verify_auth_code(code)
             if user_info:
                 break
@@ -829,94 +1127,270 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 audit.info(f"AUTH_FAIL | ip={real_ip} | attempt={auth_attempts} | code_prefix={code[:2] if code else '??'}****")
 
         if not user_info:
-            send_raw(channel, "\r\n\x1b[31m  ✗ Too many failed attempts. Disconnecting.\x1b[0m\r\n")
+            draw(TUI.goodbye_screen("User", server.term_width, server.term_height, theme=active_theme))
             audit.info(f"AUTH_LOCKOUT | ip={real_ip} | attempts={MAX_AUTH_ATTEMPTS}")
             time.sleep(2)
+            send_raw(channel, '\x1b[?1049l\x1b[?25h')
             return
 
         user_id = user_info['user_id']
         username = user_info.get('display_name') or user_info.get('username', 'User')
         audit.info(f"SESSION_START | ip={real_ip} | user_id={user_id} | username={username}")
 
+        # Load or save user-scoped theme preferences
+        if is_default:
+            save_theme(user_id, selected_theme, selected_border)
+        elif not theme_picked:
+            saved = load_theme(user_id)
+            selected_theme = saved.get("theme_idx", 0)
+            selected_border = saved.get("border_idx", 0)
+            
+        base_theme = TUI.THEMES[selected_theme].copy()
+        b_val = TUI.BORDER_COLORS[selected_border]["value"]
+        if b_val: base_theme["border"] = b_val
+        active_theme = base_theme
+
         # ---- PHASE 2: Dashboard ----
         selected_index = 0
         status_msg = f"Welcome, {username}!"
+        search_query = ""
+        filter_states = ["All", "Running", "Stopped"]
+        filter_idx = 0
+        sort_states = ["Name", "Status", "Created"]
+        sort_idx = 0
+        mode = "NORMAL"
+        
         last_activity = time.time()
+        
+        repos = []
+        status_map = {}
+        all_repos = []
+
+        def get_filtered_sorted_repos(all_repos, status_map):
+            f_repos = []
+            for r in all_repos:
+                r_status = status_map.get(r['process_id'], 'not_found')
+                
+                # Text Search
+                if search_query and search_query.lower() not in r['name'].lower():
+                    continue
+                    
+                # State Filter
+                current_filter = filter_states[filter_idx]
+                if current_filter == "Running" and r_status != "running":
+                    continue
+                if current_filter == "Stopped" and r_status != "exited":
+                    continue
+                    
+                f_repos.append(r)
+                
+            # Sort
+            current_sort = sort_states[sort_idx]
+            if current_sort == "Name":
+                f_repos.sort(key=lambda x: x['name'].lower())
+            elif current_sort == "Status":
+                f_repos.sort(key=lambda x: status_map.get(x['process_id'], 'not_found'))
+            elif current_sort == "Created":
+                f_repos.sort(key=lambda x: x.get('created', ''), reverse=True)
+                
+            return f_repos
+
+        def redraw():
+            nonlocal status_msg
+            draw(TUI.dashboard(
+                repos, selected_index, username, 
+                server.term_width, server.term_height, 
+                status_msg, theme=active_theme, 
+                search_query=search_query, 
+                filter_state=filter_states[filter_idx], 
+                sort_state=sort_states[sort_idx], 
+                mode=mode, status_map=status_map
+            ))
+            status_msg = ""
+
+        needs_refresh = True
+        last_refresh_time = 0
+        REFRESH_INTERVAL = 3.0 # seconds
 
         while True:
             # Check idle timeout
             if time.time() - last_activity > SESSION_IDLE_TIMEOUT:
-                send_raw(channel, CLEAR_SCREEN)
-                send_raw(channel, "\r\n\x1b[33m  Session timed out due to inactivity.\x1b[0m\r\n")
+                draw(TUI.goodbye_screen(username, server.term_width, server.term_height, theme=active_theme))
                 audit.info(f"SESSION_TIMEOUT | user_id={user_id} | idle_minutes={SESSION_IDLE_TIMEOUT // 60}")
                 time.sleep(2)
                 break
 
-            # Fetch repos and render
-            repos = get_user_repos(user_id)
-            if selected_index >= len(repos):
-                selected_index = max(0, len(repos) - 1)
-
-            screen = TUI.dashboard(repos, selected_index, username, server.term_width, server.term_height, status_msg)
-            send_raw(channel, CLEAR_SCREEN + HIDE_CURSOR)
-            send_raw(channel, screen)
-            status_msg = ""  # Clear one-shot status
+            # Refresh data if cooldown has expired or explicitly requested
+            if needs_refresh or (time.time() - last_refresh_time > REFRESH_INTERVAL):
+                try:
+                    all_repos = get_user_repos(user_id)
+                    status_map = {r['process_id']: get_container_status(r['process_id'], r.get('app_type', 'repo')) for r in all_repos}
+                    repos = get_filtered_sorted_repos(all_repos, status_map)
+                except Exception as e:
+                    logger.error(f"Error querying deployments: {e}")
+                needs_refresh = False
+                last_refresh_time = time.time()
+                if selected_index >= len(repos):
+                    selected_index = max(0, len(repos) - 1)
+                redraw()
 
             # Read keypress
-            key = read_key(channel, timeout=5.0)
-            if key is None:
+            key = read_key(channel, timeout=0.1)
+            if not key:
+                if server.resize_event.is_set():
+                    server.resize_event.clear()
+                    redraw()
                 continue
 
             last_activity = time.time()
 
+            if mode == "SEARCH":
+                if key == 'ESC':
+                    mode = "NORMAL"
+                    redraw()
+                elif key == 'BACKSPACE':
+                    search_query = search_query[:-1]
+                    repos = get_filtered_sorted_repos(all_repos, status_map)
+                    selected_index = 0
+                    redraw()
+                elif key in ('ENTER', '\n', '\r'):
+                    mode = "NORMAL"
+                    redraw()
+                elif isinstance(key, str) and len(key) == 1 and key.isprintable():
+                    search_query += key
+                    repos = get_filtered_sorted_repos(all_repos, status_map)
+                    selected_index = 0
+                    redraw()
+                continue
+
+            # Normal Mode Controls
             if key == 'UP':
                 if repos and selected_index > 0:
                     selected_index -= 1
+                    redraw()
             elif key == 'DOWN':
                 if repos and selected_index < len(repos) - 1:
                     selected_index += 1
+                    redraw()
+            elif key in ('q', 'Q', 'CTRL_C', 'CTRL_D', 'EOF'):
+                break
+            elif key == '/':
+                mode = "SEARCH"
+                redraw()
+            elif key in ('f', 'F'):
+                filter_idx = (filter_idx + 1) % len(filter_states)
+                repos = get_filtered_sorted_repos(all_repos, status_map)
+                selected_index = 0
+                redraw()
+            elif key in ('o', 'O'):
+                sort_idx = (sort_idx + 1) % len(sort_states)
+                repos = get_filtered_sorted_repos(all_repos, status_map)
+                selected_index = 0
+                redraw()
+            elif key in ('t', 'T'):
+                # Run the interactive theme picker inside the session
+                t_sel_theme = selected_theme
+                t_sel_border = selected_border
+                t_is_default = False
+                t_focus = "theme"
+                
+                draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default))
+                
+                while True:
+                    t_key = read_key(channel, timeout=5.0)
+                    if not t_key:
+                        if server.resize_event.is_set():
+                            server.resize_event.clear()
+                            draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default))
+                        continue
+                    
+                    t_needs_redraw = True
+                    if t_key == "RIGHT" and t_focus == "theme":
+                        t_focus = "border"
+                    elif t_key == "LEFT" and t_focus == "border":
+                        t_focus = "theme"
+                    elif t_key == "UP":
+                        if t_focus == "theme" and t_sel_theme > 0: t_sel_theme -= 1
+                        elif t_focus == "border" and t_sel_border > 0: t_sel_border -= 1
+                    elif t_key == "DOWN":
+                        if t_focus == "theme" and t_sel_theme < len(TUI.THEMES) - 1: t_sel_theme += 1
+                        elif t_focus == "border" and t_sel_border < len(TUI.BORDER_COLORS) - 1: t_sel_border += 1
+                    elif t_key == " ":
+                        t_is_default = not t_is_default
+                    elif t_key == "ENTER":
+                        selected_theme = t_sel_theme
+                        selected_border = t_sel_border
+                        if t_is_default:
+                            save_theme(user_id, selected_theme, selected_border)
+                        break
+                    elif t_key == "ESC":
+                        break
+                    elif t_key in ('CTRL_C', 'CTRL_D', 'EOF'):
+                        break
+                    else:
+                        t_needs_redraw = False
+                        
+                    if t_needs_redraw:
+                        draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default))
+                
+                base_theme = TUI.THEMES[selected_theme].copy()
+                b_val = TUI.BORDER_COLORS[selected_border]["value"]
+                if b_val: base_theme["border"] = b_val
+                active_theme = base_theme
+                redraw()
             elif key == 'ENTER':
                 if repos:
                     repo = repos[selected_index]
                     app_type = repo.get('app_type', 'repo')
                     live_status = get_container_status(repo['process_id'], app_type)
                     if live_status == 'running':
-                        send_raw(channel, CLEAR_SCREEN + SHOW_CURSOR)
-                        send_raw(channel, TUI.connecting_screen(repo['name'], server.term_width))
+                        draw(TUI.connecting_screen(repo['name'], server.term_width, server.term_height, theme=active_theme))
                         time.sleep(0.5)
-                        send_raw(channel, CLEAR_SCREEN)
+                        send_raw(channel, '\x1b[?1049l\x1b[?25h') # Exit alt screen for shell
                         attach_container_shell(channel, server, repo['process_id'], app_type, user_id)
+                        send_raw(channel, '\x1b[?1049h\x1b[?25l') # Re-enter alt screen
                         status_msg = f"Disconnected from {repo['name']}"
+                        needs_refresh = True
                     elif live_status in ('exited', 'created'):
                         status_msg = start_container(repo['process_id'], app_type, user_id)
+                        needs_refresh = True
                     else:
                         status_msg = f"Cannot connect: container is {live_status}"
-            elif key in ('q', 'Q', 'CTRL_C', 'CTRL_D', 'EOF'):
-                break
+                        redraw()
             elif key in ('l', 'L'):
                 if repos:
                     repo = repos[selected_index]
                     app_type = repo.get('app_type', 'repo')
-                    send_raw(channel, SHOW_CURSOR)
-                    view_container_logs(channel, server, repo['process_id'], app_type, user_id)
-                    status_msg = f"Exited log viewer for {repo['name']}"
+                    try:
+                        client = docker.from_env()
+                        container = get_container(client, repo['process_id'], app_type)
+                        logs_raw = container.logs(tail=50, timestamps=True).decode('utf-8').splitlines()
+                        
+                        while True:
+                            draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme))
+                            log_key = read_key(channel, timeout=0.1)
+                            if log_key in ('q', 'Q', 'ESC', 'CTRL_C'):
+                                break
+                            if server.resize_event.is_set():
+                                server.resize_event.clear()
+                    except Exception as e:
+                        status_msg = f"Could not fetch logs: {e}"
+                    redraw()
             elif key in ('r', 'R'):
                 if repos:
                     repo = repos[selected_index]
-                    app_type = repo.get('app_type', 'repo')
                     status_msg = f"Restarting {repo['name']}..."
-                    send_raw(channel, CLEAR_SCREEN + HIDE_CURSOR)
-                    send_raw(channel, TUI.dashboard(repos, selected_index, username, server.term_width, server.term_height, status_msg))
-                    status_msg = restart_container(repo['process_id'], app_type, user_id)
+                    redraw()
+                    status_msg = restart_container(repo['process_id'], repo.get('app_type', 'repo'), user_id)
+                    needs_refresh = True
             elif key in ('s', 'S'):
                 if repos:
                     repo = repos[selected_index]
-                    app_type = repo.get('app_type', 'repo')
-                    status_msg = stop_container(repo['process_id'], app_type, user_id)
+                    status_msg = stop_container(repo['process_id'], repo.get('app_type', 'repo'), user_id)
+                    needs_refresh = True
 
         # ---- PHASE 3: Goodbye ----
-        send_raw(channel, CLEAR_SCREEN + SHOW_CURSOR)
-        send_raw(channel, TUI.goodbye_screen(username, server.term_width))
+        draw(TUI.goodbye_screen(username, server.term_width, server.term_height, theme=active_theme))
         audit.info(f"SESSION_END | user_id={user_id} | username={username}")
         time.sleep(1)
 
@@ -925,7 +1399,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
     except Exception as e:
         logger.error(f"Session error for {client_addr}: {e}", exc_info=True)
     finally:
-        send_raw(channel, SHOW_CURSOR + RESET_STYLE)
+        send_raw(channel, '\x1b[?1049l\x1b[?25h') # Ensure exit alt screen
         try:
             channel.close()
         except Exception:
