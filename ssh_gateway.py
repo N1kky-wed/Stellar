@@ -531,9 +531,18 @@ class TUI:
 
         # Persistent Search Box
         search_border = theme['accent'] if mode == "SEARCH" else theme['border']
-        search_text = f" {search_query}█" if mode == "SEARCH" else (f" {search_query}" if search_query else f" [{theme['dim']}]Type / to search...[/{theme['dim']}]")
+        search_content = Text()
+        search_content.append("Search: ", style=f"bold {theme['text']}")
+        if mode == "SEARCH":
+            search_content.append(f" {search_query}", style=theme['text'])
+            search_content.append("█", style=theme['accent'])
+        elif search_query:
+            search_content.append(f" {search_query}", style=theme['text'])
+        else:
+            search_content.append(" Type / to search...", style=theme['dim'])
+            
         search_panel = Panel(
-            Text.from_markup(f"[bold {theme['text']}]Search:[[/bold {theme['text']}] {search_text}"),
+            search_content,
             box=box.ROUNDED,
             border_style=search_border,
             padding=(0, 2),
@@ -967,19 +976,25 @@ def save_theme(user_id, theme_idx, border_idx):
     if not user_id:
         return
     
+    import tempfile
     safe_user_id = str(user_id).replace('/', '_').replace('\\', '_')
     dir_path = os.path.dirname(os.path.abspath(__file__))
     theme_path = os.path.join(dir_path, f'.ssh_theme_{safe_user_id}.json')
-    temp_path = os.path.join(dir_path, f'.ssh_theme_{safe_user_id}.tmp')
     
+    temp_path = None
     try:
-        with open(temp_path, 'w', encoding='utf-8') as f:
+        fd, temp_path = tempfile.mkstemp(
+            prefix=f'.ssh_theme_{safe_user_id}.',
+            suffix='.tmp',
+            dir=dir_path
+        )
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump({"theme_idx": theme_idx, "border_idx": border_idx}, f)
         os.replace(temp_path, theme_path)
     except Exception as e:
         logger.error(f"Failed to save theme for user {user_id}: {e}")
         try:
-            if os.path.exists(temp_path):
+            if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
         except Exception:
             pass
@@ -1022,6 +1037,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         selected_border = saved.get("border_idx", 0)
         is_default = False
         focus = "theme"
+        theme_picked = False
         
         draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default))
         
@@ -1047,9 +1063,11 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             elif key == " ": # Spacebar toggle
                 is_default = not is_default
             elif key == "ENTER":
+                theme_picked = True
                 break
             elif key == "ESC":
                 selected_theme, selected_border = 0, 0
+                theme_picked = False
                 break
             elif key in ('CTRL_C', 'CTRL_D', 'EOF'):
                 send_raw(channel, '\x1b[?1049l\x1b[?25h')
@@ -1122,7 +1140,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         # Load or save user-scoped theme preferences
         if is_default:
             save_theme(user_id, selected_theme, selected_border)
-        else:
+        elif not theme_picked:
             saved = load_theme(user_id)
             selected_theme = saved.get("theme_idx", 0)
             selected_border = saved.get("border_idx", 0)
@@ -1146,9 +1164,9 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         
         repos = []
         status_map = {}
+        all_repos = []
 
-        def get_filtered_sorted_repos(status_map):
-            all_repos = get_user_repos(user_id)
+        def get_filtered_sorted_repos(all_repos, status_map):
             f_repos = []
             for r in all_repos:
                 r_status = status_map.get(r['process_id'], 'not_found')
@@ -1207,7 +1225,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 try:
                     all_repos = get_user_repos(user_id)
                     status_map = {r['process_id']: get_container_status(r['process_id'], r.get('app_type', 'repo')) for r in all_repos}
-                    repos = get_filtered_sorted_repos(status_map)
+                    repos = get_filtered_sorted_repos(all_repos, status_map)
                 except Exception as e:
                     logger.error(f"Error querying deployments: {e}")
                 needs_refresh = False
@@ -1232,7 +1250,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                     redraw()
                 elif key == 'BACKSPACE':
                     search_query = search_query[:-1]
-                    repos = get_filtered_sorted_repos(status_map)
+                    repos = get_filtered_sorted_repos(all_repos, status_map)
                     selected_index = 0
                     redraw()
                 elif key in ('ENTER', '\n', '\r'):
@@ -1240,7 +1258,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                     redraw()
                 elif isinstance(key, str) and len(key) == 1 and key.isprintable():
                     search_query += key
-                    repos = get_filtered_sorted_repos(status_map)
+                    repos = get_filtered_sorted_repos(all_repos, status_map)
                     selected_index = 0
                     redraw()
                 continue
@@ -1261,12 +1279,12 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 redraw()
             elif key in ('f', 'F'):
                 filter_idx = (filter_idx + 1) % len(filter_states)
-                repos = get_filtered_sorted_repos(status_map)
+                repos = get_filtered_sorted_repos(all_repos, status_map)
                 selected_index = 0
                 redraw()
             elif key in ('o', 'O'):
                 sort_idx = (sort_idx + 1) % len(sort_states)
-                repos = get_filtered_sorted_repos(status_map)
+                repos = get_filtered_sorted_repos(all_repos, status_map)
                 selected_index = 0
                 redraw()
             elif key in ('t', 'T'):
