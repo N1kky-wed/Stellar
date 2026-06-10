@@ -4010,6 +4010,7 @@ def get_admin_waitlist():
     query = """
         SELECT
             u.id, u.username, u.display_name, u.role, u.is_approved, u.created_at, u.last_active,
+            u.designation, u.source, u.use_case, u.waitlist_form_submitted,
             (SELECT COUNT(*) FROM chats WHERE user_id = u.id) as num_chats,
             (SELECT COUNT(*) FROM repo_history WHERE user_id = u.id) as num_projects,
             (SELECT SUM(token_count) FROM chats WHERE user_id = u.id) as total_tokens_approx
