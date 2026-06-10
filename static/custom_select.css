@@ -1,116 +1,136 @@
 .custom-select-wrapper {
-    position: relative;
-    display: inline-block;
-    user-select: none;
-    font-size: 0.9rem;
+  position: relative;
+  display: inline-block;
+  user-select: none;
+  font-size: 0.9rem;
 }
 .custom-select-trigger {
-    background: linear-gradient(45deg, var(--model-color-start, #4a4a75), var(--model-color-end, #2a2a45));
-    border: 1px solid var(--model-color-border, #6a6a95);
-    border-radius: 6px;
-    color: #fff;
-    padding: 8px 16px;
-    cursor: pointer;
-    display: inline-flex;
-    justify-content: center;
-    align-items: center;
-    gap: 8px;
-    white-space: nowrap;
-    box-shadow: 0 0 10px rgba(0,0,0,0.3);
-    transition: all 0.2s ease;
+  background: linear-gradient(
+    45deg,
+    var(--model-color-start, #4a4a75),
+    var(--model-color-end, #2a2a45)
+  );
+  border: 1px solid var(--model-color-border, #6a6a95);
+  border-radius: 6px;
+  color: #fff;
+  padding: 8px 16px;
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
 }
 .custom-select-trigger:hover {
-    filter: brightness(1.1);
+  filter: brightness(1.1);
 }
 .custom-select-options {
-    position: absolute;
-    bottom: 100%;
-    left: 0;
-    right: 0;
-    background: #1c1c2e; /* Made less transparent */
-    border: 1px solid var(--model-color-border, #6a6a95);
-    border-radius: 6px;
-    margin-bottom: 4px;
-    display: none;
-    flex-direction: column;
-    z-index: 1000;
-    overflow: hidden;
-    box-shadow: 0 -8px 16px rgba(0,0,0,0.7); /* Darker shadow */
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: #1c1c2e; /* Made less transparent */
+  border: 1px solid var(--model-color-border, #6a6a95);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  display: none;
+  flex-direction: column;
+  z-index: 1000;
+  overflow: hidden;
+  box-shadow: 0 -8px 16px rgba(0, 0, 0, 0.7); /* Darker shadow */
 }
 .custom-select-options.open {
-    display: flex;
-    animation: fadeInUp 0.2s ease forwards;
+  display: flex;
+  animation: fadeInUp 0.2s ease forwards;
 }
 
 /* Override for navbar positioning to drop down */
 #modeSelectorHeaderContainer .custom-select-options {
-    bottom: auto;
-    top: 100%;
-    margin-bottom: 0;
-    margin-top: 4px;
-    box-shadow: 0 8px 16px rgba(0,0,0,0.7);
-    animation: fadeInDown 0.2s ease forwards;
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 4px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.7);
+  animation: fadeInDown 0.2s ease forwards;
 }
 
 #modeSelector-wrapper .custom-select-trigger {
-    min-width: 105px;
+  min-width: 105px;
 }
 #modelSelect-wrapper .custom-select-trigger {
-    min-width: 99px;
+  min-width: 99px;
 }
 .custom-select-option {
-    padding: 10px 16px;
-    color: var(--primary-text-color, #D3D3D3);
-    cursor: pointer;
-    text-align: center;
-    transition: background 0.2s ease;
+  padding: 10px 16px;
+  color: var(--primary-text-color, #d3d3d3);
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.2s ease;
 }
 .custom-select-option:hover {
-    background: linear-gradient(45deg, var(--model-color-start, #4a4a75), var(--model-color-end, #2a2a45));
-    color: #fff;
+  background: linear-gradient(
+    45deg,
+    var(--model-color-start, #4a4a75),
+    var(--model-color-end, #2a2a45)
+  );
+  color: #fff;
 }
 .custom-select-option.selected {
-    background: rgba(255,255,255,0.25);
-    font-weight: 600;
-    color: #fff;
+  background: rgba(255, 255, 255, 0.25);
+  font-weight: 600;
+  color: #fff;
 }
 @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes fadeInDown {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .agent-settings-section {
-    margin-top: 25px;
-    padding-top: 20px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 .agent-settings-section h3 {
-    font-size: 1.4rem;
-    margin-bottom: 20px;
-    text-align: center;
-    color: var(--link-color);
+  font-size: 1.4rem;
+  margin-bottom: 20px;
+  text-align: center;
+  color: var(--link-color);
 }
 .settings-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .setting-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 1rem;
-    color: var(--primary-text-color);
-    cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+  color: var(--primary-text-color);
+  cursor: pointer;
 }
 .setting-item input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-    accent-color: var(--model-color-start);
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--model-color-start);
 }

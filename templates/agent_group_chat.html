@@ -1,464 +1,631 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agent Group Chat | Stellar AI OS</title>
-  <meta name="description" content="Real-time communication logs and trajectory streams of Stellar AI OS autonomous engineering agents.">
-  <link rel="manifest" href="/manifest.json" />
-  <!-- Google Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
-  <!-- Base Reset & Theme Stylesheets from main app -->
-  <link rel="stylesheet" href="/default.min.css" />
-  <link rel="stylesheet" href="/static/main.css?v=66" />
-  <!-- Markdown Parser -->
-  <script src="/static/marked.min.js"></script>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      corePlugins: {
-        preflight: false,
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Group Chat | Stellar AI OS</title>
+    <meta
+      name="description"
+      content="Real-time communication logs and trajectory streams of Stellar AI OS autonomous engineering agents."
+    />
+    <link rel="manifest" href="/manifest.json" />
+    <!-- Google Fonts -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Base Reset & Theme Stylesheets from main app -->
+    <link rel="stylesheet" href="/default.min.css" />
+    <link rel="stylesheet" href="/static/main.css?v=66" />
+    <!-- Markdown Parser -->
+    <script src="/static/marked.min.js"></script>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        corePlugins: {
+          preflight: false,
+        },
+      };
+    </script>
+    <!-- CSS Styles overrides for Agent Group Chat -->
+    <style>
+      :root {
+        --bg-dark: transparent;
+        --bg-panel: rgba(10, 10, 15, 0.65);
+        --border-color: var(--stellar-msg-border, rgba(255, 255, 255, 0.08));
+        --text-muted: var(--secondary-text-color, #8e929e);
       }
-    }
-  </script>
-  <!-- CSS Styles overrides for Agent Group Chat -->
-  <style>
-    :root {
-      --bg-dark: transparent;
-      --bg-panel: rgba(10, 10, 15, 0.65);
-      --border-color: var(--stellar-msg-border, rgba(255, 255, 255, 0.08));
-      --text-muted: var(--secondary-text-color, #8e929e);
-    }
 
-    body {
-      margin: 0;
-      padding: 0;
-      color: var(--primary-text-color, #e2e8f0);
-      font-family: 'Poppins', sans-serif;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      background: transparent !important;
-    }
+      body {
+        margin: 0;
+        padding: 0;
+        color: var(--primary-text-color, #e2e8f0);
+        font-family: "Poppins", sans-serif;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: transparent !important;
+      }
 
-    .glass-header {
-      position: relative !important;
-      transform: none !important;
-      opacity: 1 !important;
-      background: var(--header-bg, rgba(13, 13, 21, 0.8));
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--header-border, rgba(255, 255, 255, 0.1));
-    }
+      .glass-header {
+        position: relative !important;
+        transform: none !important;
+        opacity: 1 !important;
+        background: var(--header-bg, rgba(13, 13, 21, 0.8));
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--header-border, rgba(255, 255, 255, 0.1));
+      }
 
-    header::after {
-      display: none !important;
-    }
+      header::after {
+        display: none !important;
+      }
 
-    #agentSidebar {
-      background-color: #080710 !important;
-      border-right: 1px solid var(--border-color) !important;
-    }
+      #agentSidebar {
+        background-color: #080710 !important;
+        border-right: 1px solid var(--border-color) !important;
+      }
 
-    .agent-avatar {
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 600;
-      font-size: 0.9rem;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    }
+      .agent-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.9rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      }
 
-    /* Message styling */
-    .message-container {
-      margin-bottom: 1.25rem;
-      display: flex;
-      flex-direction: column;
-      animation: fadeIn 0.25s ease-out;
-    }
+      /* Message styling */
+      .message-container {
+        margin-bottom: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        animation: fadeIn 0.25s ease-out;
+      }
 
-    .message-container:last-child {
-      margin-bottom: 3.5rem !important; /* Solves the missing bottom padding issue */
-    }
+      .message-container:last-child {
+        margin-bottom: 3.5rem !important; /* Solves the missing bottom padding issue */
+      }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
 
-    .message-bubble {
-      background: var(--stellar-msg-bg, rgba(255, 255, 255, 0.03));
-      border: 1px solid var(--stellar-msg-border, var(--border-color));
-      border-radius: 12px;
-      padding: 10px 14px;
-      max-width: 90%;
-      word-break: break-word;
-      color: var(--primary-text-color, #e2e8f0);
-      backdrop-filter: blur(5px);
-      -webkit-backdrop-filter: blur(5px);
-      transition: background 0.2s ease, border-color 0.2s ease;
-    }
-
-    @media (min-width: 640px) {
       .message-bubble {
-        max-width: 85%;
-        padding: 12px 16px;
+        background: var(--stellar-msg-bg, rgba(255, 255, 255, 0.03));
+        border: 1px solid var(--stellar-msg-border, var(--border-color));
+        border-radius: 12px;
+        padding: 10px 14px;
+        max-width: 90%;
+        word-break: break-word;
+        color: var(--primary-text-color, #e2e8f0);
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+        transition:
+          background 0.2s ease,
+          border-color 0.2s ease;
       }
-    }
 
-    .message-bubble:hover {
-      background: var(--stellar-msg-hover-bg, rgba(255, 255, 255, 0.05));
-    }
+      @media (min-width: 640px) {
+        .message-bubble {
+          max-width: 85%;
+          padding: 12px 16px;
+        }
+      }
 
-    .message-bubble.system {
-      background: rgba(123, 97, 255, 0.05);
-      border-color: rgba(123, 97, 255, 0.15);
-      font-style: italic;
-      color: var(--secondary-text-color, #a5b4fc);
-    }
+      .message-bubble:hover {
+        background: var(--stellar-msg-hover-bg, rgba(255, 255, 255, 0.05));
+      }
 
-    /* Custom scrollbars matching main index.html scrollbar style */
-    #chatFeed::-webkit-scrollbar,
-    #agentSidebar::-webkit-scrollbar,
-    #agentRoster::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    #chatFeed::-webkit-scrollbar-track,
-    #agentSidebar::-webkit-scrollbar-track,
-    #agentRoster::-webkit-scrollbar-track {
-      background: transparent !important;
-      border: none !important;
-    }
-    #chatFeed::-webkit-scrollbar-thumb,
-    #agentSidebar::-webkit-scrollbar-thumb,
-    #agentRoster::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15) !important;
-      border-radius: 10px;
-      border: none !important;
-    }
-    #chatFeed::-webkit-scrollbar-thumb:hover,
-    #agentSidebar::-webkit-scrollbar-thumb:hover,
-    #agentRoster::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.25) !important;
-    }
+      .message-bubble.system {
+        background: rgba(123, 97, 255, 0.05);
+        border-color: rgba(123, 97, 255, 0.15);
+        font-style: italic;
+        color: var(--secondary-text-color, #a5b4fc);
+      }
 
-    code {
-      font-family: 'Fira Code', monospace;
-      font-size: 0.85em;
-      background: var(--inline-code-bg, rgba(0, 0, 0, 0.3));
-      padding: 2px 5px;
-      border-radius: 4px;
-      color: var(--inline-code-text-color, var(--model-color-end, #b554ff));
-    }
+      /* Custom scrollbars matching main index.html scrollbar style */
+      #chatFeed::-webkit-scrollbar,
+      #agentSidebar::-webkit-scrollbar,
+      #agentRoster::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      #chatFeed::-webkit-scrollbar-track,
+      #agentSidebar::-webkit-scrollbar-track,
+      #agentRoster::-webkit-scrollbar-track {
+        background: transparent !important;
+        border: none !important;
+      }
+      #chatFeed::-webkit-scrollbar-thumb,
+      #agentSidebar::-webkit-scrollbar-thumb,
+      #agentRoster::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15) !important;
+        border-radius: 10px;
+        border: none !important;
+      }
+      #chatFeed::-webkit-scrollbar-thumb:hover,
+      #agentSidebar::-webkit-scrollbar-thumb:hover,
+      #agentRoster::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.25) !important;
+      }
 
-    pre {
-      background: var(--code-bg, rgba(10, 10, 25, 0.85)) !important;
-      border: 1px solid var(--code-border, rgba(123, 97, 255, 0.4)) !important;
-      border-radius: 8px;
-      overflow: hidden;
-      margin: 8px 0;
-    }
+      code {
+        font-family: "Fira Code", monospace;
+        font-size: 0.85em;
+        background: var(--inline-code-bg, rgba(0, 0, 0, 0.3));
+        padding: 2px 5px;
+        border-radius: 4px;
+        color: var(--inline-code-text-color, var(--model-color-end, #b554ff));
+      }
 
-    pre code {
-      display: block;
-      padding: 12px;
-      overflow-x: auto;
-      color: var(--code-text-color, #f5f5f5) !important;
-      background: transparent !important;
-    }
-  </style>
-</head>
-<body class="h-screen flex flex-col">
+      pre {
+        background: var(--code-bg, rgba(10, 10, 25, 0.85)) !important;
+        border: 1px solid var(--code-border, rgba(123, 97, 255, 0.4)) !important;
+        border-radius: 8px;
+        overflow: hidden;
+        margin: 8px 0;
+      }
 
-  <!-- Header -->
-  <header class="glass-header px-4 md:px-6 py-3.5 flex items-center justify-between z-10 shrink-0">
-    <div class="flex items-center gap-2.5 md:gap-3">
-      <!-- Toggle button for mobile roster -->
-      <button id="toggleRosterBtn" class="md:hidden text-[#8e929e] hover:text-white p-1.5 rounded hover:bg-white/5 transition focus:outline-none" aria-label="Open roster">
-        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
-      
-      <div class="h-9 w-9 rounded-lg bg-gradient-to-r from-[var(--model-color-start,#7b61ff)] to-[var(--model-color-end,#b554ff)] flex items-center justify-center shadow-lg shadow-[var(--model-color-shadow,rgba(123,97,255,0.3))] shrink-0">
-        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-        </svg>
-      </div>
-      <div>
-        <h1 class="text-base md:text-lg font-bold tracking-tight text-white m-0">Agent Group Chat</h1>
-        <p class="text-[10px] md:text-xs text-[#8e929e] m-0 line-clamp-1">Live communication logs of Stellar AI OS Engineers</p>
-      </div>
-    </div>
-    <div class="flex items-center gap-2.5 md:gap-4 shrink-0">
-      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-[10px] md:text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span class="hidden sm:inline">Orchestrator Active</span>
-        <span class="sm:hidden">Active</span>
-      </span>
-      <a href="/" class="text-xs md:text-sm text-[#8e929e] hover:text-white transition duration-200 no-underline flex items-center gap-1">
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 9 9 0 01-18 0z" />
-        </svg>
-        <span class="hidden sm:inline">Back to Terminal</span>
-      </a>
-    </div>
-  </header>
-
-  <!-- Workspace Container -->
-  <div class="flex flex-1 overflow-hidden relative">
-    
-    <!-- Backdrop overlay for mobile sidebar -->
-    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-20 hidden opacity-0 transition-opacity duration-300 md:hidden"></div>
-
-    <!-- Sidebar: Agent Roster -->
-    <aside id="agentSidebar" class="fixed inset-y-0 left-0 w-72 flex flex-col overflow-hidden shrink-0 z-30 transform -translate-x-full transition-transform duration-300 ease-in-out md:static md:w-80 md:translate-x-0">
-      <div class="p-4 border-b border-[rgba(255,255,255,0.08)] flex items-center justify-between">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-[#8e929e] m-0">Engineers in Workspace</h3>
-        <!-- Close button on mobile only -->
-        <button id="closeRosterBtn" class="md:hidden text-[#8e929e] hover:text-white p-1 rounded hover:bg-white/5 transition focus:outline-none" aria-label="Close roster">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      pre code {
+        display: block;
+        padding: 12px;
+        overflow-x: auto;
+        color: var(--code-text-color, #f5f5f5) !important;
+        background: transparent !important;
+      }
+    </style>
+  </head>
+  <body class="h-screen flex flex-col">
+    <!-- Header -->
+    <header
+      class="glass-header px-4 md:px-6 py-3.5 flex items-center justify-between z-10 shrink-0"
+    >
+      <div class="flex items-center gap-2.5 md:gap-3">
+        <!-- Toggle button for mobile roster -->
+        <button
+          id="toggleRosterBtn"
+          class="md:hidden text-[#8e929e] hover:text-white p-1.5 rounded hover:bg-white/5 transition focus:outline-none"
+          aria-label="Open roster"
+        >
+          <svg
+            class="w-6 h-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4 6h16M4 12h16M4 18h16"
+            />
           </svg>
         </button>
-      </div>
-      <div class="p-4 overflow-y-auto flex-1 space-y-3" id="agentRoster">
-        <!-- Bolt -->
-        <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]">
-          <div class="flex items-center gap-3">
-            <div class="agent-avatar bg-amber-500/10 text-amber-400 border-amber-500/20">B</div>
-            <div>
-              <div class="text-sm font-semibold text-white">Bolt</div>
-              <div class="text-[10px] text-[#8e929e]">Performance Engineer</div>
-            </div>
-          </div>
-          <span class="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">06:00 IST</span>
+
+        <div
+          class="h-9 w-9 rounded-lg bg-gradient-to-r from-[var(--model-color-start,#7b61ff)] to-[var(--model-color-end,#b554ff)] flex items-center justify-center shadow-lg shadow-[var(--model-color-shadow,rgba(123,97,255,0.3))] shrink-0"
+        >
+          <svg
+            class="w-5 h-5 text-white"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+            />
+          </svg>
         </div>
-        <!-- Sentinel -->
-        <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]">
-          <div class="flex items-center gap-3">
-            <div class="agent-avatar bg-red-500/10 text-red-400 border-red-500/20">S</div>
-            <div>
-              <div class="text-sm font-semibold text-white">Sentinel</div>
-              <div class="text-[10px] text-[#8e929e]">Security Engineer</div>
-            </div>
-          </div>
-          <span class="text-[10px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">09:00 IST</span>
-        </div>
-        <!-- Palette -->
-        <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]">
-          <div class="flex items-center gap-3">
-            <div class="agent-avatar bg-emerald-500/10 text-emerald-400 border-emerald-500/20">P</div>
-            <div>
-              <div class="text-sm font-semibold text-white">Palette</div>
-              <div class="text-[10px] text-[#8e929e]">UI Engineer</div>
-            </div>
-          </div>
-          <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">12:00 IST</span>
-        </div>
-        <!-- Newton -->
-        <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]">
-          <div class="flex items-center gap-3">
-            <div class="agent-avatar bg-blue-500/10 text-blue-400 border-blue-500/20">N</div>
-            <div>
-              <div class="text-sm font-semibold text-white">Newton</div>
-              <div class="text-[10px] text-[#8e929e]">Test Engineer</div>
-            </div>
-          </div>
-          <span class="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">15:00 IST</span>
-        </div>
-        <!-- Lucios -->
-        <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]">
-          <div class="flex items-center gap-3">
-            <div class="agent-avatar bg-indigo-500/10 text-indigo-400 border-indigo-500/20">L</div>
-            <div>
-              <div class="text-sm font-semibold text-white">Lucios</div>
-              <div class="text-[10px] text-[#8e929e]">Observability Engineer</div>
-            </div>
-          </div>
-          <span class="text-[10px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded">18:00 IST</span>
-        </div>
-        <!-- Proton -->
-        <div class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]">
-          <div class="flex items-center gap-3">
-            <div class="agent-avatar bg-cyan-500/10 text-cyan-400 border-cyan-500/20">P</div>
-            <div>
-              <div class="text-sm font-semibold text-white">Proton</div>
-              <div class="text-[10px] text-[#8e929e]">Documentation Engineer</div>
-            </div>
-          </div>
-          <span class="text-[10px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded">21:00 IST</span>
+        <div>
+          <h1
+            class="text-base md:text-lg font-bold tracking-tight text-white m-0"
+          >
+            Agent Group Chat
+          </h1>
+          <p class="text-[10px] md:text-xs text-[#8e929e] m-0 line-clamp-1">
+            Live communication logs of Stellar AI OS Engineers
+          </p>
         </div>
       </div>
-    </aside>
-
-    <!-- Main Chat Window -->
-    <main class="flex-1 flex flex-col bg-transparent overflow-hidden relative">
-      <div id="chatFeed" class="flex-1 p-4 md:p-6 overflow-y-auto space-y-4">
-        <!-- Messages will be dynamically rendered here -->
+      <div class="flex items-center gap-2.5 md:gap-4 shrink-0">
+        <span
+          class="inline-flex items-center gap-1.5 px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-[10px] md:text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+        >
+          <span
+            class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"
+          ></span>
+          <span class="hidden sm:inline">Orchestrator Active</span>
+          <span class="sm:hidden">Active</span>
+        </span>
+        <a
+          href="/"
+          class="text-xs md:text-sm text-[#8e929e] hover:text-white transition duration-200 no-underline flex items-center gap-1"
+        >
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 9 9 0 01-18 0z"
+            />
+          </svg>
+          <span class="hidden sm:inline">Back to Terminal</span>
+        </a>
       </div>
-    </main>
+    </header>
 
-  </div>
+    <!-- Workspace Container -->
+    <div class="flex flex-1 overflow-hidden relative">
+      <!-- Backdrop overlay for mobile sidebar -->
+      <div
+        id="sidebarBackdrop"
+        class="fixed inset-0 bg-black/60 backdrop-blur-sm z-20 hidden opacity-0 transition-opacity duration-300 md:hidden"
+      ></div>
 
-  <!-- Javascript -->
-  <script>
-    // Configure marked to render links with target="_blank" and rel="noopener noreferrer"
-    if (typeof marked !== 'undefined') {
-      const renderer = new marked.Renderer();
-      renderer.link = function(href, title, text) {
-        let cleanHref = href;
-        let cleanTitle = title || '';
-        let cleanText = text;
-        if (typeof href === 'object' && href !== null) {
-          cleanHref = href.href;
-          cleanTitle = href.title || '';
-          cleanText = href.text || cleanHref;
+      <!-- Sidebar: Agent Roster -->
+      <aside
+        id="agentSidebar"
+        class="fixed inset-y-0 left-0 w-72 flex flex-col overflow-hidden shrink-0 z-30 transform -translate-x-full transition-transform duration-300 ease-in-out md:static md:w-80 md:translate-x-0"
+      >
+        <div
+          class="p-4 border-b border-[rgba(255,255,255,0.08)] flex items-center justify-between"
+        >
+          <h3
+            class="text-xs font-semibold uppercase tracking-wider text-[#8e929e] m-0"
+          >
+            Engineers in Workspace
+          </h3>
+          <!-- Close button on mobile only -->
+          <button
+            id="closeRosterBtn"
+            class="md:hidden text-[#8e929e] hover:text-white p-1 rounded hover:bg-white/5 transition focus:outline-none"
+            aria-label="Close roster"
+          >
+            <svg
+              class="w-5 h-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="p-4 overflow-y-auto flex-1 space-y-3" id="agentRoster">
+          <!-- Bolt -->
+          <div
+            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                class="agent-avatar bg-amber-500/10 text-amber-400 border-amber-500/20"
+              >
+                B
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-white">Bolt</div>
+                <div class="text-[10px] text-[#8e929e]">
+                  Performance Engineer
+                </div>
+              </div>
+            </div>
+            <span
+              class="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded"
+              >06:00 IST</span
+            >
+          </div>
+          <!-- Sentinel -->
+          <div
+            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                class="agent-avatar bg-red-500/10 text-red-400 border-red-500/20"
+              >
+                S
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-white">Sentinel</div>
+                <div class="text-[10px] text-[#8e929e]">Security Engineer</div>
+              </div>
+            </div>
+            <span
+              class="text-[10px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded"
+              >09:00 IST</span
+            >
+          </div>
+          <!-- Palette -->
+          <div
+            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                class="agent-avatar bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+              >
+                P
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-white">Palette</div>
+                <div class="text-[10px] text-[#8e929e]">UI Engineer</div>
+              </div>
+            </div>
+            <span
+              class="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded"
+              >12:00 IST</span
+            >
+          </div>
+          <!-- Newton -->
+          <div
+            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                class="agent-avatar bg-blue-500/10 text-blue-400 border-blue-500/20"
+              >
+                N
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-white">Newton</div>
+                <div class="text-[10px] text-[#8e929e]">Test Engineer</div>
+              </div>
+            </div>
+            <span
+              class="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded"
+              >15:00 IST</span
+            >
+          </div>
+          <!-- Lucios -->
+          <div
+            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                class="agent-avatar bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+              >
+                L
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-white">Lucios</div>
+                <div class="text-[10px] text-[#8e929e]">
+                  Observability Engineer
+                </div>
+              </div>
+            </div>
+            <span
+              class="text-[10px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded"
+              >18:00 IST</span
+            >
+          </div>
+          <!-- Proton -->
+          <div
+            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)]"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                class="agent-avatar bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+              >
+                P
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-white">Proton</div>
+                <div class="text-[10px] text-[#8e929e]">
+                  Documentation Engineer
+                </div>
+              </div>
+            </div>
+            <span
+              class="text-[10px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded"
+              >21:00 IST</span
+            >
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Chat Window -->
+      <main
+        class="flex-1 flex flex-col bg-transparent overflow-hidden relative"
+      >
+        <div id="chatFeed" class="flex-1 p-4 md:p-6 overflow-y-auto space-y-4">
+          <!-- Messages will be dynamically rendered here -->
+        </div>
+      </main>
+    </div>
+
+    <!-- Javascript -->
+    <script>
+      // Configure marked to render links with target="_blank" and rel="noopener noreferrer"
+      if (typeof marked !== "undefined") {
+        const renderer = new marked.Renderer();
+        renderer.link = function (href, title, text) {
+          let cleanHref = href;
+          let cleanTitle = title || "";
+          let cleanText = text;
+          if (typeof href === "object" && href !== null) {
+            cleanHref = href.href;
+            cleanTitle = href.title || "";
+            cleanText = href.text || cleanHref;
+          }
+          return `<a href="${cleanHref}" title="${cleanTitle}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline">${cleanText}</a>`;
+        };
+        if (typeof marked.use === "function") {
+          marked.use({ renderer: renderer });
+        } else if (typeof marked.setOptions === "function") {
+          marked.setOptions({ renderer: renderer });
         }
-        return `<a href="${cleanHref}" title="${cleanTitle}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline">${cleanText}</a>`;
-      };
-      if (typeof marked.use === 'function') {
-        marked.use({ renderer: renderer });
-      } else if (typeof marked.setOptions === 'function') {
-        marked.setOptions({ renderer: renderer });
       }
-    }
 
-    const chatFeed = document.getElementById('chatFeed');
-    const toggleRosterBtn = document.getElementById('toggleRosterBtn');
-    const closeRosterBtn = document.getElementById('closeRosterBtn');
-    const agentSidebar = document.getElementById('agentSidebar');
-    const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+      const chatFeed = document.getElementById("chatFeed");
+      const toggleRosterBtn = document.getElementById("toggleRosterBtn");
+      const closeRosterBtn = document.getElementById("closeRosterBtn");
+      const agentSidebar = document.getElementById("agentSidebar");
+      const sidebarBackdrop = document.getElementById("sidebarBackdrop");
 
-    // Sidebar Slide Drawer logic
-    function openSidebar() {
-      agentSidebar.classList.remove('-translate-x-full');
-      sidebarBackdrop.classList.remove('hidden');
-      setTimeout(() => {
-        sidebarBackdrop.classList.remove('opacity-0');
-        sidebarBackdrop.classList.add('opacity-100');
-      }, 10);
-    }
+      // Sidebar Slide Drawer logic
+      function openSidebar() {
+        agentSidebar.classList.remove("-translate-x-full");
+        sidebarBackdrop.classList.remove("hidden");
+        setTimeout(() => {
+          sidebarBackdrop.classList.remove("opacity-0");
+          sidebarBackdrop.classList.add("opacity-100");
+        }, 10);
+      }
 
-    function closeSidebar() {
-      agentSidebar.classList.add('-translate-x-full');
-      sidebarBackdrop.classList.remove('opacity-100');
-      sidebarBackdrop.classList.add('opacity-0');
-      setTimeout(() => {
-        sidebarBackdrop.classList.add('hidden');
-      }, 300);
-    }
+      function closeSidebar() {
+        agentSidebar.classList.add("-translate-x-full");
+        sidebarBackdrop.classList.remove("opacity-100");
+        sidebarBackdrop.classList.add("opacity-0");
+        setTimeout(() => {
+          sidebarBackdrop.classList.add("hidden");
+        }, 300);
+      }
 
-    if (toggleRosterBtn) toggleRosterBtn.onclick = openSidebar;
-    if (closeRosterBtn) closeRosterBtn.onclick = closeSidebar;
-    if (sidebarBackdrop) sidebarBackdrop.onclick = closeSidebar;
+      if (toggleRosterBtn) toggleRosterBtn.onclick = openSidebar;
+      if (closeRosterBtn) closeRosterBtn.onclick = closeSidebar;
+      if (sidebarBackdrop) sidebarBackdrop.onclick = closeSidebar;
 
-    // Simple avatar helper
-    function getAvatarColor(sender) {
-      if (sender.includes('Bolt')) return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-      if (sender.includes('Sentinel')) return 'bg-red-500/10 text-red-400 border-red-500/20';
-      if (sender.includes('Palette')) return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      if (sender.includes('Newton')) return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-      if (sender.includes('Lucios')) return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
-      if (sender.includes('Proton')) return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
-      if (sender.includes('Reviewer')) return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
-      return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
-    }
+      // Simple avatar helper
+      function getAvatarColor(sender) {
+        if (sender.includes("Bolt"))
+          return "bg-amber-500/10 text-amber-400 border-amber-500/20";
+        if (sender.includes("Sentinel"))
+          return "bg-red-500/10 text-red-400 border-red-500/20";
+        if (sender.includes("Palette"))
+          return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+        if (sender.includes("Newton"))
+          return "bg-blue-500/10 text-blue-400 border-blue-500/20";
+        if (sender.includes("Lucios"))
+          return "bg-indigo-500/10 text-indigo-400 border-indigo-500/20";
+        if (sender.includes("Proton"))
+          return "bg-cyan-500/10 text-cyan-400 border-cyan-500/20";
+        if (sender.includes("Reviewer"))
+          return "bg-purple-500/10 text-purple-400 border-purple-500/20";
+        return "bg-slate-500/10 text-slate-400 border-slate-500/20";
+      }
 
-    function addMessage(msg) {
-      const isSystem = msg.type === 'system';
-      const wrapper = document.createElement('div');
-      wrapper.className = 'message-container';
+      function addMessage(msg) {
+        const isSystem = msg.type === "system";
+        const wrapper = document.createElement("div");
+        wrapper.className = "message-container";
 
-      const avatarClass = getAvatarColor(msg.sender);
-      const initials = msg.sender.charAt(0);
+        const avatarClass = getAvatarColor(msg.sender);
+        const initials = msg.sender.charAt(0);
 
-      // Render markdown for agent reports, fall back to simple line breaks for system logs or if marked is missing
-      let contentHtml = '';
-      if (isSystem) {
-        // System logs support basic bold formatting from SQLite strings and line breaks
-        let formatted = msg.content
-          .replace(/\n/g, '<br>')
-          .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-          .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-black/40 text-rose-400 font-mono text-xs">$1</code>')
-          .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline">$1</a>');
-        contentHtml = formatted;
-      } else {
-        if (typeof marked !== 'undefined') {
-          contentHtml = marked.parse(msg.content);
+        // Render markdown for agent reports, fall back to simple line breaks for system logs or if marked is missing
+        let contentHtml = "";
+        if (isSystem) {
+          // System logs support basic bold formatting from SQLite strings and line breaks
+          let formatted = msg.content
+            .replace(/\n/g, "<br>")
+            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+            .replace(
+              /`([^`]+)`/g,
+              '<code class="px-1.5 py-0.5 rounded bg-black/40 text-rose-400 font-mono text-xs">$1</code>',
+            )
+            .replace(
+              /(https?:\/\/[^\s<]+)/g,
+              '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline">$1</a>',
+            );
+          contentHtml = formatted;
         } else {
-          contentHtml = msg.content.replace(/\n/g, '<br>');
+          if (typeof marked !== "undefined") {
+            contentHtml = marked.parse(msg.content);
+          } else {
+            contentHtml = msg.content.replace(/\n/g, "<br>");
+          }
         }
-      }
 
-      wrapper.innerHTML = `
+        wrapper.innerHTML = `
         <div class="flex items-start gap-3">
-          ${isSystem ? `
+          ${
+            isSystem
+              ? `
             <div class="agent-avatar bg-indigo-500/10 text-indigo-400 border-indigo-500/20 shrink-0">O</div>
-          ` : `
+          `
+              : `
             <div class="agent-avatar ${avatarClass} shrink-0">${initials}</div>
-          `}
+          `
+          }
           <div class="flex-1 min-w-0">
             <div class="flex items-baseline gap-2 mb-1">
               <span class="text-xs font-semibold text-white">${msg.sender}</span>
               <span class="text-[10px] text-[#8e929e]">${msg.timestamp}</span>
             </div>
-            <div class="message-bubble ${isSystem ? 'system' : ''} text-sm">
+            <div class="message-bubble ${isSystem ? "system" : ""} text-sm">
               ${contentHtml}
             </div>
           </div>
         </div>
       `;
-      chatFeed.appendChild(wrapper);
-      chatFeed.scrollTop = chatFeed.scrollHeight;
-    }
-
-    // Load backlog/history
-    async function loadHistory() {
-      try {
-        const res = await fetch('/api/admin/agent_group_chat/history');
-        if (res.status === 403) {
-          alert("Unauthorized access!");
-          window.location.href = "/";
-          return;
-        }
-        const data = await res.json();
-        chatFeed.innerHTML = '';
-        data.forEach(msg => addMessage(msg));
-      } catch (err) {
-        console.error("Failed to load chat history", err);
+        chatFeed.appendChild(wrapper);
+        chatFeed.scrollTop = chatFeed.scrollHeight;
       }
-    }
 
-    // Init global SSE stream
-    function initStream() {
-      const source = new EventSource('/api/admin/agent_group_chat/stream');
-      
-      source.onmessage = function(event) {
+      // Load backlog/history
+      async function loadHistory() {
         try {
-          const msg = JSON.parse(event.data);
-          addMessage(msg);
+          const res = await fetch("/api/admin/agent_group_chat/history");
+          if (res.status === 403) {
+            alert("Unauthorized access!");
+            window.location.href = "/";
+            return;
+          }
+          const data = await res.json();
+          chatFeed.innerHTML = "";
+          data.forEach((msg) => addMessage(msg));
         } catch (err) {
-          console.error("Failed to parse streamed message", err);
+          console.error("Failed to load chat history", err);
         }
-      };
+      }
 
-      source.onerror = function() {
-        console.log("SSE Stream closed or failed. Retrying in 5s...");
-        source.close();
-        setTimeout(initStream, 5000);
-      };
-    }
+      // Init global SSE stream
+      function initStream() {
+        const source = new EventSource("/api/admin/agent_group_chat/stream");
 
-    // Start
-    loadHistory().then(initStream);
-  </script>
-</body>
+        source.onmessage = function (event) {
+          try {
+            const msg = JSON.parse(event.data);
+            addMessage(msg);
+          } catch (err) {
+            console.error("Failed to parse streamed message", err);
+          }
+        };
+
+        source.onerror = function () {
+          console.log("SSE Stream closed or failed. Retrying in 5s...");
+          source.close();
+          setTimeout(initStream, 5000);
+        };
+      }
+
+      // Start
+      loadHistory().then(initStream);
+    </script>
+  </body>
 </html>

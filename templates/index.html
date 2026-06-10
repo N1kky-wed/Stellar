@@ -9,16 +9,22 @@
       type="image/svg+xml"
       href="/favicon.ico"
     />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <meta
       name="description"
       content="A persistent, stateful AI operating system for total autonomous agency across infrastructure, research, and design. Orchestrate Docker clusters, clone Git repos, and perform deep research with YouTube intelligence. From Red-Team sandboxes to professional PPTs and interactive reports, Stellar builds, hosts, and orchestrates with a continuous ground-truth memory ledger."
     />
-    
+
     <!-- PWA Manifest & Standalone Mobile Integration -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
     <meta name="apple-mobile-web-app-title" content="Stellar" />
     <link rel="apple-touch-icon" href="/static/icon.svg" />
     <link
@@ -34,8 +40,8 @@
       tailwind.config = {
         corePlugins: {
           preflight: false,
-        }
-      }
+        },
+      };
     </script>
     <link
       rel="stylesheet"
@@ -58,7 +64,10 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <link rel="stylesheet" href="/static/main.css?v=66" />
     <link rel="stylesheet" href="/custom_select.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css"
+    />
     <script src="/custom_select.js"></script>
     <style>
       .preload * {
@@ -141,14 +150,22 @@
       <h2 class="voice-prompt">Listening...</h2>
       <div class="visualizer-container">
         <div class="voice-controls">
-          <button id="cancelVoiceBtn" title="Cancel" aria-label="Cancel voice message">
+          <button
+            id="cancelVoiceBtn"
+            title="Cancel"
+            aria-label="Cancel voice message"
+          >
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path
                 d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41z"
               ></path>
             </svg>
           </button>
-          <button id="confirmVoiceBtn" title="Confirm & Send" aria-label="Confirm and send voice message">
+          <button
+            id="confirmVoiceBtn"
+            title="Confirm & Send"
+            aria-label="Confirm and send voice message"
+          >
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path
                 d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41L9 16.17z"
@@ -240,39 +257,82 @@
           </button>
         </div>
         <!-- Admin Dashboard Tabs -->
-        <div style="display: flex; gap: 15px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px;">
-          <button id="adminTabUsersBtn" style="
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #fff;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.95rem;
-            font-weight: 500;
-            transition: all 0.2s;
+        <div
+          style="
             display: flex;
-            align-items: center;
-            gap: 8px;
-          ">
-            <svg style="width: 18px; height: 18px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+            gap: 15px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 15px;
+          "
+        >
+          <button
+            id="adminTabUsersBtn"
+            style="
+              background: rgba(255, 255, 255, 0.05);
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              color: #fff;
+              padding: 10px 20px;
+              border-radius: 8px;
+              cursor: pointer;
+              font-size: 0.95rem;
+              font-weight: 500;
+              transition: all 0.2s;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            "
+          >
+            <svg
+              style="width: 18px; height: 18px"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+              ></path>
+            </svg>
             Users & Waitlist
           </button>
-          <button id="adminTabKeysBtn" style="
-            background: transparent;
-            border: 1px solid transparent;
-            color: #888;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.95rem;
-            font-weight: 500;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-          ">
-            <svg style="width: 18px; height: 18px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m0 0a2 2 0 01-2 2m2-2h3m-3 4a2 2 0 012 2m0 0a2 2 0 01-2 2m2-2h3M3 12h1m8-9v1m8 8h1M2 9h1m8-9v1m-8 8H2m9 2a9 9 0 11-18 0 9 9 0 0118 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M9 12a3 3 0 106 0 3 3 0 00-6 0z"></path></svg>
+          <button
+            id="adminTabKeysBtn"
+            style="
+              background: transparent;
+              border: 1px solid transparent;
+              color: #888;
+              padding: 10px 20px;
+              border-radius: 8px;
+              cursor: pointer;
+              font-size: 0.95rem;
+              font-weight: 500;
+              transition: all 0.2s;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            "
+          >
+            <svg
+              style="width: 18px; height: 18px"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15 7a2 2 0 012 2m0 0a2 2 0 01-2 2m2-2h3m-3 4a2 2 0 012 2m0 0a2 2 0 01-2 2m2-2h3M3 12h1m8-9v1m8 8h1M2 9h1m8-9v1m-8 8H2m9 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              ></path>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9 12a3 3 0 106 0 3 3 0 00-6 0z"
+              ></path>
+            </svg>
             API Key Health
           </button>
         </div>
@@ -286,7 +346,12 @@
         </div>
         <div
           id="keysContent"
-          style="display: none; flex-grow: 1; overflow-y: auto; padding: 25px 10px 40px 0"
+          style="
+            display: none;
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 25px 10px 40px 0;
+          "
         >
           <div id="keysGrid" class="tool-grid">
             <!-- Cards populated by JS -->
@@ -321,9 +386,17 @@
           class="header-icon-btn"
           title="Toggle Browser Preview"
           aria-label="Toggle browser preview panel"
-          style="display: none;"
+          style="display: none"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
             <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
             <line x1="8" y1="21" x2="16" y2="21"></line>
             <line x1="12" y1="17" x2="12" y2="21"></line>
@@ -364,7 +437,15 @@
           title="Export current chat as JSON"
           aria-label="Export current chat as JSON"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -390,7 +471,11 @@
     <div id="sidebar" style="display: none">
       <div class="sidebar-header">
         <h3>Chats</h3>
-        <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close sidebar">
+        <button
+          class="sidebar-close-btn"
+          id="sidebarCloseBtn"
+          aria-label="Close sidebar"
+        >
           <svg width="20" height="20" aria-hidden="true">
             <use xlink:href="#icon-close"></use>
           </svg>
@@ -419,7 +504,11 @@
 
     <div id="profileModal" style="display: none">
       <div class="profile-modal-content">
-        <button class="profile-close-btn" id="profileCloseBtn" aria-label="Close profile modal">
+        <button
+          class="profile-close-btn"
+          id="profileCloseBtn"
+          aria-label="Close profile modal"
+        >
           <svg width="18" height="18" aria-hidden="true">
             <use xlink:href="#icon-close"></use>
           </svg>
@@ -460,7 +549,22 @@
           </label>
         </div>
 
-        <button id="pwaProfileInstallBtn" style="display: none; margin-top: 15px; background: linear-gradient(135deg, #00f0ff 0%, #d946ef 100%); color: white; border: none; font-weight: 600; padding: 10px; border-radius: 8px; cursor: pointer; width: 100%; transition: opacity 0.2s;">
+        <button
+          id="pwaProfileInstallBtn"
+          style="
+            display: none;
+            margin-top: 15px;
+            background: linear-gradient(135deg, #00f0ff 0%, #d946ef 100%);
+            color: white;
+            border: none;
+            font-weight: 600;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: opacity 0.2s;
+          "
+        >
           Install Stellar App
         </button>
 
@@ -606,7 +710,11 @@
             <h2>Agent Capabilities</h2>
             <p>Orchestrate active nodes and intelligence modules.</p>
           </div>
-          <button class="profile-close-btn" id="agentSettingsCloseBtn" aria-label="Close agent settings">
+          <button
+            class="profile-close-btn"
+            id="agentSettingsCloseBtn"
+            aria-label="Close agent settings"
+          >
             <svg width="18" height="18" aria-hidden="true">
               <use xlink:href="#icon-close"></use>
             </svg>
@@ -933,7 +1041,8 @@
               <div class="tool-card-title">Request User Interaction</div>
             </div>
             <div class="tool-card-desc">
-              Allows the agent to pause execution and prompt the user for input, decisions, or approvals through rich UI modals.
+              Allows the agent to pause execution and prompt the user for input,
+              decisions, or approvals through rich UI modals.
             </div>
             <div class="tool-card-footer">
               <span class="status-label">Tool Status</span>
@@ -951,178 +1060,469 @@
               </label>
             </div>
           </div>
-
         </div>
       </div>
     </div>
 
     <div id="tokenCountBar"></div>
 
-    <div id="appSplitWrapper" style="display: flex; flex: 1; width: 100%; overflow: hidden; min-height: 0;">
-      <div id="chatPane" style="flex: 1; display: flex; flex-direction: column; position: relative; min-width: 0; overflow: hidden;">
-        <div id="chatContainer" style="display: none">
-      <!-- Welcome Screen Overhaul -->
-      <div id="welcomeScreen" class="welcome-screen" style="display: none;">
-        <!-- Greeting -->
-        <h1 class="welcome-greeting" id="welcomeGreeting">Greetings.</h1>
-        <p class="welcome-subtitle">What would you like to build today?</p>
-        
-        <div class="welcome-divider"></div>
-        
-        <!-- Capabilities Grid -->
-        <div class="welcome-capabilities">
-          <div class="welcome-cap-card" onclick="document.getElementById('chatInput').value = 'Help me build and deploy a full-stack application'; document.getElementById('chatInput').focus();">
-            <span class="welcome-cap-icon purple"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 1em; height: 1em;"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M4 13a8 8 0 0 1 7 7a6 6 0 0 0 3 -5a9 9 0 0 0 6 -8a3 3 0 0 0 -3 -3a9 9 0 0 0 -8 6a6 6 0 0 0 -5 3" /><path d="M7 14a6 6 0 0 0 -3 6a6 6 0 0 0 6 -3" /><path d="M14 9a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /></svg></span>
-            <div class="welcome-cap-title">Build & Deploy</div>
-            <div class="welcome-cap-desc">Full-stack applications via Repo Control</div>
-          </div>
-          
-          <div class="welcome-cap-card" onclick="document.getElementById('chatInput').value = 'Research the latest developments in '; document.getElementById('chatInput').focus();">
-            <span class="welcome-cap-icon blue"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 1em; height: 1em;"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M6 21l6 -5l6 5" /><path d="M12 13v8" /><path d="M3.294 13.678l.166 .281c.52 .88 1.624 1.265 2.605 .91l14.242 -5.165a1.023 1.023 0 0 0 .565 -1.456l-2.62 -4.705a1.087 1.087 0 0 0 -1.447 -.42l-.056 .032l-12.694 7.618c-1.02 .613 -1.357 1.897 -.76 2.905l-.001 0" /><path d="M14 5l3 5.5" /></svg></span>
-            <div class="welcome-cap-title">Deep Research</div>
-            <div class="welcome-cap-desc">Real-time web search & YouTube analysis</div>
-          </div>
-          
-          <div class="welcome-cap-card" onclick="document.getElementById('chatInput').value = 'Write and run a Python script that '; document.getElementById('chatInput').focus();">
-            <span class="welcome-cap-icon green"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 1em; height: 1em;"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M8 9l3 3l-3 3" /><path d="M13 15l3 0" /><path d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2l0 -12" /></svg></span>
-            <div class="welcome-cap-title">Code & Execute</div>
-            <div class="welcome-cap-desc">Sandboxed runtime for security & validation</div>
-          </div>
-          
-          <div class="welcome-cap-card" onclick="document.getElementById('chatInput').value = 'Generate a professional presentation about '; document.getElementById('chatInput').focus();">
-            <span class="welcome-cap-icon pink"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 1em; height: 1em;"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M3 21v-4a4 4 0 1 1 4 4h-4" /><path d="M21 3a16 16 0 0 0 -12.8 10.2" /><path d="M21 3a16 16 0 0 1 -10.2 12.8" /><path d="M10.6 9a9 9 0 0 1 4.4 4.4" /></svg></span>
-            <div class="welcome-cap-title">Create & Design</div>
-            <div class="welcome-cap-desc">High-fidelity UI mockups & presentations</div>
-          </div>
-        </div>
-        
-        <!-- Quick Action Chips -->
-        <div class="welcome-chips">
-          <button class="welcome-chip" onclick="document.getElementById('chatInput').value = 'Analyze this YouTube video: '; document.getElementById('chatInput').focus();"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 1.2em; height: 1.2em;"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M2 8a4 4 0 0 1 4 -4h12a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-12a4 4 0 0 1 -4 -4v-8" /><path d="M10 9l5 3l-5 3l0 -6" /></svg> Analyze Video</button>
-          <button class="welcome-chip" onclick="document.getElementById('chatInput').value = 'Clone this GitHub repo: '; document.getElementById('chatInput').focus();"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 1.2em; height: 1.2em;"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M5 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M5 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M7 8l0 8" /><path d="M9 18h6a2 2 0 0 0 2 -2v-5" /><path d="M14 14l3 -3l3 3" /></svg> Clone Repo</button>
-          <button class="welcome-chip" onclick="document.getElementById('chatInput').value = 'Search the web for '; document.getElementById('chatInput').focus();"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 1.2em; height: 1.2em;"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg> Web Search</button>
-          <button class="welcome-chip" onclick="document.getElementById('chatInput').value = 'Generate an image of '; document.getElementById('chatInput').focus();"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 1.2em; height: 1.2em;"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M15 8h.01" /><path d="M10 21h-4a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l1 1" /><path d="M14 21v-4a2 2 0 1 1 4 0v4" /><path d="M14 19h4" /><path d="M21 15v6" /></svg> Generate Image</button>
-        </div>
-        
-        <!-- Floating Particles Background -->
-        <div class="welcome-particles">
-          <div class="welcome-particle"></div>
-          <div class="welcome-particle"></div>
-          <div class="welcome-particle"></div>
-          <div class="welcome-particle"></div>
-          <div class="welcome-particle"></div>
-          <div class="welcome-particle"></div>
-          <div class="welcome-particle"></div>
-          <div class="welcome-particle"></div>
-        </div>
-      </div>
-      
-      <div id="messages"></div>
-    </div>
-
-    <button id="chatScrollToBottomBtn" title="Scroll to bottom" aria-label="Scroll to bottom of chat">
-      <svg width="24" height="24" aria-hidden="true">
-        <use xlink:href="#icon-arrow-down"></use>
-      </svg>
-    </button>
-    <div id="inputContainer" style="display: none">
-      <div class="drop-overlay">Drop files to upload</div>
+    <div
+      id="appSplitWrapper"
+      style="
+        display: flex;
+        flex: 1;
+        width: 100%;
+        overflow: hidden;
+        min-height: 0;
+      "
+    >
       <div
-        id="stagedFilesContainer"
+        id="chatPane"
         style="
-          font-size: 0.85em;
-          color: var(--secondary-text-color);
-          margin-bottom: 5px;
-          max-height: 80px;
-          overflow-y: auto;
-          display: none;
-          padding: 5px;
-          border: 1px dashed rgba(255, 255, 255, 0.1);
-          border-radius: 4px;
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          position: relative;
+          min-width: 0;
+          overflow: hidden;
         "
-      ></div>
-      <textarea
-        id="chatInput"
-        placeholder="Send a message or drop/paste files..."
-        rows="1"
-      ></textarea>
-      <div class="input-buttons">
-        <div class="left-buttons">
-          <button
-            id="voiceInputBtn"
-            class="file-upload-label-button"
-            title="Use voice input"
-            aria-label="Start voice input"
-          >
-            <svg width="18" height="18" aria-hidden="true">
-              <use xlink:href="#icon-mic"></use>
-            </svg>
-          </button>
-          <label
-            for="fileUpload"
-            class="file-upload-label-button"
-            title="Attach files"
-          >
-            <svg>
-              <use xlink:href="#icon-attach"></use>
-            </svg>
-          </label>
-          <input type="file" id="fileUpload" multiple style="display: none" />
-        </div>
-        <div class="right-buttons">
-          <select id="modelSelect">
-            <option
-              value="gemini-3.1-flash-lite"
-              title="Fastest model, good for quick answers."
-            >
-              Emerald
-            </option>
-            <option
-              value="gemma-4-31b-it"
-              selected
-              title="Balanced speed and capability. Default."
-            >
-              Lunarity
-            </option>
-            <option
-              value="gemini-3-flash-preview"
-              title="Smarter, better for complex tasks. "
-            >
-              Crimson
-            </option>
-            <option
-              value="gemini-3.5-flash"
-              title="Most powerful model for in-depth analysis. "
-            >
-              Obsidian
-            </option>
-          </select>
-          <button id="sendBtn" title="Send message (Enter)">➤</button>
+      >
+        <div id="chatContainer" style="display: none">
+          <!-- Welcome Screen Overhaul -->
+          <div id="welcomeScreen" class="welcome-screen" style="display: none">
+            <!-- Greeting -->
+            <h1 class="welcome-greeting" id="welcomeGreeting">Greetings.</h1>
+            <p class="welcome-subtitle">What would you like to build today?</p>
 
-          <button id="stopBtn" title="Stop generation" aria-label="Stop text generation" style="display: none">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <use xlink:href="#icon-stop"></use>
-            </svg>
-          </button>
+            <div class="welcome-divider"></div>
+
+            <!-- Capabilities Grid -->
+            <div class="welcome-capabilities">
+              <div
+                class="welcome-cap-card"
+                onclick="
+                  document.getElementById('chatInput').value =
+                    'Help me build and deploy a full-stack application';
+                  document.getElementById('chatInput').focus();
+                "
+              >
+                <span class="welcome-cap-icon purple"
+                  ><svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    style="width: 1em; height: 1em"
+                  >
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                    <path
+                      d="M4 13a8 8 0 0 1 7 7a6 6 0 0 0 3 -5a9 9 0 0 0 6 -8a3 3 0 0 0 -3 -3a9 9 0 0 0 -8 6a6 6 0 0 0 -5 3"
+                    />
+                    <path d="M7 14a6 6 0 0 0 -3 6a6 6 0 0 0 6 -3" />
+                    <path d="M14 9a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /></svg
+                ></span>
+                <div class="welcome-cap-title">Build & Deploy</div>
+                <div class="welcome-cap-desc">
+                  Full-stack applications via Repo Control
+                </div>
+              </div>
+
+              <div
+                class="welcome-cap-card"
+                onclick="
+                  document.getElementById('chatInput').value =
+                    'Research the latest developments in ';
+                  document.getElementById('chatInput').focus();
+                "
+              >
+                <span class="welcome-cap-icon blue"
+                  ><svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    style="width: 1em; height: 1em"
+                  >
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                    <path d="M6 21l6 -5l6 5" />
+                    <path d="M12 13v8" />
+                    <path
+                      d="M3.294 13.678l.166 .281c.52 .88 1.624 1.265 2.605 .91l14.242 -5.165a1.023 1.023 0 0 0 .565 -1.456l-2.62 -4.705a1.087 1.087 0 0 0 -1.447 -.42l-.056 .032l-12.694 7.618c-1.02 .613 -1.357 1.897 -.76 2.905l-.001 0"
+                    />
+                    <path d="M14 5l3 5.5" /></svg
+                ></span>
+                <div class="welcome-cap-title">Deep Research</div>
+                <div class="welcome-cap-desc">
+                  Real-time web search & YouTube analysis
+                </div>
+              </div>
+
+              <div
+                class="welcome-cap-card"
+                onclick="
+                  document.getElementById('chatInput').value =
+                    'Write and run a Python script that ';
+                  document.getElementById('chatInput').focus();
+                "
+              >
+                <span class="welcome-cap-icon green"
+                  ><svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    style="width: 1em; height: 1em"
+                  >
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                    <path d="M8 9l3 3l-3 3" />
+                    <path d="M13 15l3 0" />
+                    <path
+                      d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2l0 -12"
+                    /></svg
+                ></span>
+                <div class="welcome-cap-title">Code & Execute</div>
+                <div class="welcome-cap-desc">
+                  Sandboxed runtime for security & validation
+                </div>
+              </div>
+
+              <div
+                class="welcome-cap-card"
+                onclick="
+                  document.getElementById('chatInput').value =
+                    'Generate a professional presentation about ';
+                  document.getElementById('chatInput').focus();
+                "
+              >
+                <span class="welcome-cap-icon pink"
+                  ><svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    style="width: 1em; height: 1em"
+                  >
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                    <path d="M3 21v-4a4 4 0 1 1 4 4h-4" />
+                    <path d="M21 3a16 16 0 0 0 -12.8 10.2" />
+                    <path d="M21 3a16 16 0 0 1 -10.2 12.8" />
+                    <path d="M10.6 9a9 9 0 0 1 4.4 4.4" /></svg
+                ></span>
+                <div class="welcome-cap-title">Create & Design</div>
+                <div class="welcome-cap-desc">
+                  High-fidelity UI mockups & presentations
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Action Chips -->
+            <div class="welcome-chips">
+              <button
+                class="welcome-chip"
+                onclick="
+                  document.getElementById('chatInput').value =
+                    'Analyze this YouTube video: ';
+                  document.getElementById('chatInput').focus();
+                "
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  style="width: 1.2em; height: 1.2em"
+                >
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                  <path
+                    d="M2 8a4 4 0 0 1 4 -4h12a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-12a4 4 0 0 1 -4 -4v-8"
+                  />
+                  <path d="M10 9l5 3l-5 3l0 -6" />
+                </svg>
+                Analyze Video
+              </button>
+              <button
+                class="welcome-chip"
+                onclick="
+                  document.getElementById('chatInput').value =
+                    'Clone this GitHub repo: ';
+                  document.getElementById('chatInput').focus();
+                "
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  style="width: 1.2em; height: 1.2em"
+                >
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                  <path d="M5 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                  <path d="M5 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                  <path d="M15 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" />
+                  <path d="M7 8l0 8" />
+                  <path d="M9 18h6a2 2 0 0 0 2 -2v-5" />
+                  <path d="M14 14l3 -3l3 3" />
+                </svg>
+                Clone Repo
+              </button>
+              <button
+                class="welcome-chip"
+                onclick="
+                  document.getElementById('chatInput').value =
+                    'Search the web for ';
+                  document.getElementById('chatInput').focus();
+                "
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  style="width: 1.2em; height: 1.2em"
+                >
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                  <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+                  <path d="M3.6 9h16.8" />
+                  <path d="M3.6 15h16.8" />
+                  <path d="M11.5 3a17 17 0 0 0 0 18" />
+                  <path d="M12.5 3a17 17 0 0 1 0 18" />
+                </svg>
+                Web Search
+              </button>
+              <button
+                class="welcome-chip"
+                onclick="
+                  document.getElementById('chatInput').value =
+                    'Generate an image of ';
+                  document.getElementById('chatInput').focus();
+                "
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  style="width: 1.2em; height: 1.2em"
+                >
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                  <path d="M15 8h.01" />
+                  <path
+                    d="M10 21h-4a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v5"
+                  />
+                  <path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l1 1" />
+                  <path d="M14 21v-4a2 2 0 1 1 4 0v4" />
+                  <path d="M14 19h4" />
+                  <path d="M21 15v6" />
+                </svg>
+                Generate Image
+              </button>
+            </div>
+
+            <!-- Floating Particles Background -->
+            <div class="welcome-particles">
+              <div class="welcome-particle"></div>
+              <div class="welcome-particle"></div>
+              <div class="welcome-particle"></div>
+              <div class="welcome-particle"></div>
+              <div class="welcome-particle"></div>
+              <div class="welcome-particle"></div>
+              <div class="welcome-particle"></div>
+              <div class="welcome-particle"></div>
+            </div>
+          </div>
+
+          <div id="messages"></div>
+        </div>
+
+        <button
+          id="chatScrollToBottomBtn"
+          title="Scroll to bottom"
+          aria-label="Scroll to bottom of chat"
+        >
+          <svg width="24" height="24" aria-hidden="true">
+            <use xlink:href="#icon-arrow-down"></use>
+          </svg>
+        </button>
+        <div id="inputContainer" style="display: none">
+          <div class="drop-overlay">Drop files to upload</div>
+          <div
+            id="stagedFilesContainer"
+            style="
+              font-size: 0.85em;
+              color: var(--secondary-text-color);
+              margin-bottom: 5px;
+              max-height: 80px;
+              overflow-y: auto;
+              display: none;
+              padding: 5px;
+              border: 1px dashed rgba(255, 255, 255, 0.1);
+              border-radius: 4px;
+            "
+          ></div>
+          <textarea
+            id="chatInput"
+            placeholder="Send a message or drop/paste files..."
+            rows="1"
+          ></textarea>
+          <div class="input-buttons">
+            <div class="left-buttons">
+              <button
+                id="voiceInputBtn"
+                class="file-upload-label-button"
+                title="Use voice input"
+                aria-label="Start voice input"
+              >
+                <svg width="18" height="18" aria-hidden="true">
+                  <use xlink:href="#icon-mic"></use>
+                </svg>
+              </button>
+              <label
+                for="fileUpload"
+                class="file-upload-label-button"
+                title="Attach files"
+              >
+                <svg>
+                  <use xlink:href="#icon-attach"></use>
+                </svg>
+              </label>
+              <input
+                type="file"
+                id="fileUpload"
+                multiple
+                style="display: none"
+              />
+            </div>
+            <div class="right-buttons">
+              <select id="modelSelect">
+                <option
+                  value="gemini-3.1-flash-lite"
+                  title="Fastest model, good for quick answers."
+                >
+                  Emerald
+                </option>
+                <option
+                  value="gemma-4-31b-it"
+                  selected
+                  title="Balanced speed and capability. Default."
+                >
+                  Lunarity
+                </option>
+                <option
+                  value="gemini-3-flash-preview"
+                  title="Smarter, better for complex tasks. "
+                >
+                  Crimson
+                </option>
+                <option
+                  value="gemini-3.5-flash"
+                  title="Most powerful model for in-depth analysis. "
+                >
+                  Obsidian
+                </option>
+              </select>
+              <button id="sendBtn" title="Send message (Enter)">➤</button>
+
+              <button
+                id="stopBtn"
+                title="Stop generation"
+                aria-label="Stop text generation"
+                style="display: none"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <use xlink:href="#icon-stop"></use>
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  </div> <!-- Close chatPane -->
+      <!-- Close chatPane -->
 
-  <div id="paneResizer" style="display: none; width: 6px; cursor: col-resize; background: transparent; z-index: 101; position: relative;" 
-       onmouseover="this.style.background='var(--model-color-start)'" 
-       onmouseout="this.style.background='transparent'"></div>
-  
-  <div id="browserPane" style="display: none;">
-    <div class="browser-tabs-header">
-      <div class="browser-tabs-container" id="browserTabsContainer"></div>
-      <button id="closeBrowserPaneBtn" title="Close Panel" aria-label="Close browser panel">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg>
-      </button>
+      <div
+        id="paneResizer"
+        style="
+          display: none;
+          width: 6px;
+          cursor: col-resize;
+          background: transparent;
+          z-index: 101;
+          position: relative;
+        "
+        onmouseover="this.style.background = 'var(--model-color-start)'"
+        onmouseout="this.style.background = 'transparent'"
+      ></div>
+
+      <div id="browserPane" style="display: none">
+        <div class="browser-tabs-header">
+          <div class="browser-tabs-container" id="browserTabsContainer"></div>
+          <button
+            id="closeBrowserPaneBtn"
+            title="Close Panel"
+            aria-label="Close browser panel"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="M18 6L6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="browserContentContainer"></div>
+      </div>
     </div>
-    <div id="browserContentContainer"></div>
-  </div>
-</div> <!-- Close appSplitWrapper -->
+    <!-- Close appSplitWrapper -->
 
     <div id="editModalBackdrop" style="display: none">
       <div class="modal-content">
@@ -1161,7 +1561,11 @@
     <div id="live-preview-container" style="display: none">
       <div id="live-preview-header">
         <span id="live-preview-title"></span>
-        <button id="live-preview-close-btn" title="Close Preview" aria-label="Close live preview">
+        <button
+          id="live-preview-close-btn"
+          title="Close Preview"
+          aria-label="Close live preview"
+        >
           <span aria-hidden="true">×</span>
         </button>
       </div>
