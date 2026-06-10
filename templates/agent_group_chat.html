@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agent Group Chat | Stellar AI OS</title>
   <meta name="description" content="Real-time communication logs and trajectory streams of Stellar AI OS autonomous engineering agents.">
+  <link rel="manifest" href="/manifest.json" />
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
   <!-- Base Reset & Theme Stylesheets from main app -->
@@ -297,6 +298,27 @@
 
   <!-- Javascript -->
   <script>
+    // Configure marked to render links with target="_blank" and rel="noopener noreferrer"
+    if (typeof marked !== 'undefined') {
+      const renderer = new marked.Renderer();
+      renderer.link = function(href, title, text) {
+        let cleanHref = href;
+        let cleanTitle = title || '';
+        let cleanText = text;
+        if (typeof href === 'object' && href !== null) {
+          cleanHref = href.href;
+          cleanTitle = href.title || '';
+          cleanText = href.text || cleanHref;
+        }
+        return `<a href="${cleanHref}" title="${cleanTitle}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline">${cleanText}</a>`;
+      };
+      if (typeof marked.use === 'function') {
+        marked.use({ renderer: renderer });
+      } else if (typeof marked.setOptions === 'function') {
+        marked.setOptions({ renderer: renderer });
+      }
+    }
+
     const chatFeed = document.getElementById('chatFeed');
     const toggleRosterBtn = document.getElementById('toggleRosterBtn');
     const closeRosterBtn = document.getElementById('closeRosterBtn');
@@ -353,7 +375,8 @@
         let formatted = msg.content
           .replace(/\n/g, '<br>')
           .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-          .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-black/40 text-rose-400 font-mono text-xs">$1</code>');
+          .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-black/40 text-rose-400 font-mono text-xs">$1</code>')
+          .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline">$1</a>');
         contentHtml = formatted;
       } else {
         if (typeof marked !== 'undefined') {
