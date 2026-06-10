@@ -1063,8 +1063,19 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
 
         send_raw(channel, '\x1b[?1049h\x1b[?25l')  # Enter alt screen, hide cursor
 
-        def draw(content: str):
-            send_raw(channel, '\x1b[H\x1b[0J' + content)
+        # Double-buffer / cache the rendered string and only print cursor reposition
+        # to home (\x1b[H) without clearing (\x1b[0J) to eliminate terminal flickering.
+        last_drawn_content = None
+
+        def draw(content: str, clear: bool = False):
+            nonlocal last_drawn_content
+            if not clear and content == last_drawn_content:
+                return
+            if clear:
+                send_raw(channel, '\x1b[2J\x1b[H' + content)
+            else:
+                send_raw(channel, '\x1b[H' + content)
+            last_drawn_content = content
 
         # ---- PHASE 0: Theme Picker ----
         saved = load_theme()
@@ -1074,14 +1085,16 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         focus = "theme"
         theme_picked = False
         
-        draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default))
+        # Clear screen on the initial theme picker draw
+        draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default), clear=True)
         
         while True:
             key = read_key(channel, timeout=5.0)
             if not key:
                 if server.resize_event.is_set():
                     server.resize_event.clear()
-                    draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default))
+                    # Clear screen on resize to remove layout artifacts
+                    draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default), clear=True)
                 continue
             
             needs_redraw = True
@@ -1127,14 +1140,17 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 error_msg = f"Invalid code. {remaining} attempt{'s' if remaining > 1 else ''} remaining."
 
             code = ""
+            first_draw = True
             while len(code) < 6:
-                draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, error_msg=error_msg, theme=active_theme))
+                # Clear screen on first draw of auth screen to remove theme picker
+                draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, error_msg=error_msg, theme=active_theme), clear=first_draw)
+                first_draw = False
                 
                 key = read_key(channel, timeout=5.0)
                 if not key:
                     if server.resize_event.is_set():
                         server.resize_event.clear()
-                        draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, error_msg=error_msg, theme=active_theme))
+                        draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, error_msg=error_msg, theme=active_theme), clear=True)
                     continue
                     
                 if key == 'BACKSPACE':
@@ -1162,7 +1178,8 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 audit.info(f"AUTH_FAIL | ip={real_ip} | attempt={auth_attempts} | code_prefix={code[:2] if code else '??'}****")
 
         if not user_info:
-            draw(TUI.goodbye_screen("User", server.term_width, server.term_height, theme=active_theme))
+            # Clear screen when transitioning to goodbye screen
+            draw(TUI.goodbye_screen("User", server.term_width, server.term_height, theme=active_theme), clear=True)
             audit.info(f"AUTH_LOCKOUT | ip={real_ip} | attempts={MAX_AUTH_ATTEMPTS}")
             time.sleep(2)
             send_raw(channel, '\x1b[?1049l\x1b[?25h')
@@ -1230,7 +1247,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 
             return f_repos
 
-        def redraw():
+        def redraw(clear: bool = False):
             nonlocal status_msg
             draw(TUI.dashboard(
                 repos, selected_index, username, 
@@ -1240,17 +1257,19 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 filter_state=filter_states[filter_idx], 
                 sort_state=sort_states[sort_idx], 
                 mode=mode, status_map=status_map
-            ))
+            ), clear=clear)
             status_msg = ""
 
         needs_refresh = True
         last_refresh_time = 0
         REFRESH_INTERVAL = 3.0 # seconds
+        first_dashboard_draw = True
 
         while True:
             # Check idle timeout
             if time.time() - last_activity > SESSION_IDLE_TIMEOUT:
-                draw(TUI.goodbye_screen(username, server.term_width, server.term_height, theme=active_theme))
+                # Clear screen when entering goodbye screen
+                draw(TUI.goodbye_screen(username, server.term_width, server.term_height, theme=active_theme), clear=True)
                 audit.info(f"SESSION_TIMEOUT | user_id={user_id} | idle_minutes={SESSION_IDLE_TIMEOUT // 60}")
                 time.sleep(2)
                 break
@@ -1290,14 +1309,15 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 last_refresh_time = time.time()
                 if selected_index >= len(repos):
                     selected_index = max(0, len(repos) - 1)
-                redraw()
+                redraw(clear=first_dashboard_draw)
+                first_dashboard_draw = False
 
             # Read keypress
             key = read_key(channel, timeout=0.1)
             if not key:
                 if server.resize_event.is_set():
                     server.resize_event.clear()
-                    redraw()
+                    redraw(clear=True)
                 continue
 
             last_activity = time.time()
@@ -1352,14 +1372,15 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 t_is_default = False
                 t_focus = "theme"
                 
-                draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default))
+                # Clear screen when entering theme picker
+                draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default), clear=True)
                 
                 while True:
                     t_key = read_key(channel, timeout=5.0)
                     if not t_key:
                         if server.resize_event.is_set():
                             server.resize_event.clear()
-                            draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default))
+                            draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default), clear=True)
                         continue
                     
                     t_needs_redraw = True
@@ -1395,19 +1416,22 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 b_val = TUI.BORDER_COLORS[selected_border]["value"]
                 if b_val: base_theme["border"] = b_val
                 active_theme = base_theme
-                redraw()
+                # Clear screen when returning to dashboard
+                redraw(clear=True)
             elif key == 'ENTER':
                 if repos:
                     repo = repos[selected_index]
                     app_type = repo.get('app_type', 'repo')
                     live_status = get_container_status(repo['process_id'], app_type)
                     if live_status == 'running':
-                        draw(TUI.connecting_screen(repo['name'], server.term_width, server.term_height, theme=active_theme))
+                        draw(TUI.connecting_screen(repo['name'], server.term_width, server.term_height, theme=active_theme), clear=True)
                         time.sleep(0.5)
                         send_raw(channel, '\x1b[?1049l\x1b[?25h') # Exit alt screen for shell
                         attach_container_shell(channel, server, repo['process_id'], app_type, user_id)
                         send_raw(channel, '\x1b[?1049h\x1b[?25l') # Re-enter alt screen
                         status_msg = f"Disconnected from {repo['name']}"
+                        # Force full clear draw when returning from container shell
+                        first_dashboard_draw = True
                         needs_refresh = True
                     elif live_status in ('exited', 'created'):
                         status_msg = start_container(repo['process_id'], app_type, user_id)
@@ -1425,15 +1449,20 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                         container = get_container(client, repo['process_id'], app_type)
                         logs_raw = container.logs(tail=50, timestamps=True).decode('utf-8').splitlines()
                         
+                        # Draw the logs screen once and clear screen
+                        draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme), clear=True)
+                        
                         while True:
-                            draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme))
-                            log_key = read_key(channel, timeout=0.1)
+                            log_key = read_key(channel, timeout=1.0)
                             if log_key in ('q', 'Q', 'ESC', 'CTRL_C'):
                                 break
                             if server.resize_event.is_set():
                                 server.resize_event.clear()
+                                draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme), clear=True)
                     except Exception as e:
                         status_msg = f"Could not fetch logs: {e}"
+                    # Force full clear draw when returning to dashboard
+                    first_dashboard_draw = True
                     redraw()
             elif key in ('r', 'R'):
                 if repos:
@@ -1449,7 +1478,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                     needs_refresh = True
 
         # ---- PHASE 3: Goodbye ----
-        draw(TUI.goodbye_screen(username, server.term_width, server.term_height, theme=active_theme))
+        draw(TUI.goodbye_screen(username, server.term_width, server.term_height, theme=active_theme), clear=True)
         audit.info(f"SESSION_END | user_id={user_id} | username={username}")
         time.sleep(1)
 
