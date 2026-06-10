@@ -40,3 +40,5 @@ logs/
 scratch/
 test_marked.js
 diff_app.txt
+*.log
+.ssh_theme_*.json

@@ -1,0 +1,30 @@
+[Unit]
+Description=Stellar Autonomous Agent Orchestrator
+Documentation=https://stellarai.live
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=stellaradmin
+Group=stellaradmin
+WorkingDirectory=/home/stellaradmin/my_app
+ExecStart=/usr/bin/python3 -m orchestrator
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stellar-orchestrator
+
+# Environment
+EnvironmentFile=/home/stellaradmin/my_app/keys.env
+
+# Hardening
+NoNewPrivileges=false
+ProtectSystem=false
+
+# Allow enough time for agent cleanup on stop
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
