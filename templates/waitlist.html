@@ -1,556 +1,638 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="A persistent, stateful AI operating system for total autonomous agency. Access pending for the stateful AI ecosystem. From infrastructure orchestration and Git manipulation to YouTube intelligence and professional PPT design, Stellar builds with absolute autonomy.">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A persistent, stateful AI operating system for total autonomous agency. Access pending for the stateful AI ecosystem. From infrastructure orchestration and Git manipulation to YouTube intelligence and professional PPT design, Stellar builds with absolute autonomy."
+    />
     <title>Stellar | Node Provisioning</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.ico">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap"></noscript>
+    <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript
+      ><link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap"
+    /></noscript>
     <style>
-        :root {
-            --bg-base: #010103;
-            --surface: rgba(10, 10, 15, 0.75);
-            --border: rgba(255, 255, 255, 0.08);
-            --accent-lunarity: #4285F4;
-            --accent-emerald: #00F090;
-            --text-muted: #666670;
-        }
+      :root {
+        --bg-base: #010103;
+        --surface: rgba(10, 10, 15, 0.75);
+        --border: rgba(255, 255, 255, 0.08);
+        --accent-lunarity: #4285f4;
+        --accent-emerald: #00f090;
+        --text-muted: #666670;
+      }
 
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background-color: var(--bg-base);
-            font-family: 'Inter', sans-serif;
-            overflow: hidden;
-            color: white;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            perspective: 1500px;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background-color: var(--bg-base);
+        font-family: "Inter", sans-serif;
+        overflow: hidden;
+        color: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        perspective: 1500px;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
 
-        /* --- Mask Wrapper (Holds the Seamless Flashlight) --- */
-        .code-mask-wrapper {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            z-index: 0;
-            pointer-events: none;
-            
-            --mouse-x: 50vw;
-            --mouse-y: 50vh;
-            
-            -webkit-mask-image: radial-gradient(
-                280px circle at var(--mouse-x) var(--mouse-y), 
-                rgba(0,0,0,1) 0%, 
-                rgba(0,0,0,0.8) 15%,
-                rgba(0,0,0,0.5) 35%,
-                rgba(0,0,0,0.3) 50%,
-                rgba(0,0,0,0.2) 65%,
-                rgba(0,0,0,0.15) 80%,
-                rgba(0,0,0,0.12) 90%,
-                rgba(0,0,0,0.1) 100%
-            );
-            mask-image: radial-gradient(
-                280px circle at var(--mouse-x) var(--mouse-y), 
-                rgba(0,0,0,1) 0%, 
-                rgba(0,0,0,0.8) 15%,
-                rgba(0,0,0,0.5) 35%,
-                rgba(0,0,0,0.3) 50%,
-                rgba(0,0,0,0.2) 65%,
-                rgba(0,0,0,0.15) 80%,
-                rgba(0,0,0,0.12) 90%,
-                rgba(0,0,0,0.1) 100%
-            );
-        }
+      /* --- Mask Wrapper (Holds the Seamless Flashlight) --- */
+      .code-mask-wrapper {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 0;
+        pointer-events: none;
 
-        /* Balanced darkness void behind the card */
-        .code-mask-wrapper::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: radial-gradient(
-                ellipse 450px 700px at center, 
-                var(--bg-base) 15%, 
-                rgba(1, 1, 3, 0.9) 40%, 
-                transparent 75%
-            );
-            pointer-events: none;
-        }
+        --mouse-x: 50vw;
+        --mouse-y: 50vh;
 
-        /* --- Scrolling Code Canvas --- */
-        .code-canvas {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 12px; 
-            line-height: 1.3; 
-            color: rgba(66, 133, 244, 0.55); 
-            white-space: pre;
-            width: 110vw;
-            margin-left: -5vw;
-            will-change: transform;
-            animation: scrollMemoryDump 100s linear infinite;
-        }
+        -webkit-mask-image: radial-gradient(
+          280px circle at var(--mouse-x) var(--mouse-y),
+          rgba(0, 0, 0, 1) 0%,
+          rgba(0, 0, 0, 0.8) 15%,
+          rgba(0, 0, 0, 0.5) 35%,
+          rgba(0, 0, 0, 0.3) 50%,
+          rgba(0, 0, 0, 0.2) 65%,
+          rgba(0, 0, 0, 0.15) 80%,
+          rgba(0, 0, 0, 0.12) 90%,
+          rgba(0, 0, 0, 0.1) 100%
+        );
+        mask-image: radial-gradient(
+          280px circle at var(--mouse-x) var(--mouse-y),
+          rgba(0, 0, 0, 1) 0%,
+          rgba(0, 0, 0, 0.8) 15%,
+          rgba(0, 0, 0, 0.5) 35%,
+          rgba(0, 0, 0, 0.3) 50%,
+          rgba(0, 0, 0, 0.2) 65%,
+          rgba(0, 0, 0, 0.15) 80%,
+          rgba(0, 0, 0, 0.12) 90%,
+          rgba(0, 0, 0, 0.1) 100%
+        );
+      }
 
-        @keyframes scrollMemoryDump {
-            0% { transform: translateY(0); }
-            100% { transform: translateY(-50%); }
-        }
+      /* Balanced darkness void behind the card */
+      .code-mask-wrapper::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse 450px 700px at center,
+          var(--bg-base) 15%,
+          rgba(1, 1, 3, 0.9) 40%,
+          transparent 75%
+        );
+        pointer-events: none;
+      }
 
-        /* --- Main UI Wrapper --- */
-        .gateway-wrapper {
-            position: relative;
-            z-index: 10;
-            width: 100%;
-            max-width: 600px;
-            padding: 20px;
-            box-sizing: border-box;
-            transform-style: preserve-3d;
-            will-change: transform;
-        }
+      /* --- Scrolling Code Canvas --- */
+      .code-canvas {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        line-height: 1.3;
+        color: rgba(66, 133, 244, 0.55);
+        white-space: pre;
+        width: 110vw;
+        margin-left: -5vw;
+        will-change: transform;
+        animation: scrollMemoryDump 100s linear infinite;
+      }
 
-        .waitlist-card {
-            background: var(--surface);
-            backdrop-filter: blur(40px);
-            -webkit-backdrop-filter: blur(40px);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 60px 40px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 
-                0 0 50px 2px rgba(0, 0, 0, 0.8),      
-                0 40px 80px -20px rgba(0, 0, 0, 1),     
-                inset 0 1px 0 rgba(255, 255, 255, 0.1);
-            position: relative;
-            transform: translateZ(0);
-            box-sizing: border-box;
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden;
+      @keyframes scrollMemoryDump {
+        0% {
+          transform: translateY(0);
         }
+        100% {
+          transform: translateY(-50%);
+        }
+      }
 
-        .logo-mark {
-            font-size: 2.5rem;
-            font-weight: 900;
-            letter-spacing: 8px;
-            margin-bottom: 24px;
-            background: linear-gradient(135deg, #FFFFFF 20%, #a5c0f3 60%, #4285F4 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            filter: drop-shadow(0 4px 15px rgba(66, 133, 244, 0.3));
-        }
+      /* --- Main UI Wrapper --- */
+      .gateway-wrapper {
+        position: relative;
+        z-index: 10;
+        width: 100%;
+        max-width: 600px;
+        padding: 20px;
+        box-sizing: border-box;
+        transform-style: preserve-3d;
+        will-change: transform;
+      }
 
-        .status-badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 100px;
-            background: rgba(66, 133, 244, 0.1);
-            border: 1px solid rgba(66, 133, 244, 0.3);
-            color: var(--accent-lunarity);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.7rem;
-            letter-spacing: 1px;
-            margin-bottom: 32px;
-            text-transform: uppercase;
-        }
+      .waitlist-card {
+        background: var(--surface);
+        backdrop-filter: blur(40px);
+        -webkit-backdrop-filter: blur(40px);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 60px 40px;
+        width: 100%;
+        text-align: center;
+        box-shadow:
+          0 0 50px 2px rgba(0, 0, 0, 0.8),
+          0 40px 80px -20px rgba(0, 0, 0, 1),
+          inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        position: relative;
+        transform: translateZ(0);
+        box-sizing: border-box;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+      }
 
-        .headline {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 16px;
-            line-height: 1.4;
-        }
+      .logo-mark {
+        font-size: 2.5rem;
+        font-weight: 900;
+        letter-spacing: 8px;
+        margin-bottom: 24px;
+        background: linear-gradient(
+          135deg,
+          #ffffff 20%,
+          #a5c0f3 60%,
+          #4285f4 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        filter: drop-shadow(0 4px 15px rgba(66, 133, 244, 0.3));
+      }
 
-        .description {
-            color: var(--text-muted);
-            font-size: 0.95rem;
-            line-height: 1.6;
-            margin-bottom: 40px;
-        }
+      .status-badge {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 100px;
+        background: rgba(66, 133, 244, 0.1);
+        border: 1px solid rgba(66, 133, 244, 0.3);
+        color: var(--accent-lunarity);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+        margin-bottom: 32px;
+        text-transform: uppercase;
+      }
 
-        .provisioning-steps {
-            text-align: left;
-            margin-bottom: 40px;
-        }
+      .headline {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 16px;
+        line-height: 1.4;
+      }
 
-        .step {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 12px;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-        }
+      .description {
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        line-height: 1.6;
+        margin-bottom: 40px;
+      }
 
-        .step-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--border);
-        }
+      .provisioning-steps {
+        text-align: left;
+        margin-bottom: 40px;
+      }
 
-        .step.active { color: white; }
-        .step.active .step-dot { 
-            background: var(--accent-emerald);
-            box-shadow: 0 0 8px var(--accent-emerald);
-        }
+      .step {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+      }
 
-        .logout-link {
-            color: var(--text-muted);
-            font-size: 0.8rem;
-            cursor: pointer;
-            text-decoration: underline;
-            transition: color 0.2s;
-        }
+      .step-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--border);
+      }
 
-        .logout-link:hover { color: white; }
+      .step.active {
+        color: white;
+      }
+      .step.active .step-dot {
+        background: var(--accent-emerald);
+        box-shadow: 0 0 8px var(--accent-emerald);
+      }
 
-        /* Modal Styles */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(1, 1, 3, 0.9);
-            backdrop-filter: blur(10px);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        
-        .modal-content {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 40px;
-            width: 90%;
-            max-width: 600px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-            color: white;
-            position: relative;
-        }
+      .logout-link {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        cursor: pointer;
+        text-decoration: underline;
+        transition: color 0.2s;
+      }
 
-        .modal-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 8px;
-        }
+      .logout-link:hover {
+        color: white;
+      }
 
-        .modal-subtitle {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            margin-bottom: 24px;
-        }
+      /* Modal Styles */
+      .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(1, 1, 3, 0.9);
+        backdrop-filter: blur(10px);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
 
-        .form-group {
-            margin-bottom: 16px;
-            text-align: left;
-        }
+      .modal-content {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 40px;
+        width: 90%;
+        max-width: 600px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        color: white;
+        position: relative;
+      }
 
-        .form-group label {
-            display: block;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-        }
+      .modal-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
 
-        .form-group input, .form-group textarea, .form-group select {
-            width: 100%;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px;
-            color: white;
-            font-family: inherit;
-            font-size: 0.95rem;
-            box-sizing: border-box;
-            outline: none;
-            transition: border-color 0.2s;
-        }
+      .modal-subtitle {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        margin-bottom: 24px;
+      }
 
-        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
-            border-color: var(--accent-lunarity);
-        }
+      .form-group {
+        margin-bottom: 16px;
+        text-align: left;
+      }
 
-        .form-group input:read-only {
-            color: var(--text-muted);
-            background: rgba(255,255,255,0.02);
-            cursor: not-allowed;
-        }
+      .form-group label {
+        display: block;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+      }
 
-        .submit-btn {
-            width: 100%;
-            background: var(--accent-lunarity);
-            color: white;
-            border: none;
-            padding: 14px;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s;
-            margin-top: 10px;
-        }
+      .form-group input,
+      .form-group textarea,
+      .form-group select {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        color: white;
+        font-family: inherit;
+        font-size: 0.95rem;
+        box-sizing: border-box;
+        outline: none;
+        transition: border-color 0.2s;
+      }
 
-        .submit-btn:hover {
-            background: #3367d6;
-        }
+      .form-group input:focus,
+      .form-group textarea:focus,
+      .form-group select:focus {
+        border-color: var(--accent-lunarity);
+      }
 
-        .resubmit-btn {
-            background: transparent;
-            border: 1px solid var(--border);
-            color: var(--text-muted);
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: all 0.2s;
-            margin-top: 20px;
-            margin-bottom: 20px;
-        }
+      .form-group input:read-only {
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.02);
+        cursor: not-allowed;
+      }
 
-        .resubmit-btn:hover {
-            color: white;
-            border-color: rgba(255,255,255,0.2);
-        }
-        
-        .close-modal {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            font-size: 1.5rem;
-            cursor: pointer;
-            display: none;
-        }
-        
-        .close-modal:hover {
-            color: white;
-        }
+      .submit-btn {
+        width: 100%;
+        background: var(--accent-lunarity);
+        color: white;
+        border: none;
+        padding: 14px;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+        margin-top: 10px;
+      }
+
+      .submit-btn:hover {
+        background: #3367d6;
+      }
+
+      .resubmit-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-top: 20px;
+        margin-bottom: 20px;
+      }
+
+      .resubmit-btn:hover {
+        color: white;
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .close-modal {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 1.5rem;
+        cursor: pointer;
+        display: none;
+      }
+
+      .close-modal:hover {
+        color: white;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="code-mask-wrapper" id="maskWrapper" data-nosnippet>
-        <div class="code-canvas" id="codeCanvas" aria-hidden="true"></div>
+      <div class="code-canvas" id="codeCanvas" aria-hidden="true"></div>
     </div>
 
     <div class="gateway-wrapper" id="gatewayWrapper">
-        <div class="waitlist-card">
-            <div class="logo-mark">STELLAR</div>
-            <div class="status-badge">Access Pending</div>
-            
-            <div class="headline">You're on the waitlist for Stellar.</div>
-            
-            <div class="description">
-                Stellar is currently in closed beta. We are provisioning accounts sequentially to ensure stability.
-            </div>
+      <div class="waitlist-card">
+        <div class="logo-mark">STELLAR</div>
+        <div class="status-badge">Access Pending</div>
 
-            <div class="provisioning-steps">
-                <div class="step active">
-                    <div class="step-dot"></div>
-                    Account Initialized
-                </div>
-                <div class="step active">
-                    <div class="step-dot"></div>
-                    Waitlist Position Secured
-                </div>
-                <div class="step">
-                    <div class="step-dot"></div>
-                    Account Approval
-                </div>
-                <div class="step">
-                    <div class="step-dot"></div>
-                    Access Granted
-                </div>
-            </div>
+        <div class="headline">You're on the waitlist for Stellar.</div>
 
-            <div class="description" style="font-size: 0.8rem;">
-                We will email you once your account has been approved.
-            </div>
-            
-            <div>
-                <button class="resubmit-btn" onclick="openModal(true)" id="resubmitBtn" style="display: none;">Update Waitlist Form</button>
-            </div>
-
-            <div class="logout-link" onclick="logout()">Sign Out</div>
+        <div class="description">
+          Stellar is currently in closed beta. We are provisioning accounts
+          sequentially to ensure stability.
         </div>
+
+        <div class="provisioning-steps">
+          <div class="step active">
+            <div class="step-dot"></div>
+            Account Initialized
+          </div>
+          <div class="step active">
+            <div class="step-dot"></div>
+            Waitlist Position Secured
+          </div>
+          <div class="step">
+            <div class="step-dot"></div>
+            Account Approval
+          </div>
+          <div class="step">
+            <div class="step-dot"></div>
+            Access Granted
+          </div>
+        </div>
+
+        <div class="description" style="font-size: 0.8rem">
+          We will email you once your account has been approved.
+        </div>
+
+        <div>
+          <button
+            class="resubmit-btn"
+            onclick="openModal(true)"
+            id="resubmitBtn"
+            style="display: none"
+          >
+            Update Waitlist Form
+          </button>
+        </div>
+
+        <div class="logout-link" onclick="logout()">Sign Out</div>
+      </div>
     </div>
 
     <!-- Waitlist Form Modal -->
     <div class="modal-overlay" id="formModal">
-        <div class="modal-content">
-            <button class="close-modal" id="closeModalBtn" onclick="closeModal()" aria-label="Close modal">&times;</button>
-            <div class="modal-title">Complete Your Profile</div>
-            <div class="modal-subtitle">Help us understand your needs to prioritize your access.</div>
-            
-            <form id="waitlistForm" onsubmit="submitForm(event)">
-                <div class="form-group">
-                    <label>Name</label>
-                    <input type="text" id="formName" readonly>
-                </div>
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" id="formEmail" readonly>
-                </div>
-                <div class="form-group">
-                    <label>Designation / Role</label>
-                    <input type="text" id="formDesignation" placeholder="e.g. Software Engineer, Product Manager" required>
-                </div>
-                <div class="form-group">
-                    <label>How did you find out about Stellar?</label>
-                    <input type="text" id="formSource" placeholder="e.g. Twitter, Friend, Event" required>
-                </div>
-                <div class="form-group">
-                    <label>How do you plan to use Stellar?</label>
-                    <textarea id="formUseCase" rows="3" placeholder="Briefly describe your main use cases..." required></textarea>
-                </div>
-                <button type="submit" class="submit-btn" id="submitBtnText">Submit Information</button>
-            </form>
+      <div class="modal-content">
+        <button
+          class="close-modal"
+          id="closeModalBtn"
+          onclick="closeModal()"
+          aria-label="Close modal"
+        >
+          &times;
+        </button>
+        <div class="modal-title">Complete Your Profile</div>
+        <div class="modal-subtitle">
+          Help us understand your needs to prioritize your access.
         </div>
+
+        <form id="waitlistForm" onsubmit="submitForm(event)">
+          <div class="form-group">
+            <label>Name</label>
+            <input type="text" id="formName" readonly />
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="formEmail" readonly />
+          </div>
+          <div class="form-group">
+            <label>Designation / Role</label>
+            <input
+              type="text"
+              id="formDesignation"
+              placeholder="e.g. Software Engineer, Product Manager"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label>How did you find out about Stellar?</label>
+            <input
+              type="text"
+              id="formSource"
+              placeholder="e.g. Twitter, Friend, Event"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label>How do you plan to use Stellar?</label>
+            <textarea
+              id="formUseCase"
+              rows="3"
+              placeholder="Briefly describe your main use cases..."
+              required
+            ></textarea>
+          </div>
+          <button type="submit" class="submit-btn" id="submitBtnText">
+            Submit Information
+          </button>
+        </form>
+      </div>
     </div>
 
     <script>
-        let isResubmitting = false;
+      let isResubmitting = false;
 
-        async function fetchWaitlistInfo() {
-            try {
-                const response = await fetch('/api/user/waitlist_info');
-                const data = await response.json();
-                
-                if (data.success) {
-                    document.getElementById('formName').value = data.display_name || '';
-                    document.getElementById('formEmail').value = data.email || '';
-                    
-                    if (!data.form_submitted) {
-                        openModal(false);
-                    } else {
-                        document.getElementById('resubmitBtn').style.display = 'inline-block';
-                    }
-                }
-            } catch (error) {
-                console.error("Failed to fetch waitlist info:", error);
-            }
-        }
+      async function fetchWaitlistInfo() {
+        try {
+          const response = await fetch("/api/user/waitlist_info");
+          const data = await response.json();
 
-        function openModal(resubmitting) {
-            isResubmitting = resubmitting;
-            document.getElementById('formModal').style.display = 'flex';
-            if (resubmitting) {
-                document.getElementById('closeModalBtn').style.display = 'block';
-                document.getElementById('submitBtnText').innerText = 'Update Information';
+          if (data.success) {
+            document.getElementById("formName").value = data.display_name || "";
+            document.getElementById("formEmail").value = data.email || "";
+
+            if (!data.form_submitted) {
+              openModal(false);
             } else {
-                document.getElementById('closeModalBtn').style.display = 'none';
-                document.getElementById('submitBtnText').innerText = 'Submit Information';
+              document.getElementById("resubmitBtn").style.display =
+                "inline-block";
             }
+          }
+        } catch (error) {
+          console.error("Failed to fetch waitlist info:", error);
         }
+      }
 
-        function closeModal() {
-            if (isResubmitting) {
-                document.getElementById('formModal').style.display = 'none';
-            }
+      function openModal(resubmitting) {
+        isResubmitting = resubmitting;
+        document.getElementById("formModal").style.display = "flex";
+        if (resubmitting) {
+          document.getElementById("closeModalBtn").style.display = "block";
+          document.getElementById("submitBtnText").innerText =
+            "Update Information";
+        } else {
+          document.getElementById("closeModalBtn").style.display = "none";
+          document.getElementById("submitBtnText").innerText =
+            "Submit Information";
         }
+      }
 
-        async function submitForm(e) {
-            e.preventDefault();
-            
-            const designation = document.getElementById('formDesignation').value;
-            const source = document.getElementById('formSource').value;
-            const useCase = document.getElementById('formUseCase').value;
-            const submitBtn = document.getElementById('submitBtnText');
-            
-            submitBtn.innerText = 'Submitting...';
-            submitBtn.disabled = true;
-            
-            try {
-                const response = await fetch('/api/user/submit_waitlist_form', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ designation, source, use_case: useCase })
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    document.getElementById('formModal').style.display = 'none';
-                    document.getElementById('resubmitBtn').style.display = 'inline-block';
-                    if (!isResubmitting) {
-                        // Optional: show a small toast or just let the modal close
-                    }
-                } else {
-                    alert('Error submitting form: ' + result.message);
-                }
-            } catch (error) {
-                alert('Network error while submitting form.');
-            } finally {
-                submitBtn.innerText = isResubmitting ? 'Update Information' : 'Submit Information';
-                submitBtn.disabled = false;
-            }
+      function closeModal() {
+        if (isResubmitting) {
+          document.getElementById("formModal").style.display = "none";
         }
+      }
 
-        async function logout() {
-            await fetch('/logout', { method: 'POST' });
-            window.location.href = '/';
+      async function submitForm(e) {
+        e.preventDefault();
+
+        const designation = document.getElementById("formDesignation").value;
+        const source = document.getElementById("formSource").value;
+        const useCase = document.getElementById("formUseCase").value;
+        const submitBtn = document.getElementById("submitBtnText");
+
+        submitBtn.innerText = "Submitting...";
+        submitBtn.disabled = true;
+
+        try {
+          const response = await fetch("/api/user/submit_waitlist_form", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ designation, source, use_case: useCase }),
+          });
+
+          const result = await response.json();
+          if (result.success) {
+            document.getElementById("formModal").style.display = "none";
+            document.getElementById("resubmitBtn").style.display =
+              "inline-block";
+            if (!isResubmitting) {
+              // Optional: show a small toast or just let the modal close
+            }
+          } else {
+            alert("Error submitting form: " + result.message);
+          }
+        } catch (error) {
+          alert("Network error while submitting form.");
+        } finally {
+          submitBtn.innerText = isResubmitting
+            ? "Update Information"
+            : "Submit Information";
+          submitBtn.disabled = false;
         }
-        
-        // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            fetchWaitlistInfo();
-            
-            // --- Background Effects ---
-            const maskWrapper = document.getElementById('maskWrapper');
-            const codeCanvas = document.getElementById('codeCanvas');
-            const snippets = [
-                "def provision_docker_cluster(node_id):",
-                "ledger = db.query('SELECT * FROM ground_truth')",
-                "raise StateDriftException('Ledger mismatch')",
-                "container = client.containers.run(network='bridge')",
-                "async function mountPagedMemory(stream) {",
-                "return chunks.map(chunk => compressMetadata(chunk));",
-                "def proxy_wildcard(path):",
-                "container_ip = redis.get(f'route:{host}')",
-                "[OBSIDIAN] Adversarial security audit...",
-                "INSERT INTO interactions (agent_id) VALUES ('obsidian');",
-                "0x0000000000000000", "0xFFFFFFFFFFFFFFFF", "sys.stdout.write"
-            ];
+      }
 
-            let baseDump = "";
-            for (let i = 0; i < 150; i++) { 
-                let line = "";
-                while (line.length < 350) { line += snippets[Math.floor(Math.random() * snippets.length)] + "  "; }
-                baseDump += line + "\n";
-            }
-            codeCanvas.textContent = baseDump + baseDump;
+      async function logout() {
+        await fetch("/logout", { method: "POST" });
+        window.location.href = "/";
+      }
 
-            const wrapper = document.getElementById('gatewayWrapper');
-            let mouseX = 0, mouseY = 0, targetX = 0, targetY = 0;
+      // Initialize
+      document.addEventListener("DOMContentLoaded", () => {
+        fetchWaitlistInfo();
 
-            document.addEventListener('mousemove', (e) => {
-                maskWrapper.style.setProperty('--mouse-x', `${e.clientX}px`);
-                maskWrapper.style.setProperty('--mouse-y', `${e.clientY}px`);
-                
-                mouseX = (e.clientX - window.innerWidth/2) / 75;
-                mouseY = (e.clientY - window.innerHeight/2) / 75;
-            });
+        // --- Background Effects ---
+        const maskWrapper = document.getElementById("maskWrapper");
+        const codeCanvas = document.getElementById("codeCanvas");
+        const snippets = [
+          "def provision_docker_cluster(node_id):",
+          "ledger = db.query('SELECT * FROM ground_truth')",
+          "raise StateDriftException('Ledger mismatch')",
+          "container = client.containers.run(network='bridge')",
+          "async function mountPagedMemory(stream) {",
+          "return chunks.map(chunk => compressMetadata(chunk));",
+          "def proxy_wildcard(path):",
+          "container_ip = redis.get(f'route:{host}')",
+          "[OBSIDIAN] Adversarial security audit...",
+          "INSERT INTO interactions (agent_id) VALUES ('obsidian');",
+          "0x0000000000000000",
+          "0xFFFFFFFFFFFFFFFF",
+          "sys.stdout.write",
+        ];
 
-            function animate3D() {
-                if (Math.abs(mouseX - targetX) > 0.001) targetX += (mouseX - targetX) * 0.04;
-                if (Math.abs(mouseY - targetY) > 0.001) targetY += (mouseY - targetY) * 0.04;
-                
-                wrapper.style.transform = `rotateY(${targetX}deg) rotateX(${-targetY}deg)`;
-                requestAnimationFrame(animate3D);
-            }
-            animate3D();
+        let baseDump = "";
+        for (let i = 0; i < 150; i++) {
+          let line = "";
+          while (line.length < 350) {
+            line +=
+              snippets[Math.floor(Math.random() * snippets.length)] + "  ";
+          }
+          baseDump += line + "\n";
+        }
+        codeCanvas.textContent = baseDump + baseDump;
+
+        const wrapper = document.getElementById("gatewayWrapper");
+        let mouseX = 0,
+          mouseY = 0,
+          targetX = 0,
+          targetY = 0;
+
+        document.addEventListener("mousemove", (e) => {
+          maskWrapper.style.setProperty("--mouse-x", `${e.clientX}px`);
+          maskWrapper.style.setProperty("--mouse-y", `${e.clientY}px`);
+
+          mouseX = (e.clientX - window.innerWidth / 2) / 75;
+          mouseY = (e.clientY - window.innerHeight / 2) / 75;
         });
+
+        function animate3D() {
+          if (Math.abs(mouseX - targetX) > 0.001)
+            targetX += (mouseX - targetX) * 0.04;
+          if (Math.abs(mouseY - targetY) > 0.001)
+            targetY += (mouseY - targetY) * 0.04;
+
+          wrapper.style.transform = `rotateY(${targetX}deg) rotateX(${-targetY}deg)`;
+          requestAnimationFrame(animate3D);
+        }
+        animate3D();
+      });
     </script>
-</body>
+  </body>
 </html>

@@ -1,435 +1,474 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stellar Sentinel — Healing Telemetry Dashboard</title>
     <!-- Premium Geist & Geist Mono fonts for an ultra-clean, developer-centric aesthetic -->
-    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Geist:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
-        :root {
-            --bg-color: #09090b;
-            --panel-bg: #0e0e11;
-            --border-color: rgba(255, 255, 255, 0.08);
-            --primary: #10b981;
-            --primary-dim: rgba(16, 185, 129, 0.1);
-            --text-main: #f4f4f5;
-            --text-muted: #a1a1aa;
-            --text-dim: #52525b;
-            --terminal-bg: #050507;
-        }
+      :root {
+        --bg-color: #09090b;
+        --panel-bg: #0e0e11;
+        --border-color: rgba(255, 255, 255, 0.08);
+        --primary: #10b981;
+        --primary-dim: rgba(16, 185, 129, 0.1);
+        --text-main: #f4f4f5;
+        --text-muted: #a1a1aa;
+        --text-dim: #52525b;
+        --terminal-bg: #050507;
+      }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
 
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 24px;
-            overflow-y: auto;
-        }
+      body {
+        background-color: var(--bg-color);
+        color: var(--text-main);
+        font-family:
+          "Geist",
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        overflow-y: auto;
+      }
 
-        /* Full Dashboard Layout Box */
+      /* Full Dashboard Layout Box */
+      .sentinel-workspace {
+        width: 90vw;
+        max-width: 1400px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+
+      @media (min-width: 900px) {
         .sentinel-workspace {
-            width: 90vw;
-            max-width: 1400px;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 24px;
+          grid-template-columns: 400px 1fr;
         }
+      }
 
-        @media (min-width: 900px) {
-            .sentinel-workspace {
-                grid-template-columns: 400px 1fr;
-            }
-        }
+      /* Panel Structure */
+      .control-panel,
+      .terminal-panel {
+        background: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+      }
 
-        /* Panel Structure */
-        .control-panel, .terminal-panel {
-            background: var(--panel-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
-        }
+      /* Control Panel Styles */
+      .control-panel {
+        padding: 32px;
+        justify-content: space-between;
+        gap: 24px;
+      }
 
-        /* Control Panel Styles */
-        .control-panel {
-            padding: 32px;
-            justify-content: space-between;
-            gap: 24px;
-        }
+      .panel-header {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
 
-        .panel-header {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
+      .brand-group {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
 
-        .brand-group {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-        }
+      h1 {
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+        color: var(--text-main);
+      }
 
-        h1 {
-            font-size: 16px;
-            font-weight: 600;
-            letter-spacing: -0.2px;
-            color: var(--text-main);
-        }
+      .status-badge {
+        font-family: "Geist Mono", monospace;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--primary);
+        background: rgba(16, 185, 129, 0.06);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        padding: 4px 10px;
+        border-radius: 6px;
+        white-space: nowrap;
+        transition: all 0.3s ease;
+      }
 
-        .status-badge {
-            font-family: 'Geist Mono', monospace;
-            font-size: 11px;
-            font-weight: 500;
-            color: var(--primary);
-            background: rgba(16, 185, 129, 0.06);
-            border: 1px solid rgba(16, 185, 129, 0.2);
-            padding: 4px 10px;
-            border-radius: 6px;
-            white-space: nowrap;
-            transition: all 0.3s ease;
-        }
+      .description {
+        font-size: 13px;
+        color: var(--text-muted);
+        line-height: 1.6;
+      }
 
-        .description {
-            font-size: 13px;
-            color: var(--text-muted);
-            line-height: 1.6;
-        }
+      .description strong {
+        color: var(--text-main);
+        font-weight: 500;
+        font-family: "Geist Mono", monospace;
+      }
 
-        .description strong {
-            color: var(--text-main);
-            font-weight: 500;
-            font-family: 'Geist Mono', monospace;
-        }
+      /* Real-time connection feedback list */
+      .metadata-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.04);
+        padding-top: 20px;
+      }
 
-        /* Real-time connection feedback list */
-        .metadata-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            border-top: 1px solid rgba(255, 255, 255, 0.04);
-            padding-top: 20px;
-        }
+      .metadata-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+      }
 
-        .metadata-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 12px;
-        }
+      .metadata-label {
+        font-family: "Geist Mono", monospace;
+        color: var(--text-dim);
+      }
 
-        .metadata-label {
-            font-family: 'Geist Mono', monospace;
-            color: var(--text-dim);
-        }
+      .metadata-value {
+        font-family: "Geist Mono", monospace;
+        color: var(--text-muted);
+        text-align: right;
+        max-width: 180px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
 
-        .metadata-value {
-            font-family: 'Geist Mono', monospace;
-            color: var(--text-muted);
-            text-align: right;
-            max-width: 180px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
+      /* Connection socket indicator reflecting true JS state */
+      .live-indicator {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: color 0.3s ease;
+      }
 
-        /* Connection socket indicator reflecting true JS state */
-        .live-indicator {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            transition: color 0.3s ease;
-        }
+      .live-dot {
+        width: 6px;
+        height: 6px;
+        background-color: currentColor;
+        border-radius: 50%;
+        transition: background-color 0.3s ease;
+      }
 
-        .live-dot {
-            width: 6px;
-            height: 6px;
-            background-color: currentColor;
-            border-radius: 50%;
-            transition: background-color 0.3s ease;
-        }
+      /* Terminal Panel Styles */
+      .terminal-panel {
+        min-height: 650px;
+        overflow: hidden;
+      }
 
-        /* Terminal Panel Styles */
-        .terminal-panel {
-            min-height: 650px;
-            overflow: hidden;
-        }
+      .terminal-header {
+        background: rgba(255, 255, 255, 0.01);
+        padding: 14px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
 
-        .terminal-header {
-            background: rgba(255, 255, 255, 0.01);
-            padding: 14px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-        }
+      .terminal-title {
+        font-family: "Geist Mono", monospace;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-muted);
+        letter-spacing: 0.5px;
+      }
 
-        .terminal-title {
-            font-family: 'Geist Mono', monospace;
-            font-size: 11px;
-            font-weight: 500;
-            color: var(--text-muted);
-            letter-spacing: 0.5px;
-        }
+      .terminal-path {
+        font-family: "Geist Mono", monospace;
+        font-size: 10px;
+        color: var(--text-dim);
+      }
 
-        .terminal-path {
-            font-family: 'Geist Mono', monospace;
-            font-size: 10px;
-            color: var(--text-dim);
-        }
+      .console-box {
+        padding: 20px;
+        font-family: "Geist Mono", monospace;
+        font-size: 12px;
+        color: #d4d4d8;
+        background: var(--terminal-bg);
+        flex-grow: 1;
+        height: 580px;
+        overflow-y: auto;
+        position: relative;
+        scroll-behavior: smooth;
+      }
 
-        .console-box {
-            padding: 20px;
-            font-family: 'Geist Mono', monospace;
-            font-size: 12px;
-            color: #d4d4d8;
-            background: var(--terminal-bg);
-            flex-grow: 1;
-            height: 580px;
-            overflow-y: auto;
-            position: relative;
-            scroll-behavior: smooth;
-        }
+      .console-line {
+        line-height: 1.7;
+        margin-bottom: 8px;
+        word-break: break-all;
+      }
 
-        .console-line {
-            line-height: 1.7;
-            margin-bottom: 8px;
-            word-break: break-all;
-        }
+      .console-line.system {
+        color: var(--text-dim);
+      }
 
-        .console-line.system {
-            color: var(--text-dim);
-        }
+      .console-line.success {
+        color: var(--primary);
+      }
 
-        .console-line.success {
-            color: var(--primary);
-        }
+      .console-line.error {
+        color: #f87171;
+      }
 
-        .console-line.error {
-            color: #f87171;
-        }
+      /* Progress track */
+      .activity-track {
+        width: 100%;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 1px;
+        overflow: hidden;
+        position: relative;
+        margin-top: auto;
+      }
 
-        /* Progress track */
-        .activity-track {
-            width: 100%;
-            height: 2px;
-            background: rgba(255, 255, 255, 0.04);
-            border-radius: 1px;
-            overflow: hidden;
-            position: relative;
-            margin-top: auto;
-        }
+      .activity-bar {
+        width: 40%;
+        height: 100%;
+        background: var(--primary);
+        position: absolute;
+        animation: progress-slide 1.8s infinite ease-in-out;
+        border-radius: 1px;
+        transition: all 0.5s ease;
+      }
 
-        .activity-bar {
-            width: 40%;
-            height: 100%;
-            background: var(--primary);
-            position: absolute;
-            animation: progress-slide 1.8s infinite ease-in-out;
-            border-radius: 1px;
-            transition: all 0.5s ease;
+      @keyframes progress-slide {
+        0% {
+          left: -40%;
         }
+        50% {
+          width: 30%;
+        }
+        100% {
+          left: 100%;
+        }
+      }
 
-        @keyframes progress-slide {
-            0% { left: -40%; }
-            50% { width: 30%; }
-            100% { left: 100%; }
-        }
-
-        /* Native Scrollbar Customization */
-        .console-box::-webkit-scrollbar {
-            width: 6px;
-        }
-        .console-box::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        .console-box::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.06);
-            border-radius: 3px;
-        }
-        .console-box::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.12);
-        }
+      /* Native Scrollbar Customization */
+      .console-box::-webkit-scrollbar {
+        width: 6px;
+      }
+      .console-box::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .console-box::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 3px;
+      }
+      .console-box::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
     </style>
-</head>
-<body>
-
+  </head>
+  <body>
     <main class="sentinel-workspace">
-        
-        <!-- Interactive Control Panel / Info Sidebar -->
-        <section class="control-panel">
-            <div class="panel-header">
-                <div class="brand-group">
-                    <h1>Stellar Sentinel</h1>
-                    <div class="status-badge" id="status-badge">Auto-Healing App</div>
-                </div>
-                
-                <p class="description">
-                    We detected an issue in your deployment (<strong>{{ app_name }}</strong>). Sentinel has enqueued it and is currently generating a stateful hot-patch. Please wait while the application heals.
-                </p>
-            </div>
+      <!-- Interactive Control Panel / Info Sidebar -->
+      <section class="control-panel">
+        <div class="panel-header">
+          <div class="brand-group">
+            <h1>Stellar Sentinel</h1>
+            <div class="status-badge" id="status-badge">Auto-Healing App</div>
+          </div>
 
-            <!-- Factual metadata tied directly to actual JS variables and state -->
-            <div class="metadata-list">
-                <div class="metadata-item">
-                    <span class="metadata-label">App Target</span>
-                    <span class="metadata-value" title="{{ app_name }}">{{ app_name }}</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Process ID</span>
-                    <span class="metadata-value" title="{{ process_id }}">{{ process_id }}</span>
-                </div>
-                <div class="metadata-item">
-                    <span class="metadata-label">Live Stream</span>
-                    <span class="metadata-value">
-                        <span id="telemetry-socket" class="live-indicator" style="color: #f59e0b;">
-                            <span class="live-dot"></span>
-                            <span class="indicator-text">CONNECTING</span>
-                        </span>
-                    </span>
-                </div>
-            </div>
-        </section>
+          <p class="description">
+            We detected an issue in your deployment (<strong
+              >{{ app_name }}</strong
+            >). Sentinel has enqueued it and is currently generating a stateful
+            hot-patch. Please wait while the application heals.
+          </p>
+        </div>
 
-        <!-- Widescreen Developer Terminal -->
-        <section class="terminal-panel">
-            <div class="terminal-header">
-                <span class="terminal-title">Telemetry stream</span>
-                <span class="terminal-path">/var/log/sentinel/telemetry.stream</span>
-            </div>
-            
-            <div class="console-box" id="console">
-                <div class="console-line system">> Initializing connection to healing telemetry...</div>
-            </div>
+        <!-- Factual metadata tied directly to actual JS variables and state -->
+        <div class="metadata-list">
+          <div class="metadata-item">
+            <span class="metadata-label">App Target</span>
+            <span class="metadata-value" title="{{ app_name }}"
+              >{{ app_name }}</span
+            >
+          </div>
+          <div class="metadata-item">
+            <span class="metadata-label">Process ID</span>
+            <span class="metadata-value" title="{{ process_id }}"
+              >{{ process_id }}</span
+            >
+          </div>
+          <div class="metadata-item">
+            <span class="metadata-label">Live Stream</span>
+            <span class="metadata-value">
+              <span
+                id="telemetry-socket"
+                class="live-indicator"
+                style="color: #f59e0b"
+              >
+                <span class="live-dot"></span>
+                <span class="indicator-text">CONNECTING</span>
+              </span>
+            </span>
+          </div>
+        </div>
+      </section>
 
-            <!-- Sleek linear loader track -->
-            <div class="activity-track">
-                <div class="activity-bar" id="activityBar"></div>
-            </div>
-        </section>
+      <!-- Widescreen Developer Terminal -->
+      <section class="terminal-panel">
+        <div class="terminal-header">
+          <span class="terminal-title">Telemetry stream</span>
+          <span class="terminal-path">/var/log/sentinel/telemetry.stream</span>
+        </div>
 
+        <div class="console-box" id="console">
+          <div class="console-line system">
+            > Initializing connection to healing telemetry...
+          </div>
+        </div>
+
+        <!-- Sleek linear loader track -->
+        <div class="activity-track">
+          <div class="activity-bar" id="activityBar"></div>
+        </div>
+      </section>
     </main>
 
     <script>
-        const processId = "{{ process_id }}";
-        const consoleBox = document.getElementById("console");
-        const statusBadge = document.getElementById("status-badge");
-        const activityBar = document.getElementById("activityBar");
-        const telemetrySocket = document.getElementById("telemetry-socket");
-        const socketText = telemetrySocket.querySelector(".indicator-text");
+      const processId = "{{ process_id }}";
+      const consoleBox = document.getElementById("console");
+      const statusBadge = document.getElementById("status-badge");
+      const activityBar = document.getElementById("activityBar");
+      const telemetrySocket = document.getElementById("telemetry-socket");
+      const socketText = telemetrySocket.querySelector(".indicator-text");
 
-        function log(message, type = "normal") {
-            const line = document.createElement("div");
-            line.className = "console-line " + type;
-            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-            consoleBox.appendChild(line);
-            consoleBox.scrollTop = consoleBox.scrollHeight;
-        }
+      function log(message, type = "normal") {
+        const line = document.createElement("div");
+        line.className = "console-line " + type;
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        consoleBox.appendChild(line);
+        consoleBox.scrollTop = consoleBox.scrollHeight;
+      }
 
-        // Establish Server-Sent Events stream
-        let intentionalClose = false;
-        let reconnectAttempts = 0;
+      // Establish Server-Sent Events stream
+      let intentionalClose = false;
+      let reconnectAttempts = 0;
 
-        function setSocketState(text, color) {
-            telemetrySocket.style.color = color;
-            socketText.textContent = text;
-        }
+      function setSocketState(text, color) {
+        telemetrySocket.style.color = color;
+        socketText.textContent = text;
+      }
 
-        function connectSSE() {
-            setSocketState("CONNECTING", "#f59e0b");
-            const eventSource = new EventSource(`/api/sentinel/stream/${processId}`);
+      function connectSSE() {
+        setSocketState("CONNECTING", "#f59e0b");
+        const eventSource = new EventSource(
+          `/api/sentinel/stream/${processId}`,
+        );
 
-            eventSource.onopen = function() {
-                setSocketState("CONNECTED", "#10b981");
-            };
+        eventSource.onopen = function () {
+          setSocketState("CONNECTED", "#10b981");
+        };
 
-            eventSource.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.message) {
-                        let logType = "normal";
-                        if (data.event === "healed") logType = "success";
-                        if (data.event === "failed") logType = "error";
-                        log(data.message, logType);
-                    }
+        eventSource.onmessage = function (event) {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.message) {
+              let logType = "normal";
+              if (data.event === "healed") logType = "success";
+              if (data.event === "failed") logType = "error";
+              log(data.message, logType);
+            }
 
-                    if (data.stage) {
-                        statusBadge.textContent = data.stage;
-                    }
+            if (data.stage) {
+              statusBadge.textContent = data.stage;
+            }
 
-                    if (data.event === "healed") {
-                        intentionalClose = true;
-                        eventSource.close();
-                        statusBadge.textContent = "✓ Application Healed";
-                        statusBadge.style.color = "#10b981";
-                        statusBadge.style.borderColor = "rgba(16, 185, 129, 0.4)";
-                        statusBadge.style.background = "rgba(16, 185, 129, 0.1)";
-                        
-                        setSocketState("CLOSED", "#a1a1aa");
+            if (data.event === "healed") {
+              intentionalClose = true;
+              eventSource.close();
+              statusBadge.textContent = "✓ Application Healed";
+              statusBadge.style.color = "#10b981";
+              statusBadge.style.borderColor = "rgba(16, 185, 129, 0.4)";
+              statusBadge.style.background = "rgba(16, 185, 129, 0.1)";
 
-                        if (activityBar) {
-                            activityBar.style.background = "#10b981";
-                            activityBar.style.width = "100%";
-                            activityBar.style.left = "0";
-                            activityBar.style.animation = "none";
-                        }
-                        log("Patch applied successfully. Reloading in 3 seconds...", "success");
-                        setTimeout(() => { window.location.reload(); }, 3000);
-                    }
+              setSocketState("CLOSED", "#a1a1aa");
 
-                    if (data.event === "failed") {
-                        intentionalClose = true;
-                        eventSource.close();
-                        statusBadge.textContent = "Healing Suspended";
-                        statusBadge.style.color = "#ef4444";
-                        statusBadge.style.borderColor = "rgba(239, 68, 68, 0.4)";
-                        statusBadge.style.background = "rgba(239, 68, 68, 0.1)";
-                        
-                        setSocketState("HALTED", "#ef4444");
+              if (activityBar) {
+                activityBar.style.background = "#10b981";
+                activityBar.style.width = "100%";
+                activityBar.style.left = "0";
+                activityBar.style.animation = "none";
+              }
+              log(
+                "Patch applied successfully. Reloading in 3 seconds...",
+                "success",
+              );
+              setTimeout(() => {
+                window.location.reload();
+              }, 3000);
+            }
 
-                        if (activityBar) {
-                            activityBar.style.background = "#ef4444";
-                            activityBar.style.width = "100%";
-                            activityBar.style.left = "0";
-                            activityBar.style.animation = "none";
-                        }
-                        log("Healing loop terminated. Application restored to baseline snapshot.", "error");
-                    }
-                } catch (e) {
-                    console.error("Failed to parse SSE payload", e);
-                }
-            };
+            if (data.event === "failed") {
+              intentionalClose = true;
+              eventSource.close();
+              statusBadge.textContent = "Healing Suspended";
+              statusBadge.style.color = "#ef4444";
+              statusBadge.style.borderColor = "rgba(239, 68, 68, 0.4)";
+              statusBadge.style.background = "rgba(239, 68, 68, 0.1)";
 
-            eventSource.onerror = function(err) {
-                if (intentionalClose) return; // Suppressed — we closed it on purpose
-                eventSource.close();
-                reconnectAttempts++;
-                
-                setSocketState("OFFLINE", "#ef4444");
+              setSocketState("HALTED", "#ef4444");
 
-                if (reconnectAttempts <= 5) {
-                    log(`Telemetry connection dropped. Reconnecting (${reconnectAttempts}/5)...`, "system");
-                    setTimeout(connectSSE, 2000);
-                } else {
-                    log("Could not reconnect to healer. Reloading page...", "error");
-                    setTimeout(() => { window.location.reload(); }, 3000);
-                }
-            };
-        }
+              if (activityBar) {
+                activityBar.style.background = "#ef4444";
+                activityBar.style.width = "100%";
+                activityBar.style.left = "0";
+                activityBar.style.animation = "none";
+              }
+              log(
+                "Healing loop terminated. Application restored to baseline snapshot.",
+                "error",
+              );
+            }
+          } catch (e) {
+            console.error("Failed to parse SSE payload", e);
+          }
+        };
 
-        connectSSE();
+        eventSource.onerror = function (err) {
+          if (intentionalClose) return; // Suppressed — we closed it on purpose
+          eventSource.close();
+          reconnectAttempts++;
+
+          setSocketState("OFFLINE", "#ef4444");
+
+          if (reconnectAttempts <= 5) {
+            log(
+              `Telemetry connection dropped. Reconnecting (${reconnectAttempts}/5)...`,
+              "system",
+            );
+            setTimeout(connectSSE, 2000);
+          } else {
+            log("Could not reconnect to healer. Reloading page...", "error");
+            setTimeout(() => {
+              window.location.reload();
+            }, 3000);
+          }
+        };
+      }
+
+      connectSSE();
     </script>
-</body>
+  </body>
 </html>

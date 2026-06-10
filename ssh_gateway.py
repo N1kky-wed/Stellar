@@ -92,6 +92,49 @@ audit.addHandler(_audit_handler)
 active_sessions = 0
 sessions_lock = threading.Lock()
 
+# Thread-local Console and Container Status Cache to prevent performance lag & flickering
+_thread_local = threading.local()
+
+def get_console(width: int) -> Console:
+    """Get a thread-local Console instance to avoid expensive creation overhead."""
+    if not hasattr(_thread_local, 'console'):
+        _thread_local.console = Console(
+            force_terminal=True,
+            color_system="256",
+            highlight=False,
+            legacy_windows=False
+        )
+    _thread_local.console.width = width
+    return _thread_local.console
+
+_container_statuses_cache = None
+_container_statuses_timestamp = 0.0
+_cache_lock = threading.Lock()
+
+def get_all_container_statuses() -> dict:
+    """Get status of all containers, cached for 2 seconds to avoid overloading Docker daemon."""
+    global _container_statuses_cache, _container_statuses_timestamp
+    now = time.time()
+    with _cache_lock:
+        if _container_statuses_cache is None or (now - _container_statuses_timestamp > 2.0):
+            try:
+                client = get_docker_client()
+                containers = client.containers.list(all=True)
+                _container_statuses_cache = {c.name: c.status for c in containers}
+                _container_statuses_timestamp = now
+            except Exception as e:
+                logger.error(f"Failed to list containers: {e}")
+                if _container_statuses_cache is None:
+                    _container_statuses_cache = {}
+        return _container_statuses_cache.copy()
+
+def invalidate_container_cache():
+    """Invalidate the cached container statuses to force a fresh fetch."""
+    global _container_statuses_timestamp
+    with _cache_lock:
+        _container_statuses_timestamp = 0.0
+
+
 # ============================================================
 # ANSI Helpers
 # ============================================================
@@ -160,11 +203,15 @@ rate_limiter = RateLimiter()
 # Database Helper
 # ============================================================
 def get_user_repos(user_id: int) -> list:
-    """Fetch all repos for a user from the database."""
+    """Fetch all repos for a user from the database with WAL mode and busy timeout."""
     repos = []
+    conn = None
     try:
         conn = sqlite3.connect(DATABASE_PATH)
         conn.row_factory = sqlite3.Row
+        # Set WAL mode and busy timeout to avoid database locked errors under load
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
         cursor = conn.execute(
             'SELECT id, project_name, process_id, container_id, status, '
             'subdomain, created_at, app_type FROM repo_history '
@@ -182,9 +229,14 @@ def get_user_repos(user_id: int) -> list:
                 'created': row['created_at'][:10] if row['created_at'] else '-',
                 'app_type': row['app_type'] or 'forge',
             })
-        conn.close()
     except Exception as e:
         logger.error(f"DB error fetching repos for user {user_id}: {e}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
     return repos
 
 
@@ -210,16 +262,15 @@ def get_docker_client():
 
 
 def get_container_status(process_id: str, app_type: str = 'repo') -> str:
-    """Get live Docker container status."""
-    try:
-        # Re-use global docker client to avoid expensive initialization overhead
-        client = get_docker_client()
-        container = get_container(client, process_id, app_type)
-        return container.status
-    except docker.errors.NotFound:
-        return 'not_found'
-    except Exception:
-        return 'unknown'
+    """Get live Docker container status from cached container statuses."""
+    statuses = get_all_container_statuses()
+    name1 = f"stellar-{app_type}-{process_id}"
+    name2 = f"stellar-repo-{process_id}"
+    if name1 in statuses:
+        return statuses[name1]
+    if name2 in statuses:
+        return statuses[name2]
+    return 'not_found'
 
 
 
@@ -408,18 +459,19 @@ class TUI:
 
     @staticmethod
     def _render(width: int, height: int, content, theme: dict) -> str:
-        """Wrap content in a themed box and render to string, filling the screen."""
+        """Wrap content in a themed box and render to string, filling the screen, reusing Console instance."""
         from rich.align import Align
         buf = StringIO()
-        console = Console(
-            file=buf,
-            width=width,
-            force_terminal=True,
-            color_system="256",
-            highlight=False,
-            legacy_windows=False
-        )
         
+        # Reuse thread-local Console to avoid creation overhead
+        console = get_console(width)
+        console.file = buf
+        
+        # Catch narrow or short terminal dimensions to avoid Panel layout crash
+        if height < 5 or width < 20:
+            console.print(content)
+            return buf.getvalue()
+            
         # Wrap everything in the master "app box"
         panel = Panel(
             content,
@@ -883,45 +935,7 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
         time.sleep(1.5)
 
 
-# ============================================================
-# Container Logs Viewer
-# ============================================================
-def view_container_logs(channel, server: StellarSSHServer, process_id: str, app_type: str, user_id: int):
-    """Stream Docker container logs to the SSH channel."""
-    try:
-        # Re-use global docker client to avoid expensive initialization overhead
-        client = get_docker_client()
-        container = get_container(client, process_id, app_type)
-        container_name = container.name
-        audit.info(f"LOGS_VIEW | user_id={user_id} | container={container_name}")
-
-        send_raw(channel, CLEAR_SCREEN)
-        send_raw(channel, TUI.log_viewer_header(container_name, server.term_width))
-
-        # Stream logs
-        log_stream = container.logs(stream=True, follow=True, tail=50, timestamps=True)
-
-        for chunk in log_stream:
-            # Check if user wants to quit
-            ready = select.select([channel], [], [], 0.05)
-            if ready[0]:
-                key_data = channel.recv(32)
-                if key_data in (b'q', b'Q', b'\x03'):
-                    break
-
-            try:
-                line = chunk.decode('utf-8', errors='replace').rstrip('\n')
-                send_raw(channel, f"  {line}\r\n")
-            except Exception:
-                pass
-
-    except docker.errors.NotFound:
-        send_raw(channel, "\r\n\x1b[31m  Container not found.\x1b[0m\r\n")
-        time.sleep(1.5)
-    except Exception as e:
-        logger.error(f"Log viewer error: {e}")
-        send_raw(channel, f"\r\n\x1b[31m  Error: {str(e)[:80]}\x1b[0m\r\n")
-        time.sleep(1.5)
+# Container Logs Viewer (streaming is handled inline via diff checks on timeout/resize)
 
 
 # ============================================================
@@ -940,6 +954,8 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
         duration = time.time() - start_time
         logger.info(f"Container restart complete for {container_name} in {duration:.2f}s")
         audit.info(f"CONTAINER_RESTART_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
+        # Invalidate container cache so it updates instantly
+        invalidate_container_cache()
         return f"✓ {container_name} restarted successfully"
     except docker.errors.NotFound:
         return "✗ Container not found"
@@ -961,6 +977,8 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
         duration = time.time() - start_time
         logger.info(f"Container stop complete for {container_name} in {duration:.2f}s")
         audit.info(f"CONTAINER_STOP_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
+        # Invalidate container cache so it updates instantly
+        invalidate_container_cache()
         return f"✓ {container_name} stopped"
     except docker.errors.NotFound:
         return "✗ Container not found"
@@ -982,6 +1000,8 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
         duration = time.time() - start_time
         logger.info(f"Container start complete for {container_name} in {duration:.2f}s")
         audit.info(f"CONTAINER_START_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
+        # Invalidate container cache so it updates instantly
+        invalidate_container_cache()
         return f"✓ {container_name} started"
     except docker.errors.NotFound:
         return "✗ Container not found"
@@ -1158,7 +1178,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 elif key in ('CTRL_C', 'CTRL_D', 'EOF'):
                     send_raw(channel, '\x1b[?1049l\x1b[?25h')
                     return
-                elif isinstance(key, str):
+                elif isinstance(key, str) and key not in ('UP', 'DOWN', 'LEFT', 'RIGHT', 'ENTER', 'ESC', 'BACKSPACE', 'CTRL_C', 'CTRL_D', 'EOF'):
                     for char in key.upper():
                         if char in (" ", "-"):
                             continue
@@ -1279,14 +1299,8 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 try:
                     all_repos = get_user_repos(user_id)
                     
-                    # Batch query all container statuses from Docker daemon to reduce overhead
-                    try:
-                        client = get_docker_client()
-                        containers = client.containers.list(all=True)
-                        container_statuses = {c.name: c.status for c in containers}
-                    except Exception as docker_err:
-                        logger.error(f"Failed to list containers: {docker_err}")
-                        container_statuses = {}
+                    # Batch query all container statuses from Docker daemon using cache to reduce overhead
+                    container_statuses = get_all_container_statuses()
                     
                     status_map = {}
                     for r in all_repos:
@@ -1456,9 +1470,21 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                             log_key = read_key(channel, timeout=1.0)
                             if log_key in ('q', 'Q', 'ESC', 'CTRL_C'):
                                 break
-                            if server.resize_event.is_set():
-                                server.resize_event.clear()
-                                draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme), clear=True)
+                            
+                            # Live log refreshes: triggered on timeout or resize, and redraws only if content changes
+                            if log_key is None or server.resize_event.is_set():
+                                clear_screen = False
+                                if server.resize_event.is_set():
+                                    server.resize_event.clear()
+                                    clear_screen = True
+                                
+                                try:
+                                    new_logs = container.logs(tail=50, timestamps=True).decode('utf-8').splitlines()
+                                    if new_logs != logs_raw or clear_screen:
+                                        logs_raw = new_logs
+                                        draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme), clear=clear_screen)
+                                except Exception:
+                                    pass
                     except Exception as e:
                         status_msg = f"Could not fetch logs: {e}"
                     # Force full clear draw when returning to dashboard
