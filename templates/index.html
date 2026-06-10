@@ -43,25 +43,31 @@
         },
       };
     </script>
+    <!-- Upgrade KaTeX to 0.16.21 to fix CVE-2025-23207 (XSS via htmlData) and update SRI hashes -->
     <link
       rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css"
-      integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css"
+      integrity="sha384-zh0CIslj+VczCZtlzBcjt5ppRcsAmDnRem7ESsYwWwg3m/OaJ2l4x7YBZl9Kxxib"
       crossorigin="anonymous"
     />
     <script
       defer
-      src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"
-      integrity="sha384-hIoBPJpTUs74ddyc4bFZSM1TVlQDA60VBbJS0oA934VSz82sBx1X7kSx2ATBDIyd"
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"
+      integrity="sha384-Rma6DA2IPUwhNxmrB/7S3Tno0YY7sFu9WSYMCuulLhIqYSGZ2gKCJWIqhBWqMQfh"
       crossorigin="anonymous"
     ></script>
     <script
       defer
-      src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"
-      integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk"
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"
+      integrity="sha384-hCXGrW6PitJEwbkoStFjeJxv+fSOOQKOPbJxSfM6G5sWZjAyWhXiTIIAmQqnlLlh"
       crossorigin="anonymous"
     ></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <!-- Upgrade DOMPurify to 3.2.4 to address XSS / prototype pollution vulnerabilities and apply SRI validation -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"
+      integrity="sha384-eEu5CTj3qGvu9PdJuS+YlkNi7d2XxQROAFYOr59zgObtlcux1ae1Il3u7jvdCSWu"
+      crossorigin="anonymous"
+    ></script>
     <link rel="stylesheet" href="/static/main.css?v=66" />
     <link rel="stylesheet" href="/custom_select.css" />
     <link
