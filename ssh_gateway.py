@@ -196,16 +196,31 @@ def get_container(client, process_id: str, app_type: str):
         return client.containers.get(f"stellar-repo-{process_id}")
 
 
+_docker_client = None
+_docker_client_lock = threading.Lock()
+
+def get_docker_client():
+    """Get a thread-safe shared Docker client instance."""
+    global _docker_client
+    if _docker_client is None:
+        with _docker_client_lock:
+            if _docker_client is None:
+                _docker_client = docker.from_env()
+    return _docker_client
+
+
 def get_container_status(process_id: str, app_type: str = 'repo') -> str:
     """Get live Docker container status."""
     try:
-        client = docker.from_env()
+        # Re-use global docker client to avoid expensive initialization overhead
+        client = get_docker_client()
         container = get_container(client, process_id, app_type)
         return container.status
     except docker.errors.NotFound:
         return 'not_found'
     except Exception:
         return 'unknown'
+
 
 
 # ============================================================
@@ -764,7 +779,8 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
     Pipes SSH channel ↔ Docker exec PTY bidirectionally.
     """
     try:
-        client = docker.from_env()
+        # Re-use global docker client to avoid expensive initialization overhead
+        client = get_docker_client()
         container = get_container(client, process_id, app_type)
         container_name = container.name
         audit.info(f"SHELL_ATTACH | user_id={user_id} | container={container_name}")
@@ -873,7 +889,8 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
 def view_container_logs(channel, server: StellarSSHServer, process_id: str, app_type: str, user_id: int):
     """Stream Docker container logs to the SSH channel."""
     try:
-        client = docker.from_env()
+        # Re-use global docker client to avoid expensive initialization overhead
+        client = get_docker_client()
         container = get_container(client, process_id, app_type)
         container_name = container.name
         audit.info(f"LOGS_VIEW | user_id={user_id} | container={container_name}")
@@ -913,7 +930,8 @@ def view_container_logs(channel, server: StellarSSHServer, process_id: str, app_
 def restart_container(process_id: str, app_type: str, user_id: int) -> str:
     """Restart a Docker container."""
     try:
-        client = docker.from_env()
+        # Re-use global docker client to avoid expensive initialization overhead
+        client = get_docker_client()
         container = get_container(client, process_id, app_type)
         container_name = container.name
         audit.info(f"CONTAINER_RESTART | user_id={user_id} | container={container_name}")
@@ -928,7 +946,8 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
 def stop_container(process_id: str, app_type: str, user_id: int) -> str:
     """Stop a Docker container."""
     try:
-        client = docker.from_env()
+        # Re-use global docker client to avoid expensive initialization overhead
+        client = get_docker_client()
         container = get_container(client, process_id, app_type)
         container_name = container.name
         audit.info(f"CONTAINER_STOP | user_id={user_id} | container={container_name}")
@@ -943,7 +962,8 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
 def start_container(process_id: str, app_type: str, user_id: int) -> str:
     """Start a stopped Docker container."""
     try:
-        client = docker.from_env()
+        # Re-use global docker client to avoid expensive initialization overhead
+        client = get_docker_client()
         container = get_container(client, process_id, app_type)
         container_name = container.name
         audit.info(f"CONTAINER_START | user_id={user_id} | container={container_name}")
@@ -1224,7 +1244,30 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             if needs_refresh or (time.time() - last_refresh_time > REFRESH_INTERVAL):
                 try:
                     all_repos = get_user_repos(user_id)
-                    status_map = {r['process_id']: get_container_status(r['process_id'], r.get('app_type', 'repo')) for r in all_repos}
+                    
+                    # Batch query all container statuses from Docker daemon to reduce overhead
+                    try:
+                        client = get_docker_client()
+                        containers = client.containers.list(all=True)
+                        container_statuses = {c.name: c.status for c in containers}
+                    except Exception as docker_err:
+                        logger.error(f"Failed to list containers: {docker_err}")
+                        container_statuses = {}
+                    
+                    status_map = {}
+                    for r in all_repos:
+                        pid = r['process_id']
+                        app_type = r.get('app_type', 'repo')
+                        # Check specific and fallback container names
+                        name1 = f"stellar-{app_type}-{pid}"
+                        name2 = f"stellar-repo-{pid}"
+                        if name1 in container_statuses:
+                            status_map[pid] = container_statuses[name1]
+                        elif name2 in container_statuses:
+                            status_map[pid] = container_statuses[name2]
+                        else:
+                            status_map[pid] = 'not_found'
+                    
                     repos = get_filtered_sorted_repos(all_repos, status_map)
                 except Exception as e:
                     logger.error(f"Error querying deployments: {e}")
@@ -1362,7 +1405,8 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                     repo = repos[selected_index]
                     app_type = repo.get('app_type', 'repo')
                     try:
-                        client = docker.from_env()
+                        # Re-use global docker client to avoid expensive initialization overhead
+                        client = get_docker_client()
                         container = get_container(client, repo['process_id'], app_type)
                         logs_raw = container.logs(tail=50, timestamps=True).decode('utf-8').splitlines()
                         

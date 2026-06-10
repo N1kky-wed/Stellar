@@ -72,11 +72,25 @@
       }
 
       .code-controls .run-code-btn.running {
+        cursor: pointer;
+        background-color: rgba(220, 38, 38, 0.2);
+        color: #ef4444;
+        border: 1px solid rgba(220, 38, 38, 0.4);
+        animation: pulse-run 2s infinite;
+      }
+
+      .code-controls .run-code-btn.running:hover {
+        background-color: rgba(220, 38, 38, 0.35);
+        color: #ffffff;
+        border-color: rgba(220, 38, 38, 0.6);
+      }
+
+      .code-controls .run-code-btn.stopping {
         cursor: not-allowed;
-        background-color: rgba(255, 165, 0, 0.3);
+        background-color: rgba(255, 165, 0, 0.25);
         color: #ffc966;
-        border-color: rgba(255, 165, 0, 0.5);
-        animation: pulse-run 1.5s infinite;
+        border: 1px solid rgba(255, 165, 0, 0.45);
+        animation: pulse-run 1s infinite;
       }
 
       @keyframes pulse-run {
@@ -1103,6 +1117,18 @@
         color: var(--primary-text-color);
       }
 
+      .sidebar-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin: 0 0 20px 0 !important;
+        flex-shrink: 0;
+      }
+
+      .sidebar-actions button {
+        margin: 0 !important;
+      }
+
       #newChatBtn {
         width: 100%;
         padding: 12px;
@@ -1127,6 +1153,34 @@
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
         filter: brightness(1.1);
+      }
+
+      #agentGroupChatBtn {
+        width: 100%;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.03);
+        color: #e2e8f0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin: 0 0 20px 0 !important;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        box-sizing: border-box;
+      }
+
+      #agentGroupChatBtn:hover {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: #10b981;
+        color: #fff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
       }
 
       #chatList {

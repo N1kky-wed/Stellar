@@ -1969,12 +1969,42 @@ const defaultAgentSettings = {
         }
 
         const runButton = event.target.closest(".run-code-btn");
-        if (!runButton || runButton.disabled) return;
-        event.stopPropagation();
+        if (!runButton) return;
+
+        if (runButton.classList.contains("stopping")) {
+          return;
+        }
 
         const wrapper = runButton.closest(".code-content-original");
         const codeEl = wrapper?.querySelector("code");
         if (!wrapper || !codeEl) return;
+
+        event.stopPropagation();
+
+        if (runButton.classList.contains("running")) {
+          runButton.classList.remove("running");
+          runButton.classList.add("stopping");
+          runButton.disabled = true;
+          runButton.innerHTML = "Stopping...";
+
+          if (runButton._abortController) {
+            runButton._abortController.abort();
+            runButton._abortController = null;
+          }
+
+          const outputPanel = wrapper.querySelector(".code-output-container");
+          const containerId = outputPanel ? outputPanel.dataset.containerId : null;
+          if (containerId) {
+            fetch("/api/stop_container", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ container_id: containerId }),
+            }).catch(err => {
+              console.error("Failed to send stop request:", err);
+            });
+          }
+          return;
+        }
 
         const langMatch = codeEl.className.match(/language-(\w+)/);
         const lang = langMatch ? langMatch[1] : "unknown";
@@ -1982,13 +2012,16 @@ const defaultAgentSettings = {
 
         let processId = null;
 
+        const controller = new AbortController();
+        runButton._abortController = controller;
+
         runButton.classList.add("running");
-        runButton.disabled = true;
-        runButton.innerHTML = "Connecting...";
+        runButton.disabled = false;
+        runButton.innerHTML = '<svg style="width:12px; height:12px; fill: currentColor; margin-right: 4px; vertical-align: middle;"><use xlink:href="#icon-stop"></use></svg>Stop';
 
         const outputContentDiv = createOutputPanel(wrapper, runButton);
         outputContentDiv.innerHTML =
-          '<span class="output-line">Connecting...</span>';
+          '<span class="output-line" style="color: var(--secondary-text-color);">Connecting...</span>';
 
         const backendRunnableLanguages = [
           "python",
@@ -2004,13 +2037,14 @@ const defaultAgentSettings = {
         ];
 
         if (backendRunnableLanguages.includes(lang)) {
-          executeCode(code, lang, outputContentDiv, runButton, processId);
+          executeCode(code, lang, outputContentDiv, runButton, processId, controller);
         } else {
           outputContentDiv.innerHTML = `<span class="output-line error">Execution is not supported for '${lang}' language.</span>`;
           runButton.classList.remove("running");
           runButton.disabled = false;
           runButton.innerHTML =
             '<svg style="width:14px; height:14px;"><use xlink:href="#icon-play"></use></svg> Run';
+          runButton._abortController = null;
         }
       });
 
@@ -2020,13 +2054,12 @@ const defaultAgentSettings = {
         outputContentDiv,
         runButton,
         processId = null,
+        controller = null,
       ) {
-        runButton.innerHTML = "Running...";
-        runButton.classList.add("running");
-        runButton.disabled = true;
         outputContentDiv.innerHTML =
           '<span class="output-line initial-status" style="color: var(--secondary-text-color);">Preparing sandbox environment...</span>';
         let firstOutputReceived = false;
+        const signal = controller ? controller.signal : null;
 
         try {
           const payload = {
@@ -2039,6 +2072,7 @@ const defaultAgentSettings = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
+            signal: signal,
           });
 
           if (!response.ok) {
@@ -2059,6 +2093,10 @@ const defaultAgentSettings = {
           );
 
           while (true) {
+            if (signal && signal.aborted) {
+              throw new DOMException("Aborted", "AbortError");
+            }
+
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -2105,19 +2143,29 @@ const defaultAgentSettings = {
             outputContentDiv.scrollTop = outputContentDiv.scrollHeight;
           }
         } catch (error) {
-          if (!firstOutputReceived) {
-            outputContentDiv.innerHTML = "";
+          if (error.name === "AbortError") {
+            const abortLine = document.createElement("span");
+            abortLine.className = "output-line error";
+            abortLine.style.color = "var(--secondary-text-color)";
+            abortLine.textContent = "\n[Execution terminated by user]";
+            outputContentDiv.appendChild(abortLine);
+          } else {
+            if (!firstOutputReceived) {
+              outputContentDiv.innerHTML = "";
+            }
+            const errorLine = document.createElement("span");
+            errorLine.className = "output-line error";
+            errorLine.textContent = `Error: ${error.message}`;
+            outputContentDiv.appendChild(errorLine);
           }
-          const errorLine = document.createElement("span");
-          errorLine.className = "output-line error";
-          errorLine.textContent = `Error: ${error.message}`;
-          outputContentDiv.appendChild(errorLine);
         } finally {
           runButton.classList.remove("running");
+          runButton.classList.remove("stopping");
           runButton.disabled = false;
           runButton.innerHTML =
             '<svg style="width:14px; height:14px;"><use xlink:href="#icon-play"></use></svg> Run';
-          if (!firstOutputReceived) {
+          runButton._abortController = null;
+          if (!firstOutputReceived && (!signal || !signal.aborted)) {
             outputContentDiv.innerHTML =
               '<span class="output-line" style="color: var(--secondary-text-color);">[Execution finished with no output]</span>';
           }
@@ -5737,6 +5785,7 @@ const defaultAgentSettings = {
 
             if (data.role === "admin") {
               addAdminControls();
+              addAgentGroupChatButton();
             }
 
             // Set currentChatId from URL param first, fallback to check_auth data, then null
@@ -5781,6 +5830,30 @@ const defaultAgentSettings = {
         } else {
           headerRight.appendChild(waitlistBtn);
         }
+      }
+
+      function addAgentGroupChatButton() {
+        if (document.getElementById("agentGroupChatBtn")) return;
+        const sidebar = document.getElementById("sidebar");
+        if (!sidebar) return;
+        
+        const newChatBtn = document.getElementById("newChatBtn");
+        if (!newChatBtn) return;
+        
+        const groupChatBtn = document.createElement("button");
+        groupChatBtn.id = "agentGroupChatBtn";
+        groupChatBtn.innerHTML = `
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+          </svg>
+          Agent Group Chat
+        `;
+        groupChatBtn.onclick = () => {
+          window.open('/agent-group-chat', '_blank');
+        };
+        
+        // Insert after newChatBtn
+        newChatBtn.parentNode.insertBefore(groupChatBtn, newChatBtn.nextSibling);
       }
 
       const adminWaitlistModal = document.getElementById("adminWaitlistModal");
