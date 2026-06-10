@@ -75,7 +75,7 @@ try:
         logging.info("Creating 'stellar_isolated' network with ICC disabled.")
         client.networks.create("stellar_isolated", driver="bridge", options={"com.docker.network.bridge.enable_icc": "false"})
 except Exception as e:
-    logger.exception("Error caught: %s", e)
+    logger.exception("Docker initialization failed on startup")
     logging.error(f"Could not connect to Docker daemon on startup. Please ensure Docker is running. Code execution will fail. Error: {e}")
 
 from functools import wraps
@@ -380,6 +380,9 @@ class GlobalKeyManager:
     def block_key(self, key_val, model_id, duration_seconds, reason='RPM'):
         if reason == 'INVALID':
             model_id = None
+            
+        key_hash = hash(key_val) if key_val else 0
+        logger.warning("API key blocked hash=%s model=%s duration_sec=%s reason=%s", key_hash, model_id, duration_seconds, reason)
             
         with self.lock:
             self.blocked_until[(key_val, model_id)] = time.time() + duration_seconds
@@ -1327,7 +1330,10 @@ def generate_chat_name(chat_id, first_message_content):
                     t0 = time.time()
                     r = chat.send_message(prompt)
                     duration = time.time() - t0
-                    logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=chat_name_generation", model_name, duration)
+                    usage = getattr(r, 'usage_metadata', None)
+                    prompt_tokens = getattr(usage, 'prompt_token_count', 0) if usage else 0
+                    candidates_tokens = getattr(usage, 'candidates_token_count', 0) if usage else 0
+                    logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=chat_name_generation prompt_tokens=%d candidates_tokens=%d", model_name, duration, prompt_tokens, candidates_tokens)
                     
                     generated_name = "New Chat"
                     if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
@@ -1473,10 +1479,13 @@ def count_chat_tokens(chat_id=None):
         for current_key in active_keys:
             try:
                 client = genai.Client(api_key=current_key)
+                t0 = time.time()
                 token_count_response = client.models.count_tokens(
                     model="gemini-3.1-flash-lite", contents=history_for_tokens
                 )
                 t_count = token_count_response.total_tokens
+                duration = time.time() - t0
+                logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=count_tokens", "gemini-3.1-flash-lite", duration)
                 token_counted = True
                 break
             except Exception as token_e:
@@ -1555,7 +1564,10 @@ def upload_files_to_gemini(context_id, filenames, api_key=None):
 
             try:
                 logger.info(f"[GEMINI-UPLOAD] Uploading {filename} natively to Gemini...")
+                t0 = time.time()
                 g_file = client.files.upload(file=filepath)
+                duration = time.time() - t0
+                logger.info("Gemini API call completed method=files.upload duration_sec=%.2f filename=%s", duration, filename)
                 
                 # Wait for processing
                 while g_file.state.name == "PROCESSING":
@@ -1654,7 +1666,7 @@ def scrape_url(url: str) -> str:
         logger.info("Scraped URL successfully url=%s content_length=%d", url, len(apron) if apron else 0)
         return apron
     except Exception as e:
-        logger.exception("Error caught: %s", e)
+        logger.exception("Failed to scrape URL url=%s", url)
         return f"Error scraping {url}: {str(e)}"
 
 stop_sequence="8919018818"
@@ -1679,7 +1691,10 @@ def is_output_cut_off(text: str, key: str) -> bool:
         t0 = time.time()
         r = chat.send_message(check_prompt)
         duration = time.time() - t0
-        logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=cut_off_check", 'gemini-3.1-flash-lite', duration)
+        usage = getattr(r, 'usage_metadata', None)
+        prompt_tokens = getattr(usage, 'prompt_token_count', 0) if usage else 0
+        candidates_tokens = getattr(usage, 'candidates_token_count', 0) if usage else 0
+        logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=cut_off_check prompt_tokens=%d candidates_tokens=%d", 'gemini-3.1-flash-lite', duration, prompt_tokens, candidates_tokens)
         
         if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
             response_text = r.candidates[0].content.parts[0].text.strip().upper()
@@ -1690,7 +1705,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
         else:
             return False
     except Exception as e:
-        logger.exception("Error caught: %s", e)
+        logger.exception("Failed to check if output is cut off")
         return False
 
 
@@ -1829,7 +1844,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     t0 = time.time()
                     r = chat.send_message(message_to_send)
                     duration = time.time() - t0
-                    logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=query_stream_generation", model_id, duration)
+                    usage = getattr(r, 'usage_metadata', None)
+                    prompt_tokens = getattr(usage, 'prompt_token_count', 0) if usage else 0
+                    candidates_tokens = getattr(usage, 'candidates_token_count', 0) if usage else 0
+                    logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=query_stream_generation prompt_tokens=%d candidates_tokens=%d attempt=%d key_index=%d", model_id, duration, prompt_tokens, candidates_tokens, attempt, current_key_index)
                     consecutive_network_errors = 0 # Reset on success
                 except Exception as loop_e:
                     logger.exception("Error caught: %s", loop_e)
@@ -2127,13 +2145,22 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                             return func_to_call(**kwargs)
 
                                     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                                    logger.info("Executing tool name=%s chat_id=%s args=%s", func_name, chat_id, args_dict)
+                                    t_tool_start = time.time()
                                     future = executor.submit(_run_tool_with_context, **args_dict)
+                                    tool_status = "success"
                                     try:
                                         res = future.result(timeout=timeout_val)
                                     except concurrent.futures.TimeoutError:
                                         res = f"Error: Tool '{func_name}' was stopped because it exceeded the timeout of {timeout_val} seconds that the agent set for that tool."
+                                        tool_status = "timeout"
+                                    except Exception as tool_exc:
+                                        res = f"Error: {str(tool_exc)}"
+                                        tool_status = "error"
                                     finally:
                                         executor.shutdown(wait=False)
+                                    duration_tool = time.time() - t_tool_start
+                                    logger.info("Executed tool name=%s chat_id=%s duration_sec=%.2f status=%s", func_name, chat_id, duration_tool, tool_status)
                             
                             # Record tool call in DB for context persistence
                             record_tool_call(func_name, args_dict, res)
@@ -2397,7 +2424,7 @@ def create_output_file(query_or_base_name: str, content: str, extension: str = "
                 else:
                     return None
             except Exception as e:
-                logger.exception("Error caught: %s", e)
+                logger.exception("Unexpected error writing output file full_path=%s", full_path)
                 pass
             if os.path.exists(full_path):
                 try:
@@ -2406,7 +2433,7 @@ def create_output_file(query_or_base_name: str, content: str, extension: str = "
                     pass
             return None
     except Exception as e:
-        logger.exception("Error caught: %s", e)
+        logger.exception("Unexpected error preparing output file path prefix=%s", query_or_base_name)
         return None
     return None
 
@@ -2449,6 +2476,8 @@ def _extract_json_from_response(response_text):
     return None
 
 def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='repo', subdomain=None):
+    logger.info("Starting deployment process_id=%s app_type=%s subdomain=%s", process_id, app_type, subdomain)
+    t_start = time.time()
     logs_buffer = []
 
     user_id = None
@@ -2520,7 +2549,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     if res.exit_code == 0:
                         old_reqs = res.output.decode('utf-8')
                 except Exception:
-                    logger.exception("Error caught.")
+                    logger.exception("Failed to read requirements.txt from old container process_id=%s", process_id)
                     pass
                 
                 new_reqs = project_files.get('requirements.txt', '')
@@ -2543,7 +2572,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                             if res.exit_code != 0 or res.output.decode().strip() == '000':
                                 break
                         except Exception:
-                            logger.exception("Error caught.")
+                            logger.exception("Failed to check readiness of old container port release process_id=%s", process_id)
                             break
                     
                     # Find mount path to update files
@@ -2559,7 +2588,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     old_container.remove(force=True)
                     logger.info("Old container stopped and removed process_id=%s container_id=%s duration_sec=%.2f", process_id, old_container.id, time.time() - t_stop)
             except docker.errors.NotFound:
-                pass
+                logger.info("Previous container not found on Docker engine, skipping cleanup. process_id=%s container_id=%s", process_id, old_container_id)
             except Exception as e:
                 logger.exception("Error cleaning up previous container process_id=%s: %s", process_id, e)
                 _put_event({'type': 'log', 'content': f'Note: Could not inspect/remove previous instance: {e}'})
@@ -2696,7 +2725,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             try:
                 redis_client.hset(redis_key, mapping={"host_port": str(host_port)})
             except Exception:
-                logger.exception("Error caught.")
+                logger.exception("Failed to write host_port to Redis process_id=%s", process_id)
                 pass
 
             _put_event({'type': 'log', 'content': f'Container is running on port {host_port}. Verifying server readiness...'})
@@ -2721,7 +2750,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                         except ValueError:
                             pass
                 except Exception as exec_err:
-                    logger.exception("Error caught: %s", exec_err)
+                    logger.exception("Health check exec failed during startup check process_id=%s container_id=%s", process_id, container.short_id)
                     logger.warning(f"Health check exec error for {container.short_id}: {exec_err}")
                     break
             
@@ -2762,6 +2791,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                  except: pass
 
         if not public_url_found:
+            logger.error("Deployment failed to get public URL for process_id=%s, container may have crashed.", process_id)
             _put_event({'type': 'error', 'content': 'Failed to get public URL. Container may have crashed.'})
             update_history(status='failed', final_logs="\n".join(logs_buffer))
             try: redis_client.hset(redis_key, mapping={"status": "failed"})
@@ -2799,6 +2829,9 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
 
         if current_status != 'failed':
             update_history(status='stopped', final_logs="\n".join(logs_buffer))
+            
+        duration = time.time() - t_start
+        logger.info("Deployment finished process_id=%s app_type=%s status=%s duration_sec=%.2f", process_id, app_type, current_status, duration)
         
         if container:
             try:
@@ -2866,11 +2899,14 @@ def stop_and_cleanup_app_by_process_id(process_id, app_type='repo'):
 
     if container_id:
         try:
+            logger.info("Stopping and removing container container_id=%s process_id=%s", container_id, process_id)
+            t_stop = time.time()
             container = client.containers.get(container_id)
             container.stop(timeout=5)
             container.remove(force=True)
+            logger.info("Container stopped and removed container_id=%s duration_sec=%.2f", container_id, time.time() - t_stop)
         except docker.errors.NotFound:
-            pass
+            logger.info("Container to remove not found container_id=%s process_id=%s", container_id, process_id)
         except Exception as e:
             logger.exception("Error caught: %s", e)
             logger.warning(f"Warning during cleanup for container {container_id}: {e}")
@@ -4996,10 +5032,13 @@ def api_count_tokens():
             try:
                 client = genai.Client(api_key=current_key)
                 contents = [types.Content(role="user", parts=[types.Part(text=t)]) for t in text_list]
+                t0 = time.time()
                 token_count_response = client.models.count_tokens(
                     model="gemini-3.1-flash-lite", contents=contents
                 )
                 t_count = token_count_response.total_tokens
+                duration = time.time() - t0
+                logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=api_count_tokens", "gemini-3.1-flash-lite", duration)
                 break
             except Exception as token_e:
                 err_str = str(token_e).lower()
@@ -5816,6 +5855,8 @@ def run_code():
                 redis_client.hset(redis_key, mapping={ "status": "starting", "process_id": process_id })
 
 
+            logger.info("Creating run_code sandbox container image=%s run_id=%s process_id=%s user_network=%s", config['image'], run_id, process_id, user_network)
+            t_run = time.time()
             container = client.containers.run(
                 image=config['image'], command=config['command'](main_code_filename_with_ext),
                 working_dir='/app', volumes={abs_temp_dir_path: {'bind': '/app', 'mode': 'rw'}},
@@ -5829,6 +5870,7 @@ def run_code():
                     "created_at_ts": str(time.time())
                 }
             )
+            logger.info("Run_code sandbox container created container_id=%s duration_sec=%.2f", container.id, time.time() - t_run)
             yield f"data: {json.dumps({'type': 'container_id', 'id': container.id})}\n\n"
 
             if is_server_app and process_id:
