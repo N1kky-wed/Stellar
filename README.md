@@ -51,6 +51,7 @@ Internet ──► Nginx (HTTPS + wildcard *.stellarai.live)
 ```
 
 Key design principles:
+
 - **Per-user isolation** — every user gets their own Docker network (`stellar_net_<user_id>`) with ICC disabled.
 - **Stateful persistence** — all repo deployments snapshot their file trees to SQLite on stop/restart.
 - **Smart key rotation** — `GlobalKeyManager` tracks per-key, per-model rate limit blocks with automatic expiry and Pacific-midnight daily resets.
@@ -63,14 +64,14 @@ Key design principles:
 
 ## Prerequisites
 
-| Requirement | Version / Notes |
-|---|---|
-| Python | 3.10+ |
-| Docker Engine | 20.10+ (daemon must be running) |
-| Redis | 6+ (running on `localhost:6379`) |
-| Nginx | For production TLS termination |
-| Pandoc | Required by `pypandoc` for document conversion |
-| Node.js | Optional — only needed if you build the frontend separately |
+| Requirement   | Version / Notes                                             |
+| ------------- | ----------------------------------------------------------- |
+| Python        | 3.10+                                                       |
+| Docker Engine | 20.10+ (daemon must be running)                             |
+| Redis         | 6+ (running on `localhost:6379`)                            |
+| Nginx         | For production TLS termination                              |
+| Pandoc        | Required by `pypandoc` for document conversion              |
+| Node.js       | Optional — only needed if you build the frontend separately |
 
 **Docker Images Required** (build or pull before first run):
 
@@ -148,24 +149,25 @@ The application will start on `http://0.0.0.0:5000`. For development, Flask's bu
 
 All secrets and configuration are loaded from `keys.env` at startup. This file must never be committed to version control (it is already listed in `.gitignore`).
 
-| Variable | Description | Required |
-|---|---|---|
-| `FLASK_SECRET_KEY` | Flask session signing secret. Use a long random string. | ✅ |
-| `GEMINI_API_KEY` | Primary Gemini API key (Google AI Studio) | ✅ |
-| `GEMINI_BACKUP_KEY_1` ... `_N` | Additional Gemini API keys for automatic quota rotation | Optional |
-| `TAVILY_API_KEY` | Primary Tavily search/crawl API key | ✅ |
-| `TAVILY_BACKUP_KEY_1` ... `_N` | Backup Tavily keys for rotation | Optional |
-| `YOUTUBE_API_KEY` | YouTube Data API v3 key (for `analyze_youtube_video` search action) | ✅ |
-| `EMAIL_USER` | Gmail address used by `send_self_email` | ✅ |
-| `EMAIL_PASS` | Gmail app password (not account password) | ✅ |
-| `FIREBASE_PROJECT_ID` | Firebase project ID for Google OAuth token verification | ✅ |
-| `TWILIO_ACCOUNT_SID` | Twilio SID for SMS notifications | Optional |
-| `TWILIO_AUTH_TOKEN` | Twilio auth token | Optional |
-| `TWILIO_FROM_NUMBER` | Twilio phone number | Optional |
-| `DATABASE_NAME` | Path to SQLite DB file (default: `stellar_local.db`) | Optional |
-| `ENCRYPTION_KEY` | Fernet encryption key for sensitive stored data | ✅ |
+| Variable                       | Description                                                         | Required |
+| ------------------------------ | ------------------------------------------------------------------- | -------- |
+| `FLASK_SECRET_KEY`             | Flask session signing secret. Use a long random string.             | ✅       |
+| `GEMINI_API_KEY`               | Primary Gemini API key (Google AI Studio)                           | ✅       |
+| `GEMINI_BACKUP_KEY_1` ... `_N` | Additional Gemini API keys for automatic quota rotation             | Optional |
+| `TAVILY_API_KEY`               | Primary Tavily search/crawl API key                                 | ✅       |
+| `TAVILY_BACKUP_KEY_1` ... `_N` | Backup Tavily keys for rotation                                     | Optional |
+| `YOUTUBE_API_KEY`              | YouTube Data API v3 key (for `analyze_youtube_video` search action) | ✅       |
+| `EMAIL_USER`                   | Gmail address used by `send_self_email`                             | ✅       |
+| `EMAIL_PASS`                   | Gmail app password (not account password)                           | ✅       |
+| `FIREBASE_PROJECT_ID`          | Firebase project ID for Google OAuth token verification             | ✅       |
+| `TWILIO_ACCOUNT_SID`           | Twilio SID for SMS notifications                                    | Optional |
+| `TWILIO_AUTH_TOKEN`            | Twilio auth token                                                   | Optional |
+| `TWILIO_FROM_NUMBER`           | Twilio phone number                                                 | Optional |
+| `DATABASE_NAME`                | Path to SQLite DB file (default: `stellar_local.db`)                | Optional |
+| `ENCRYPTION_KEY`               | Fernet encryption key for sensitive stored data                     | ✅       |
 
 > **Generating a Fernet Key:**
+>
 > ```python
 > from cryptography.fernet import Fernet
 > print(Fernet.generate_key().decode())
@@ -221,12 +223,14 @@ sudo systemctl start stellar
 ```
 
 The service runs Gunicorn with:
+
 - Worker class: `gthread` (gevent-compatible threaded workers)
 - Workers: `4`, Threads per worker: `25`
 - Timeout: `3600s` (long timeout for streaming AI responses)
 - Bind: Unix socket `stellar.sock` (consumed by Nginx)
 
 **To apply backend code changes:**
+
 ```bash
 sudo systemctl restart stellar
 ```
@@ -237,6 +241,7 @@ Stellar includes a fully custom, interactive SSH Terminal User Interface (TUI) g
 
 **Authentication & Login Flow:**
 Stellar completely replaces traditional SSH public-key authentication with a modern, short-lived device authorization flow tied to the user's web session:
+
 1. The user initiates a connection via `ssh stellar@stellarai.live`.
 2. The OpenSSH server matches the `stellar` user, disables all tunneling/port-forwarding, and forces the connection into the Python Paramiko SSH server (`ssh_gateway.py`).
 3. The user is presented with an ASCII art prompt requesting a 6-character code.
@@ -245,17 +250,20 @@ Stellar completely replaces traditional SSH public-key authentication with a mod
 6. The user pastes this code into their SSH terminal. The gateway verifies the code against Redis via an internal API. Upon success, the session is instantly authenticated as the correct user without ever exposing server credentials or requiring public SSH keys.
 
 **Dashboard Features:**
+
 - **Container Management:** A beautiful Rich-powered terminal interface displaying all active and historical repository deployments owned by the user.
 - **Interactive Docker Shells:** (The core feature) Users can select any running container and press `ENTER` to instantly drop into a fully interactive root `bash` PTY shell inside their sandboxed Docker container, effectively replacing the need to run `docker exec` on the host.
 - **Live Telemetry:** View the current container status (Running, Stopped), creation timestamps, and routed subdomains in a clean table format.
 - **Lifecycle Controls:** Users can navigate the list and instantly Stop or Restart their deployed containers directly from the terminal using keyboard controls.
 
 **Usage:**
+
 ```bash
 ssh stellar@stellarai.live
 ```
 
 **Service Deployment:**
+
 ```bash
 sudo cp stellar-ssh.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -274,6 +282,7 @@ sudo nginx -t && sudo systemctl reload nginx
 ```
 
 Key Nginx settings:
+
 - **SSL:** Let's Encrypt certificates for `stellarai.live` and `*.stellarai.live`
 - **Max body size:** 50MB (for file uploads)
 - **Proxy timeouts:** 3600s (matching Gunicorn)
@@ -286,12 +295,12 @@ Key Nginx settings:
 
 Stellar supports four AI personas, each mapped to a specific Gemini model tier:
 
-| Persona | Model | Infrastructure Access | Best For |
-|---|---|---|---|
-| **Obsidian** | `gemini-3.5-flash` | Lab + Repo | Complex reasoning, long multi-step tasks |
-| **Crimson** | `gemini-3-flash-preview` | Lab + Repo | Fast execution, lower quota usage |
-| **Lunarity** | `gemini-3.1-flash-lite` | Lab only | Lightweight tasks, error explanations |
-| **Emerald** | `gemini-2.5-flash-lite` | None | Standard Q&A, no infrastructure |
+| Persona      | Model                    | Infrastructure Access | Best For                                 |
+| ------------ | ------------------------ | --------------------- | ---------------------------------------- |
+| **Obsidian** | `gemini-3.5-flash`       | Lab + Repo            | Complex reasoning, long multi-step tasks |
+| **Crimson**  | `gemini-3-flash-preview` | Lab + Repo            | Fast execution, lower quota usage        |
+| **Lunarity** | `gemini-3.1-flash-lite`  | Lab only              | Lightweight tasks, error explanations    |
+| **Emerald**  | `gemini-2.5-flash-lite`  | None                  | Standard Q&A, no infrastructure          |
 
 All models share access to YouTube intelligence and standard tools. The agent dynamically selects which persona processes a request based on user preference and current quota availability.
 
@@ -330,17 +339,18 @@ lab_execute(
 
 **Actions:**
 
-| Action | Description |
-|---|---|
-| `deploy` | Provision a new container. Optionally clone a GitHub repo into it. Returns a live public URL. |
-| `execute` | Run a bash command inside a running deployment (install deps, start servers, patch files). |
-| `stop` | Gracefully stop and auto-snapshot all code files to SQLite before container destruction. |
-| `restart` | Stop + re-provision a fresh container, restoring all snapshotted files. |
-| `snapshot` | Manually trigger a file snapshot of specific paths. |
-| `list_history` | List all past deployments with URLs and statuses. |
-| `rename` | Change a deployment's display name and generate a new public subdomain. |
+| Action         | Description                                                                                   |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| `deploy`       | Provision a new container. Optionally clone a GitHub repo into it. Returns a live public URL. |
+| `execute`      | Run a bash command inside a running deployment (install deps, start servers, patch files).    |
+| `stop`         | Gracefully stop and auto-snapshot all code files to SQLite before container destruction.      |
+| `restart`      | Stop + re-provision a fresh container, restoring all snapshotted files.                       |
+| `snapshot`     | Manually trigger a file snapshot of specific paths.                                           |
+| `list_history` | List all past deployments with URLs and statuses.                                             |
+| `rename`       | Change a deployment's display name and generate a new public subdomain.                       |
 
 **Key behaviors:**
+
 - Server health is automatically verified post-start (HTTP status check on the internal port).
 - The agent is required to bind servers to `0.0.0.0` for the ingress router to work.
 - Pre-flight dependency installation and server start must be **separate `execute` calls** to prevent OOM kills.
@@ -354,17 +364,16 @@ lab_execute(
 
 **Actions:**
 
-| Action | Description |
-|---|---|
-| `tavily_search` | Deep semantic search with optional AI summary, image extraction, and date filtering |
-| `tavily_extract` | Full-page markdown/HTML extraction of up to 20 URLs simultaneously |
-| `tavily_crawl` | Recursive site crawling with configurable depth and path filters |
-| `tavily_map` | Domain architecture mapping — discovers all reachable URLs on a site |
+| Action           | Description                                                                         |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| `tavily_search`  | Deep semantic search with optional AI summary, image extraction, and date filtering |
+| `tavily_extract` | Full-page markdown/HTML extraction of up to 20 URLs simultaneously                  |
+| `tavily_crawl`   | Recursive site crawling with configurable depth and path filters                    |
+| `tavily_map`     | Domain architecture mapping — discovers all reachable URLs on a site                |
 
 **Advanced parameters:** Topic filtering (`general`, `news`, `finance`), domain inclusion/exclusion lists, exact phrase matching, time range filters (`d`, `w`, `m`, `y`), natural language crawler instructions, and image extraction with automatic dead-link verification.
 
 ---
-
 
 **End-to-end AI-generated PowerPoint presentations.**
 
@@ -427,10 +436,10 @@ Re-generates a single slide in an existing presentation using the original slide
 
 **Cross-environment file transfer** between chat uploads, lab sandboxes, and repo containers.
 
-| Action | Description |
-|---|---|
-| `read` | List all files currently uploaded in the chat context |
-| `move` | Transfer a file or directory between environments (chat → lab, lab → repo, etc.) |
+| Action    | Description                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `read`    | List all files currently uploaded in the chat context                                                                     |
+| `move`    | Transfer a file or directory between environments (chat → lab, lab → repo, etc.)                                          |
 | `project` | Export a file or directory from a container to the host `outputs/` folder, making it downloadable/previewable by the user |
 
 Directories are automatically compressed as `.tar.gz` before projection.
@@ -478,16 +487,17 @@ The agent generates a complete, self-contained HTML/CSS/JS widget. The user inte
 
 **Key capabilities:**
 
-| Use Case | How It Works |
-|---|---|
-| 🎮 **Interactive Games** | Play chess, tic-tac-toe, RPGs, and more — the AI renders the board, captures your move, thinks about its counter-move using its own neural network, and re-renders the updated state. No external engines needed. |
-| 🎨 **Mock UI Gallery** | Before building a website, the agent generates 3-4 distinct visual mockups as interactive cards. You browse and pick your favorite. The agent proceeds with your chosen design — zero wasted iterations. |
-| 📋 **Project Questionnaires** | Instead of guessing what you want, the agent renders a beautiful multi-step form asking targeted questions: "Auth provider?", "Color scheme?", "Layout style?". Your answers drive the entire build. |
-| 🔍 **Preference Discovery** | When the agent needs API keys, config values, or style preferences, it renders a clean card-based picker instead of dumping a wall of text. |
-| 📚 **Interactive Tutorials** | Step-by-step lessons where each step waits for you to complete an action before proceeding. |
-| 🗳️ **MCQ & Polls** | Render beautiful multiple-choice questions to gather structured feedback or quiz the user. |
+| Use Case                      | How It Works                                                                                                                                                                                                      |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🎮 **Interactive Games**      | Play chess, tic-tac-toe, RPGs, and more — the AI renders the board, captures your move, thinks about its counter-move using its own neural network, and re-renders the updated state. No external engines needed. |
+| 🎨 **Mock UI Gallery**        | Before building a website, the agent generates 3-4 distinct visual mockups as interactive cards. You browse and pick your favorite. The agent proceeds with your chosen design — zero wasted iterations.          |
+| 📋 **Project Questionnaires** | Instead of guessing what you want, the agent renders a beautiful multi-step form asking targeted questions: "Auth provider?", "Color scheme?", "Layout style?". Your answers drive the entire build.              |
+| 🔍 **Preference Discovery**   | When the agent needs API keys, config values, or style preferences, it renders a clean card-based picker instead of dumping a wall of text.                                                                       |
+| 📚 **Interactive Tutorials**  | Step-by-step lessons where each step waits for you to complete an action before proceeding.                                                                                                                       |
+| 🗳️ **MCQ & Polls**            | Render beautiful multiple-choice questions to gather structured feedback or quiz the user.                                                                                                                        |
 
 **Built-in UX safeguards:**
+
 - **Visual feedback** — buttons disable and show "Thinking..." immediately on click, preventing spam.
 - **Escape hatch** — every widget includes an "Exit" or "Cancel" button so you're never locked into an interaction.
 - **Optional text input** — widgets can include a small text field so you can type instructions to the agent mid-interaction (e.g., "change the rules" or "I want to do something else").
@@ -552,13 +562,13 @@ Background push notifications are delivered via the Web Push protocol (VAPID):
 
 Operational guidelines (formerly "mandates") are stored in the `talents` database table rather than the filesystem. Each talent defines technical standards, preferred libraries, code structure requirements, and quality gates that the agent follows for specialized tasks.
 
-| Talent | Trigger Condition |
-|---|---|
-| Frontend Design | Before building any web UI, component, or dashboard |
-| Generative AI | Before writing any Gemini/GenAI integration code |
-| Game Development | Before building 3D rendering engines or game mechanics |
-| Mobile Development | Before building Android APKs or React Native apps |
-| Red Team | Before any security research, pen-testing, or vulnerability analysis |
+| Talent             | Trigger Condition                                                    |
+| ------------------ | -------------------------------------------------------------------- |
+| Frontend Design    | Before building any web UI, component, or dashboard                  |
+| Generative AI      | Before writing any Gemini/GenAI integration code                     |
+| Game Development   | Before building 3D rendering engines or game mechanics               |
+| Mobile Development | Before building Android APKs or React Native apps                    |
+| Red Team           | Before any security research, pen-testing, or vulnerability analysis |
 
 Talents are injected into the lab sandbox at `/lab/` before the agent begins specialized work. They can be managed via the admin interface.
 
@@ -595,9 +605,10 @@ This enables fully autonomous operation: the agent can schedule itself to monito
 
 Deploy a complete React + Python backend application with one conversation:
 
-> *"Build a real-time stock dashboard with a React frontend and a Flask WebSocket backend. Deploy it live."*
+> _"Build a real-time stock dashboard with a React frontend and a Flask WebSocket backend. Deploy it live."_
 
 Stellar will:
+
 1. `repo_control(action='deploy')` — provision a fresh container.
 2. `repo_control(action='execute')` — scaffold the project, install `npm` and `pip` dependencies (separate calls to avoid OOM).
 3. `repo_control(action='execute')` — start the server on `0.0.0.0:5000`.
@@ -607,9 +618,10 @@ Stellar will:
 
 ### 2. Data Analysis & Report Generation
 
-> *"Analyze the attached sales CSV, generate key visualizations, and email me the PDF report."*
+> _"Analyze the attached sales CSV, generate key visualizations, and email me the PDF report."_
 
 Stellar will:
+
 1. `lab_execute` — install pandas, matplotlib, weasyprint; run the analysis script.
 2. `lab_execute` — generate charts and compile an HTML dashboard.
 3. `lab_execute` — convert HTML to PDF using `weasyprint`.
@@ -620,9 +632,10 @@ Stellar will:
 
 ### 3. Deep Security Analysis (Red Team Mode)
 
-> *"Audit this open-source API for authentication vulnerabilities."*
+> _"Audit this open-source API for authentication vulnerabilities."_
 
 Under the Red Team mandate (persona: **Angel**), Stellar will:
+
 1. `lab_execute` — clone the target repository, install `sqlmap`, `semgrep`, or custom scanners.
 2. `lab_execute` — run static analysis, enumerate endpoints, attempt injection payloads.
 3. `logs_and_preferences` — record the methodology and any verified findings.
@@ -632,9 +645,10 @@ Under the Red Team mandate (persona: **Angel**), Stellar will:
 
 ### 4. AI Presentation on Demand
 
-> *"Create a 12-slide corporate pitch deck on quantum computing for a non-technical audience."*
+> _"Create a 12-slide corporate pitch deck on quantum computing for a non-technical audience."_
 
 Stellar will:
+
 1. `web_search` — gather recent research, statistics, and key concepts.
 2. `make_presentation` — plan slides with structured JSON, generate 12 AI-designed full-bleed slide images concurrently, assemble the `.pptx`.
 3. Return a download link and interactive slide preview carousel.
@@ -644,9 +658,10 @@ Stellar will:
 
 ### 5. Autonomous Scheduled Intelligence
 
-> *"Every Monday at 9 AM, search for the top 5 AI news stories and email me a summary."*
+> _"Every Monday at 9 AM, search for the top 5 AI news stories and email me a summary."_
 
 Stellar will:
+
 1. `schedule_task(action='schedule', recurring_minutes=10080)` — schedule a weekly task.
 2. When triggered: `web_search(action='tavily_search', topic='news')` — gather stories.
 3. `send_self_email` — format and deliver the digest automatically.
@@ -655,9 +670,10 @@ Stellar will:
 
 ### 6. YouTube Deep Dive
 
-> *"Find the most-watched tutorial on LangGraph and summarize how it handles state management."*
+> _"Find the most-watched tutorial on LangGraph and summarize how it handles state management."_
 
 Stellar will:
+
 1. `analyze_youtube_video(action='search')` — query YouTube API, return top videos by view count.
 2. `analyze_youtube_video(action='analyze', video_url=...)` — feed the video to Gemini multimodal, extract the specific segment on state management, return a timestamped summary.
 
@@ -665,9 +681,10 @@ Stellar will:
 
 ### 7. Interactive Project Planning with Live UI
 
-> *"Build me a personal portfolio website."*
+> _"Build me a personal portfolio website."_
 
 Instead of guessing, Stellar will:
+
 1. `request_user_interaction` — render a beautiful multi-step questionnaire asking about color scheme, layout preference, sections to include, and tech stack.
 2. `request_user_interaction` — generate 3-4 visual mock UI cards and let you pick your favorite design direction.
 3. Use your collected preferences to build exactly what you want — no wasted iterations.
@@ -677,9 +694,10 @@ Instead of guessing, Stellar will:
 
 ### 8. Play Games Against the AI
 
-> *"Play chess with me"*
+> _"Play chess with me"_
 
 Stellar will:
+
 1. `request_user_interaction` — render a stunning interactive chessboard with SVG pieces, move highlighting, and click-to-move controls.
 2. Capture your move via the UI, then use its own neural network reasoning to decide its counter-move.
 3. `request_user_interaction` — re-render the board with both moves applied. Repeat until checkmate, draw, or you click "Exit".
@@ -716,9 +734,11 @@ if is_blocked:
 All tools in `agent_tools.py` implement the same rotation pattern, and `gemini_generate` handles mid-conversation key switches by reconstructing the chat history with the new key's client.
 
 ### Credential Store for Subagents
+
 ### Manual Account Switching
 
 To switch the active CLI account on the host machine:
+
 ```bash
 cp credentials/account_X/google_accounts.json ~/.gemini/google_accounts.json
 cp credentials/account_X/oauth_creds.json ~/.gemini/oauth_creds.json
@@ -729,17 +749,17 @@ pkill -f gemini
 
 ## Security Model
 
-| Layer | Mechanism |
-|---|---|
-| **Authentication** | Google OAuth via Firebase ID token verification (`/login/google`) |
-| **Authorization** | `@require_approval` decorator on all protected routes; user status checked against SQLite `users` table |
-| **Container isolation** | Per-user Docker networks with ICC disabled; lab/repo containers cannot communicate with each other |
-| **File system access** | `manage_files` restricts host-side moves to `UPLOAD_FOLDER` and `outputs/` only |
-| **Email** | `send_self_email` sends only to the authenticated user's registered email — not arbitrary addresses |
-| **Session security** | Flask-Session with signed cookies (`FLASK_SECRET_KEY`); session cookie named `stellar_session_main` |
-| **Encryption** | Fernet symmetric encryption for sensitive stored data |
-| **Upload validation** | File extension allowlist enforced on all uploads |
-| **Nginx TLS** | Let's Encrypt certificates with HSTS and modern SSL configuration |
+| Layer                   | Mechanism                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Authentication**      | Google OAuth via Firebase ID token verification (`/login/google`)                                       |
+| **Authorization**       | `@require_approval` decorator on all protected routes; user status checked against SQLite `users` table |
+| **Container isolation** | Per-user Docker networks with ICC disabled; lab/repo containers cannot communicate with each other      |
+| **File system access**  | `manage_files` restricts host-side moves to `UPLOAD_FOLDER` and `outputs/` only                         |
+| **Email**               | `send_self_email` sends only to the authenticated user's registered email — not arbitrary addresses     |
+| **Session security**    | Flask-Session with signed cookies (`FLASK_SECRET_KEY`); session cookie named `stellar_session_main`     |
+| **Encryption**          | Fernet symmetric encryption for sensitive stored data                                                   |
+| **Upload validation**   | File extension allowlist enforced on all uploads                                                        |
+| **Nginx TLS**           | Let's Encrypt certificates with HSTS and modern SSL configuration                                       |
 
 ---
 
@@ -747,18 +767,18 @@ pkill -f gemini
 
 The application uses a single SQLite file (`stellar_local.db`) in WAL journal mode. Key tables:
 
-| Table | Purpose |
-|---|---|
-| `users` | User accounts: `id`, `username` (email), `is_approved`, `display_name`, `password_hash` |
-| `chats` | Chat sessions per user. Includes `is_temp` flag for ephemeral sessions. |
-| `messages` | All chat messages: `message_type` (user/stellar), `message_content`, `hidden` (boolean), `visualization_html`, `attached_files` (JSON). Hidden messages are excluded from the UI but included in LLM context. |
-| `tool_calls` | Full tool input/output for paginated retrieval by `read_tool_output`. Includes `hidden` flag for memory compression. |
-| `repo_history` | Deployment history: `process_id`, `project_name`, `subdomain`, `files_snapshot` (JSON), `status` |
-| `scheduled_tasks` | Autonomous task queue: `task_prompt`, `execute_at`, `recurring_minutes`, `metadata`, `is_active` |
-| `user_logs_prefs` | Persistent agent memory: `user_id`, `log_entry`, `created_at` |
-| `agent_feedback` | Bug reports filed by `report_process_issue`: `topic`, `issue_description`, `technical_context` |
-| `push_subscriptions` | Web Push subscription endpoints per user/device for background notifications |
-| `talents` | Operational guidelines (formerly mandates): `name`, `content`, `user_id`, `chat_id` |
+| Table                | Purpose                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`              | User accounts: `id`, `username` (email), `is_approved`, `display_name`, `password_hash`                                                                                                                       |
+| `chats`              | Chat sessions per user. Includes `is_temp` flag for ephemeral sessions.                                                                                                                                       |
+| `messages`           | All chat messages: `message_type` (user/stellar), `message_content`, `hidden` (boolean), `visualization_html`, `attached_files` (JSON). Hidden messages are excluded from the UI but included in LLM context. |
+| `tool_calls`         | Full tool input/output for paginated retrieval by `read_tool_output`. Includes `hidden` flag for memory compression.                                                                                          |
+| `repo_history`       | Deployment history: `process_id`, `project_name`, `subdomain`, `files_snapshot` (JSON), `status`                                                                                                              |
+| `scheduled_tasks`    | Autonomous task queue: `task_prompt`, `execute_at`, `recurring_minutes`, `metadata`, `is_active`                                                                                                              |
+| `user_logs_prefs`    | Persistent agent memory: `user_id`, `log_entry`, `created_at`                                                                                                                                                 |
+| `agent_feedback`     | Bug reports filed by `report_process_issue`: `topic`, `issue_description`, `technical_context`                                                                                                                |
+| `push_subscriptions` | Web Push subscription endpoints per user/device for background notifications                                                                                                                                  |
+| `talents`            | Operational guidelines (formerly mandates): `name`, `content`, `user_id`, `chat_id`                                                                                                                           |
 
 WAL mode and `busy_timeout=5000` are set on all connections to handle concurrent access from multiple Gunicorn threads.
 
@@ -826,4 +846,4 @@ my_app/
 
 ---
 
-*Built with Flask · Powered by Gemini · Deployed on stellarai.live*
+_Built with Flask · Powered by Gemini · Deployed on stellarai.live_

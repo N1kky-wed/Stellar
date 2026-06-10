@@ -1,3 +1,16 @@
+"""
+Issue Resolver Module
+
+This module implements the background execution recovery daemon for Stellar. It processes issues
+reported by agents that encounter genuine technical failures during execution. It:
+1. Coordinates with a Telegram bot to alert admins of open issues and processes admin commands
+   (approve, resolve, mishap).
+2. Uses Google credentials directory to switch API keys / accounts.
+3. Automatically launches the Gemini CLI inside a secure execution environment to investigate, modify,
+   and verify fixes in the codebase for approved issues.
+4. Registers and updates the status of the issue in SQLite.
+"""
+
 import sqlite3
 import subprocess
 import fcntl
@@ -30,11 +43,25 @@ RESOLVER_HOME = "/home/stellaradmin/.gemini_resolver_home"
 ACTIVE_ACC_FILE = "/tmp/active_resolver_account"
 
 def get_db():
+    """
+    Establish a connection to the local SQLite database.
+    Sets the row factory to sqlite3.Row for dictionary-like access.
+
+    Returns:
+        sqlite3.Connection: The database connection object.
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def get_available_accounts():
+    """
+    List all available Google account credentials located in the credentials base directory.
+    Filters folders starting with 'account_'.
+
+    Returns:
+        list of str: A sorted list of account subdirectory names.
+    """
     accounts = []
     if os.path.exists(CREDENTIALS_BASE_DIR):
         for d in os.listdir(CREDENTIALS_BASE_DIR):
@@ -43,6 +70,13 @@ def get_available_accounts():
     return sorted(accounts)
 
 def switch_account(account_name):
+    """
+    Configure the active resolver Google credentials by copying account JSON key/credentials
+    to the active resolver home directory.
+
+    Args:
+        account_name (str): The name of the credentials directory to copy from.
+    """
     config_dir = os.path.join(RESOLVER_HOME, ".gemini")
     os.makedirs(config_dir, exist_ok=True)
     src_dir = os.path.join(CREDENTIALS_BASE_DIR, account_name)
@@ -53,6 +87,15 @@ def switch_account(account_name):
             shutil.copy2(os.path.join(src_dir, f), os.path.join(config_dir, f))
 
 def main():
+    """
+    Main entry point for the issue resolver daemon.
+    Uses flock to guarantee a single concurrent running instance.
+    Runs a continuous loop:
+    1. Reads commands from Telegram to update issue status.
+    2. Broadcasts notifications to Telegram for newly opened issues.
+    3. Dequeues and processes approved issues using the Gemini CLI fixer loop.
+    4. Handles API key rotation on quota exhaustion.
+    """
     lock_fd = open(LOCK_FILE, 'w')
     try:
         try:
