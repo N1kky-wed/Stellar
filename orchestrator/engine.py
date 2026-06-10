@@ -216,6 +216,9 @@ class OrchestratorEngine:
                 logger.info(f"PR #{pr_num} for agent {run['agent_id']} was MERGED.")
                 self.state_db.update_pr_status(run['id'], 'MERGED')
                 
+                # Auto pull and reload affected services
+                self._pull_and_reload_services(pr_num)
+                
                 # Get the NEXT agent in pipeline
                 return self._get_next_pipeline_agent(run['agent_id'])
             elif current_status == 'CLOSED':
@@ -223,6 +226,46 @@ class OrchestratorEngine:
                 self.state_db.update_pr_status(run['id'], 'CLOSED')
                 
         return None
+
+    def _pull_and_reload_services(self, pr_num: int):
+        logger.info(f"PR #{pr_num} merged. Pulling changes and checking for service updates on host...")
+        try:
+            # 1. Pull changes on host
+            pull_res = subprocess.run(["git", "pull"], cwd="/home/stellaradmin/my_app", capture_output=True, text=True, check=True)
+            logger.info(f"Git pull output:\n{pull_res.stdout.strip()}")
+            
+            # 2. Get list of files modified in the merge commit
+            diff_res = subprocess.run(["git", "diff", "HEAD~1", "HEAD", "--name-only"], cwd="/home/stellaradmin/my_app", capture_output=True, text=True, check=True)
+            files = [f.strip() for f in diff_res.stdout.strip().split('\n') if f.strip()]
+            logger.info(f"Files modified in merge commit: {files}")
+            
+            reload_stellar = False
+            restart_ssh = False
+            restart_orchestrator = False
+            
+            for file in files:
+                if file.startswith("orchestrator/") or file == "stellar_orchestrator.service":
+                    restart_orchestrator = True
+                elif file == "ssh_gateway.py":
+                    restart_ssh = True
+                elif file in ["app.py", "sentinel_healer.py", "webscrapper.py", "agent_tools.py"] or file.startswith("templates/") or file.startswith("static/"):
+                    reload_stellar = True
+                    
+            if reload_stellar:
+                logger.info("Auto-reloading stellar.service...")
+                subprocess.run(["sudo", "systemctl", "reload", "stellar"], check=True)
+                
+            if restart_ssh:
+                logger.info("Auto-restarting stellar-ssh.service...")
+                subprocess.run(["sudo", "systemctl", "restart", "stellar-ssh"], check=True)
+                
+            if restart_orchestrator:
+                logger.info("Auto-restarting stellar_orchestrator.service...")
+                # Run detached so it doesn't kill this process before finishing the tick
+                subprocess.Popen(["sudo", "systemctl", "restart", "stellar_orchestrator"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+        except Exception as e:
+            logger.error(f"Failed to auto-pull or reload services for PR #{pr_num}: {e}", exc_info=True)
 
     def _get_next_pipeline_agent(self, current_agent_id: str) -> Optional[Dict[str, Any]]:
         for i, agent in enumerate(config.AGENT_PIPELINE):
