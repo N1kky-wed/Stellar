@@ -1,8 +1,25 @@
+"""
+Prompts Module
+
+This module defines the template prompts and instruction blocks used by the Stellar agent system,
+including fallback diagnostics and the refinement agent prompts.
+"""
+
 import datetime
 
 naw = datetime.datetime.now()
 
 def get_error_explanation_prompt(user_query: str, error_details: str) -> str:
+    """
+    Generate the prompt for the fallback agent (Lunarity) to explain technical execution failures to the user.
+
+    Args:
+        user_query (str): The user's original input query that triggered the error.
+        error_details (str): The technical execution error/exception message.
+
+    Returns:
+        str: The complete diagnostic explanation prompt.
+    """
     return f"""Role: Lunarity, Stellar's technical diagnostic specialist. 
 
 The user's request failed during processing by the primary models (Obsidian/Crimson). 
@@ -20,6 +37,13 @@ Instruction:
 4. Maintain a professional, clinical, and helpful tone. Do not apologize."""
 
 def get_generative_ui_guide() -> str:
+    """
+    Retrieve the prompt instructions guiding agents on how and when to generate
+    interactive, stateful custom frontend widgets (Generative UI) instead of plain markdown.
+
+    Returns:
+        str: The guidelines text for building Generative UI components.
+    """
     return """
     
 CODE DELIVERY RULE (OVERRIDES GENERATIVE UI): When the user's request is for a file (HTML, CSS, JS, Python, etc.), deliver ONLY the raw code in a fenced code block. Never wrap code deliverables in interactive UI previews, download buttons, or live letter editors. If delivering an HTML file that should NOT be rendered interactively by the frontend, you MUST include the comment `<!--raw-code-->` anywhere in the raw HTML.
@@ -78,6 +102,22 @@ You have access to the `request_user_interaction` tool. This is your most powerf
 
 
 def get_refinement_prompt(user_query: str, conversation_history_list: list, username: str = None, disabled_tools: list = None, user_id: int = None, model_id: str = None) -> str:
+    """
+    Construct the system refinement prompt for the main agent loop.
+    Injects context guidelines, tool documentation, disabled tools warnings, user preferences,
+    recent memories, dynamic timestamps, and the current conversation history.
+
+    Args:
+        user_query (str): The current user query string.
+        conversation_history_list (list): The list of prior message/event strings.
+        username (str, optional): The name of the user.
+        disabled_tools (list, optional): The list of tool names currently disabled in settings.
+        user_id (int, optional): The database ID of the user.
+        model_id (str, optional): The active model identifier.
+
+    Returns:
+        str: The fully expanded agent refinement instruction prompt.
+    """
     conv_hist_str = "\n".join(conversation_history_list) if conversation_history_list else "No previous conversation turns."
     internal_guidelines_header = "<!-- Internal Processing Guidelines -->"
 

@@ -1,3 +1,18 @@
+"""
+Sentinel Healer Module
+
+This module implements the autonomous self-healing daemon for Stellar. It monitors the Redis healing
+queue ('sentinel:queue') for errors reported by deployed user repositories. When a runtime exception
+or compilation error is encountered by a user application, the Sentinel Healer:
+1. Acquires a Redis lock for the corresponding application process.
+2. Extracts error details from the local SQLite database.
+3. Creates a workspace backup.
+4. Synthesizes a corrective code patch using the Gemini API (gemini-3.5-flash) with structured outputs.
+5. Applies the synthesized patch.
+6. Performs syntax validation and health checks inside the application's Docker container.
+7. Commits changes, updates database status, and falls back/rolls back if validation fails.
+"""
+
 import os
 import time
 import json
@@ -20,6 +35,14 @@ _healer_thread = None
 _stop_event = threading.Event()
 
 def get_db_conn():
+    """
+    Establish a connection to the SQLite local database.
+    Sets the row factory to sqlite3.Row for dictionary-like access, enables WAL mode,
+    and sets a busy timeout of 5 seconds to handle concurrent write contention.
+
+    Returns:
+        sqlite3.Connection: The database connection object.
+    """
     conn = sqlite3.connect(DATABASE_NAME)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -27,6 +50,17 @@ def get_db_conn():
     return conn
 
 def get_working_api_key(model_name="gemini-3.5-flash"):
+    """
+    Retrieve an active, unblocked Gemini API key from the primary and backup key list.
+    Checks the key block manager to prevent using rate-limited or invalid keys.
+    Falls back to the primary key if all keys are currently marked as blocked.
+
+    Args:
+        model_name (str): The name of the Gemini model to check block status for.
+
+    Returns:
+        str: A valid Gemini API key.
+    """
     try:
         from app import PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER
         keys_to_try = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
@@ -43,6 +77,17 @@ def get_working_api_key(model_name="gemini-3.5-flash"):
         return os.getenv("PRIMARY_API_KEY")
 
 def get_diff(old_content, new_content, filename):
+    """
+    Generate a unified diff showing changes between the original file content and the modified content.
+
+    Args:
+        old_content (str): The baseline content of the file.
+        new_content (str): The proposed/modified content of the file.
+        filename (str): The relative path/name of the file.
+
+    Returns:
+        str: The unified diff formatted as a string.
+    """
     old_lines = old_content.splitlines(keepends=True)
     new_lines = new_content.splitlines(keepends=True)
     diff = difflib.unified_diff(
@@ -53,6 +98,20 @@ def get_diff(old_content, new_content, filename):
     return "".join(diff)
 
 def detect_startup_command(host_dir):
+    """
+    Analyze the files present in the host application directory to guess the appropriate startup command.
+    Checks for:
+    - server.js -> node server.js
+    - package.json -> reads 'scripts.start', defaults to node server.js
+    - app.py -> python app.py
+    Falls back to python app.py if no matches are found.
+
+    Args:
+        host_dir (str): The directory containing user application source files.
+
+    Returns:
+        str: The command string to start the application (e.g., 'python app.py').
+    """
     # Check if server.js exists
     if os.path.exists(os.path.join(host_dir, 'server.js')):
         return "node server.js"
@@ -81,6 +140,16 @@ def detect_startup_command(host_dir):
     return "python app.py"
 
 def stop_application_server(container, cmd):
+    """
+    Stop the application server running inside the Docker container.
+    Constructs and executes a safe python kill script to locate and SIGKILL running instances
+    of the web server (avoiding killing the container's main shell or the execution hook itself),
+    and issues broad pkill fallsbacks.
+
+    Args:
+        container (docker.models.containers.Container): The Docker container object.
+        cmd (str): The startup command used to detect running process keywords.
+    """
     from app import logger
     try:
         kws = ['node', 'npm'] if ('node' in cmd or 'npm' in cmd) else ['app.py', 'python', 'flask']
@@ -103,20 +172,45 @@ def stop_application_server(container, cmd):
 
 # Pydantic models for structured output
 class EditBlock(BaseModel):
+    """
+    Represents a search-and-replace edit block targeting a specific section of a file.
+    """
     search_text: str = Field(description="The exact block of text to find in the original file. Provide enough context lines to ensure uniqueness.")
     replace_text: str = Field(description="The new text to replace the search_text with.")
 
 class FilePatch(BaseModel):
+    """
+    Represents a set of edits or complete new content to apply to a specific repository file.
+    """
     file_path: str = Field(description="The relative path of the file to fix, e.g. 'app.py'")
     edits: List[EditBlock] = Field(default_factory=list, description="List of search/replace blocks to apply to the file. Use this for modifying existing files.")
     full_content: str = Field(default="", description="If creating a completely new file, provide its full content here instead of edits.")
     explanation: str = Field(description="A brief description of what was causing the bug and how this fixes it.")
 
 class SelfHealingPatch(BaseModel):
+    """
+    Represents the full structured patch generated by the Gemini model for self-healing.
+    """
     patches: List[FilePatch] = Field(description="The list of file patches to apply.")
     root_cause: str = Field(description="Root cause analysis of the bug.")
 
 def heal_application(process_id, error_id, r_client):
+    """
+    Perform the core self-healing sequence for a user application.
+    Orchestrates the entire recovery pipeline:
+    - Acquires a Redis lock for the given process ID to avoid concurrent runs.
+    - Updates application error status in SQLite.
+    - Fetches the error context (affected file/line, stack trace).
+    - Backs up the current container codebase directory.
+    - Synthesizes patches via Gemini API.
+    - Restarts the app container and runs health validation checks.
+    - Finalizes state updates in DB/Redis or performs rollbacks on validation failures.
+
+    Args:
+        process_id (str): The unique process/subdomain ID of the user application.
+        error_id (int): The database primary key ID of the sentinel_app_errors record.
+        r_client (redis.StrictRedis): The Redis client instance used for locking and queue operations.
+    """
     from app import logger, KEY_MANAGER
     logger.info("Initiating self-healing workflow process_id=%s error_id=%s", process_id, error_id)
     
@@ -142,6 +236,14 @@ def heal_application(process_id, error_id, r_client):
     r_client.delete(log_history_key)  # Clear any stale history from previous healing runs
 
     def publish_log(event, message, stage=None):
+        """
+        Publish diagnostic logs to Redis channel and history log list for real-time SSE streaming.
+
+        Args:
+            event (str): The classification of log event (e.g. 'info', 'healed', 'failed').
+            message (str): The descriptive log message.
+            stage (str, optional): The current phase of the healing workflow to update in Redis.
+        """
         payload = {"event": event, "message": message}
         if stage:
             payload["stage"] = stage
@@ -557,6 +659,12 @@ Please provide the corrected file contents to heal the application.
             pass
 
 def _healer_loop():
+    """
+    Main loop for the Sentinel Healer background worker.
+    Runs continuously in a background daemon thread until stop event is signaled.
+    Blocks for 1 second at a time while popping jobs from the 'sentinel:queue' Redis list.
+    When a job is dequeued, it delegates execution to the `heal_application` helper.
+    """
     import redis
     # Connect to Redis
     r_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
@@ -587,6 +695,10 @@ def _healer_loop():
             time.sleep(2)
 
 def start_sentinel_healer():
+    """
+    Start the Sentinel self-healing background thread if it is not already active.
+    Initializes a new daemon thread targetting `_healer_loop`.
+    """
     global _healer_thread, _stop_event
     if _healer_thread is not None and _healer_thread.is_alive():
         return
@@ -597,6 +709,10 @@ def start_sentinel_healer():
     _healer_thread.start()
 
 def stop_sentinel_healer():
+    """
+    Signal the Sentinel self-healing background thread to exit gracefully.
+    Sets the stop event which causes the `_healer_loop` to exit.
+    """
     global _stop_event
     from app import logger
     logger.info("Stopping Sentinel self-healing daemon thread...")
