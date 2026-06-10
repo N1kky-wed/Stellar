@@ -10,6 +10,8 @@
   <!-- Base Reset & Theme Stylesheets from main app -->
   <link rel="stylesheet" href="/default.min.css" />
   <link rel="stylesheet" href="/static/main.css?v=66" />
+  <!-- Markdown Parser -->
+  <script src="/static/marked.min.js"></script>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -344,6 +346,23 @@
       const avatarClass = getAvatarColor(msg.sender);
       const initials = msg.sender.charAt(0);
 
+      // Render markdown for agent reports, fall back to simple line breaks for system logs or if marked is missing
+      let contentHtml = '';
+      if (isSystem) {
+        // System logs support basic bold formatting from SQLite strings and line breaks
+        let formatted = msg.content
+          .replace(/\n/g, '<br>')
+          .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+          .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-black/40 text-rose-400 font-mono text-xs">$1</code>');
+        contentHtml = formatted;
+      } else {
+        if (typeof marked !== 'undefined') {
+          contentHtml = marked.parse(msg.content);
+        } else {
+          contentHtml = msg.content.replace(/\n/g, '<br>');
+        }
+      }
+
       wrapper.innerHTML = `
         <div class="flex items-start gap-3">
           ${isSystem ? `
@@ -357,7 +376,7 @@
               <span class="text-[10px] text-[#8e929e]">${msg.timestamp}</span>
             </div>
             <div class="message-bubble ${isSystem ? 'system' : ''} text-sm">
-              ${msg.content.replace(/\n/g, '<br>')}
+              ${contentHtml}
             </div>
           </div>
         </div>
