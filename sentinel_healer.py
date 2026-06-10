@@ -118,6 +118,7 @@ class SelfHealingPatch(BaseModel):
 
 def heal_application(process_id, error_id, r_client):
     from app import logger, KEY_MANAGER
+    logger.info("Initiating self-healing workflow process_id=%s error_id=%s", process_id, error_id)
     
     lock_key = f"lock:sentinel:heal:{process_id}"
     # Acquire Redis lock with 5-minute TTL
@@ -321,7 +322,10 @@ Please provide the corrected file contents to heal the application.
                 t0 = time.time()
                 r = chat.send_message(user_prompt)
                 duration = time.time() - t0
-                logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=sentinel_healer", "gemini-3.5-flash", duration)
+                usage = getattr(r, 'usage_metadata', None)
+                prompt_tokens = getattr(usage, 'prompt_token_count', 0) if usage else 0
+                candidates_tokens = getattr(usage, 'candidates_token_count', 0) if usage else 0
+                logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=sentinel_healer prompt_tokens=%d candidates_tokens=%d attempt=%d", "gemini-3.5-flash", duration, prompt_tokens, candidates_tokens, current_key_index + 1)
 
                 candidate = r.candidates[0]
                 full_text = "".join(
@@ -567,6 +571,8 @@ def _healer_loop():
                 process_id = payload.get("process_id")
                 error_id = payload.get("error_id")
                 if process_id and error_id:
+                    from app import logger
+                    logger.info("Dequeued self-healing job process_id=%s error_id=%s", process_id, error_id)
                     try:
                         heal_application(process_id, error_id, r_client)
                     except Exception as e:
@@ -584,10 +590,14 @@ def start_sentinel_healer():
     global _healer_thread, _stop_event
     if _healer_thread is not None and _healer_thread.is_alive():
         return
+    from app import logger
+    logger.info("Starting Sentinel self-healing daemon thread...")
     _stop_event.clear()
     _healer_thread = threading.Thread(target=_healer_loop, daemon=True)
     _healer_thread.start()
 
 def stop_sentinel_healer():
     global _stop_event
+    from app import logger
+    logger.info("Stopping Sentinel self-healing daemon thread...")
     _stop_event.set()
