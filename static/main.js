@@ -5849,7 +5849,7 @@ const defaultAgentSettings = {
           Agent Group Chat
         `;
         groupChatBtn.onclick = () => {
-          window.open('/agent-group-chat', '_blank');
+          window.location.href = '/agent-group-chat';
         };
         
         // Insert after newChatBtn
