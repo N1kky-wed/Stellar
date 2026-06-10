@@ -40,6 +40,27 @@ from prompts import (
     get_refinement_prompt
 )
 
+class RequestIDFormatter(logging.Formatter):
+    def format(self, record):
+        from flask import has_request_context, g, request
+        import uuid
+        try:
+            if has_request_context():
+                if not getattr(g, 'request_id', None):
+                    g.request_id = request.headers.get('X-Request-ID', str(uuid.uuid4())[:8])
+                record.request_id = g.request_id
+            else:
+                record.request_id = 'system'
+        except Exception:
+            record.request_id = 'error'
+        return super().format(record)
+
+handler = logging.StreamHandler()
+handler.setFormatter(RequestIDFormatter('%(asctime)s [%(levelname)s] %(name)s [req_id=%(request_id)s]: %(message)s'))
+logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
 
 client = None
@@ -106,9 +127,6 @@ def send_login_notification(username, display_name=None, is_waitlist=False):
     telegram_bot.send_message(message_body)
 
 # --- LOGGING AND ENV LOADING ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 script_dir = Path(__file__).resolve().parent
 keys_env_path = script_dir / 'keys.env'
@@ -681,28 +699,25 @@ def initialize_database():
         if 'visualization_html' not in columns:
             try:
                 cursor.execute("ALTER TABLE messages ADD COLUMN visualization_html TEXT")
-                print("Added 'visualization_html' column to 'messages' table.")
+                logger.info("Added 'visualization_html' column to 'messages' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'visualization_html' column: {e}")
+                logger.exception("Error adding 'visualization_html' column: %s", e)
 
         # Migration: Add hidden column if it doesn't exist
         if 'hidden' not in columns:
             try:
                 cursor.execute("ALTER TABLE messages ADD COLUMN hidden BOOLEAN DEFAULT 0")
-                print("Added 'hidden' column to 'messages' table.")
+                logger.info("Added 'hidden' column to 'messages' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'hidden' column: {e}")
+                logger.exception("Error adding 'hidden' column: %s", e)
 
         # Migration: Add attached_files column for Native Gemini File URIs
         if 'attached_files' not in columns:
             try:
                 cursor.execute("ALTER TABLE messages ADD COLUMN attached_files TEXT")
-                print("Added 'attached_files' column to 'messages' table.")
+                logger.info("Added 'attached_files' column to 'messages' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'attached_files' column: {e}")
+                logger.exception("Error adding 'attached_files' column: %s", e)
 
         # Add user_logs_prefs table
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_logs_prefs'")
@@ -713,75 +728,67 @@ def initialize_database():
                 log_entry TEXT NOT NULL,
                 created_at DATETIME DEFAULT (CURRENT_TIMESTAMP)
             )''')
-            print("Created 'user_logs_prefs' table.")
+            logger.info("Created 'user_logs_prefs' table.")
 
         cursor.execute("PRAGMA table_info(users)")
         users_columns = [info[1] for info in cursor.fetchall()]
         if 'display_name' not in users_columns:
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
-                print("Added 'display_name' column to 'users' table.")
+                logger.info("Added 'display_name' column to 'users' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'display_name' column: {e}")
+                logger.exception("Error adding 'display_name' column: %s", e)
 
         if 'last_active' not in users_columns:
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN last_active DATETIME")
-                print("Added 'last_active' column to 'users' table.")
+                logger.info("Added 'last_active' column to 'users' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'last_active' column: {e}")
+                logger.exception("Error adding 'last_active' column: %s", e)
 
         if 'pfp_url' not in users_columns:
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN pfp_url TEXT")
-                print("Added 'pfp_url' column to 'users' table.")
+                logger.info("Added 'pfp_url' column to 'users' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'pfp_url' column: {e}")
+                logger.exception("Error adding 'pfp_url' column: %s", e)
 
         if 'designation' not in users_columns:
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN designation TEXT")
-                print("Added 'designation' column to 'users' table.")
+                logger.info("Added 'designation' column to 'users' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'designation' column: {e}")
+                logger.exception("Error adding 'designation' column: %s", e)
 
         if 'source' not in users_columns:
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN source TEXT")
-                print("Added 'source' column to 'users' table.")
+                logger.info("Added 'source' column to 'users' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'source' column: {e}")
+                logger.exception("Error adding 'source' column: %s", e)
 
         if 'use_case' not in users_columns:
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN use_case TEXT")
-                print("Added 'use_case' column to 'users' table.")
+                logger.info("Added 'use_case' column to 'users' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'use_case' column: {e}")
+                logger.exception("Error adding 'use_case' column: %s", e)
 
         if 'waitlist_form_submitted' not in users_columns:
             try:
                 cursor.execute("ALTER TABLE users ADD COLUMN waitlist_form_submitted BOOLEAN DEFAULT 0")
-                print("Added 'waitlist_form_submitted' column to 'users' table.")
+                logger.info("Added 'waitlist_form_submitted' column to 'users' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'waitlist_form_submitted' column: {e}")
+                logger.exception("Error adding 'waitlist_form_submitted' column: %s", e)
 
         cursor.execute("PRAGMA table_info(chats)")
         chats_columns = [info[1] for info in cursor.fetchall()]
         if 'token_count' not in chats_columns:
             try:
                 cursor.execute("ALTER TABLE chats ADD COLUMN token_count INTEGER DEFAULT 0")
-                print("Added 'token_count' column to 'chats' table.")
+                logger.info("Added 'token_count' column to 'chats' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'token_count' column: {e}")
+                logger.exception("Error adding 'token_count' column: %s", e)
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_api_keys'")
         if cursor.fetchone() is None:
@@ -820,10 +827,9 @@ def initialize_database():
             try:
                 cursor.execute("ALTER TABLE repo_history ADD COLUMN subdomain TEXT")
                 cursor.execute("CREATE INDEX idx_subdomain ON repo_history(subdomain)")
-                print("Added 'subdomain' column to 'repo_history' table.")
+                logger.info("Added 'subdomain' column to 'repo_history' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'subdomain' column: {e}")
+                logger.exception("Error adding 'subdomain' column: %s", e)
 
         cursor.execute('''CREATE TABLE IF NOT EXISTS tool_calls (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -841,20 +847,18 @@ def initialize_database():
         if 'hidden' not in tc_columns:
             try:
                 cursor.execute("ALTER TABLE tool_calls ADD COLUMN hidden BOOLEAN DEFAULT 0")
-                print("Added 'hidden' column to 'tool_calls' table.")
+                logger.info("Added 'hidden' column to 'tool_calls' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'hidden' column to tool_calls: {e}")
+                logger.exception("Error adding 'hidden' column to tool_calls: %s", e)
 
         cursor.execute("PRAGMA table_info(chats)")
         chats_columns = [info[1] for info in cursor.fetchall()]
         if 'is_temp' not in chats_columns:
             try:
                 cursor.execute("ALTER TABLE chats ADD COLUMN is_temp BOOLEAN DEFAULT 0")
-                print("Added 'is_temp' column to 'chats' table.")
+                logger.info("Added 'is_temp' column to 'chats' table.")
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Error adding 'is_temp' column: {e}")
+                logger.exception("Error adding 'is_temp' column: %s", e)
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='scheduled_tasks'")
         if cursor.fetchone() is None:
@@ -879,10 +883,9 @@ def initialize_database():
             if 'metadata' not in st_columns:
                 try:
                     cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN metadata TEXT")
-                    print("Added 'metadata' column to 'scheduled_tasks' table.")
+                    logger.info("Added 'metadata' column to 'scheduled_tasks' table.")
                 except Exception as e:
-                    logger.exception("Error caught: %s", e)
-                    print(f"Error adding 'metadata' column to scheduled_tasks: {e}")
+                    logger.exception("Error adding 'metadata' column to scheduled_tasks: %s", e)
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_feedback'")
         if cursor.fetchone() is None:
@@ -898,7 +901,7 @@ def initialize_database():
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
                 FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE SET NULL
             )''')
-            print("Created 'agent_feedback' table.")
+            logger.info("Created 'agent_feedback' table.")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='talents'")
         if cursor.fetchone() is None:
@@ -907,7 +910,7 @@ def initialize_database():
                 talent_name TEXT UNIQUE NOT NULL,
                 mandate_text TEXT NOT NULL
             )''')
-            print("Created 'talents' table.")
+            logger.info("Created 'talents' table.")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='push_subscriptions'")
         if cursor.fetchone() is None:
@@ -920,7 +923,7 @@ def initialize_database():
                 created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )''')
-            print("Created 'push_subscriptions' table.")
+            logger.info("Created 'push_subscriptions' table.")
 
         # Migrate push subscriptions to Redis if SQLite contains any
         try:
@@ -936,11 +939,11 @@ def initialize_database():
                     r_client.hset(redis_key, row['endpoint'], val)
                     migrated += 1
                 if migrated > 0:
-                    print(f"Migrated {migrated} PWA push subscriptions from SQLite to Redis.")
+                    logger.info(f"Migrated {migrated} PWA push subscriptions from SQLite to Redis.")
                     cursor.execute("DELETE FROM push_subscriptions")
                     db.commit()
         except Exception as e:
-            print(f"Error migrating push subscriptions to Redis: {e}")
+            logger.exception("Error migrating push subscriptions to Redis: %s", e)
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sentinel_app_errors'")
         if cursor.fetchone() is None:
@@ -956,7 +959,7 @@ def initialize_database():
                 created_at DATETIME DEFAULT (CURRENT_TIMESTAMP)
             )''')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentinel_errors_process_id ON sentinel_app_errors(process_id)")
-            print("Created 'sentinel_app_errors' table.")
+            logger.info("Created 'sentinel_app_errors' table.")
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sentinel_app_patches'")
         if cursor.fetchone() is None:
@@ -969,7 +972,7 @@ def initialize_database():
                 FOREIGN KEY (error_id) REFERENCES sentinel_app_errors(id) ON DELETE CASCADE
             )''')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentinel_patches_error_id ON sentinel_app_patches(error_id)")
-            print("Created 'sentinel_app_patches' table.")
+            logger.info("Created 'sentinel_app_patches' table.")
 
         # Add performance indexes for foreign key lookups
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_user_id ON chats(user_id)")
@@ -1321,7 +1324,10 @@ def generate_chat_name(chat_id, first_message_content):
                 try:
                     client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
                     chat = client.chats.create(model=model_name, config={'tools': []})
+                    t0 = time.time()
                     r = chat.send_message(prompt)
+                    duration = time.time() - t0
+                    logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=chat_name_generation", model_name, duration)
                     
                     generated_name = "New Chat"
                     if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
@@ -1645,7 +1651,7 @@ def scrape_url(url: str) -> str:
             return f"Error scraping {url}: {msg}"
 
         apron=webscrapper.scrape_url(url)
-        print(apron)
+        logger.info("Scraped URL successfully url=%s content_length=%d", url, len(apron) if apron else 0)
         return apron
     except Exception as e:
         logger.exception("Error caught: %s", e)
@@ -1670,7 +1676,10 @@ def is_output_cut_off(text: str, key: str) -> bool:
     try:
         client = genai.Client(api_key=key, http_options={'api_version': 'v1beta'})
         chat = client.chats.create(model='gemini-3.1-flash-lite', config={'tools': []})
+        t0 = time.time()
         r = chat.send_message(check_prompt)
+        duration = time.time() - t0
+        logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=cut_off_check", 'gemini-3.1-flash-lite', duration)
         
         if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
             response_text = r.candidates[0].content.parts[0].text.strip().upper()
@@ -1817,7 +1826,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             consecutive_network_errors = 0
             while True:
                 try:
+                    t0 = time.time()
                     r = chat.send_message(message_to_send)
+                    duration = time.time() - t0
+                    logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=query_stream_generation", model_id, duration)
                     consecutive_network_errors = 0 # Reset on success
                 except Exception as loop_e:
                     logger.exception("Error caught: %s", loop_e)
@@ -2541,12 +2553,15 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                             break
                 else:
                     _put_event({'type': 'log', 'content': f'Dependencies changed. Rebuilding container ({old_container.short_id})...'})
+                    logger.info("Stopping and removing old container for rebuilding process_id=%s container_id=%s", process_id, old_container.id)
+                    t_stop = time.time()
                     old_container.stop(timeout=10)
                     old_container.remove(force=True)
+                    logger.info("Old container stopped and removed process_id=%s container_id=%s duration_sec=%.2f", process_id, old_container.id, time.time() - t_stop)
             except docker.errors.NotFound:
                 pass
             except Exception as e:
-                logger.exception("Error caught: %s", e)
+                logger.exception("Error cleaning up previous container process_id=%s: %s", process_id, e)
                 _put_event({'type': 'log', 'content': f'Note: Could not inspect/remove previous instance: {e}'})
 
         if not reuse_container:
@@ -2571,6 +2586,8 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
 
         if not reuse_container:
             # Start container with sleep to keep it running while we install deps
+            logger.info("Creating new sandbox container process_id=%s image=%s user_network=%s", process_id, 'stellar-python-sandbox:3.12', user_network)
+            t_run = time.time()
             container = client.containers.run(
                 image='stellar-python-sandbox:3.12',
                 command='sleep infinity',
@@ -2591,12 +2608,14 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     "repo_app_id": process_id
                 }
             )
+            logger.info("New sandbox container created process_id=%s container_id=%s duration_sec=%.2f", process_id, container.id, time.time() - t_run)
 
             _put_event({'type': 'container_id', 'id': container.id})
             _put_event({'type': 'log', 'content': f'Sandbox container ({container.short_id}) created.'})
 
             update_history(status='created', container_id=container.id)
         else:
+            logger.info("Reusing existing sandbox container process_id=%s container_id=%s", process_id, container.id)
             _put_event({'type': 'container_id', 'id': container.id})
             update_history(status='reused', container_id=container.id)
 

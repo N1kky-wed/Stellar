@@ -550,6 +550,7 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
     for current_key in keys_to_try:
         try:
             client = genai.Client(api_key=current_key)
+            t0 = time.time()
             response = client.models.generate_content(
                 model=model,
                 contents=parts,
@@ -558,6 +559,8 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                     response_modalities=["IMAGE"]
                 )
             )
+            duration = time.time() - t0
+            logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=generate_image", model, duration)
             
             for part in response.candidates[0].content.parts:
                 if hasattr(part, 'inline_data') and part.inline_data:
@@ -1110,8 +1113,7 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
                 slide.shapes.add_picture(image_stream, 0, 0, width=prs.slide_width, height=prs.slide_height)
                 prs.save(pptx_filepath)
         except Exception as e:
-            logger.exception("Error caught: %s", e)
-            print(f"Error updating PPTX: {e}")
+            logger.exception("Error updating PPTX pptx_filepath=%s: %s", pptx_filepath, e)
 
     return f"REGENERATED_SLIDE:{json.dumps({'presentation_id': presentation_id, 'slide_index': slide_index, 'url': f'/view/pres_{presentation_id}/{slide_img_filename}'})}"
 
@@ -1368,8 +1370,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                 db.commit()
                 return count
             except Exception as e:
-                logger.exception("Error caught: %s", e)
-                print(f"Auto-snapshot failed for {p_id}: {e}")
+                logger.exception("Auto-snapshot failed for process_id=%s: %s", p_id, e)
                 return 0
 
         if action == "stop":

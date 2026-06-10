@@ -153,6 +153,7 @@ def heal_application(process_id, error_id, r_client):
         r_client.expire(log_history_key, 300)  # Keep for 5 minutes
 
     try:
+        heal_start_time = time.time()
         publish_log("info", "Sentinel healer activated. Inspecting database details...", stage="Initializing Healer")
         
         # Connect to DB
@@ -317,7 +318,10 @@ Please provide the corrected file contents to heal the application.
                     max_output_tokens=65536,
                 )
                 chat = client.chats.create(model="gemini-3.5-flash", config=chat_config)
+                t0 = time.time()
                 r = chat.send_message(user_prompt)
+                duration = time.time() - t0
+                logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=sentinel_healer", "gemini-3.5-flash", duration)
 
                 candidate = r.candidates[0]
                 full_text = "".join(
@@ -541,6 +545,12 @@ Please provide the corrected file contents to heal the application.
             
         r_client.delete(f"sentinel:healing:{process_id}")
         r_client.delete(lock_key)
+        
+        try:
+            duration = time.time() - heal_start_time
+            logger.info("Sentinel self-healing process completed for process_id=%s error_id=%s duration_sec=%.2f", process_id, error_id, duration)
+        except Exception:
+            pass
 
 def _healer_loop():
     import redis
