@@ -32,8 +32,9 @@ def scrape_url(url):
         clean_title = re.sub(r'[^a-zA-Z0-9\s]', '', title)
         clean_title = re.sub(r'\s+', ' ', clean_title).strip()
 
-        print("Clean Title:", clean_title)
-        print("\nClean Paragraphs:")
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Scraped Title: %s", clean_title)
         
         # Return the cleaned text
         return f"context from {url}: is \n{clean_text}"

@@ -935,11 +935,16 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
         container = get_container(client, process_id, app_type)
         container_name = container.name
         audit.info(f"CONTAINER_RESTART | user_id={user_id} | container={container_name}")
+        start_time = time.time()
         container.restart(timeout=10)
+        duration = time.time() - start_time
+        logger.info(f"Container restart complete for {container_name} in {duration:.2f}s")
+        audit.info(f"CONTAINER_RESTART_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
         return f"✓ {container_name} restarted successfully"
     except docker.errors.NotFound:
         return "✗ Container not found"
     except Exception as e:
+        logger.error(f"Container restart failed for process_id={process_id}: {e}", exc_info=True)
         return f"✗ Restart failed: {str(e)[:60]}"
 
 
@@ -951,11 +956,16 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
         container = get_container(client, process_id, app_type)
         container_name = container.name
         audit.info(f"CONTAINER_STOP | user_id={user_id} | container={container_name}")
+        start_time = time.time()
         container.stop(timeout=10)
+        duration = time.time() - start_time
+        logger.info(f"Container stop complete for {container_name} in {duration:.2f}s")
+        audit.info(f"CONTAINER_STOP_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
         return f"✓ {container_name} stopped"
     except docker.errors.NotFound:
         return "✗ Container not found"
     except Exception as e:
+        logger.error(f"Container stop failed for process_id={process_id}: {e}", exc_info=True)
         return f"✗ Stop failed: {str(e)[:60]}"
 
 
@@ -967,11 +977,16 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
         container = get_container(client, process_id, app_type)
         container_name = container.name
         audit.info(f"CONTAINER_START | user_id={user_id} | container={container_name}")
+        start_time = time.time()
         container.start()
+        duration = time.time() - start_time
+        logger.info(f"Container start complete for {container_name} in {duration:.2f}s")
+        audit.info(f"CONTAINER_START_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
         return f"✓ {container_name} started"
     except docker.errors.NotFound:
         return "✗ Container not found"
     except Exception as e:
+        logger.error(f"Container start failed for process_id={process_id}: {e}", exc_info=True)
         return f"✗ Start failed: {str(e)[:60]}"
 
 
