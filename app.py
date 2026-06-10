@@ -5497,21 +5497,68 @@ def get_agent_group_chat_history():
     if session.get('role') != 'admin':
         return jsonify({'error': 'Forbidden'}), 403
         
-    log_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.log'
-    if not os.path.exists(log_path):
+    db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
+    if not os.path.exists(db_path):
         return jsonify([])
         
     messages = []
     try:
-        with open(log_path, 'r') as f:
-            lines = f.readlines()
-        # Get last 100 lines
-        for line in lines[-100:]:
-            parsed = parse_log_line(line)
-            if parsed:
-                messages.append(parsed)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        runs = conn.execute("""
+            SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message 
+            FROM agent_runs 
+            ORDER BY id ASC
+        """).fetchall()
+        conn.close()
+        
+        for r in runs:
+            agent_name = r['agent_id'].capitalize()
+            start_ts = r['started_at'].replace('T', ' ').split('.')[0]
+            finish_ts = (r['finished_at'] or r['started_at']).replace('T', ' ').split('.')[0]
+            
+            # 1. Starting system message
+            messages.append({
+                'timestamp': start_ts,
+                'sender': 'Orchestrator',
+                'content': f"🚀 Starting agent **{agent_name}** on branch `{r['branch_name']}`...",
+                'type': 'system'
+            })
+            
+            # 2. Final messages if not running
+            if r['status'] == 'COMPLETED':
+                if r['summary_message']:
+                    messages.append({
+                        'timestamp': finish_ts,
+                        'sender': f"{agent_name} (Agent)",
+                        'content': r['summary_message'],
+                        'type': 'agent'
+                    })
+                
+                pr_text = f" (PR #{r['pr_number']})" if r['pr_number'] else ""
+                pr_link = f"\nPull Request: {r['pr_url']}" if r['pr_url'] else ""
+                messages.append({
+                    'timestamp': finish_ts,
+                    'sender': 'Orchestrator',
+                    'content': f"✅ Agent **{agent_name}** completed successfully!{pr_text}{pr_link}",
+                    'type': 'system'
+                })
+            elif r['status'] == 'FAILED':
+                messages.append({
+                    'timestamp': finish_ts,
+                    'sender': 'Orchestrator',
+                    'content': f"❌ Agent **{agent_name}** run failed.\nError: {r['error_message'] or 'Unknown error'}",
+                    'type': 'system'
+                })
+            elif r['status'] == 'TIMEOUT':
+                messages.append({
+                    'timestamp': finish_ts,
+                    'sender': 'Orchestrator',
+                    'content': f"⚠️ Agent **{agent_name}** run timed out after exceeding limits.",
+                    'type': 'system'
+                })
     except Exception as e:
-        logger.error(f"Error reading orchestrator log history: {e}")
+        logger.error(f"Error reading agent runs history: {e}")
         
     return jsonify(messages)
 
@@ -5522,25 +5569,92 @@ def agent_group_chat_stream():
         return make_response('Forbidden', 403)
         
     def log_stream():
-        log_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.log'
-        if not os.path.exists(log_path):
+        db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
+        if not os.path.exists(db_path):
             yield "data: {}\n\n"
             return
             
+        yielded_states = {} # rid -> status
         try:
-            with open(log_path, 'r') as f:
-                # Seek to end
-                f.seek(0, 2)
-                while True:
-                    line = f.readline()
-                    if not line:
-                        time.sleep(0.5)
-                        continue
-                    parsed = parse_log_line(line)
-                    if parsed:
-                        yield f"data: {json.dumps(parsed)}\n\n"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            runs = conn.execute("SELECT id, status FROM agent_runs").fetchall()
+            for r in runs:
+                yielded_states[r['id']] = r['status']
+            conn.close()
         except Exception as e:
-            logger.error(f"Error in orchestrator log SSE stream: {e}")
+            logger.error(f"Error seeding SSE stream yielded states: {e}")
+            
+        while True:
+            try:
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                runs = conn.execute("""
+                    SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message 
+                    FROM agent_runs 
+                    ORDER BY id ASC
+                """).fetchall()
+                conn.close()
+                
+                for r in runs:
+                    rid = r['id']
+                    status = r['status']
+                    agent_name = r['agent_id'].capitalize()
+                    start_ts = r['started_at'].replace('T', ' ').split('.')[0]
+                    finish_ts = (r['finished_at'] or r['started_at']).replace('T', ' ').split('.')[0]
+                    
+                    if rid not in yielded_states:
+                        yielded_states[rid] = status
+                        msg = {
+                            'timestamp': start_ts,
+                            'sender': 'Orchestrator',
+                            'content': f"🚀 Starting agent **{agent_name}** on branch `{r['branch_name']}`...",
+                            'type': 'system'
+                        }
+                        yield f"data: {json.dumps(msg)}\n\n"
+                        
+                    elif yielded_states[rid] == 'RUNNING' and status != 'RUNNING':
+                        yielded_states[rid] = status
+                        
+                        if status == 'COMPLETED':
+                            if r['summary_message']:
+                                msg = {
+                                    'timestamp': finish_ts,
+                                    'sender': f"{agent_name} (Agent)",
+                                    'content': r['summary_message'],
+                                    'type': 'agent'
+                                }
+                                yield f"data: {json.dumps(msg)}\n\n"
+                            
+                            pr_text = f" (PR #{r['pr_number']})" if r['pr_number'] else ""
+                            pr_link = f"\nPull Request: {r['pr_url']}" if r['pr_url'] else ""
+                            msg = {
+                                'timestamp': finish_ts,
+                                'sender': 'Orchestrator',
+                                'content': f"✅ Agent **{agent_name}** completed successfully!{pr_text}{pr_link}",
+                                'type': 'system'
+                            }
+                            yield f"data: {json.dumps(msg)}\n\n"
+                        elif status == 'FAILED':
+                            msg = {
+                                'timestamp': finish_ts,
+                                'sender': 'Orchestrator',
+                                'content': f"❌ Agent **{agent_name}** run failed.\nError: {r['error_message'] or 'Unknown error'}",
+                                'type': 'system'
+                            }
+                            yield f"data: {json.dumps(msg)}\n\n"
+                        elif status == 'TIMEOUT':
+                            msg = {
+                                'timestamp': finish_ts,
+                                'sender': 'Orchestrator',
+                                'content': f"⚠️ Agent **{agent_name}** run timed out after exceeding limits.",
+                                'type': 'system'
+                            }
+                            yield f"data: {json.dumps(msg)}\n\n"
+            except Exception as e:
+                logger.error(f"Error in database log SSE stream: {e}")
+                
+            time.sleep(2)
             
     return Response(stream_with_context(log_stream()), mimetype="text/event-stream")
 
