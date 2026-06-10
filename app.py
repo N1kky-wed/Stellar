@@ -314,6 +314,16 @@ app.config['SESSION_REDIS'] = redis.StrictRedis(host='localhost', port=6379, db=
 
 Session(app)
 
+# Override get_cookie_domain to dynamically support wildcard subdomains in production
+original_get_cookie_domain = app.session_interface.get_cookie_domain
+def custom_get_cookie_domain(app):
+    if has_request_context():
+        host = request.headers.get('Host', '')
+        if 'stellarai.live' in host:
+            return '.stellarai.live'
+    return original_get_cookie_domain(app)
+app.session_interface.get_cookie_domain = custom_get_cookie_domain
+
 
 PRIMARY_API_KEY = os.getenv("PRIMARY_API_KEY")
 if PRIMARY_API_KEY:
@@ -5280,12 +5290,8 @@ def sentinel_log_error():
         if not process_id:
             return jsonify({"error": "No deployment mapping found"}), 404
 
-        # Ownership is validated implicitly: we resolved owner_id from the DB
-        # via the subdomain in the reported URL. The session cookie is NOT
-        # available here because this request comes from a cross-subdomain iframe
-        # (SameSite=Lax blocks cookie sending across subdomains), so checking
-        # session.get('user_id') would always return None and disable healing.
-        is_owner = owner_id is not None
+        # Validate that the visitor is the authenticated owner of the application
+        is_owner = ('user_id' in session and session['user_id'] == owner_id)
 
         error_info = data.get('error', {})
         error_type = error_info.get('type', 'js_error')
@@ -5413,6 +5419,112 @@ def index():
         session.permanent = True
         
     return serve_no_cache('templates/index.html')
+
+def parse_log_line(line):
+    # Match: YYYY-MM-DD HH:MM:SS,ms - LEVEL - [file.py:line] - message
+    match = re.match(r'^([\d\-:\s,]+) - (\w+) - \[([\w\.]+):\d+\] - (.*)$', line.strip())
+    if not match:
+        return None
+        
+    timestamp_str, level, source_file, message = match.groups()
+    
+    # Try to identify if it's sent by an agent
+    agent_match = re.match(r'^\[(\w+)\]\s*(.*)$', message)
+    if agent_match:
+        agent_slug = agent_match.group(1).lower()
+        content = agent_match.group(2)
+        # Map agent ID to display name
+        agent_names = {
+            'bolt': 'Bolt (Performance Engineer)',
+            'sentinel': 'Sentinel (Security Engineer)',
+            'palette': 'Palette (UI Engineer)',
+            'newton': 'Newton (Test Engineer)',
+            'lucios': 'Lucios (Observability Engineer)',
+            'proton': 'Proton (Documentation Engineer)',
+            'code-reviewer': 'Code Reviewer'
+        }
+        sender = agent_names.get(agent_slug, agent_slug.capitalize())
+        msg_type = 'agent'
+    else:
+        sender = 'Orchestrator'
+        content = message
+        msg_type = 'system'
+        
+    return {
+        'timestamp': timestamp_str,
+        'level': level,
+        'source': source_file,
+        'sender': sender,
+        'content': content,
+        'type': msg_type
+    }
+
+@app.route('/agent-group-chat')
+@require_approval
+def agent_group_chat_page():
+    if session.get('role') != 'admin':
+        return make_response('Forbidden', 403)
+    
+    # Serve templates/agent_group_chat.html
+    with open('templates/agent_group_chat.html', 'r') as f:
+        content = f.read()
+    response = make_response(content)
+    response.headers['Content-Type'] = 'text/html'
+    return response
+
+@app.route('/api/admin/agent_group_chat/history')
+@require_approval
+def get_agent_group_chat_history():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+        
+    log_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.log'
+    if not os.path.exists(log_path):
+        return jsonify([])
+        
+    messages = []
+    try:
+        with open(log_path, 'r') as f:
+            lines = f.readlines()
+        # Get last 100 lines
+        for line in lines[-100:]:
+            parsed = parse_log_line(line)
+            if parsed:
+                messages.append(parsed)
+    except Exception as e:
+        logger.error(f"Error reading orchestrator log history: {e}")
+        
+    return jsonify(messages)
+
+@app.route('/api/admin/agent_group_chat/stream')
+@require_approval
+def agent_group_chat_stream():
+    if session.get('role') != 'admin':
+        return make_response('Forbidden', 403)
+        
+    def log_stream():
+        log_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.log'
+        if not os.path.exists(log_path):
+            yield "data: {}\n\n"
+            return
+            
+        try:
+            with open(log_path, 'r') as f:
+                # Seek to end
+                f.seek(0, 2)
+                while True:
+                    line = f.readline()
+                    if not line:
+                        time.sleep(0.5)
+                        continue
+                    parsed = parse_log_line(line)
+                    if parsed:
+                        yield f"data: {json.dumps(parsed)}\n\n"
+        except Exception as e:
+            logger.error(f"Error in orchestrator log SSE stream: {e}")
+            
+    return Response(stream_with_context(log_stream()), mimetype="text/event-stream")
+
 @app.route('/api/chats/search_messages', methods=['GET'])
 @require_approval
 def search_messages_route():

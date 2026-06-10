@@ -60,6 +60,9 @@ def test_log_error_success(mock_redis, setup_repo_history, client):
     # Mock redis lpush
     mock_redis.lpush.return_value = 1
 
+    with client.session_transaction() as sess:
+        sess['user_id'] = 1
+
     response = client.post('/api/sentinel/log_error', json=payload)
     assert response.status_code == 200
     data = json.loads(response.data)
@@ -79,6 +82,62 @@ def test_log_error_success(mock_redis, setup_repo_history, client):
 
     # Check redis queue push was called
     mock_redis.lpush.assert_called_once()
+
+
+@patch('app.redis_client')
+def test_log_error_non_owner(mock_redis, setup_repo_history, client):
+    # Test error logging with valid mapping but visitor is a different user (not owner)
+    payload = {
+        "url": "https://mysubdomain.stellarai.live/some/path",
+        "error": {
+            "type": "js_error",
+            "message": "Uncaught ReferenceError: x is not defined",
+            "stack": "ReferenceError: x is not defined at main.js:10",
+            "source": "main.js",
+            "line": 10
+        }
+    }
+    
+    # Authenticate as a different user (user_id = 999, owner is 1)
+    with client.session_transaction() as sess:
+        sess['user_id'] = 999
+
+    response = client.post('/api/sentinel/log_error', json=payload)
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['status'] == 'success'
+    
+    # Check that redis queue push was NOT called (healing skipped)
+    mock_redis.lpush.assert_not_called()
+
+
+@patch('app.redis_client')
+def test_log_error_anonymous(mock_redis, setup_repo_history, client):
+    # Test error logging with valid mapping but visitor is anonymous (no session)
+    payload = {
+        "url": "https://mysubdomain.stellarai.live/some/path",
+        "error": {
+            "type": "js_error",
+            "message": "Uncaught ReferenceError: x is not defined",
+            "stack": "ReferenceError: x is not defined at main.js:10",
+            "source": "main.js",
+            "line": 10
+        }
+    }
+    
+    # Ensure no session is active (anonymous visitor)
+    with client.session_transaction() as sess:
+        sess.clear()
+
+    response = client.post('/api/sentinel/log_error', json=payload)
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['status'] == 'success'
+    
+    # Check that redis queue push was NOT called (healing skipped)
+    mock_redis.lpush.assert_not_called()
+
+
 
 
 @patch('sentinel_healer.docker.from_env')
