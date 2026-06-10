@@ -257,3 +257,122 @@ def test_healer_workflow_success(mock_genai_client_class, mock_docker_env, setup
 
     # Clean up mock directories
     shutil.rmtree(mock_host_dir, ignore_errors=True)
+
+
+# --- Sentinel Route Tests ---
+
+@patch('app.redis_client')
+def test_sentinel_status_no_url(mock_redis, client):
+    """
+    Asserts that sentinel status route returns healing: False if url param is missing or empty.
+    """
+    response = client.get('/api/sentinel/status')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['healing'] is False
+
+@patch('app.redis_client')
+def test_sentinel_status_no_subdomain(mock_redis, client):
+    """
+    Asserts that sentinel status route returns healing: False if subdomain cannot be parsed.
+    """
+    response = client.get('/api/sentinel/status?url=invalid_url')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['healing'] is False
+
+@patch('app.redis_client')
+def test_sentinel_status_no_mapping(mock_redis, client):
+    """
+    Asserts that sentinel status route returns healing: False if subdomain does not map
+    to any process in repo_history.
+    """
+    response = client.get('/api/sentinel/status?url=https://unknown.stellarai.live')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['healing'] is False
+
+@patch('app.redis_client')
+def test_sentinel_status_not_healing(mock_redis, setup_repo_history, client):
+    """
+    Asserts that sentinel status route returns healing: False if subdomain has a process
+    but Redis key "sentinel:healing:<process_id>" is not set.
+    """
+    mock_redis.get.return_value = None
+    response = client.get('/api/sentinel/status?url=https://mysubdomain.stellarai.live')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['healing'] is False
+    mock_redis.get.assert_called_with("sentinel:healing:test-process-123")
+
+@patch('app.redis_client')
+def test_sentinel_status_healing(mock_redis, setup_repo_history, client):
+    """
+    Asserts that sentinel status route returns healing: True if subdomain has a process
+    and Redis key "sentinel:healing:<process_id>" is set.
+    """
+    mock_redis.get.return_value = b"1"
+    response = client.get('/api/sentinel/status?url=https://mysubdomain.stellarai.live')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data['healing'] is True
+    mock_redis.get.assert_called_with("sentinel:healing:test-process-123")
+
+@patch('app.redis_client')
+def test_sentinel_stream_flow(mock_redis, client):
+    """
+    Asserts that the sentinel stream SSE endpoint connects, replays history from Redis,
+    drains live events from pubsub, and terminates when a healed/failed event is received.
+    """
+    # Mock Redis lrange (history replay)
+    mock_redis.lrange.return_value = [
+        json.dumps({'event': 'started', 'message': 'Healing started'}).encode('utf-8'),
+        json.dumps({'event': 'patching', 'message': 'Applying patch...'}).encode('utf-8')
+    ]
+
+    # Mock Redis pubsub
+    mock_pubsub = MagicMock()
+    mock_redis.pubsub.return_value = mock_pubsub
+    
+    # Mock pubsub listen to yield one live status event and then a terminal healed event
+    mock_pubsub.listen.return_value = [
+        {
+            'type': 'message',
+            'data': json.dumps({'event': 'testing', 'message': 'Running build tests'}).encode('utf-8')
+        },
+        {
+            'type': 'message',
+            'data': json.dumps({'event': 'healed', 'message': 'Healed successfully!'}).encode('utf-8')
+        }
+    ]
+
+    response = client.get('/api/sentinel/stream/test-process-123')
+    assert response.status_code == 200
+    assert response.is_streamed
+
+    # Consume the SSE stream
+    content = b"".join(response.response)
+
+    # Check that connected event, history, and live events are all in the stream output
+    assert b"Connected to Sentinel Healer" in content
+    assert b"Healing started" in content
+    assert b"Applying patch..." in content
+    assert b"Running build tests" in content
+    assert b"Healed successfully!" in content
+
+    # Verify pubsub lifecycle methods were called
+    mock_pubsub.subscribe.assert_called_once_with("sentinel:logs:test-process-123")
+    mock_pubsub.unsubscribe.assert_called_once_with("sentinel:logs:test-process-123")
+    mock_pubsub.close.assert_called_once()
+
+def test_test_sentinel_overlay_route(client):
+    """
+    Asserts that the test sentinel overlay route renders correctly (200 OK)
+    and contains correct app details.
+    """
+    response = client.get('/test-sentinel-overlay')
+    assert response.status_code == 200
+    assert b"TestApp" in response.data
+    assert b"test-id" in response.data
+
+
