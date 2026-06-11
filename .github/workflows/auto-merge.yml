@@ -19,7 +19,7 @@ jobs:
       contents: write
     steps:
       - name: Enable auto-merge
-        run: gh pr merge --auto --squash "${{ github.event.pull_request.number }}"
+        run: gh pr merge --auto --squash --repo "${{ github.repository }}" "${{ github.event.pull_request.number }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -37,6 +37,6 @@ jobs:
         run: |
           BRANCH="${{ github.event.pull_request.head.ref }}"
           echo "Deleting branch: $BRANCH"
-          gh api repos/${{ github.repository }}/git/refs/heads/${BRANCH} -X DELETE
+          gh api "repos/${{ github.repository }}/git/refs/heads/${BRANCH}" -X DELETE
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
