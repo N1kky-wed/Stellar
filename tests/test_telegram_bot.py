@@ -72,3 +72,53 @@ def test_discover_chat_id(mock_get, mock_env, monkeypatch):
 
     assert chat_id == "222"
     assert bot.chat_id == "222"
+
+@patch('telegram_bot.requests.get')
+def test_get_new_messages_success(mock_get, mock_env):
+    """Asserts that get_new_messages parses updates correctly and updates last_update_id."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "ok": True,
+        "result": [
+            {
+                "update_id": 1001,
+                "message": {
+                    "text": "Hello Telegram",
+                    "chat": {"id": 999}
+                }
+            },
+            {
+                "update_id": 1002,
+                "message": {
+                    # message without text (e.g. photo/document)
+                    "chat": {"id": 999}
+                }
+            }
+        ]
+    }
+    mock_get.return_value = mock_response
+
+    bot = TelegramBot()
+    messages = bot.get_new_messages()
+    
+    assert len(messages) == 1
+    assert messages[0] == {"text": "Hello Telegram", "chat_id": "999"}
+    assert bot.last_update_id == 1002
+
+
+@patch('telegram_bot.requests.get')
+def test_get_updates_exception(mock_get, mock_env):
+    """Asserts that get_updates returns None and logs/handles errors when a requests exception occurs."""
+    mock_get.side_effect = Exception("Connection timed out")
+    bot = TelegramBot()
+    assert bot.get_updates() is None
+
+
+@patch('telegram_bot.requests.post')
+def test_send_message_exception(mock_post, mock_env):
+    """Asserts that send_message handles exceptions gracefully without raising."""
+    mock_post.side_effect = Exception("Failed connection")
+    bot = TelegramBot()
+    # Should not raise exception
+    bot.send_message("Hello Test")
+
