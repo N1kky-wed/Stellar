@@ -85,7 +85,7 @@ def require_approval(f):
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             return jsonify({'error': 'Authentication required.'}), 401
-        
+
         # We check the session first for speed, but the index route syncs it with DB
         if not session.get('is_approved'):
             # Double check with DB to be sure
@@ -161,17 +161,17 @@ if not VAPID_PUBLIC_KEY or not VAPID_PRIVATE_KEY_PEM:
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption()
         ).decode('utf-8')
-        
+
         public_bytes = private_key.public_key().public_bytes(
             encoding=serialization.Encoding.X962,
             format=serialization.PublicFormat.UncompressedPoint
         )
         public_b64url = base64.urlsafe_b64encode(public_bytes).decode('utf-8').rstrip('=')
         private_b64 = base64.b64encode(private_pem.encode('utf-8')).decode('utf-8')
-        
+
         VAPID_PUBLIC_KEY = public_b64url
         VAPID_PRIVATE_KEY_PEM = private_pem
-        
+
         if keys_env_path.is_file():
             with open(keys_env_path, 'a') as f:
                 f.write(f"\n# VAPID keys for PWA Web Push notifications\n")
@@ -224,7 +224,7 @@ FIREBASE_PROJECT_ID = "stellarai-live"
 def login_google():
     data = request.get_json()
     token = data.get('id_token')
-    
+
     if not token:
         return jsonify({"success": False, "message": "ID token required."}), 400
 
@@ -234,23 +234,23 @@ def login_google():
         # and the issuer must be https://securetoken.google.com/<project_id>
         try:
             id_info = id_token.verify_firebase_token(
-                token, 
-                google_requests.Request(), 
+                token,
+                google_requests.Request(),
                 audience=FIREBASE_PROJECT_ID
             )
         except Exception as ve:
             logger.error(f"Token verification failed: {ve}")
             return jsonify({"success": False, "message": f"Verification failed: {ve}"}), 401
-        
+
         # Additional Firebase-specific checks
         if id_info.get('iss') != f"https://securetoken.google.com/{FIREBASE_PROJECT_ID}":
             logger.error(f"Invalid issuer: {id_info.get('iss')}")
             raise ValueError("Invalid issuer.")
-        
+
         email = id_info['email']
         name = data.get('display_name') or id_info.get('name') or email.split('@')[0]
         picture_url = id_info.get('picture')
-        
+
         db = get_db()
         cursor = db.execute('SELECT id, username, display_name, pfp_url, role, is_approved, login_count FROM users WHERE username = ?', (email,))
         user = _fetchone_as_dict(cursor)
@@ -261,7 +261,7 @@ def login_google():
             # Check for first user
             cursor = db.execute("SELECT COUNT(*) FROM users")
             user_count = cursor.fetchone()[0]
-            
+
             if user_count == 0:
                 role = 'admin'
                 is_approved = 1
@@ -271,7 +271,7 @@ def login_google():
 
             db.execute('INSERT INTO users (username, display_name, pfp_url, role, is_approved) VALUES (?, ?, ?, ?, ?)', (email, name, picture_url, role, is_approved))
             db.commit()
-            
+
             cursor = db.execute('SELECT id, username, display_name, pfp_url, role, is_approved, login_count FROM users WHERE username = ?', (email,))
             user = _fetchone_as_dict(cursor)
         else:
@@ -281,7 +281,7 @@ def login_google():
                 db.commit()
                 user['display_name'] = name
                 user['pfp_url'] = picture_url
-        
+
         # Update login count and last active
         db.execute('UPDATE users SET login_count = login_count + 1, last_active = CURRENT_TIMESTAMP WHERE id = ?', (user['id'],))
         db.commit()
@@ -307,10 +307,10 @@ def login_google():
         session['pfp_url'] = user.get('pfp_url')
         session.modified = True
         session.permanent = True
-        
+
         if user['is_approved']:
-            get_current_chat_id(session['user_id']) 
-        
+            get_current_chat_id(session['user_id'])
+
         return jsonify({"success": True, "is_approved": bool(user['is_approved'])}), 200
 
     except ValueError:
@@ -368,9 +368,9 @@ from threading import Lock
 class GlobalKeyManager:
     def __init__(self):
         self.lock = Lock()
-        self.blocked_until = {} 
-        self.block_reason = {} 
-        
+        self.blocked_until = {}
+        self.block_reason = {}
+
     def _get_redis_keys(self, key_val, model_id):
         import hashlib
         key_hash = hashlib.sha256(key_val.encode('utf-8')).hexdigest()
@@ -380,21 +380,21 @@ class GlobalKeyManager:
     def block_key(self, key_val, model_id, duration_seconds, reason='RPM'):
         if reason == 'INVALID':
             model_id = None
-            
+
         key_hash = hash(key_val) if key_val else 0
         logger.warning("API key blocked hash=%s model=%s duration_sec=%s reason=%s", key_hash, model_id, duration_seconds, reason)
-            
+
         with self.lock:
             self.blocked_until[(key_val, model_id)] = time.time() + duration_seconds
             self.block_reason[(key_val, model_id)] = reason
-            
+
         try:
             k_until, k_reason = self._get_redis_keys(key_val, model_id)
             redis_client.setex(k_until, int(duration_seconds), str(time.time() + duration_seconds))
             redis_client.setex(k_reason, int(duration_seconds), reason)
         except Exception as e:
             logger.error(f"Error writing key block to Redis: {e}")
-            
+
     def is_key_blocked(self, key_val, model_id):
         # Try checking Redis first to coordinate between different processes
         try:
@@ -408,7 +408,7 @@ class GlobalKeyManager:
                         return True, reason
                 except ValueError:
                     pass
-            
+
             # Check global block in Redis
             if model_id is not None:
                 k_until_g, k_reason_g = self._get_redis_keys(key_val, None)
@@ -430,13 +430,13 @@ class GlobalKeyManager:
             blocked_time = self.blocked_until.get((key_val, model_id), 0)
             if time.time() < blocked_time:
                 return True, self.block_reason.get((key_val, model_id), 'RPM')
-            
+
             # Check global model block
             if model_id is not None:
                 blocked_time_global = self.blocked_until.get((key_val, None), 0)
                 if time.time() < blocked_time_global:
                     return True, self.block_reason.get((key_val, None), 'RPM')
-                    
+
             return False, None
 
     def get_key_blocks(self, key_val, models):
@@ -471,7 +471,7 @@ class GlobalKeyManager:
             model_blocked = False
             model_reason = None
             model_remaining = 0.0
-            
+
             try:
                 k_until, k_reason = self._get_redis_keys(key_val, model)
                 blocked_until_val = redis_client.get(k_until)
@@ -486,7 +486,7 @@ class GlobalKeyManager:
                         pass
             except Exception:
                 pass
-                
+
             if not model_blocked:
                 with self.lock:
                     blocked_time = self.blocked_until.get((key_val, model), 0)
@@ -494,7 +494,7 @@ class GlobalKeyManager:
                         model_blocked = True
                         model_reason = self.block_reason.get((key_val, model), 'RPM')
                         model_remaining = max(0.0, blocked_time - time.time())
-            
+
             effective_blocked, effective_reason = self.is_key_blocked(key_val, model)
             if effective_blocked:
                 if model_blocked:
@@ -527,26 +527,26 @@ def get_seconds_until_pacific_midnight():
     try:
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         year = now_utc.year
-        
+
         # DST start: 2nd Sunday in March
         march_1 = datetime.datetime(year, 3, 1, tzinfo=datetime.timezone.utc)
         march_1_dow = march_1.weekday()
         days_to_first_sunday = (6 - march_1_dow) % 7
         dst_start = march_1 + datetime.timedelta(days=days_to_first_sunday + 7)
-        
+
         # DST end: 1st Sunday in November
         nov_1 = datetime.datetime(year, 11, 1, tzinfo=datetime.timezone.utc)
         nov_1_dow = nov_1.weekday()
         days_to_nov_sunday = (6 - nov_1_dow) % 7
         dst_end = nov_1 + datetime.timedelta(days=days_to_nov_sunday)
-        
+
         is_dst = dst_start <= now_utc < dst_end
         pacific_offset = datetime.timedelta(hours=-7) if is_dst else datetime.timedelta(hours=-8)
-        
+
         now_pacific = now_utc + pacific_offset
         # Next Pacific midnight is tomorrow at 00:00:00 Pacific
         tomorrow_pacific = datetime.datetime(now_pacific.year, now_pacific.month, now_pacific.day, tzinfo=datetime.timezone.utc) + datetime.timedelta(days=1)
-        
+
         seconds_until_midnight = (tomorrow_pacific - now_pacific).total_seconds()
         return max(int(seconds_until_midnight), 60)
     except Exception as e:
@@ -555,11 +555,11 @@ def get_seconds_until_pacific_midnight():
 
 def parse_quota_block_duration(error_msg):
     err_lower = error_msg.lower()
-    if ('minute' in err_lower or 'queries per minute' in err_lower or 
+    if ('minute' in err_lower or 'queries per minute' in err_lower or
         'rpm' in err_lower or 'tpm' in err_lower or 'queriesperminute' in err_lower):
         # Minute limit / TPM / RPM: Block for 60 seconds
         return 60, 'RPM'
-    elif ('requestsperday' in err_lower or 'requests per day' in err_lower or 
+    elif ('requestsperday' in err_lower or 'requests per day' in err_lower or
           'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower or
           'exceeded your current quota' in err_lower or 'billing details' in err_lower or 'quota/rate limits' in err_lower):
         # Daily limit / Quota exhaustion: Block until the next Pacific Midnight reset time
@@ -656,7 +656,7 @@ def initialize_database():
         db.execute("PRAGMA journal_mode=WAL;")
         db.execute("PRAGMA busy_timeout=5000;")
         cursor = db.cursor()
-        
+
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
         if cursor.fetchone() is None:
             cursor.execute('''CREATE TABLE users (
@@ -823,7 +823,7 @@ def initialize_database():
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
             ''')
-            
+
         cursor.execute("PRAGMA table_info(repo_history)")
         columns = [info[1] for info in cursor.fetchall()]
         if 'subdomain' not in columns:
@@ -1042,7 +1042,7 @@ def insert_message(chat_id, message_type, message_content,
     """Insert a new message into the messages table."""
     if not chat_id:
         return None
-    
+
     max_retries = 3
     retry_delay_seconds = 1
 
@@ -1057,8 +1057,8 @@ def insert_message(chat_id, message_type, message_content,
                                        attached_files, hidden)
                    VALUES (?, ?, ?, ?, ?, ?, ?)''',
                 (chat_id, message_type, message_content,
-                 is_research_output, html_file, 
-                 json.dumps(attached_files) if attached_files else None, 
+                 is_research_output, html_file,
+                 json.dumps(attached_files) if attached_files else None,
                  hidden_val)
             )
             db.commit()
@@ -1070,7 +1070,7 @@ def insert_message(chat_id, message_type, message_content,
                     def thread_target(app_instance, target_chat_id, target_query):
                         with app_instance.app_context():
                             generate_chat_name(target_chat_id, target_query)
-                    
+
                     threading.Thread(target=thread_target, args=(current_app._get_current_object(), chat_id, user_query_for_name), daemon=True).start()
 
             # Trigger Token Count update in background
@@ -1150,7 +1150,7 @@ def build_annotated_history(conversation_history, user_message_id):
                 continue
             role = 'User' if msg.get('message_type') == 'user' else 'Stellar'
             content = msg.get('message_content', '')
-            
+
             # Calculate time delta for context
             time_str = msg.get('timestamp')
             time_annotation = ""
@@ -1171,7 +1171,7 @@ def build_annotated_history(conversation_history, user_message_id):
             # Strip base64 before passing to LLM context
             clean_content = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', content)
             conv_hist_list.append(f"{role}{time_annotation}: {clean_content}")
-            
+
     return conv_hist_list, last_msg_time
 
 
@@ -1207,7 +1207,7 @@ def get_conversation_history(chat_id, for_ui=False):
                     msg['attached_files'] = []
             else:
                 msg['attached_files'] = []
-            
+
             # CRITICAL: Prevent frontend crashes by truncating massive Base64 images
             if msg.get('message_content'):
                 # If content is huge and contains base64, replace the base64 part
@@ -1236,18 +1236,18 @@ def get_tool_history(chat_id):
         db = get_db()
         cursor = db.execute('''
             SELECT id, tool_name, input_params, length(result) as res_len,
-                   CASE 
+                   CASE
                        WHEN tool_name IN ('read_tool_output', 'obtain_talent') THEN result
                        ELSE substr(result, 1, 1000)
                    END as res_part,
-                   timestamp 
-            FROM tool_calls 
-            WHERE chat_id = ? AND hidden = 0 
+                   timestamp
+            FROM tool_calls
+            WHERE chat_id = ? AND hidden = 0
             ORDER BY timestamp ASC
         ''', (chat_id,))
         rows = cursor.fetchall()
         if not rows: return ""
-        
+
         context_lines = ["\n**Internal Tool Execution History:**"]
         for r in rows:
             res_str = r['res_part']
@@ -1293,7 +1293,7 @@ def update_message(message_id, content):
         chat_id = chat_info['chat_id']
         db.execute('UPDATE messages SET message_content = ? WHERE id = ?', (content, message_id))
         db.commit()
-        
+
         return True
     except sqlite3.Error as e:
         logger.error(f"Database error in update_message: {e}", exc_info=True)
@@ -1309,10 +1309,10 @@ def generate_chat_name(chat_id, first_message_content):
         try:
             prompt = f"Given the following first message of a conversation, generate a very short, descriptive name (max 5 words) for this chat. Respond only with the name.\n\nMessage: {first_message_content}"
             model_name = "gemini-3.1-flash-lite"
-            
+
             raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
             keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
-            
+
             # Filter out globally rate-limited or quota-exhausted keys
             active_keys = []
             for k in keys_to_try:
@@ -1322,7 +1322,7 @@ def generate_chat_name(chat_id, first_message_content):
             if not active_keys:
                 active_keys = keys_to_try
             keys_to_try = active_keys
-            
+
             for current_key in keys_to_try:
                 try:
                     client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
@@ -1334,14 +1334,14 @@ def generate_chat_name(chat_id, first_message_content):
                     prompt_tokens = getattr(usage, 'prompt_token_count', 0) if usage else 0
                     candidates_tokens = getattr(usage, 'candidates_token_count', 0) if usage else 0
                     logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=chat_name_generation prompt_tokens=%d candidates_tokens=%d", model_name, duration, prompt_tokens, candidates_tokens)
-                    
+
                     generated_name = "New Chat"
                     if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
                         response_text = r.candidates[0].content.parts[0].text.strip()
                         generated_name = response_text.replace('"', '').replace("'", '').strip()
                         if len(generated_name.split()) > 5:
                             generated_name = ' '.join(generated_name.split()[:5]) + '...'
-                    
+
                     logger.info(f"LLM generated name: '{generated_name}' for chat_id: {chat_id}")
                     db.execute('UPDATE chats SET name = ? WHERE id = ?', (generated_name, chat_id))
                     db.commit()
@@ -1359,9 +1359,9 @@ def generate_chat_name(chat_id, first_message_content):
                         logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error during name generation.")
                     logger.warning(f"API error during chat name generation: {e}. Trying next key...")
                     continue
-            
+
             logger.error(f"All keys failed for chat name generation (chat {chat_id}).")
-            
+
         except Exception as e:
             logger.error(f"Error in generate_chat_name (chat {chat_id}): {e}")
 
@@ -1370,7 +1370,7 @@ def generate_unique_subdomain(project_name):
     base_slug = re.sub(r'[^a-z0-9]+', '-', project_name.lower()).strip('-')
     if not base_slug:
         base_slug = "app"
-    
+
     db = get_db()
     slug = base_slug
     counter = 1
@@ -1394,7 +1394,7 @@ def count_chat_tokens(chat_id=None):
         from prompts import get_refinement_prompt
         # We pass empty history and query because we just want the 'wrapper' parts (System + Memory)
         full_system_prompt = get_refinement_prompt("", [], user_id=user_id)
-        
+
         # Extract everything before 'Conversation History:'
         system_parts = full_system_prompt.split("Conversation History:")
         system_instruction = system_parts[0].strip()
@@ -1405,17 +1405,17 @@ def count_chat_tokens(chat_id=None):
             (chat_id,)
         )
         messages = _fetch_as_dict(cursor)
-        
+
         # Get tool calls
         cursor = db.execute(
             '''SELECT id, tool_name, input_params, length(result) as res_len,
-                      CASE 
+                      CASE
                           WHEN tool_name IN ('read_tool_output', 'obtain_talent') THEN result
                           ELSE substr(result, 1, 1000)
                       END as res_part,
-                      timestamp 
-               FROM tool_calls 
-               WHERE chat_id = ? AND hidden = 0 
+                      timestamp
+               FROM tool_calls
+               WHERE chat_id = ? AND hidden = 0
                ORDER BY timestamp ASC''',
             (chat_id,)
         )
@@ -1427,7 +1427,7 @@ def count_chat_tokens(chat_id=None):
             combined_history.append({'type': 'message', 'data': m, 'ts': m['timestamp']})
         for t in tool_calls:
             combined_history.append({'type': 'tool', 'data': t, 'ts': t['timestamp']})
-        
+
         combined_history.sort(key=lambda x: x['ts'])
 
         # Start history with the System Instruction
@@ -1465,15 +1465,15 @@ def count_chat_tokens(chat_id=None):
 
         if len(history_for_tokens) <= 1: # Only system prompt
             return 0
-         
+
         raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
         keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
-        
+
         # Filter out globally rate-limited or quota-exhausted keys
         active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, "gemini-3.1-flash-lite")[0]]
         if not active_keys:
             active_keys = keys_to_try
-            
+
         t_count = 0
         token_counted = False
         for current_key in active_keys:
@@ -1498,10 +1498,10 @@ def count_chat_tokens(chat_id=None):
                     KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                     logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error during count_chat_tokens.")
                 logger.warning(f"Failed to count tokens with key (Hash: {hash(current_key)}): {token_e}")
-                
+
         if not token_counted:
             raise ValueError("All API keys failed or rate-limited in count_chat_tokens")
-        
+
         # Save to DB
         try:
             db = get_db()
@@ -1530,7 +1530,7 @@ def upload_files_to_gemini(context_id, filenames, api_key=None):
                 break
     client = genai.Client(api_key=api_key)
     session_upload_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(context_id))
-    
+
     # Whitelist of extensions and MIME types supported by Gemini Native File API
     SUPPORTED_EXTENSIONS = {
         '.pdf',
@@ -1546,9 +1546,9 @@ def upload_files_to_gemini(context_id, filenames, api_key=None):
             ext = os.path.splitext(filename)[1].lower()
             mime_type, _ = mimetypes.guess_type(filepath)
             mime_type = mime_type or 'application/octet-stream'
-            
+
             logger.info(f"[GEMINI-UPLOAD] Checking file: {filename}, ext: {ext}, mime: {mime_type}")
-            
+
             # Strict check: extension must be in whitelist
             if ext not in SUPPORTED_EXTENSIONS:
                 logger.warning(f"[GEMINI-UPLOAD] Extension {ext} not in whitelist. Routing {filename} to Lab.")
@@ -1568,16 +1568,16 @@ def upload_files_to_gemini(context_id, filenames, api_key=None):
                 g_file = client.files.upload(file=filepath)
                 duration = time.time() - t0
                 logger.info("Gemini API call completed method=files.upload duration_sec=%.2f filename=%s", duration, filename)
-                
+
                 # Wait for processing
                 while g_file.state.name == "PROCESSING":
                     time.sleep(2)
                     g_file = client.files.get(name=g_file.name)
-                    
+
                 if g_file.state.name == "FAILED":
                     logger.error(f"[GEMINI-UPLOAD] Gemini failed to process file {filename}")
                     continue
-                    
+
                 gemini_files.append({
                     "uri": g_file.uri,
                     "mime_type": g_file.mime_type,
@@ -1640,7 +1640,7 @@ def is_safe_hostname(hostname):
             ip_str = sockaddr[0]
             try:
                 ip = ipaddress.ip_address(ip_str)
-                if (ip.is_private or ip.is_loopback or ip.is_link_local or 
+                if (ip.is_private or ip.is_loopback or ip.is_link_local or
                     ip.is_multicast or ip.is_reserved or ip.is_unspecified):
                     return False, f"Access to internal networks is forbidden: {ip_str}"
             except ValueError:
@@ -1652,9 +1652,9 @@ def is_safe_hostname(hostname):
 def scrape_url(url: str) -> str:
     if not url or not url.startswith(('http://', 'https://')):
         return f"Error scraping {url}: Invalid URL format"
-    
+
     from urllib.parse import urlparse
-    
+
     try:
         parsed = urlparse(url)
         safe, msg = is_safe_hostname(parsed.hostname)
@@ -1674,7 +1674,7 @@ stop_sequence="8919018818"
 def is_output_cut_off(text: str, key: str) -> bool:
     if not key:
         return False
-    
+
     if len(text.strip()) < 50 and (text.strip().endswith('.') or text.strip().endswith('!') or text.strip().endswith('?')):
         return False
 
@@ -1684,7 +1684,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
         f"Respond only with 'YES' if it feels complete, and 'NO' if it feels cut off and requires continuation. "
         f"Do not add any other text.\n\nText:\n---\n{text}\n---"
     )
-    
+
     try:
         client = genai.Client(api_key=key, http_options={'api_version': 'v1beta'})
         chat = client.chats.create(model='gemini-3.1-flash-lite', config={'tools': []})
@@ -1695,7 +1695,7 @@ def is_output_cut_off(text: str, key: str) -> bool:
         prompt_tokens = getattr(usage, 'prompt_token_count', 0) if usage else 0
         candidates_tokens = getattr(usage, 'candidates_token_count', 0) if usage else 0
         logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=cut_off_check prompt_tokens=%d candidates_tokens=%d", 'gemini-3.1-flash-lite', duration, prompt_tokens, candidates_tokens)
-        
+
         if r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
             response_text = r.candidates[0].content.parts[0].text.strip().upper()
             if "NO" in response_text:
@@ -1725,7 +1725,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 db.commit()
         except Exception as e:
             logger.error(f"Error recording tool call: {e}")
-    
+
     last_exception = None
 
     original_prompt_for_continuation = prompt
@@ -1735,8 +1735,8 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     # Ensure PRIMARY_API_KEY is the absolute first priority, then check passed 'key', then backups.
     # We use a list with dict.fromkeys() to maintain order and remove duplicates.
     raw_keys = [PRIMARY_API_KEY, key] + [bk for bk in BACKUP_API_KEYS if bk]
-    keys_to_try = [k for k in dict.fromkeys(raw_keys) if k] 
-    
+    keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
+
     # Filter out globally rate-limited or quota-exhausted keys to avoid time/resource waste
     active_keys = []
     blocked_info = []
@@ -1746,16 +1746,16 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             active_keys.append(k)
         else:
             blocked_info.append((k, reason))
-            
+
     if not active_keys:
         # Fallback: if ALL keys are blocked, try them all to avoid complete lockout
         active_keys = keys_to_try
     else:
         if blocked_info:
             logger.info(f"Skipped {len(blocked_info)} globally blocked/exhausted API key(s) to protect from redundant 429 hits.")
-            
+
     keys_to_try = active_keys
-    
+
 
     current_key_index = 0
 
@@ -1791,9 +1791,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 from agent_tools import available_tools
             except ImportError:
                 available_tools = []
-                
+
             tools_config = available_tools.copy()
-            
+
             # Restrict lab_execute and repo_control to Elite models
             elite_models = ["gemini-3-flash-preview", "gemini-3.5-flash", "gemma-4-31b-it"]
             if model_id not in elite_models:
@@ -1833,11 +1833,11 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 ]
             )
             chat = client.chats.create(model=model_id, config=chat_config)
-            
+
             message_to_send = prompt if isinstance(prompt, list) else current_effective_prompt
-            
+
             import agent_tools
-            
+
             consecutive_network_errors = 0
             while True:
                 try:
@@ -1854,13 +1854,13 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                     error_string = str(loop_e).lower()
                     is_quota = any(x in error_string for x in ['429', '403', 'permission_denied', 'resource_exhausted', 'quota', 'rate limit'])
                     is_network = any(x in error_string for x in ['500', '503', 'connection', 'timeout', 'deadline'])
-                    
+
                     if is_quota:
                         block_duration, block_reason = parse_quota_block_duration(error_string)
                         block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
                         KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                         logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in inner loop.")
-                        
+
                         next_key_idx = get_next_unblocked_key_index(current_key_index)
                         if next_key_idx is not None:
                             logger.warning(f"Switching from key index {current_key_index} to backup key index {next_key_idx} (circular queue)...")
@@ -1869,10 +1869,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         else:
                             logger.error("All available keys in keys_to_try are blocked. Aborting inner loop.")
                             break
-                        
-                        
+
+
                         client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
-                        
+
                         if gemini_files_data:
                             context_id = get_file_context_id()
                             if context_id:
@@ -1885,14 +1885,14 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                             if old_f.get('display_name') == new_f.get('display_name') and old_f.get('uri') and new_f.get('uri'):
                                                 uri_map[old_f['uri']] = new_f['uri']
                                                 old_f['uri'] = new_f['uri']
-                                    
+
                                     def update_part_uri(part):
                                         if hasattr(part, 'file_data') and part.file_data and hasattr(part.file_data, 'file_uri'):
                                             old_uri = part.file_data.file_uri
                                             if old_uri in uri_map:
                                                 return types.Part.from_uri(file_uri=uri_map[old_uri], mime_type=part.file_data.mime_type)
                                         return part
-                                    
+
                                     if isinstance(message_to_send, list):
                                         message_to_send = [update_part_uri(p) for p in message_to_send]
                                     if isinstance(current_effective_prompt, list):
@@ -1908,22 +1908,22 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                     p = update_part_uri(p)
                                 new_parts.append(p)
                             new_history.append(types.Content(role=h_msg.role, parts=new_parts))
-                                
+
                         chat = client.chats.create(model=model_id, config=chat_config, history=new_history)
-                        continue 
+                        continue
                     elif is_network and consecutive_network_errors < 3:
                         consecutive_network_errors += 1
                         logger.warning(f"Connection issue detected (Attempt {consecutive_network_errors}/3) with model {model_id} using key index {current_key_index}. Error: {loop_e}")
                         yield {'status': f'Connection issue. Retrying in-place ({consecutive_network_errors}/3)...'}
                         time.sleep(2 * consecutive_network_errors)
-                        
+
                         # If we hit 3 network errors, try switching keys before giving up on this attempt
                         if consecutive_network_errors == 3:
                              block_duration, block_reason = parse_quota_block_duration(error_string)
                              block_scope = model_id
                              KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                              logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to persistent network issues in inner loop.")
-                             
+
                              next_key_idx = get_next_unblocked_key_index(current_key_index)
                              if next_key_idx is not None:
                                  logger.warning(f"Persistent network issues with key index {current_key_index}. Switching to backup key index {next_key_idx} (circular queue)...")
@@ -1934,7 +1934,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                  logger.error("All available keys in keys_to_try are blocked. Aborting inner loop.")
                                  break
                              consecutive_network_errors = 0 # Reset for the new key
-                        
+
                         # Re-init chat with (potentially new) key
                         client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
                         old_history = chat.get_history() if hasattr(chat, 'get_history') else []
@@ -1959,23 +1959,23 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         break
                     else:
                         raise ValueError(error_msg)
-                
+
                 candidate = r.candidates[0]
                 parts = getattr(candidate.content, 'parts', [])
-                
+
                 # DEBUG LOG
                 part_types = [type(p).__name__ for p in parts]
                 logger.info(f"[DEBUG] Model parts received: {part_types}")
                 for p in parts:
                     if getattr(p, 'text', None): logger.info(f"[DEBUG] Text part length: {len(p.text)}")
                     if getattr(p, 'function_call', None): logger.info(f"[DEBUG] Function call: {p.function_call.name}")
-                
+
                 if not parts:
                     yield {'result': ""}
                     return
-                    
+
                 function_calls = [p.function_call for p in parts if getattr(p, 'function_call', None)]
-                
+
                 # Capture and yield any introductory text that comes WITH the function calls
                 current_parts_text = []
                 for part in parts:
@@ -1983,9 +1983,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         continue # Skip thinking blocks!
                     if getattr(part, 'text', None):
                         current_parts_text.append(part.text)
-                
+
                 intro_text = "".join(current_parts_text)
-                
+
                 if intro_text:
                     yield {'result': intro_text}
                     accumulated_full_output += intro_text
@@ -2014,7 +2014,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                         if first_user_msg_id:
                                             db = get_db()
                                             db.execute('''
-                                                UPDATE messages 
+                                                UPDATE messages
                                                 SET timestamp = datetime((SELECT timestamp FROM messages WHERE id = ?), '-1 second')
                                                 WHERE id = ?
                                             ''', (int(first_user_msg_id), stellar_msg_id))
@@ -2045,22 +2045,22 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             return
                         func_name = fc.name
                         args_dict = dict(fc.args) if fc.args else {}
-                        
+
                         timeout_val = args_dict.get('timeout')
-                        
+
                         yield {'status': args_dict.get('status', f'Using tool: {func_name}...'), 'timeout': timeout_val}
-                            
+
                         # execute
                         try:
                             # STRICT SECURITY CHECK: Only allow tools that were actually provided in the config
                             allowed_tool_names = [getattr(t, '__name__', '') for t in tools_config]
-                            
+
                             if func_name not in allowed_tool_names:
                                 res = f"Error: The tool '{func_name}' is restricted for this model level."
                                 logger.warning(f"[SECURITY] Model {model_id} tried to call unauthorized tool: {func_name}")
                             else:
                                 func_to_call = getattr(agent_tools, func_name)
-                                
+
                                 # Dynamically pass the current model_id to specific tools
                                 if func_name in ["analyze_youtube_video"]:
                                     if 'model_id' not in args_dict:
@@ -2068,7 +2068,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
                                 if func_name == "logs_and_preferences":
                                     args_dict['user_id'] = str(getattr(g, 'user_id', 'global'))
-                                    
+
                                 if func_name == "request_user_interaction":
                                     interaction_id = str(uuid.uuid4())
                                     html_ui = args_dict.get('html_ui', '')
@@ -2082,7 +2082,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                     html_ui = _re.sub(r'</?head[^>]*>', '', html_ui, flags=_re.IGNORECASE)
                                     html_ui = _re.sub(r'</?body[^>]*>', '', html_ui, flags=_re.IGNORECASE)
                                     yield {'type': 'generative_ui', 'html': html_ui, 'interaction_id': interaction_id}
-                                    
+
                                     # Dispatch Web Push background notification
                                     try:
                                         from flask import g
@@ -2095,7 +2095,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                             if row:
                                                 p_user_id = row['user_id']
                                             db_temp.close()
-                                        
+
                                         if p_user_id:
                                             prompt_desc = args_dict.get('status', 'Stellar needs your interaction to proceed with the task.')
                                             send_push_notification(
@@ -2107,7 +2107,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                     except Exception as push_err:
                                         logger.error(f"Failed to dispatch interaction push notification: {push_err}")
 
-                                    
+
                                     # Polling loop
                                     start_time = time.time()
                                     poll_interval = 2
@@ -2116,7 +2116,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                     try:
                                         r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
                                         redis_key = f"ui_interaction:{interaction_id}"
-                                        
+
                                         while time.time() - start_time < (timeout_val or 300):
                                             val = r_client.get(redis_key)
                                             if val:
@@ -2125,7 +2125,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                                 break
                                             yield {'status': 'Waiting for user interaction...'}
                                             time.sleep(poll_interval)
-                                            
+
                                         if res is None:
                                             res = "Error: User did not interact with the UI in time."
                                     except Exception as e:
@@ -2134,10 +2134,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                 else:
                                     import concurrent.futures
                                     from flask import current_app, g
-                                    
+
                                     app_obj = current_app._get_current_object()
                                     g_state = {k: getattr(g, k) for k in ['user_id', 'username', 'chat_id', 'session_id', 'model_id'] if hasattr(g, k)}
-                                    
+
                                     def _run_tool_with_context(**kwargs):
                                         with app_obj.app_context():
                                             for k, v in g_state.items():
@@ -2161,14 +2161,14 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                         executor.shutdown(wait=False)
                                     duration_tool = time.time() - t_tool_start
                                     logger.info("Executed tool name=%s chat_id=%s duration_sec=%.2f status=%s", func_name, chat_id, duration_tool, tool_status)
-                            
+
                             # Record tool call in DB for context persistence
                             record_tool_call(func_name, args_dict, res)
 
                             # Store result for final verification/forced inclusion
                             called_tools_results.append({'name': func_name, 'result': res})
 
-                            # We no longer yield any tool results immediately. 
+                            # We no longer yield any tool results immediately.
                             # Instead, we provide them to the model as a FunctionResponse part,
                             # and rely on the model to include the information naturally in its final text turn.
                             # This prevents the "double output" issue where the system yielded it and then the model repeated it.
@@ -2192,7 +2192,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                     row = cursor.fetchone()
                                     if row: last_tool_id = row[0]
                                 except: pass
-                                
+
                                 num_lines = len(llm_safe_res.split('\n'))
                                 llm_safe_res = f"[Output truncated for context efficiency. ID: {last_tool_id}, Lines: {num_lines}, Length: {len(llm_safe_res)} chars. Use read_tool_output(output_id={last_tool_id}) to view the full text if necessary.]"
 
@@ -2226,7 +2226,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                             if first_user_msg_id:
                                                 db = get_db()
                                                 db.execute('''
-                                                    UPDATE messages 
+                                                    UPDATE messages
                                                     SET timestamp = datetime((SELECT timestamp FROM messages WHERE id = ?), '-1 second')
                                                     WHERE id = ?
                                                 ''', (int(first_user_msg_id), stellar_msg_id))
@@ -2255,7 +2255,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
             # Forcibly add tool results if the model forgot to include them or mangled them
             import re
-            
+
             # First, clean up any SVGs the model might have wrapped in markdown code blocks
             # This allows them to render correctly even if the model ignored instructions.
             accumulated_full_output = re.sub(r'```(?:svg|xml)?\s*(<svg[\s\S]*?</svg>)\s*```', r'\1', accumulated_full_output, flags=re.IGNORECASE)
@@ -2266,7 +2266,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
                 if not isinstance(tool['result'], str): continue
                 clean_res = tool['result'].strip()
-                
+
                 # Check if the result (or a significant part of it) is already in the output
                 already_present = False
                 if clean_res in accumulated_full_output:
@@ -2278,7 +2278,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                         if m in accumulated_full_output:
                             already_present = True
                             break
-                
+
                 if not already_present:
                     yield {'result': f"\n{clean_res}\n"}
                     accumulated_full_output += f"\n{clean_res}\n"
@@ -2297,7 +2297,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
                 if is_output_cut_off(output_this_attempt.strip(), PRIMARY_API_KEY):
                     yield {'status': 'Output is cut off. Attempting to continue...', 'phase': 'continuation_attempt'}
-                    
+
                     # Prevent base64 blowup during continuation
                     safe_accumulated = re.sub(r'(data:image/[^;]+;base64,)[a-zA-Z0-9+/=]+', r'\1[TRUNCATED]', accumulated_full_output)
                     current_effective_prompt = (
@@ -2351,10 +2351,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             last_exception = e
             is_blockable_error = False
             error_string = str(e).lower()
-            
+
             is_quota_error = ('429' in error_string or '403' in error_string or 'permission_denied' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)
             is_transient_error = ('overloaded' in error_string or '503' in error_string or 'service unavailable' in error_string or '500' in error_string or 'internal error' in error_string or 'internal_error' in error_string)
-            
+
             if is_quota_error or is_transient_error:
                  is_blockable_error = True
                  block_duration, block_reason = parse_quota_block_duration(error_string)
@@ -2439,7 +2439,7 @@ def create_output_file(query_or_base_name: str, content: str, extension: str = "
 
 GRACE_PERIOD_SECONDS = 30
 
-def _redis_repo_key(pid): 
+def _redis_repo_key(pid):
     return f"repo:process:{pid}"
 
 def _redis_runcode_key(pid):
@@ -2458,21 +2458,21 @@ def _extract_json_from_response(response_text):
     """
     if not response_text:
         return None
-    
+
     # Try to find markdown code blocks first
     import re
     code_block_pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
     match = re.search(code_block_pattern, response_text, re.DOTALL)
     if match:
         return match.group(1)
-        
+
     # Fallback: try to find the first '{' and last '}'
     start_idx = response_text.find('{')
     end_idx = response_text.rfind('}')
-    
+
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
         return response_text[start_idx : end_idx + 1]
-        
+
     return None
 
 def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='repo', subdomain=None):
@@ -2486,7 +2486,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         cursor = db.execute('SELECT user_id FROM repo_history WHERE process_id = ?', (process_id,))
         row = cursor.fetchone()
         if row: user_id = row['user_id']
-    
+
     client = docker.from_env()
     user_network = ensure_user_network(client, user_id)
 
@@ -2536,12 +2536,12 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         temp_dir_path = None
         reuse_container = False
         run_id = str(uuid.uuid4())
-        
+
         # Check if we can reuse the old container
         if old_container_id:
             try:
                 old_container = client.containers.get(old_container_id)
-                
+
                 # Check if requirements.txt changed
                 old_reqs = ""
                 try:
@@ -2551,19 +2551,19 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 except Exception:
                     logger.exception("Failed to read requirements.txt from old container process_id=%s", process_id)
                     pass
-                
+
                 new_reqs = project_files.get('requirements.txt', '')
                 if old_reqs.strip() == new_reqs.strip():
                     reuse_container = True
                     container = old_container
                     _put_event({'type': 'log', 'content': f'Reusing existing container ({container.short_id})...'})
-                    
+
                     # Stop old app process
                     # Kill both 'sh' and 'python' processes to prevent port conflicts
                     container.exec_run("python3 -c \"import os, signal; my_pid = os.getpid(); [os.kill(int(p), signal.SIGKILL) for p in os.listdir('/proc') if p.isdigit() and int(p) != my_pid and any(kw in open(f'/proc/{p}/cmdline').read('\x00') for kw in ['app.py', 'python', 'flask'])]\"", user='root')
                     container.exec_run("pkill -9 python || true", user='root')
                     container.exec_run("pkill -f 'python app.py' || true", user='root')
-                    
+
                     # Wait for the port to be fully released to prevent false-positive readiness
                     for _ in range(20):
                         time.sleep(0.5)
@@ -2574,7 +2574,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                         except Exception:
                             logger.exception("Failed to check readiness of old container port release process_id=%s", process_id)
                             break
-                    
+
                     # Find mount path to update files
                     for mount in container.attrs.get('Mounts', []):
                         if mount['Destination'] == '/app':
@@ -2596,21 +2596,21 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         if not reuse_container:
             temp_dir_path = os.path.join(SANDBOX_DIR, f"{app_type}_{run_id}")
             os.makedirs(temp_dir_path, exist_ok=True)
-            
+
         # Write all project files
         if temp_dir_path:
             with open(os.path.join(temp_dir_path, 'app.py'), 'w', encoding='utf-8') as f:
                 f.write(project_files.get('app.py', ''))
             with open(os.path.join(temp_dir_path, 'index.html'), 'w', encoding='utf-8') as f:
                 f.write(project_files.get('index.html', ''))
-            
+
             # Write requirements.txt if present
             requirements_content = project_files.get('requirements.txt', '')
             has_requirements = bool(requirements_content.strip())
             if has_requirements:
                 with open(os.path.join(temp_dir_path, 'requirements.txt'), 'w', encoding='utf-8') as f:
                     f.write(requirements_content)
-            
+
             abs_temp_dir_path = os.path.abspath(temp_dir_path)
 
         if not reuse_container:
@@ -2664,7 +2664,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         if has_requirements and not reuse_container:
             _put_event({'type': 'phase', 'phase': 'installing'})
             _put_event({'type': 'log', 'content': '📦 Installing dependencies from requirements.txt...'})
-            
+
             try:
                 # Run pip install with streaming output
                 exec_result = container.exec_run(
@@ -2672,7 +2672,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     stream=True,
                     demux=True
                 )
-                
+
                 for stdout_chunk, stderr_chunk in exec_result.output:
                     if stdout_chunk:
                         lines = stdout_chunk.decode('utf-8', 'replace').rstrip().split('\n')
@@ -2684,7 +2684,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                         for line in lines:
                             if line.strip():
                                 _put_event({'type': 'install_log', 'content': line})
-                
+
                 _put_event({'type': 'log', 'content': '✅ Dependencies installed successfully.'})
             except Exception as pip_err:
                 logger.error(f"Pip install error for {process_id}: {pip_err}")
@@ -2694,10 +2694,10 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         # Phase 2: Start the Flask application
         _put_event({'type': 'phase', 'phase': 'starting'})
         _put_event({'type': 'log', 'content': '🚀 Starting Flask application...'})
-        
+
         # Start the Flask app in the background using exec, redirecting output to app.log
         container.exec_run(["sh", "-c", "python app.py > app.log 2>&1"], detach=True)
-        
+
         # Wait for the port to become available
         public_url_found = False
         host_port = None
@@ -2715,7 +2715,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     break
             except (IndexError, TypeError, KeyError, AttributeError):
                 continue
-        
+
         if host_port:
             # Set the port in active_apps and Redis as soon as we find it
             with active_apps_lock:
@@ -2729,7 +2729,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 pass
 
             _put_event({'type': 'log', 'content': f'Container is running on port {host_port}. Verifying server readiness...'})
-            
+
             is_ready = False
             for _ in range(30):  # Increased retries for dependency-heavy apps
                 time.sleep(1)
@@ -2753,7 +2753,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     logger.exception("Health check exec failed during startup check process_id=%s container_id=%s", process_id, container.short_id)
                     logger.warning(f"Health check exec error for {container.short_id}: {exec_err}")
                     break
-            
+
             if is_ready:
                 with active_apps_lock:
                     if process_id in active_apps:
@@ -2773,7 +2773,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             else:
                  error_prefix = f"Server responded with ERROR {status_code}" if status_code >= 500 else "Server verification failed"
                  _put_event({'type': 'error', 'content': f'{error_prefix}. The app inside the container did not start correctly.'})
-                 
+
                  # Retrieve app.log to show why it failed
                  try:
                      log_res = container.exec_run("cat app.log")
@@ -2829,10 +2829,10 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
 
         if current_status != 'failed':
             update_history(status='stopped', final_logs="\n".join(logs_buffer))
-            
+
         duration = time.time() - t_start
         logger.info("Deployment finished process_id=%s app_type=%s status=%s duration_sec=%.2f", process_id, app_type, current_status, duration)
-        
+
         if container:
             try:
                 try:
@@ -2934,7 +2934,7 @@ def get_history_route():
     try:
         chat_id = request.args.get('chat_id')
         db = get_db()
-        
+
         if chat_id:
             try:
                 chat_id_int = int(chat_id)
@@ -2950,19 +2950,19 @@ def get_history_route():
                 if not cursor.fetchone():
                     session.pop('current_chat_id', None)
                     chat_id = None
-            
+
             if not chat_id:
                 chat_id = get_current_chat_id(session['user_id'])
                 session['current_chat_id'] = chat_id
                 session.modified = True
-                
+
         if not chat_id:
             return jsonify({'status': 'Failed: No active chat ID found', 'history': []}), 400
 
         history = get_conversation_history(chat_id, for_ui=True)
         # Filter out hidden compressed state docs — they're for LLM context only, not the UI
         history = [msg for msg in history if not str(msg.get('message_content', '')).startswith('[COMPRESSED MEMORY STATE]')]
-        
+
         return jsonify({'history': history})
     except Exception as e:
         logger.error(f"Error in get_history_route: {e}", exc_info=True)
@@ -2988,7 +2988,7 @@ def update_message_route():
         message_info = _fetchone_as_dict(cursor)
         if not message_info:
             return jsonify({'status': 'Failed: Message not found'}), 404
-        
+
         chat_id = message_info['chat_id']
         cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, session['user_id']))
         chat_ownership = cursor.fetchone()
@@ -3009,28 +3009,28 @@ def update_message_route():
 def api_logs_preferences():
     user_id = str(session['user_id'])
     db = get_db()
-    
+
     if request.method == 'GET':
         cursor = db.execute('SELECT id, log_entry FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
         logs = [row['log_entry'] for row in cursor.fetchall()]
         return jsonify({'logs': logs})
-            
+
     elif request.method == 'POST':
         data = request.get_json()
         if not data or 'logs' not in data:
             return jsonify({'error': 'Invalid data'}), 400
-        
+
         db.execute('DELETE FROM user_logs_prefs WHERE user_id = ?', (user_id,))
         if data['logs']:
             db.executemany('INSERT INTO user_logs_prefs (user_id, log_entry) VALUES (?, ?)', [(user_id, log) for log in data['logs']])
         db.commit()
         return jsonify({'success': True})
-        
+
     elif request.method == 'DELETE':
         index = request.args.get('index', type=int)
         if index is None:
             return jsonify({'error': 'Invalid request'}), 400
-        
+
         cursor = db.execute('SELECT id FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
         rows = cursor.fetchall()
         if 0 <= index < len(rows):
@@ -3062,7 +3062,7 @@ def generative_ui_finish():
     result_data = data.get('data')
     if not interaction_id:
         return jsonify({'error': 'Missing interaction_id'}), 400
-        
+
     try:
         import redis
         r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
@@ -3198,7 +3198,7 @@ def refine_stream():
         return Response(stream_with_context(error_stream()), mimetype='text/event-stream', status=404)
 
     query_data = json.loads(query_data_str)
-    
+
     # Ownership Check
     if str(query_data.get('user_id')) != str(session.get('user_id')):
         def error_stream(): yield f"data: {json.dumps({'status': 'Unauthorized: Query ownership mismatch.', 'error': True})}\n\n"
@@ -3219,7 +3219,7 @@ def refine_stream():
 
     if not is_running:
         redis_client.setex(f"stream_started:{query_id}", 3600 * 24, "1")
-        
+
         cancel_event = threading.Event()
         if chat_id:
             old_event = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
@@ -3260,7 +3260,7 @@ def refine_stream():
                 if check_and_log_stop(query_id, "history retrieval"): return
                 conversation_history = get_conversation_history(chat_id)
                 conv_hist_list, last_msg_time = build_annotated_history(conversation_history, user_message_id)
-            
+
                 # Dynamically add tool execution history to context
                 tool_hist_context = get_tool_history(chat_id)
                 if tool_hist_context:
@@ -3270,10 +3270,10 @@ def refine_stream():
                 # Phase 1: Three-Bucket Ratio Calculation
                 new_msg_size = len(user_query_from_frontend)
                 history_msg_size = sum(len(str(msg.get('message_content', ''))) for msg in conversation_history if str(msg.get('id')) != str(user_message_id))
-                
+
                 # Calculate tool size from the raw tool history context string
                 tool_size = len(tool_hist_context) if tool_hist_context else 0
-                
+
                 total_size = new_msg_size + history_msg_size + tool_size
                 if total_size > 0:
                     new_msg_pct = int((new_msg_size / total_size) * 100)
@@ -3293,7 +3293,7 @@ def refine_stream():
                         # The new message itself is too large
                         yield 'data: ' + json.dumps({"error": "Your message is too large for the remaining context window. Please shorten it or start a new chat."}) + '\n\n'
                         return
-                    
+
                     try:
                         db_safety = get_db()
                         if tool_pct >= msg_pct:
@@ -3317,14 +3317,14 @@ def refine_stream():
                     except Exception as e:
                         logger.error(f"Safety drop failed for chat {chat_id}: {e}")
                         break
-                    
+
                     # Rebuild context after safety drop
                     conversation_history = get_conversation_history(chat_id)
                     conv_hist_list, last_msg_time = build_annotated_history(conversation_history, user_message_id)
                     tool_hist_context = get_tool_history(chat_id)
                     if tool_hist_context:
                         conv_hist_list.append(tool_hist_context)
-                    
+
                     current_chat_tokens = count_chat_tokens(chat_id)
 
                 if safety_rounds >= 2 and current_chat_tokens > 0.95 * MODEL_CONTEXT_LIMIT:
@@ -3342,7 +3342,7 @@ def refine_stream():
                         ).fetchone()[0]
                     except:
                         recent_compress = 0
-                    
+
                     if recent_compress == 0:
                         total_pct = int((current_chat_tokens / MODEL_CONTEXT_LIMIT) * 100)
                         compression_warning = (
@@ -3364,7 +3364,7 @@ def refine_stream():
                     if check_and_log_stop(query_id, f"LLM call {current_model}"): return
                     display_name = MODEL_NAMES.get(current_model, current_model)
                     current_api_key = PRIMARY_API_KEY
-                
+
                     if not current_api_key:
                         yield f"data: {json.dumps({'status': 'Error: API Key Configuration Missing.', 'error': True})}\n\n"
                         return
@@ -3372,7 +3372,7 @@ def refine_stream():
                     if current_model != models_to_try[0]:
                         yield f"data: {json.dumps({'status': f'Model failed. Falling back to {display_name}...', 'phase': 'refining'})}\n\n"
                         time.sleep(1)
-                
+
                     # If we have partial work from a previous failed model, inject it as continuation context
                     effective_conv_hist = conv_hist_list.copy()
                     if partial_work_done:
@@ -3380,14 +3380,14 @@ def refine_stream():
                         # Define model tiers clearly for fallback guidance
                         full_access = ["gemini-3-flash-preview", "gemini-3.5-flash", "gemma-4-31b-it"]
                         lab_only = [] # Lunarity now has full access
-                    
+
                         if current_model in lab_only:
                             capability_note = " NOTE: You have access to 'lab_execute' but NOT 'repo_control'. Complete the task using the Lab or Web Search."
                         elif current_model not in full_access:
                             capability_note = " NOTE: You are a standard model and do not have access to 'lab_execute' or 'repo_control'. You MUST use your available tools (Web Search, File Management, etc.) to complete the task."
-                    
+
                         effective_conv_hist.append(f"Stellar (Partial Progress from failed model): {partial_work_done}\n\n[SYSTEM INSTRUCTION]: The previous model failed mid-thought. Continue the task immediately from where it left off using the partial output provided above. Do not repeat the work already done.{capability_note}")
-                
+
 
 
                     # Calculate time elapsed since last message (in UTC)
@@ -3403,7 +3403,7 @@ def refine_stream():
                             logger.error(f"Error calculating time elapsed: {e}")
 
                     effective_user_query = f"{time_elapsed_str}{user_query_from_frontend}"
-                    text_prompt = get_refinement_prompt(effective_user_query, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id, model_id=current_model)                
+                    text_prompt = get_refinement_prompt(effective_user_query, effective_conv_hist, username=username, disabled_tools=disabled_tools, user_id=user_id, model_id=current_model)
 
                     # Create a copy of multimodal_prompt and add the text_prompt
                     final_prompt = multimodal_prompt.copy()
@@ -3421,7 +3421,7 @@ def refine_stream():
                         gemini_files_data=gemini_files_data,
                         cancel_event=cancel_event
                     )
-                
+
                     model_failed = False
                     current_attempt_result = ""
                     for item in generator_output:
@@ -3452,19 +3452,19 @@ def refine_stream():
                             else:
                                 current_attempt_result += temp_result
                                 refined_query_result += temp_result
-                
+
                     if not model_failed and refined_query_result:
                         break
                     else:
                         # If whole loop failed without even partial result, we keep refined_query_result as is for next iteration
                         pass
- 
+
                 # FINAL FAIL-SAFE: If everything failed, have Lunarity generate a diagnostic report
                 if not refined_query_result and last_error_details:
                     yield f"data: {json.dumps({'status': 'All models busy or exhausted. Lunarity is generating diagnostic report...', 'phase': 'diagnostic'})}\n\n"
                     from prompts import get_error_explanation_prompt
                     diag_prompt = get_error_explanation_prompt(user_query_from_frontend, last_error_details)
-                
+
                     generator_output = gemini_generate(
                         prompt=diag_prompt,
                         model_id="gemma-4-31b-it",
@@ -3480,7 +3480,7 @@ def refine_stream():
                             return
                         if 'result' in item:
                             refined_query_result += item['result']
- 
+
                 if refined_query_result:
                     if cancel_event and cancel_event.is_set():
                         logger.info(f"generator_task for chat {chat_id} aborted before database insert. Deleting partial progress.")
@@ -3503,7 +3503,7 @@ def refine_stream():
                              'refined_query': refined_query_result
                          }
                          yield f"data: {json.dumps(final_data)}\n\n"
-                         
+
                          # Dispatch background notification when task is complete!
                          try:
                              from flask import g
@@ -3516,7 +3516,7 @@ def refine_stream():
                                  if row:
                                      p_user_id = row['user_id']
                                  db_temp.close()
-                                 
+
                              if p_user_id:
                                  # Limit notification body preview
                                  preview_body = refined_query_result or "Task execution completed successfully."
@@ -3571,7 +3571,7 @@ def stop_generation():
         if cancel_event:
             logger.info(f"Stop button clicked: Signalling thread termination for chat_id: {chat_id}")
             cancel_event.set()
-        
+
     logging.info(f"Stop flag set in Redis for query_id: {query_id}")
     return jsonify({'success': True, 'message': 'Stop signal received.'})
 
@@ -3638,10 +3638,10 @@ def delete_message():
         message_id = int(data.get('message_id'))
     except (ValueError, TypeError):
         return jsonify({'error': 'Invalid message_id.'}), 400
-    
+
     user_id = session['user_id']
     db = get_db()
-    
+
     try:
         logger.info(f"Attempting to delete message {message_id} for user {user_id}")
         # Verify ownership by checking the chat the message belongs to
@@ -3650,7 +3650,7 @@ def delete_message():
             JOIN chats c ON m.chat_id = c.id
             WHERE m.id = ? AND c.user_id = ?
         ''', (message_id, user_id))
-        
+
         row = cursor.fetchone()
         if not row:
             logger.warning(f"Deletion failed: Message {message_id} not found or unauthorized for user {user_id}")
@@ -3676,10 +3676,10 @@ def delete_messages_after():
 
     if not message_id or not chat_id:
         return jsonify({'error': 'Missing message_id or chat_id.'}), 400
-    
+
     user_id = session['user_id']
     db = get_db()
-    
+
     try:
         cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))
         if not cursor.fetchone():
@@ -3689,7 +3689,7 @@ def delete_messages_after():
         target_message = _fetchone_as_dict(cursor)
         if not target_message:
             return jsonify({'error': 'Target message not found in the specified chat.'}), 404
-            
+
         target_timestamp = target_message['timestamp']
 
         cursor = db.execute(
@@ -3709,7 +3709,7 @@ def delete_messages_after():
     except Exception as e:
         logger.error(f"Error in delete_messages_after: {e}", exc_info=True)
         return jsonify({'error': 'An internal error occurred.'}), 500
-    
+
 @app.route('/clear_history', methods=['POST'])
 @require_approval
 def clear_history():
@@ -3729,7 +3729,7 @@ def clear_history():
         cleared_pending = session.pop('pending_queries', None)
         if cleared_pending is not None:
             session.modified = True
-            
+
         active_query_str = redis_client.get(f"chat_active_query:{chat_id}")
         if active_query_str:
             try:
@@ -3739,14 +3739,14 @@ def clear_history():
                     redis_client.setex(f"stop_flag:{q_id}", 3600, "1")
             except: pass
             redis_client.delete(f"chat_active_query:{chat_id}")
-        
+
         cursor = db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
         deleted_count = cursor.rowcount
         db.execute('DELETE FROM tool_calls WHERE chat_id = ?', (chat_id,))
         db.commit()
-        
 
-        
+
+
         return jsonify({'status': 'Success', 'message': 'Conversation history cleared'})
     except sqlite3.Error as db_e:
         logger.error(f"Database error clearing history: {db_e}", exc_info=True)
@@ -3759,11 +3759,11 @@ def clear_history():
 @require_approval
 def image_proxy():
     from urllib.parse import urlparse
-    
+
     image_url = request.args.get('url')
     if not image_url or not image_url.startswith(('http://', 'https://')):
         return "Invalid URL", 400
-        
+
     try:
         # 1. SSRF Protection: Prevent access to internal/private networks
         parsed = urlparse(image_url)
@@ -3780,13 +3780,13 @@ def image_proxy():
                 resp.close()
                 return "Redirects are not allowed for security reasons", 400
             resp.raise_for_status()
-            
+
             # 3. MIME Type Validation: Ensure it's actually an image, not a malicious script/HTML
             content_type = resp.headers.get('Content-Type', '')
             if not content_type.startswith('image/'):
                 resp.close()
                 return "Target is not an image", 400
-                
+
             # 4. DoS Protection: Prevent downloading massive files (Max 50MB)
             content_length = resp.headers.get('Content-Length')
             if content_length and int(content_length) > 50 * 1024 * 1024:
@@ -3796,7 +3796,7 @@ def image_proxy():
             excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
             headers = [(name, value) for (name, value) in resp.raw.headers.items()
                        if name.lower() not in excluded_headers]
-            
+
             def generate():
                 try:
                     bytes_read = 0
@@ -3810,9 +3810,9 @@ def image_proxy():
                 finally:
                     resp.close()
 
-            return Response(stream_with_context(generate()), 
-                            status=resp.status_code, 
-                            content_type=content_type, 
+            return Response(stream_with_context(generate()),
+                            status=resp.status_code,
+                            content_type=content_type,
                             headers=headers)
         except requests.exceptions.RequestException as e:
             if resp:
@@ -3833,13 +3833,17 @@ def image_proxy():
 def download_file(filename):
     if '..' in filename or filename.startswith('/'):
         return "Invalid path", 400
-    directory = os.path.abspath(os.path.join(os.path.dirname(__file__), "outputs"))
+    # Resolve real path of output directory to prevent path traversal via symlinks
+    directory = os.path.realpath(os.path.join(os.path.dirname(__file__), "outputs"))
     file_path = os.path.join(directory, filename)
-    if not os.path.abspath(file_path).startswith(directory):
-         return "Access denied", 403
     if not os.path.exists(file_path) or not os.path.isfile(file_path):
         return jsonify({'status': 'Failed: File not found'}), 404
-    
+
+    # Ensure the resolved file path actually lies within the outputs directory
+    real_file_path = os.path.realpath(file_path)
+    if os.path.commonpath([directory, real_file_path]) != directory:
+         return "Access denied", 403
+
     # Use dirname and basename for send_from_directory to correctly serve sub-paths
     subdir = os.path.dirname(filename)
     basename = os.path.basename(filename)
@@ -3850,13 +3854,17 @@ def download_file(filename):
 def view_file(filename):
     if '..' in filename or filename.startswith('/'):
         return "Invalid path", 400
-    directory = os.path.abspath(os.path.join(os.path.dirname(__file__), "outputs"))
+    # Resolve real path of output directory to prevent path traversal via symlinks
+    directory = os.path.realpath(os.path.join(os.path.dirname(__file__), "outputs"))
     file_path = os.path.join(directory, filename)
-    if not os.path.abspath(file_path).startswith(directory):
-         return "Access denied", 403
     if not os.path.exists(file_path) or not os.path.isfile(file_path):
          return "File not found", 404
-         
+
+    # Ensure the resolved file path actually lies within the outputs directory
+    real_file_path = os.path.realpath(file_path)
+    if os.path.commonpath([directory, real_file_path]) != directory:
+         return "Access denied", 403
+
     safe_filename = os.path.basename(filename)
     mimetype = 'text/plain'
     if safe_filename.lower().endswith(('.html', '.htm')): mimetype = 'text/html'
@@ -3875,7 +3883,7 @@ def view_file(filename):
     elif safe_filename.lower().endswith(('.zip', '.tar', '.gz', '.7z', '.rar')): mimetype = 'application/octet-stream'
     elif safe_filename.lower().endswith(('.json', '.jsonl')): mimetype = 'application/json'
     elif safe_filename.lower().endswith(('.csv', '.tsv')): mimetype = 'text/csv'
-    
+
     subdir = os.path.dirname(filename)
     basename = os.path.basename(filename)
     return send_from_directory(os.path.join(directory, subdir), basename, mimetype=mimetype)
@@ -3907,7 +3915,7 @@ def serve_turndown():
 def send_approval_email(recipient_email, display_name):
     sender = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASS")
-    
+
     msg = EmailMessage()
     msg['Subject'] = "Stellar: Access Granted"
     msg['From'] = f"Stellar AI <{sender}>"
@@ -3924,13 +3932,13 @@ def send_approval_email(recipient_email, display_name):
                             <td>
                                 <h1 style="margin: 0; padding: 0; font-size: 2.5rem; letter-spacing: 4px; color: #4285F4;">STELLAR</h1>
                                 <p style="color: #00c292; font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; letter-spacing: 1px; margin-top: 10px; margin-bottom: 30px;">ACCESS GRANTED</p>
-                                
+
                                 <h2 style="font-size: 1.5rem; font-weight: normal; margin-bottom: 20px; color: #111111;">Welcome, {display_name}!</h2>
-                                
+
                                 <p style="color: #555555; font-size: 1rem; line-height: 1.6; margin-bottom: 40px;">
                                     Your account has been successfully approved and provisioned for the Stellar Autonomous Environment. You can now log in and begin orchestrating clusters and generating analytics.
                                 </p>
-                                
+
                                 <a href="https://stellarai.live" style="display: inline-block; background-color: #4285F4; color: white; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 1rem; letter-spacing: 0.5px;">ENTER STELLAR</a>
                             </td>
                         </tr>
@@ -3941,7 +3949,7 @@ def send_approval_email(recipient_email, display_name):
     </body>
     </html>
     """
-    
+
     msg.set_content(f"Welcome to Stellar, {display_name}! Your account has been approved. Visit https://stellarai.live to access the platform.")
     msg.add_alternative(html_content, subtype='html')
 
@@ -3956,7 +3964,7 @@ def send_approval_email(recipient_email, display_name):
 def send_revocation_email(recipient_email, display_name):
     sender = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASS")
-    
+
     msg = EmailMessage()
     msg['Subject'] = "Stellar: Access Status Update"
     msg['From'] = f"Stellar AI <{sender}>"
@@ -3973,13 +3981,13 @@ def send_revocation_email(recipient_email, display_name):
                             <td>
                                 <h1 style="margin: 0; padding: 0; font-size: 2.5rem; letter-spacing: 4px; color: #111111;">STELLAR</h1>
                                 <p style="color: #FF2A4D; font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; letter-spacing: 1px; margin-top: 10px; margin-bottom: 30px;">ACCESS REVOKED</p>
-                                
+
                                 <h2 style="font-size: 1.5rem; font-weight: normal; margin-bottom: 20px; color: #111111;">Hello, {display_name}</h2>
-                                
+
                                 <p style="color: #555555; font-size: 1rem; line-height: 1.6; margin-bottom: 40px;">
                                     Your access to the Stellar Autonomous Environment has been suspended. You have been placed back on our waitlist. We will notify you if your access is restored in the future.
                                 </p>
-                                
+
                                 <div style="display: inline-block; border: 1px solid #e0e0e0; color: #666666; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 1rem; letter-spacing: 0.5px;">STATUS: ON WAITLIST</div>
                             </td>
                         </tr>
@@ -3990,7 +3998,7 @@ def send_revocation_email(recipient_email, display_name):
     </body>
     </html>
     """
-    
+
     msg.set_content(f"Hello {display_name}, your access to Stellar has been revoked and you have been placed back on the waitlist.")
     msg.add_alternative(html_content, subtype='html')
 
@@ -4008,32 +4016,32 @@ def get_admin_keys():
         return jsonify({'error': 'Unauthorized'}), 403
 
     keys_to_report = []
-    
+
     if PRIMARY_API_KEY:
         keys_to_report.append({
             'label': 'Primary API Key',
             'value': PRIMARY_API_KEY
         })
-        
+
     for idx, key in enumerate(BACKUP_API_KEYS, start=1):
         if key:
             keys_to_report.append({
                 'label': f'Backup API Key {idx}',
                 'value': key
             })
-            
+
     response_data = []
     for item in keys_to_report:
         key_val = item['value']
         masked = key_val[:8] + "..." + key_val[-4:] if len(key_val) > 12 else key_val
         blocks = KEY_MANAGER.get_key_blocks(key_val, list(MODEL_NAMES.keys()))
-        
+
         response_data.append({
             'label': item['label'],
             'masked': masked,
             'blocks': blocks
         })
-        
+
     return jsonify(response_data), 200
 
 @app.route('/api/admin/waitlist', methods=['GET'])
@@ -4099,30 +4107,30 @@ def toggle_user_access():
 def approve_user():
     if session.get('role') != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
-    
+
     data = request.get_json()
     user_id = data.get('user_id')
     user_email = data.get('email') # Assuming username is email or email is provided
-    
+
     if not user_id:
         return jsonify({'error': 'User ID required'}), 400
-        
+
     db = get_db()
     try:
         cursor = db.execute("SELECT username FROM users WHERE id = ?", (user_id,))
         user = cursor.fetchone()
         if not user:
             return jsonify({'error': 'User not found'}), 404
-            
+
         db.execute("UPDATE users SET is_approved = 1 WHERE id = ?", (user_id,))
         db.commit()
-        
+
         # If user_email is not provided, try to use username if it looks like an email
         recipient = user_email or (user['username'] if '@' in user['username'] else None)
-        
+
         if recipient:
             threading.Thread(target=send_approval_email, args=(recipient, user['username']), daemon=True).start()
-            
+
         return jsonify({'success': True, 'message': f"User {user['username']} approved."}), 200
     except sqlite3.Error as e:
         return jsonify({'error': str(e)}), 500
@@ -4131,25 +4139,25 @@ def approve_user():
 def admin_impersonate():
     if session.get('role') != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
-    
+
     data = request.get_json()
     user_id = data.get('user_id')
     if not user_id:
          return jsonify({'error': 'User ID required'}), 400
-         
+
     db = get_db()
     cursor = db.execute('SELECT id, username, display_name, role, is_approved FROM users WHERE id = ?', (user_id,))
     user = _fetchone_as_dict(cursor)
     if not user:
          return jsonify({'error': 'User not found'}), 404
-         
+
     session['user_id'] = user['id']
     session['username'] = user['username']
     session['display_name'] = user['display_name']
     session['role'] = user['role']
     session['is_approved'] = bool(user['is_approved'])
     session.pop('current_chat_id', None)
-    
+
     return jsonify({'success': True, 'message': f"Impersonating {user['username']}"}), 200
 
 @app.route('/logout', methods=['POST'])
@@ -4239,13 +4247,13 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
         width: 100vw; height: 100vh;
         z-index: 0;
         pointer-events: none;
-        
+
         --mouse-x: 50vw;
         --mouse-y: 50vh;
-        
+
         -webkit-mask-image: radial-gradient(
-            280px circle at var(--mouse-x) var(--mouse-y), 
-            rgba(0,0,0,1) 0%, 
+            280px circle at var(--mouse-x) var(--mouse-y),
+            rgba(0,0,0,1) 0%,
             rgba(0,0,0,0.8) 15%,
             rgba(0,0,0,0.5) 35%,
             rgba(0,0,0,0.3) 50%,
@@ -4255,8 +4263,8 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
             rgba(0,0,0,0.1) 100%
         );
         mask-image: radial-gradient(
-            280px circle at var(--mouse-x) var(--mouse-y), 
-            rgba(0,0,0,1) 0%, 
+            280px circle at var(--mouse-x) var(--mouse-y),
+            rgba(0,0,0,1) 0%,
             rgba(0,0,0,0.8) 15%,
             rgba(0,0,0,0.5) 35%,
             rgba(0,0,0,0.3) 50%,
@@ -4272,9 +4280,9 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
         position: absolute;
         inset: 0;
         background: radial-gradient(
-            ellipse 450px 700px at center, 
-            var(--bg-base) 15%, 
-            rgba(1, 1, 3, 0.9) 40%, 
+            ellipse 450px 700px at center,
+            var(--bg-base) 15%,
+            rgba(1, 1, 3, 0.9) 40%,
             transparent 75%
         );
         pointer-events: none;
@@ -4283,9 +4291,9 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
     /* --- Scrolling Code Canvas --- */
     .code-canvas {
         font-family: 'JetBrains Mono', monospace;
-        font-size: 12px; 
-        line-height: 1.3; 
-        color: rgba(66, 133, 244, 0.55); 
+        font-size: 12px;
+        line-height: 1.3;
+        color: rgba(66, 133, 244, 0.55);
         white-space: pre;
         width: 110vw;
         margin-left: -5vw;
@@ -4317,10 +4325,10 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
         border: 1px solid var(--border);
         border-radius: 24px;
         padding: 50px 40px;
-        box-shadow: 
-            0 0 50px 2px rgba(0, 0, 0, 0.8),      
-            0 40px 80px -20px rgba(0, 0, 0, 1),     
-            inset 0 1px 0 rgba(255, 255, 255, 0.1); 
+        box-shadow:
+            0 0 50px 2px rgba(0, 0, 0, 0.8),
+            0 40px 80px -20px rgba(0, 0, 0, 1),
+            inset 0 1px 0 rgba(255, 255, 255, 0.1);
         position: relative;
         overflow: hidden;
         display: flex;
@@ -4418,7 +4426,7 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
     }
     .btn:hover:not(:disabled) {
         background: rgba(255, 255, 255, 0.08);
-        border-color: rgba(66, 133, 244, 0.5); 
+        border-color: rgba(66, 133, 244, 0.5);
         transform: translateY(-2px);
         box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.6);
     }
@@ -4467,7 +4475,7 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
         margin-top: 10px;
     }
     .timer span { color: #FFD200; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
-    
+
     .copy-btn {
         margin-top: 12px;
         background: rgba(66, 133, 244, 0.1);
@@ -4481,7 +4489,7 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
         transition: all 0.2s;
     }
     .copy-btn:hover { background: rgba(66, 133, 244, 0.18); }
-    
+
     .instructions {
         margin-top: 14px;
         color: var(--text-muted);
@@ -4577,7 +4585,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     let baseDump = "";
-    for (let i = 0; i < 150; i++) { 
+    for (let i = 0; i < 150; i++) {
         let line = "";
         while (line.length < 350) { line += snippets[Math.floor(Math.random() * snippets.length)] + "  "; }
         baseDump += line + "\\n";
@@ -4590,7 +4598,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('mousemove', (e) => {
         maskWrapper.style.setProperty('--mouse-x', `${e.clientX}px`);
         maskWrapper.style.setProperty('--mouse-y', `${e.clientY}px`);
-        
+
         mouseX = (e.clientX - window.innerWidth/2) / 75;
         mouseY = (e.clientY - window.innerHeight/2) / 75;
     });
@@ -4598,7 +4606,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function animate3D() {
         if (Math.abs(mouseX - targetX) > 0.001) targetX += (mouseX - targetX) * 0.04;
         if (Math.abs(mouseY - targetY) > 0.001) targetY += (mouseY - targetY) * 0.04;
-        
+
         wrapper.style.transform = `rotateY(${targetX}deg) rotateX(${-targetY}deg)`;
         requestAnimationFrame(animate3D);
     }
@@ -4675,7 +4683,7 @@ function copyCode() {
 def ssh_auth_page():
     if 'user_id' not in session:
         return redirect('/?redirect=/auth/ssh')
-    
+
     # Check if approved
     if not session.get('is_approved'):
         db = get_db()
@@ -4691,7 +4699,7 @@ def ssh_auth_page():
             response = make_response(content)
             response.headers['Content-Type'] = 'text/html'
             return response
-            
+
     return _SSH_AUTH_PAGE_HTML, 200, {'Content-Type': 'text/html'}
 
 @app.route('/api/ssh/generate-code', methods=['POST'])
@@ -4811,11 +4819,11 @@ def check_auth_status():
 @require_approval
 def user_global_events():
     user_id = session['user_id']
-    
+
     def event_stream():
         pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
         pubsub.subscribe(f"user_events:{user_id}")
-        
+
         try:
             while True:
                 message = pubsub.get_message(timeout=15)
@@ -4846,11 +4854,11 @@ def get_user_chats():
     db = get_db()
     try:
         cursor = db.execute('''
-            SELECT c.id, c.name, COALESCE(MAX(m.timestamp), c.created_at) as last_active 
-            FROM chats c 
-            LEFT JOIN messages m ON c.id = m.chat_id 
+            SELECT c.id, c.name, COALESCE(MAX(m.timestamp), c.created_at) as last_active
+            FROM chats c
+            LEFT JOIN messages m ON c.id = m.chat_id
             WHERE c.user_id = ? AND c.is_temp = 0
-            GROUP BY c.id 
+            GROUP BY c.id
             ORDER BY last_active DESC
         ''', (user_id,))
         chats = _fetch_as_dict(cursor)
@@ -4871,12 +4879,12 @@ def create_new_chat():
         cursor = db.execute('INSERT INTO chats (user_id, name) VALUES (?, ?)', (user_id, 'New Chat'))
         db.commit()
         new_chat_id = cursor.lastrowid
-        
+
 
 
         session['current_chat_id'] = new_chat_id
         session.modified = True
-        
+
         return jsonify({'success': True, 'chat_id': new_chat_id, 'name': 'New Chat'}), 201
     except sqlite3.Error as e:
         logger.error(f"Database error in create_new_chat: {e}", exc_info=True)
@@ -4894,7 +4902,7 @@ def create_temp_chat():
         # Delete any previous temp chats for this user to keep the DB clean!
         # Cascading deletes will automatically wipe out associated messages and tool calls.
         db.execute('DELETE FROM chats WHERE user_id = ? AND is_temp = 1', (user_id,))
-        
+
         # Create the new temporary chat
         cursor = db.execute('INSERT INTO chats (user_id, name, is_temp) VALUES (?, ?, 1)', (user_id, 'Incognito Session'))
         db.commit()
@@ -4902,7 +4910,7 @@ def create_temp_chat():
 
         session['current_chat_id'] = new_chat_id
         session.modified = True
-        
+
         return jsonify({'success': True, 'chat_id': new_chat_id}), 201
     except Exception as e:
         logger.error(f"Error in create_temp_chat: {e}", exc_info=True)
@@ -4918,14 +4926,14 @@ def set_active_chat():
 
     user_id = session['user_id']
     db = get_db()
-    
+
     cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))
     if not cursor.fetchone():
         return jsonify({'error': 'Chat not found or unauthorized.'}), 403
 
     session['current_chat_id'] = chat_id
     session.modified = True
-    
+
     return jsonify({'success': True, 'message': f'Active chat set to {chat_id}'})
 @app.route('/api/chats/<int:chat_id>/delete', methods=['DELETE'])
 @require_approval
@@ -4947,12 +4955,12 @@ def delete_chat_route(chat_id):
                     redis_client.setex(f"stop_flag:{q_id}", 3600, "1")
             except: pass
             redis_client.delete(f"chat_active_query:{chat_id}")
-        
+
         db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
         db.execute('DELETE FROM tool_calls WHERE chat_id = ?', (chat_id,))
         db.execute('DELETE FROM chats WHERE id = ?', (chat_id,))
         db.commit()
-        
+
         if session.get('current_chat_id') == chat_id:
             session.pop('current_chat_id', None)
             session.modified = True
@@ -4974,20 +4982,20 @@ def update_chat_name_route(chat_id):
     chat_ownership = cursor.fetchone()
     if not chat_ownership:
         return jsonify({'error': 'Unauthorized to update this chat name.'}), 403
-    
+
     data = request.get_json()
     first_message_content = data.get('first_message_content')
-    
+
     if not first_message_content:
         return jsonify({'success': False, 'message': 'Missing first message content for naming.'}), 400
-    
+
     try:
         generate_chat_name(chat_id, first_message_content)
-        
+
         cursor = db.execute('SELECT name FROM chats WHERE id = ?', (chat_id,))
         updated_chat_row = _fetchone_as_dict(cursor)
         updated_name = updated_chat_row['name'] if updated_chat_row else 'New Chat'
-        
+
         return jsonify({'success': True, 'name': updated_name, 'message': 'Chat name updated successfully.'}), 200
     except Exception as e:
         logger.error(f"Error in update_chat_name_route for chat {chat_id}: {e}", exc_info=True)
@@ -5006,7 +5014,7 @@ def get_chat_tokens_route(chat_id):
     token_count = row['token_count']
     if token_count == 0:
          token_count = count_chat_tokens(chat_id)
-         
+
     return jsonify({'token_count': token_count}), 200
 
 @app.route('/api/utils/count_tokens', methods=['POST'])
@@ -5021,12 +5029,12 @@ def api_count_tokens():
         from google.genai import types
         raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
         keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
-        
+
         # Filter out globally rate-limited or quota-exhausted keys
         active_keys = [k for k in keys_to_try if not KEY_MANAGER.is_key_blocked(k, "gemini-3.1-flash-lite")[0]]
         if not active_keys:
             active_keys = keys_to_try
-            
+
         t_count = None
         for current_key in active_keys:
             try:
@@ -5050,10 +5058,10 @@ def api_count_tokens():
                     KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                     logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error during api_count_tokens.")
                 logger.warning(f"Failed to count tokens in api_count_tokens: {token_e}")
-                
+
         if t_count is None:
             return jsonify({'error': 'All API keys failed or rate-limited'}), 500
-            
+
         return jsonify({'token_count': t_count}), 200
     except Exception as e:
         logger.error(f"Error in api_count_tokens: {e}")
@@ -5110,11 +5118,11 @@ def change_display_name_route():
 def get_waitlist_info():
     if 'user_id' not in session:
         return jsonify({"success": False, "message": "Not logged in"}), 401
-    
+
     db = get_db()
     cursor = db.execute('SELECT username, display_name, waitlist_form_submitted FROM users WHERE id = ?', (session['user_id'],))
     user_data = cursor.fetchone()
-    
+
     if user_data:
         return jsonify({
             "success": True,
@@ -5128,21 +5136,21 @@ def get_waitlist_info():
 def submit_waitlist_form():
     if 'user_id' not in session:
         return jsonify({"success": False, "message": "Not logged in"}), 401
-        
+
     data = request.get_json()
     designation = data.get('designation', '')
     source = data.get('source', '')
     use_case = data.get('use_case', '')
-    
+
     db = get_db()
     try:
         db.execute('''
-            UPDATE users 
-            SET designation = ?, source = ?, use_case = ?, waitlist_form_submitted = 1 
+            UPDATE users
+            SET designation = ?, source = ?, use_case = ?, waitlist_form_submitted = 1
             WHERE id = ?
         ''', (designation, source, use_case, session['user_id']))
         db.commit()
-        
+
         # Fetch user info for Telegram message
         cursor = db.execute('SELECT username, display_name FROM users WHERE id = ?', (session['user_id'],))
         user_data = cursor.fetchone()
@@ -5150,7 +5158,7 @@ def submit_waitlist_form():
             name_str = f"{user_data['display_name']} ({user_data['username']})" if user_data['display_name'] else user_data['username']
             msg = f"📝 Waitlist Form Submitted\nUser: {name_str}\nDesignation: {designation}\nSource: {source}\nUse Case: {use_case}"
             telegram_bot.send_message(msg)
-            
+
         return jsonify({"success": True})
     except Exception as e:
         logger.error(f"Error submitting waitlist form: {e}")
@@ -5181,23 +5189,23 @@ def send_push_notification(user_id, title, body, url=None):
     import redis
     r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
     redis_key = f"user_push_subscriptions:{user_id}"
-    
+
     subscriptions_dict = r_client.hgetall(redis_key)
     if not subscriptions_dict:
         return 0
 
     from pywebpush import webpush, WebPushException
     import json
-    
+
     payload = json.dumps({
         "title": title,
         "body": body,
         "url": url or "/"
     })
-    
+
     success_count = 0
     expired_endpoints = []
-    
+
     for endpoint, creds_str in subscriptions_dict.items():
         try:
             creds = json.loads(creds_str)
@@ -5221,14 +5229,14 @@ def send_push_notification(user_id, title, body, url=None):
                 expired_endpoints.append(endpoint)
         except Exception as e:
             logger.error(f"Error sending push: {e}")
-            
+
     if expired_endpoints:
         try:
             r_client.hdel(redis_key, *expired_endpoints)
             logger.info(f"Cleaned up {len(expired_endpoints)} expired push subscriptions from Redis.")
         except Exception as e:
             logger.error(f"Error cleaning up expired push subscriptions from Redis: {e}")
-            
+
     return success_count
 
 @app.route('/api/pwa/vapid_public_key', methods=['GET'])
@@ -5241,20 +5249,20 @@ def get_vapid_public_key():
 def pwa_subscribe():
     if 'user_id' not in session:
         return jsonify({"success": False, "message": "Not logged in"}), 401
-        
+
     data = request.get_json()
     subscription = data.get('subscription')
     if not subscription or not subscription.get('endpoint'):
         return jsonify({"success": False, "message": "Invalid subscription object."}), 400
-        
+
     endpoint = subscription.get('endpoint')
     keys = subscription.get('keys', {})
     p256dh = keys.get('p256dh')
     auth = keys.get('auth')
-    
+
     if not p256dh or not auth:
         return jsonify({"success": False, "message": "Missing subscription cryptographic keys."}), 400
-        
+
     try:
         import redis
         r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
@@ -5265,15 +5273,15 @@ def pwa_subscribe():
         endpoint_hash = hashlib.md5(endpoint.encode('utf-8')).hexdigest()
         owner_key = f"pwa_endpoint_owner:{endpoint_hash}"
         old_owner = r_client.get(owner_key)
-        
+
         current_user_str = str(session['user_id'])
         if old_owner and old_owner != current_user_str:
             # Remove this endpoint from the previous user's subscriptions
             r_client.hdel(f"user_push_subscriptions:{old_owner}", endpoint)
-            
+
         # Register the new owner (30 day TTL)
         r_client.set(owner_key, current_user_str, ex=60*60*24*30)
-        
+
         # Store in Redis Hash for current user
         r_client.hset(redis_key, endpoint, val)
         return jsonify({"success": True, "message": "Subscribed to background notifications."}), 200
@@ -5285,14 +5293,14 @@ def pwa_subscribe():
 def pwa_test_push():
     if 'user_id' not in session:
         return jsonify({"success": False, "message": "Not logged in"}), 401
-        
+
     success_count = send_push_notification(
         user_id=session['user_id'],
         title="Stellar Push Test",
         body="Congratulations! Your background push notifications are fully configured and functional.",
         url="/"
     )
-    
+
     if success_count > 0:
         return jsonify({"success": True, "message": f"Sent test push to {success_count} device(s)."}), 200
     else:
@@ -5472,11 +5480,11 @@ def index():
 
     if not session.get('is_approved'):
         return serve_no_cache('templates/waitlist.html')
-    
+
     if 'initialized' not in session:
         session['initialized'] = True
         session.permanent = True
-        
+
     return serve_no_cache('templates/index.html')
 
 def parse_log_line(line):
@@ -5484,9 +5492,9 @@ def parse_log_line(line):
     match = re.match(r'^([\d\-:\s,]+) - (\w+) - \[([\w\.]+):\d+\] - (.*)$', line.strip())
     if not match:
         return None
-        
+
     timestamp_str, level, source_file, message = match.groups()
-    
+
     # Try to identify if it's sent by an agent
     agent_match = re.match(r'^\[(\w+)\]\s*(.*)$', message)
     if agent_match:
@@ -5508,7 +5516,7 @@ def parse_log_line(line):
         sender = 'Orchestrator'
         content = message
         msg_type = 'system'
-        
+
     return {
         'timestamp': timestamp_str,
         'level': level,
@@ -5523,7 +5531,7 @@ def parse_log_line(line):
 def agent_group_chat_page():
     if session.get('role') != 'admin':
         return make_response('Forbidden', 403)
-    
+
     # Serve templates/agent_group_chat.html
     with open('templates/agent_group_chat.html', 'r') as f:
         content = f.read()
@@ -5567,27 +5575,27 @@ def orchestrator_status():
 def get_agent_group_chat_history():
     if session.get('role') != 'admin':
         return jsonify({'error': 'Forbidden'}), 403
-        
+
     db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
     if not os.path.exists(db_path):
         return jsonify([])
-        
+
     messages = []
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         runs = conn.execute("""
-            SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message 
-            FROM agent_runs 
+            SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message
+            FROM agent_runs
             ORDER BY id ASC
         """).fetchall()
         conn.close()
-        
+
         for r in runs:
             agent_name = r['agent_id'].capitalize()
             start_ts = r['started_at'].replace('T', ' ').split('.')[0]
             finish_ts = (r['finished_at'] or r['started_at']).replace('T', ' ').split('.')[0]
-            
+
             # 1. Starting system message
             messages.append({
                 'timestamp': start_ts,
@@ -5595,7 +5603,7 @@ def get_agent_group_chat_history():
                 'content': f"🚀 Starting agent **{agent_name}** on branch `{r['branch_name']}`...",
                 'type': 'system'
             })
-            
+
             # 2. Final messages if not running
             if r['status'] == 'COMPLETED':
                 if r['summary_message']:
@@ -5605,7 +5613,7 @@ def get_agent_group_chat_history():
                         'content': r['summary_message'],
                         'type': 'agent'
                     })
-                
+
                 pr_text = f" (PR #{r['pr_number']})" if r['pr_number'] else ""
                 pr_link = f"\nPull Request: {r['pr_url']}" if r['pr_url'] else ""
                 messages.append({
@@ -5630,7 +5638,7 @@ def get_agent_group_chat_history():
                 })
     except Exception as e:
         logger.error(f"Error reading agent runs history: {e}")
-        
+
     return jsonify(messages)
 
 @app.route('/api/admin/agent_group_chat/stream')
@@ -5638,13 +5646,13 @@ def get_agent_group_chat_history():
 def agent_group_chat_stream():
     if session.get('role') != 'admin':
         return make_response('Forbidden', 403)
-        
+
     def log_stream():
         db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
         if not os.path.exists(db_path):
             yield "data: {}\n\n"
             return
-            
+
         yielded_states = {} # rid -> status
         try:
             conn = sqlite3.connect(db_path)
@@ -5655,25 +5663,25 @@ def agent_group_chat_stream():
             conn.close()
         except Exception as e:
             logger.error(f"Error seeding SSE stream yielded states: {e}")
-            
+
         while True:
             try:
                 conn = sqlite3.connect(db_path)
                 conn.row_factory = sqlite3.Row
                 runs = conn.execute("""
-                    SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message 
-                    FROM agent_runs 
+                    SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message
+                    FROM agent_runs
                     ORDER BY id ASC
                 """).fetchall()
                 conn.close()
-                
+
                 for r in runs:
                     rid = r['id']
                     status = r['status']
                     agent_name = r['agent_id'].capitalize()
                     start_ts = r['started_at'].replace('T', ' ').split('.')[0]
                     finish_ts = (r['finished_at'] or r['started_at']).replace('T', ' ').split('.')[0]
-                    
+
                     if rid not in yielded_states:
                         yielded_states[rid] = status
                         msg = {
@@ -5683,10 +5691,10 @@ def agent_group_chat_stream():
                             'type': 'system'
                         }
                         yield f"data: {json.dumps(msg)}\n\n"
-                        
+
                     elif yielded_states[rid] == 'RUNNING' and status != 'RUNNING':
                         yielded_states[rid] = status
-                        
+
                         if status == 'COMPLETED':
                             if r['summary_message']:
                                 msg = {
@@ -5696,7 +5704,7 @@ def agent_group_chat_stream():
                                     'type': 'agent'
                                 }
                                 yield f"data: {json.dumps(msg)}\n\n"
-                            
+
                             pr_text = f" (PR #{r['pr_number']})" if r['pr_number'] else ""
                             pr_link = f"\nPull Request: {r['pr_url']}" if r['pr_url'] else ""
                             msg = {
@@ -5724,9 +5732,9 @@ def agent_group_chat_stream():
                             yield f"data: {json.dumps(msg)}\n\n"
             except Exception as e:
                 logger.error(f"Error in database log SSE stream: {e}")
-                
+
             time.sleep(2)
-            
+
     return Response(stream_with_context(log_stream()), mimetype="text/event-stream")
 
 @app.route('/api/chats/search_messages', methods=['GET'])
@@ -5777,28 +5785,28 @@ def search_messages_route():
             if message_content and search_term_lower in message_content.lower():
                 start_index = message_content.lower().find(search_term_lower)
                 if start_index != -1:
-                    snippet_end = min(len(message_content), start_index + SNIPPET_LENGTH) 
+                    snippet_end = min(len(message_content), start_index + SNIPPET_LENGTH)
                     snippet = message_content[start_index:snippet_end]
-                    
+
                     if snippet_end < len(message_content):
                         snippet = snippet + "..."
-                    
+
                     snippet = re.sub(r'\s+', ' ', snippet).strip()
                     snippet = snippet.replace('`', '').replace('*', '')
                     snippet = snippet.replace('\n', ' ')
-                    
+
                     if message_type == 'user':
                         snippet = "You: " + snippet
                     elif message_type == 'stellar':
                         snippet = "Stellar: " + snippet
-                
+
             found_chats_info[chat_id] = {
                 'chat_name': chat_name,
                 'snippet': snippet,
                 'message_id': message_id,
                 'message_type': message_type
             }
-            
+
         return jsonify({'results': found_chats_info}), 200
     except sqlite3.Error as e:
         logger.error(f"Database error in search_messages_route: {e}", exc_info=True)
@@ -5836,7 +5844,7 @@ def run_code():
         match = re.search(r'public\s+class\s+(\w+)', code)
         if match:
             main_code_basename = match.group(1)
-    
+
     lang_config = {
         'python': {'image': 'stellar-python-sandbox:3.12', 'extension': '.py', 'command': lambda f: ['python', '-u', f]},
         'javascript': {'image': 'stellar-node-sandbox:latest', 'extension': '.js', 'command': lambda f: ['node', f]},
@@ -5856,7 +5864,7 @@ def run_code():
     main_code_filename_with_ext = main_code_basename + config['extension']
     is_server_app = language == 'python' and 'app.run(' in code
     ports_to_publish = {'5000/tcp': ('0.0.0.0', 0)} if is_server_app else None
-    
+
     run_id = str(uuid.uuid4())
     temp_dir_path = os.path.join(SANDBOX_DIR, run_id)
     try:
@@ -5881,7 +5889,7 @@ def run_code():
                 with app.app_context():
                     session['last_run_code_process_id'] = process_id
                     session.modified = True
-                
+
                 redis_key = _redis_runcode_key(process_id)
                 redis_client.hset(redis_key, mapping={ "status": "starting", "process_id": process_id })
 
@@ -5945,10 +5953,10 @@ def run_code():
 
             if is_server_app and process_id:
                 pass
-            
+
             if os.path.exists(temp_dir_path):
                 shutil.rmtree(temp_dir_path, ignore_errors=True)
-    
+
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
 @app.route('/api/user/api_keys', methods=['POST'])
@@ -5958,13 +5966,13 @@ def manage_api_keys():
     data = request.get_json()
     if not data or not isinstance(data.get('api_keys'), dict):
         return jsonify({'error': 'Invalid request. api_keys object is required.'}), 400
-    
+
     db = get_db()
     try:
         for key_name, key_value in data['api_keys'].items():
             if not key_name or not key_value:
                 continue
-            
+
             encrypted_value = cipher_suite.encrypt(key_value.encode('utf-8'))
             db.execute(
                 'INSERT OR REPLACE INTO user_api_keys (user_id, key_name, encrypted_value) VALUES (?, ?, ?)',
@@ -6048,7 +6056,7 @@ def generate_visualization():
 
     if not content:
         return jsonify({'error': 'Content is required for visualization.'}), 400
-    
+
     if not api_key:
          return jsonify({'error': 'API key not configured.'}), 500
 
@@ -6071,7 +6079,7 @@ def generate_visualization():
         # We use a non-streaming call here for simplicity as we need the full HTML
         # or we could stream it to the frontend effectively.
         # For now, let's use the gemini_generate generator but collect the result.
-        
+
         chat_id = session.get('current_chat_id')
         if message_id:
             try:
@@ -6088,7 +6096,7 @@ def generate_visualization():
                 full_response += chunk['result']
             elif 'error' in chunk:
                  return jsonify({'error': chunk['error']}), 500
-        
+
         if not full_response:
              return jsonify({'error': 'Failed to generate visualization.'}), 500
 
@@ -6204,11 +6212,11 @@ class OrphanContainerMonitor:
                             app_data = None
                             with active_apps_lock:
                                 app_data = active_apps.get(process_id)
-                            
+
                             # Only check if it's supposed to be 'running'
                             if app_data and app_data.get('port') and app_data.get('status') == 'running':
                                 # Use created_ts to avoid racing with initial startup (5 min grace period)
-                                if current_time - created_ts > 300: 
+                                if current_time - created_ts > 300:
                                     target_port = app_data['port']
                                     try:
                                         # Use host loopback to check the mapped port
@@ -6252,7 +6260,7 @@ def cleanup_stale_containers():
 
         # Also clean up by name pattern for backward compatibility
         stale_named = client.containers.list(all=True, filters={'name': 'stellar-sandbox-*'})
-        
+
         all_stale = list(set(stale_labeled + stale_named))
 
         if not all_stale:
@@ -6276,7 +6284,7 @@ def cleanup_stale_containers():
                         pass
 
                 logging.warning(f"Force-removing stale container: {container.name} ({container.short_id})")
-                container.remove(force=True) 
+                container.remove(force=True)
             except docker.errors.NotFound:
                 logging.info(f"Container {container.name} was already removed.")
             except Exception as e:
@@ -6291,7 +6299,7 @@ def cleanup_stale_containers():
 
 # Start the orphan monitor - only in the main process to avoid multi-worker redundancy
 if not app.config.get('TESTING'):
-    # Note: In gunicorn, this might still trigger per worker if not careful, 
+    # Note: In gunicorn, this might still trigger per worker if not careful,
     # but we initialize active_apps per process anyway.
     orphan_monitor = OrphanContainerMonitor(interval=300)
     orphan_monitor.start()
@@ -6346,7 +6354,7 @@ def intercept_subdomains():
                 return render_template('sentinel_healing_overlay.html', app_name=subdomain, status_text=healing_status, process_id=process_id)
         except Exception as redis_err:
             logger.error(f"Failed to check sentinel healing status in Redis: {redis_err}")
-        
+
         app_info = None
         with active_apps_lock:
             app_info = active_apps.get(process_id)
@@ -6540,7 +6548,7 @@ def get_repo_history():
     user_id = session['user_id']
     db = get_db()
     cursor = db.execute('''
-        SELECT fh.id, fh.project_name, fh.process_id, fh.status, fh.deployment_url, fh.created_at, fh.last_updated 
+        SELECT fh.id, fh.project_name, fh.process_id, fh.status, fh.deployment_url, fh.created_at, fh.last_updated
         FROM repo_history fh
         INNER JOIN (
             SELECT process_id, MAX(id) as latest_id
@@ -6658,11 +6666,11 @@ class TaskSchedulerMonitor:
             db = get_db()
             # ATOMIC CLAIM: Try to lock any pending task that is due
             db.execute('''
-                UPDATE scheduled_tasks 
+                UPDATE scheduled_tasks
                 SET status = 'running', lock_id = ?
                 WHERE id IN (
                     SELECT id FROM scheduled_tasks
-                    WHERE is_active = 1 
+                    WHERE is_active = 1
                     AND status = 'pending'
                     AND (execute_at IS NULL OR execute_at <= datetime('now', 'localtime'))
                     LIMIT 1
@@ -6677,7 +6685,7 @@ class TaskSchedulerMonitor:
                 WHERE lock_id = ? AND status = 'running'
             ''', (worker_id,))
             task = cursor.fetchone()
-            
+
             if task:
                 def run_task_wrapper(t):
                     try:
@@ -6687,7 +6695,7 @@ class TaskSchedulerMonitor:
                             if t['recurring_minutes'] > 0:
                                 db.execute('''
                                     UPDATE scheduled_tasks
-                                    SET execute_at = datetime('now', 'localtime', '+' || ? || ' minutes'), 
+                                    SET execute_at = datetime('now', 'localtime', '+' || ? || ' minutes'),
                                         last_run = datetime('now', 'localtime'), status = 'pending', lock_id = NULL
                                     WHERE id = ?
                                 ''', (t['recurring_minutes'], t['id']))
@@ -6710,7 +6718,7 @@ class TaskSchedulerMonitor:
             # Set global context for tools to use in background threads
             g.user_id = user_id
             g.chat_id = chat_id
-            
+
             from app import get_conversation_history, insert_message, gemini_generate, PRIMARY_API_KEY, build_annotated_history
             history = get_conversation_history(chat_id)
             conv_hist_list, last_msg_time = build_annotated_history(history[-10:], None)
@@ -6731,13 +6739,13 @@ class TaskSchedulerMonitor:
             # Wrap the task prompt in a directive and include the scratchpad metadata
             meta_context = f"\n**TASK SCRATCHPAD (TRANSIENT STATE):**\n{metadata}\n" if metadata else ""
             directive_prompt = f"{time_elapsed_str}### SCHEDULED TASK EXECUTION MANDATE\nYou are executing a pre-authorized scheduled task.{meta_context}\nYou MUST use the necessary tools to fulfill this request immediately. Do not apologize or simulate the action.\n\nTask: {task_prompt}"
-            
+
             system_prompt = get_refinement_prompt(directive_prompt, conv_hist_list, user_id=user_id, model_id=model_id)
 
             generator = gemini_generate(
-                prompt=system_prompt, 
+                prompt=system_prompt,
                 model_id=model_id, # MODEL LOCK ENFORCED
-                key=PRIMARY_API_KEY, 
+                key=PRIMARY_API_KEY,
                 chat_id=chat_id
             )
 

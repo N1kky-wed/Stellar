@@ -126,7 +126,7 @@ def test_admin_impersonate(auth_client):
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['success'] is True
-    
+
     # Verify session is updated
     with auth_client.session_transaction() as sess:
         assert sess['user_id'] == 10
@@ -610,6 +610,27 @@ def test_download_view_file(client):
     response = client.get('/download/dummy.txt')
     assert response.status_code == 200
     assert b'hello' in response.data
+
+    # Test symlink vulnerability
+    with open('test_outside.txt', 'w') as f:
+        f.write('secret_data')
+    try:
+        os.symlink('../test_outside.txt', 'outputs/symlink.txt')
+
+        response_view = client.get('/view/symlink.txt')
+        assert response_view.status_code == 403
+
+        response_dl = client.get('/download/symlink.txt')
+        assert response_dl.status_code == 403
+    finally:
+        try:
+            os.unlink('outputs/symlink.txt')
+        except:
+            pass
+        try:
+            os.unlink('test_outside.txt')
+        except:
+            pass
 
     # Clean up
     try:
