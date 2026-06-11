@@ -118,45 +118,71 @@ class OrchestratorEngine:
             except Exception as e:
                 logger.error(f"Failed to restore cooldown from DB: {e}")
 
-    def _get_agy_log_tail(self) -> str:
-        """Read the last 100 lines of the agy cli.log from inside the container."""
-        cmd = "cat /root/.gemini/antigravity-cli/cli.log 2>/dev/null | tail -100"
-        rc, stdout, _ = container.exec_in_container(cmd, timeout=10)
-        return stdout if rc == 0 else ""
+    def _get_agy_log_tail(self, start_time: datetime) -> str:
+        """Read the last 100 lines of the current run's log file from inside the container.
+        Ensures that we do not perform dirty reads from previous runs' logs.
+        """
+        # 1. Resolve symlink to get actual log file path and its mtime
+        cmd = "readlink -f /root/.gemini/antigravity-cli/cli.log"
+        rc, log_path, _ = container.exec_in_container(cmd, timeout=5)
+        if rc != 0 or not log_path.strip():
+            return ""
+        log_path = log_path.strip()
+
+        # 2. Check the mtime of the log file
+        cmd_mtime = f"stat -c %Y {log_path}"
+        rc_mtime, mtime_str, _ = container.exec_in_container(cmd_mtime, timeout=5)
+        if rc_mtime != 0 or not mtime_str.strip():
+            return ""
+        
+        try:
+            log_mtime = float(mtime_str.strip())
+        except ValueError:
+            return ""
+            
+        # Convert start_time to epoch time
+        start_epoch = start_time.timestamp()
+        
+        # If the log file was modified before the agent started, it's a stale log file
+        # We allow a 5-second buffer for clock skew
+        if log_mtime < start_epoch - 5:
+            logger.info(f"Log file {log_path} modification time ({log_mtime}) is older than agent start time ({start_epoch}). Ignoring stale log.")
+            return ""
+
+        # 3. Read the last 100 lines of this file
+        cmd_cat = f"tail -n 100 {log_path}"
+        rc_cat, stdout, _ = container.exec_in_container(cmd_cat, timeout=10)
+        return stdout if rc_cat == 0 else ""
 
     def _check_quota_error(self, log_tail: str) -> Optional[datetime]:
         """
-        Scan the agy cli.log tail for RESOURCE_EXHAUSTED / 429 errors.
-        If found, parse 'Resets in Xh Ym Zs' and return the datetime when
-        quota will be restored. Returns None if no quota error found.
+        Scan the agy log tail for RESOURCE_EXHAUSTED / 429 errors.
+        If found, parse 'Resets in XhYmZs' and return when quota will be restored.
+        Returns None if no quota error found.
         """
         if "RESOURCE_EXHAUSTED" not in log_tail and "429" not in log_tail:
             return None
 
         logger.warning("QUOTA ERROR detected in agy log!")
 
-        # Try to parse 'Resets in Xh Ym Zs' or 'Resets in Xm Ys'
-        match = re.search(
-            r"Resets in\s+(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?",
-            log_tail
-        )
+        # Format is compact: 'Resets in 3h39m35s' (no spaces between parts)
+        # Also handles partial: '45m12s', '2h30m', '90s'
+        match = re.search(r"Resets in ((?:\d+h)?(?:\d+m)?(?:\d+s)?)", log_tail)
         now = datetime.now(IST)
-        if match:
-            hours   = int(match.group(1) or 0)
-            minutes = int(match.group(2) or 0)
-            seconds = int(match.group(3) or 0)
-            delta   = timedelta(hours=hours, minutes=minutes, seconds=seconds)
-            # Add a small buffer so we don't retry right at the boundary
+        if match and match.group(1):
+            raw = match.group(1)  # e.g. '3h39m35s'
+            h = int(re.search(r'(\d+)h', raw).group(1)) if 'h' in raw else 0
+            m = int(re.search(r'(\d+)m', raw).group(1)) if 'm' in raw else 0
+            s = int(re.search(r'(\d+)s', raw).group(1)) if 's' in raw else 0
+            delta = timedelta(hours=h, minutes=m, seconds=s)
+            # Add 2-minute buffer so we don't retry right at the boundary
             reset_at = now + delta + timedelta(minutes=2)
-            logger.warning(
-                f"Quota resets in {hours}h {minutes}m {seconds}s. "
-                f"Cooldown until {reset_at.strftime('%Y-%m-%d %H:%M:%S %Z')}"
-            )
+            logger.warning(f"Quota resets in {h}h {m}m {s}s. Cooldown until {reset_at.strftime('%H:%M:%S %Z')}")
             return reset_at
         else:
             # Couldn't parse reset time — default to 4-hour cooldown
             fallback = now + timedelta(hours=4)
-            logger.warning(f"Could not parse reset time. Defaulting 4-hour cooldown until {fallback}")
+            logger.warning(f"Could not parse reset time from log. Defaulting to 4-hour cooldown until {fallback.strftime('%H:%M:%S %Z')}")
             return fallback
 
     def _is_in_cooldown(self, now: datetime) -> bool:
@@ -182,25 +208,24 @@ class OrchestratorEngine:
             logger.error(f"Docker container {config.CONTAINER_NAME} is not running! Skipping tick.")
             return
 
-        # 0. Quota cooldown guard — do nothing until quota refreshes
-        if self._is_in_cooldown(now):
-            return
-
-        # 1. If an agent is running, monitor it
+        # 1. Always monitor a running agent (even during cooldown — shouldn't happen, but be safe)
         if self.current_process:
             self._check_running_agent(now)
             return
 
-        # 2. Check if the previous agent's PR just got MERGED (Event-driven trigger)
-        # We find the last COMPLETED run, check if its PR status is PENDING, and if it just got MERGED,
-        # we start the next agent immediately.
+        # 2. Always check for merged PRs and trigger service reloads — even during cooldown.
+        #    Agent fixes should be deployed immediately regardless of quota state.
         next_agent = self._check_for_merge_trigger()
-        if next_agent:
-            logger.info(f"PR MERGE EVENT DETECTED: Triggering next agent {next_agent['name']} immediately!")
+        if next_agent and not self._is_in_cooldown(now):
+            logger.info(f"PR MERGE EVENT DETECTED: Starting next agent {next_agent['name']} immediately!")
             self._start_agent(next_agent)
             return
 
-        # 3. Check if any agent's scheduled time is due
+        # 3. Quota cooldown guard — don't schedule new agents until quota refreshes
+        if self._is_in_cooldown(now):
+            return
+
+        # 4. Check if any agent's scheduled time is due
         due_agent = self._get_due_agent(now)
         if due_agent:
             logger.info(f"SCHEDULE DUE EVENT: Starting scheduled agent {due_agent['name']}...")
@@ -247,7 +272,7 @@ class OrchestratorEngine:
             now_str = now.isoformat()
 
             # --- Quota check: read cli.log BEFORE deciding success/failure ---
-            log_tail = self._get_agy_log_tail()
+            log_tail = self._get_agy_log_tail(self.agent_start_time)
             quota_reset_at = self._check_quota_error(log_tail)
 
             if quota_reset_at:
