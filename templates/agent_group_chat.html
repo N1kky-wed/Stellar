@@ -246,13 +246,19 @@
       </div>
       <div class="flex items-center gap-2.5 md:gap-4 shrink-0">
         <span
+          id="orchestratorStatusBadge"
           class="inline-flex items-center gap-1.5 px-2 py-0.5 md:px-2.5 md:py-1 rounded-full text-[10px] md:text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
         >
           <span
+            id="orchestratorStatusDot"
             class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"
           ></span>
-          <span class="hidden sm:inline">Orchestrator Active</span>
-          <span class="sm:hidden">Active</span>
+          <span id="orchestratorStatusText" class="hidden sm:inline"
+            >Orchestrator Active</span
+          >
+          <span id="orchestratorStatusTextMobile" class="sm:hidden"
+            >Active</span
+          >
         </span>
         <a
           href="/"
@@ -275,6 +281,43 @@
         </a>
       </div>
     </header>
+
+    <!-- Quota Cooldown Banner -->
+    <div
+      id="cooldownBanner"
+      style="
+        display: none;
+        background: linear-gradient(
+          90deg,
+          rgba(251, 146, 60, 0.15) 0%,
+          rgba(234, 88, 12, 0.1) 100%
+        );
+        border-bottom: 1px solid rgba(251, 146, 60, 0.25);
+      "
+      class="shrink-0 px-4 py-2.5 flex items-center gap-3 text-sm font-medium"
+    >
+      <svg
+        class="w-4 h-4 text-orange-400 shrink-0 animate-pulse"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+      <span class="text-orange-300 text-xs md:text-sm">
+        &#9208; Orchestrator paused &mdash; API quota exhausted. Resumes at
+        <strong id="cooldownUntil" class="text-orange-200">--:--</strong>. Time
+        remaining:
+        <strong id="cooldownCountdown" class="text-white font-mono"
+          >--:--:--</strong
+        >
+      </span>
+    </div>
 
     <!-- Workspace Container -->
     <div class="flex flex-1 overflow-hidden relative">
@@ -626,6 +669,93 @@
 
       // Start
       loadHistory().then(initStream);
+
+      // ── Orchestrator Status + Cooldown Banner ─────────────────────────
+      let _cooldownRemaining = 0;
+      let _cooldownInterval = null;
+
+      function fmtHMS(secs) {
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+        return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
+      }
+
+      function startCountdown(secs) {
+        _cooldownRemaining = secs;
+        if (_cooldownInterval) clearInterval(_cooldownInterval);
+        _cooldownInterval = setInterval(() => {
+          _cooldownRemaining = Math.max(0, _cooldownRemaining - 1);
+          document.getElementById("cooldownCountdown").textContent =
+            fmtHMS(_cooldownRemaining);
+          if (_cooldownRemaining <= 0) {
+            clearInterval(_cooldownInterval);
+            // Re-poll immediately to clear the banner
+            pollOrchestratorStatus();
+          }
+        }, 1000);
+      }
+
+      function applyOrchestratorStatus(data) {
+        const banner = document.getElementById("cooldownBanner");
+        const badge = document.getElementById("orchestratorStatusBadge");
+        const dot = document.getElementById("orchestratorStatusDot");
+        const text = document.getElementById("orchestratorStatusText");
+        const textMob = document.getElementById("orchestratorStatusTextMobile");
+
+        if (data.cooldown && data.cooldown.active) {
+          // Show orange cooldown banner
+          banner.style.display = "flex";
+          document.getElementById("cooldownUntil").textContent =
+            data.cooldown.until;
+          startCountdown(data.cooldown.remaining_seconds);
+
+          // Orange badge
+          badge.style.background = "rgba(249,115,22,0.12)";
+          badge.style.borderColor = "rgba(249,115,22,0.3)";
+          badge.style.color = "#fb923c";
+          dot.style.background = "#fb923c";
+          text.textContent = "Quota Cooldown";
+          textMob.textContent = "Paused";
+        } else {
+          // Hide banner
+          banner.style.display = "none";
+          if (_cooldownInterval) {
+            clearInterval(_cooldownInterval);
+            _cooldownInterval = null;
+          }
+
+          // Green badge
+          badge.style.background = "rgba(16,185,129,0.1)";
+          badge.style.borderColor = "rgba(16,185,129,0.2)";
+          badge.style.color = "#34d399";
+          dot.style.background = "#34d399";
+
+          if (data.running_agent) {
+            const name =
+              data.running_agent.agent_id.charAt(0).toUpperCase() +
+              data.running_agent.agent_id.slice(1);
+            text.textContent = `Running: ${name}`;
+            textMob.textContent = name;
+          } else {
+            text.textContent = "Orchestrator Active";
+            textMob.textContent = "Active";
+          }
+        }
+      }
+
+      async function pollOrchestratorStatus() {
+        try {
+          const resp = await fetch("/api/admin/orchestrator/status");
+          if (resp.ok) applyOrchestratorStatus(await resp.json());
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
+      // Poll immediately and then every 15s
+      pollOrchestratorStatus();
+      setInterval(pollOrchestratorStatus, 15000);
     </script>
   </body>
 </html>

@@ -5531,6 +5531,37 @@ def agent_group_chat_page():
     response.headers['Content-Type'] = 'text/html'
     return response
 
+@app.route('/api/admin/orchestrator/status')
+@require_approval
+def orchestrator_status():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+    db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
+    result = {'cooldown': {'active': False}, 'running_agent': None}
+    try:
+        from datetime import timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT value FROM orchestrator_state WHERE key='quota_cooldown_until'").fetchone()
+        if row and row['value']:
+            cooldown_dt = datetime.datetime.fromisoformat(row['value'])
+            now = datetime.datetime.now(IST)
+            if cooldown_dt > now:
+                remaining_secs = int((cooldown_dt - now).total_seconds())
+                result['cooldown'] = {
+                    'active': True,
+                    'until': cooldown_dt.strftime('%H:%M IST'),
+                    'remaining_seconds': remaining_secs,
+                }
+        running = conn.execute("SELECT agent_id, started_at FROM agent_runs WHERE status='RUNNING' ORDER BY id DESC LIMIT 1").fetchone()
+        if running:
+            result['running_agent'] = dict(running)
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error fetching orchestrator status: {e}")
+    return jsonify(result)
+
 @app.route('/api/admin/agent_group_chat/history')
 @require_approval
 def get_agent_group_chat_history():

@@ -1,4 +1,5 @@
 # engine.py
+import re
 import time
 import logging
 from datetime import datetime, timedelta
@@ -22,9 +23,14 @@ class OrchestratorEngine:
         self.agent_start_time: Optional[datetime] = None
         self.branch_name: Optional[str] = None
         self.prompt_file: Optional[str] = None
-        
+        # Quota cooldown: don't start any agent until this time
+        self.quota_cooldown_until: Optional[datetime] = None
+
         # Recover from previous crash/restart if there's a running run in database
         self._recover_state()
+
+        # Restore persisted cooldown (survives service restarts)
+        self._restore_cooldown_from_db()
 
     def _recover_state(self):
         current = self.state_db.get_current_run()
@@ -88,12 +94,96 @@ class OrchestratorEngine:
             else:
                 time.sleep(config.PR_CHECK_INTERVAL_SECONDS)
 
+    # ------------------------------------------------------------------
+    # Quota / Rate-limit helpers
+    # ------------------------------------------------------------------
+
+    def _restore_cooldown_from_db(self):
+        """On startup, restore any persisted quota cooldown so restarts don't bypass it."""
+        stored = self.state_db.get_state("quota_cooldown_until")
+        if stored:
+            try:
+                cooldown_dt = datetime.fromisoformat(stored)
+                now = datetime.now(IST)
+                if cooldown_dt > now:
+                    self.quota_cooldown_until = cooldown_dt
+                    remaining = (cooldown_dt - now).total_seconds() / 60
+                    logger.warning(
+                        f"[STARTUP] Restored quota cooldown from DB. "
+                        f"{remaining:.1f} min remaining until {cooldown_dt.strftime('%H:%M:%S %Z')}."
+                    )
+                else:
+                    logger.info("[STARTUP] Stored quota cooldown has already expired. Clearing.")
+                    self.state_db.set_state("quota_cooldown_until", "")
+            except Exception as e:
+                logger.error(f"Failed to restore cooldown from DB: {e}")
+
+    def _get_agy_log_tail(self) -> str:
+        """Read the last 100 lines of the agy cli.log from inside the container."""
+        cmd = "cat /root/.gemini/antigravity-cli/cli.log 2>/dev/null | tail -100"
+        rc, stdout, _ = container.exec_in_container(cmd, timeout=10)
+        return stdout if rc == 0 else ""
+
+    def _check_quota_error(self, log_tail: str) -> Optional[datetime]:
+        """
+        Scan the agy cli.log tail for RESOURCE_EXHAUSTED / 429 errors.
+        If found, parse 'Resets in Xh Ym Zs' and return the datetime when
+        quota will be restored. Returns None if no quota error found.
+        """
+        if "RESOURCE_EXHAUSTED" not in log_tail and "429" not in log_tail:
+            return None
+
+        logger.warning("QUOTA ERROR detected in agy log!")
+
+        # Try to parse 'Resets in Xh Ym Zs' or 'Resets in Xm Ys'
+        match = re.search(
+            r"Resets in\s+(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?",
+            log_tail
+        )
+        now = datetime.now(IST)
+        if match:
+            hours   = int(match.group(1) or 0)
+            minutes = int(match.group(2) or 0)
+            seconds = int(match.group(3) or 0)
+            delta   = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+            # Add a small buffer so we don't retry right at the boundary
+            reset_at = now + delta + timedelta(minutes=2)
+            logger.warning(
+                f"Quota resets in {hours}h {minutes}m {seconds}s. "
+                f"Cooldown until {reset_at.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            )
+            return reset_at
+        else:
+            # Couldn't parse reset time — default to 4-hour cooldown
+            fallback = now + timedelta(hours=4)
+            logger.warning(f"Could not parse reset time. Defaulting 4-hour cooldown until {fallback}")
+            return fallback
+
+    def _is_in_cooldown(self, now: datetime) -> bool:
+        """Return True if the engine is currently in quota cooldown."""
+        if self.quota_cooldown_until and now < self.quota_cooldown_until:
+            remaining = (self.quota_cooldown_until - now).total_seconds() / 60
+            logger.info(
+                f"[COOLDOWN] Quota not yet refreshed. "
+                f"{remaining:.1f} min remaining until {self.quota_cooldown_until.strftime('%H:%M:%S %Z')}. "
+                "Skipping tick."
+            )
+            return True
+        if self.quota_cooldown_until and now >= self.quota_cooldown_until:
+            logger.info("[COOLDOWN] Quota cooldown lifted. Resuming normal scheduling.")
+            self.quota_cooldown_until = None
+        return False
+
     def _tick(self):
         now = datetime.now(IST)
         
         # Verify container is running
         if not container.is_container_running():
             logger.error(f"Docker container {config.CONTAINER_NAME} is not running! Skipping tick.")
+            return
+
+        # 0. Quota cooldown guard — do nothing until quota refreshes
+        if self._is_in_cooldown(now):
             return
 
         # 1. If an agent is running, monitor it
@@ -155,6 +245,27 @@ class OrchestratorEngine:
             
             logger.info(f"Agent {self.current_agent_id} process finished with exit code {retcode}.")
             now_str = now.isoformat()
+
+            # --- Quota check: read cli.log BEFORE deciding success/failure ---
+            log_tail = self._get_agy_log_tail()
+            quota_reset_at = self._check_quota_error(log_tail)
+
+            if quota_reset_at:
+                # Agent hit quota — treat as failed and enter cooldown
+                logger.warning(
+                    f"Agent {self.current_agent_id} was terminated by quota exhaustion (429). "
+                    f"Marking FAILED. Cooldown until {quota_reset_at.strftime('%H:%M:%S %Z')}."
+                )
+                self.quota_cooldown_until = quota_reset_at
+                self.state_db.set_state("quota_cooldown_until", quota_reset_at.isoformat())
+                self.state_db.fail_run(
+                    self.current_run_id, now_str,
+                    f"RESOURCE_EXHAUSTED (429): quota resets at {quota_reset_at.isoformat()}",
+                    summary_message="Agent aborted due to API quota exhaustion."
+                )
+                container.unload_agent_prompt()
+                self._clear_active_run()
+                return
             
             if retcode == 0:
                 summary = self._get_summary()
