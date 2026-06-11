@@ -189,11 +189,25 @@ def send_raw(channel, text):
 # Rate Limiter (Redis-backed)
 # ============================================================
 class RateLimiter:
+    """
+    Redis-backed rate limiter for handling SSH connection rate limiting and authentication failure tracking.
+    """
     def __init__(self):
+        """
+        Initialize the Redis rate limiter client connection.
+        """
         self.r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
     def check_connection_rate(self, ip: str) -> bool:
-        """Returns True if connection is allowed."""
+        """
+        Check if the connection rate limit has been exceeded for a given IP address.
+
+        Args:
+            ip (str): The client IP address.
+
+        Returns:
+            bool: True if connection is within the limit and allowed; False otherwise.
+        """
         key = f"ssh_conn_rate:{ip}"
         try:
             count = self.r.incr(key)
@@ -205,7 +219,15 @@ class RateLimiter:
             return True  # Fail open to avoid lockout on Redis issues
 
     def record_auth_failure(self, ip: str) -> int:
-        """Record a failed auth attempt. Returns total failures."""
+        """
+        Record a failed authentication attempt for the given IP address.
+
+        Args:
+            ip (str): The client IP address.
+
+        Returns:
+            int: The cumulative count of auth failures within the window, or 0 on error.
+        """
         key = f"ssh_verify_fail:{ip}"
         try:
             count = self.r.incr(key)
@@ -216,7 +238,15 @@ class RateLimiter:
             return 0
 
     def is_ip_blocked(self, ip: str) -> bool:
-        """Check if IP has too many failed auths."""
+        """
+        Check if the given IP address is blocked due to excessive authentication failures.
+
+        Args:
+            ip (str): The client IP address.
+
+        Returns:
+            bool: True if the IP is blocked (failures >= 10); False otherwise.
+        """
         try:
             count = self.r.get(f"ssh_verify_fail:{ip}")
             return int(count or 0) >= 10
@@ -349,6 +379,12 @@ class StellarSSHServer(paramiko.ServerInterface):
     """
 
     def __init__(self, client_addr: str):
+        """
+        Initialize the SSH server interface.
+
+        Args:
+            client_addr (str): The IP address of the incoming SSH client.
+        """
         self.client_addr = client_addr
         self.event = threading.Event()
         self.term_width = 80
@@ -356,35 +392,121 @@ class StellarSSHServer(paramiko.ServerInterface):
         self.resize_event = threading.Event()
 
     def check_channel_request(self, kind, chanid):
+        """
+        Determine if the requested channel type is supported. Only 'session' is allowed.
+
+        Args:
+            kind (str): The kind of channel requested.
+            chanid (int): The channel identifier.
+
+        Returns:
+            int: paramiko.OPEN_SUCCEEDED if allowed; paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED otherwise.
+        """
         if kind == 'session':
             return paramiko.OPEN_SUCCEEDED
         logger.warning(f"Rejected channel request kind='{kind}' from {self.client_addr}")
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
     def check_auth_none(self, username):
+        """
+        Accept authentication without password or key at the transport layer.
+        Actual authentication occurs inside the interactive TUI.
+
+        Args:
+            username (str): The requested SSH username.
+
+        Returns:
+            int: paramiko.AUTH_SUCCESSFUL.
+        """
         self.username = username
         # Accept none-auth; real auth happens in TUI
         return paramiko.AUTH_SUCCESSFUL
 
     def check_auth_password(self, username, password):
+        """
+        Reject password authentication attempts at the transport layer.
+
+        Args:
+            username (str): The username trying to authenticate.
+            password (str): The password credential.
+
+        Returns:
+            int: paramiko.AUTH_FAILED.
+        """
         return paramiko.AUTH_FAILED
 
     def check_auth_publickey(self, username, key):
+        """
+        Reject public-key authentication attempts at the transport layer.
+
+        Args:
+            username (str): The username trying to authenticate.
+            key (paramiko.PKey): The public key credential.
+
+        Returns:
+            int: paramiko.AUTH_FAILED.
+        """
         return paramiko.AUTH_FAILED
 
     def get_allowed_auths(self, username):
+        """
+        Declare the list of allowed authentication methods.
+
+        Args:
+            username (str): The username querying authentication methods.
+
+        Returns:
+            str: 'none' to indicate only transport-level open auth is allowed.
+        """
         return 'none'
 
     def check_channel_shell_request(self, channel):
+        """
+        Acknowledge a shell channel request by triggering the server event.
+
+        Args:
+            channel (paramiko.Channel): The active SSH channel.
+
+        Returns:
+            bool: True.
+        """
         self.event.set()
         return True
 
     def check_channel_pty_request(self, channel, term, width, height, pixelwidth, pixelheight, modes):
+        """
+        Configure the terminal dimensions requested by the client.
+
+        Args:
+            channel (paramiko.Channel): The active SSH channel.
+            term (str): The terminal emulation type.
+            width (int): The terminal column width.
+            height (int): The terminal row height.
+            pixelwidth (int): Pixel width.
+            pixelheight (int): Pixel height.
+            modes (dict): Terminal modes.
+
+        Returns:
+            bool: True.
+        """
         self.term_width = width
         self.term_height = height
         return True
 
     def check_channel_window_change_request(self, channel, width, height, pixelwidth, pixelheight):
+        """
+        Update terminal dimensions and set resize event upon window size changes.
+
+        Args:
+            channel (paramiko.Channel): The active SSH channel.
+            width (int): The new terminal column width.
+            height (int): The new terminal row height.
+            pixelwidth (int): New pixel width.
+            pixelheight (int): New pixel height.
+
+        Returns:
+            bool: True.
+        """
         self.term_width = width
         self.term_height = height
         self.resize_event.set()
@@ -392,21 +514,75 @@ class StellarSSHServer(paramiko.ServerInterface):
 
     # --- SECURITY: Block all forwarding ---
     def check_port_forward_request(self, address, port):
+        """
+        Deny port forwarding requests for security compliance.
+
+        Args:
+            address (str): Target address.
+            port (int): Target port.
+
+        Returns:
+            bool: False.
+        """
         logger.warning(f"BLOCKED port forward request from {self.client_addr}: {address}:{port}")
         return False
 
     def check_channel_direct_tcpip_request(self, chanid, origin, destination):
+        """
+        Deny direct TCP/IP channel requests to prevent tunneling.
+
+        Args:
+            chanid (int): Channel ID.
+            origin (tuple): Source socket address.
+            destination (tuple): Destination socket address.
+
+        Returns:
+            int: paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED.
+        """
         logger.warning(f"BLOCKED direct-tcpip from {self.client_addr}: {origin} -> {destination}")
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
     def check_channel_env_request(self, channel, name, value):
+        """
+        Reject client environment variable setup requests.
+
+        Args:
+            channel (paramiko.Channel): The active SSH channel.
+            name (str): Env variable name.
+            value (str): Env variable value.
+
+        Returns:
+            bool: False.
+        """
         return False
 
     def check_channel_x11_request(self, channel, single_connection, auth_protocol, auth_cookie, screen_number):
+        """
+        Deny X11 forwarding requests for security compliance.
+
+        Args:
+            channel (paramiko.Channel): The active SSH channel.
+            single_connection (bool): Single connection flag.
+            auth_protocol (str): Auth protocol.
+            auth_cookie (str): Auth cookie.
+            screen_number (int): Screen number.
+
+        Returns:
+            bool: False.
+        """
         logger.warning(f"BLOCKED X11 forwarding from {self.client_addr}")
         return False
 
     def check_channel_forward_agent_request(self, channel):
+        """
+        Deny SSH agent forwarding requests.
+
+        Args:
+            channel (paramiko.Channel): The active SSH channel.
+
+        Returns:
+            bool: False.
+        """
         logger.warning(f"BLOCKED agent forwarding from {self.client_addr}")
         return False
 
@@ -471,10 +647,28 @@ class TUI:
 
     @staticmethod
     def get_logo(theme: dict) -> str:
+        """
+        Generate a styled micro-logo string using theme primary and dim colors.
+
+        Args:
+            theme (dict): The active theme configuration dictionary.
+
+        Returns:
+            str: Rich-markup formatted logo string.
+        """
         return f"[bold {theme['primary']}]Stellar[/bold {theme['primary']}] [{theme['dim']}]Code[/{theme['dim']}]"
 
     @staticmethod
     def get_big_logo(theme: dict) -> str:
+        """
+        Generate the large ASCII art banner styled with theme colors.
+
+        Args:
+            theme (dict): The active theme configuration dictionary.
+
+        Returns:
+            str: Rich-markup formatted ASCII art logo.
+        """
         c = theme['primary']
         return f"""
  [bold {c}]███████╗████████╗███████╗██╗     ██╗      █████╗ ██████╗ [/bold {c}]
@@ -516,6 +710,20 @@ class TUI:
 
     @staticmethod
     def theme_picker(selected_theme: int, selected_border: int, focus: str, width: int, height: int, is_default: bool = False) -> str:
+        """
+        Render the interactive theme selection UI page.
+
+        Args:
+            selected_theme (int): The index of currently selected theme in THEMES.
+            selected_border (int): The index of currently selected border color in BORDER_COLORS.
+            focus (str): The list currently focused ('theme' or 'border').
+            width (int): Current terminal column width.
+            height (int): Current terminal row height.
+            is_default (bool): True if the user flagged this selection as default.
+
+        Returns:
+            str: Rendered string buffer representing the theme picker UI.
+        """
         base_theme = TUI.THEMES[selected_theme]
         border_override = TUI.BORDER_COLORS[selected_border]["value"]
         
@@ -585,6 +793,19 @@ class TUI:
 
     @staticmethod
     def auth_screen(width: int, height: int, typed_code: str = "", error_msg: str = "", theme: dict = None) -> str:
+        """
+        Render the authentication screen where the user enters their 6-digit one-time access code.
+
+        Args:
+            width (int): Current terminal column width.
+            height (int): Current terminal row height.
+            typed_code (str): The code typed so far by the user.
+            error_msg (str): Error message to display, if any.
+            theme (dict): The active theme configuration dictionary.
+
+        Returns:
+            str: Rendered string buffer representing the authentication page.
+        """
         if not theme: theme = TUI.THEMES[0]
         content = Text.from_markup(TUI.get_big_logo(theme) + "\n", justify="center")
         content.append("\nAuthentication required\n", style=f"bold {theme['text']}")
@@ -611,6 +832,26 @@ class TUI:
 
     @staticmethod
     def dashboard(repos: list, selected: int, username: str, width: int, height: int, status_msg: str = "", theme: dict = None, search_query: str = "", filter_state: str = "All", sort_state: str = "Name", mode: str = "NORMAL", status_map: dict = None) -> str:
+        """
+        Render the primary dashboard screen showing deployments list, filters, sorting options, and controls.
+
+        Args:
+            repos (list): List of user repository configurations.
+            selected (int): Currently selected index of the repository in the list.
+            username (str): The active session username.
+            width (int): Current terminal column width.
+            height (int): Current terminal row height.
+            status_msg (str): General status notification/alert message to display in the footer.
+            theme (dict): Active theme dictionary.
+            search_query (str): Active search filter query.
+            filter_state (str): Current filter condition state ('All', 'Running', 'Stopped').
+            sort_state (str): Current sorting criteria ('Name', 'Status', 'Created').
+            mode (str): Active navigation/entry mode ('NORMAL' or 'SEARCH').
+            status_map (dict): Cached container status mapping dictionary.
+
+        Returns:
+            str: Rendered string buffer representing the dashboard UI.
+        """
         if not theme: theme = TUI.THEMES[0]
         
         header_table = Table.grid(expand=True)
@@ -739,6 +980,18 @@ class TUI:
 
     @staticmethod
     def connecting_screen(repo_name: str, width: int, height: int, theme: dict = None) -> str:
+        """
+        Render a temporary transition screen shown while connecting to a container shell.
+
+        Args:
+            repo_name (str): The name of the target repository/container.
+            width (int): Current terminal column width.
+            height (int): Current terminal row height.
+            theme (dict): Active theme configuration dictionary.
+
+        Returns:
+            str: Rendered string buffer representing the connection status screen.
+        """
         if not theme: theme = TUI.THEMES[0]
         content = Text.from_markup(f"\n\n[{theme['dim']}]Connecting to[/{theme['dim']}] [bold {theme['text']}]{repo_name}[/bold {theme['text']}]\n\n", justify="center")
         from rich.align import Align
@@ -746,6 +999,19 @@ class TUI:
 
     @staticmethod
     def logs_screen(repo_name: str, logs: list, width: int, height: int, theme: dict = None) -> str:
+        """
+        Render the real-time container log viewer screen.
+
+        Args:
+            repo_name (str): The name of the repository/container.
+            logs (list): List of logs lines to show.
+            width (int): Current terminal column width.
+            height (int): Current terminal row height.
+            theme (dict): Active theme configuration dictionary.
+
+        Returns:
+            str: Rendered string buffer representing the logs viewer UI.
+        """
         if not theme: theme = TUI.THEMES[0]
         
         header = Text.from_markup(f"  {TUI.get_logo(theme)} [{theme['dim']}]› Logs ›[/{theme['dim']}] [{theme['text']}]{repo_name}[/{theme['text']}]\n")
@@ -764,6 +1030,18 @@ class TUI:
 
     @staticmethod
     def goodbye_screen(username: str, width: int, height: int, theme: dict = None) -> str:
+        """
+        Render the session termination / goodbye screen.
+
+        Args:
+            username (str): The active session username.
+            width (int): Current terminal column width.
+            height (int): Current terminal row height.
+            theme (dict): Active theme configuration dictionary.
+
+        Returns:
+            str: Rendered string buffer representing the goodbye page.
+        """
         if not theme: theme = TUI.THEMES[0]
         content = Text.from_markup(f"\n\n[{theme['dim']}]Goodbye,[/{theme['dim']}] [bold {theme['text']}]{username}[/bold {theme['text']}][{theme['dim']}]. Session terminated.[/{theme['dim']}]\n\n", justify="center")
         from rich.align import Align
@@ -862,7 +1140,18 @@ def read_key(channel, timeout: float = 0.5) -> str | None:
 
 
 def read_line(channel, prompt: str, mask: bool = False, max_len: int = 20) -> str | None:
-    """Read a line of input with echo (or masked echo)."""
+    """
+    Read a full line of text input from the client channel with echo or masked echo.
+
+    Args:
+        channel (paramiko.Channel): The active SSH channel.
+        prompt (str): Prompt string to display to the user.
+        mask (bool): If True, mask characters with '*' (e.g. for passcode entry).
+        max_len (int): Maximum input length allowed.
+
+    Returns:
+        str | None: The accumulated input string, or None if connection was closed or cancelled.
+    """
     send_raw(channel, prompt)
     buffer = []
 
@@ -1018,7 +1307,17 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
 # Container Management Actions
 # ============================================================
 def restart_container(process_id: str, app_type: str, user_id: int) -> str:
-    """Restart a Docker container."""
+    """
+    Restart the Docker container associated with the specified deployment.
+
+    Args:
+        process_id (str): The process identifier of the application.
+        app_type (str): The application type (e.g. 'repo').
+        user_id (int): The ID of the requesting user (for audit logging).
+
+    Returns:
+        str: Success or failure status message.
+    """
     try:
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
@@ -1041,7 +1340,17 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
 
 
 def stop_container(process_id: str, app_type: str, user_id: int) -> str:
-    """Stop a Docker container."""
+    """
+    Stop the Docker container associated with the specified deployment.
+
+    Args:
+        process_id (str): The process identifier of the application.
+        app_type (str): The application type (e.g. 'repo').
+        user_id (int): The ID of the requesting user (for audit logging).
+
+    Returns:
+        str: Success or failure status message.
+    """
     try:
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
@@ -1064,7 +1373,17 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
 
 
 def start_container(process_id: str, app_type: str, user_id: int) -> str:
-    """Start a stopped Docker container."""
+    """
+    Start the Docker container associated with the specified deployment.
+
+    Args:
+        process_id (str): The process identifier of the application.
+        app_type (str): The application type (e.g. 'repo').
+        user_id (int): The ID of the requesting user (for audit logging).
+
+    Returns:
+        str: Success or failure status message.
+    """
     try:
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
@@ -1090,6 +1409,15 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
 # Theme Persistence
 # ============================================================
 def load_theme(user_id=None):
+    """
+    Load the saved theme index and border index preferences for the specified user.
+
+    Args:
+        user_id (int or str, optional): The user ID. Defaults to None.
+
+    Returns:
+        dict: A dictionary containing theme_idx and border_idx.
+    """
     if not user_id:
         return {"theme_idx": 0, "border_idx": 0}
     
@@ -1104,6 +1432,14 @@ def load_theme(user_id=None):
     return {"theme_idx": 0, "border_idx": 0}
 
 def save_theme(user_id, theme_idx, border_idx):
+    """
+    Save the specified user's theme index and border index preferences to disk.
+
+    Args:
+        user_id (int or str): The user ID.
+        theme_idx (int): Selected theme index.
+        border_idx (int): Selected border color index.
+    """
     if not user_id:
         return
     
@@ -1328,6 +1664,16 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         all_repos = []
 
         def get_filtered_sorted_repos(all_repos, status_map):
+            """
+            Filter and sort the list of repositories based on active search, filters, and sort options.
+
+            Args:
+                all_repos (list): Full list of user repository dicts.
+                status_map (dict): Status mapping dictionary for container statuses.
+
+            Returns:
+                list: Filtered and sorted list of repositories.
+            """
             f_repos = []
             for r in all_repos:
                 r_status = status_map.get(r['process_id'], 'not_found')
@@ -1357,6 +1703,12 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             return f_repos
 
         def redraw(clear: bool = False):
+            """
+            Redraw the primary TUI dashboard.
+
+            Args:
+                clear (bool): True to force a full clear and redraw of the terminal screen.
+            """
             nonlocal status_msg
             draw(TUI.dashboard(
                 repos, selected_index, username, 
@@ -1618,7 +1970,13 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
 # Connection Handler
 # ============================================================
 def handle_connection(client_socket, client_addr):
-    """Handle a new TCP connection, set up SSH transport."""
+    """
+    Handle a newly accepted TCP connection, performing rate limiting and setting up Paramiko SSH transport.
+
+    Args:
+        client_socket (socket.socket): The TCP socket of the client connection.
+        client_addr (tuple): The client IP address and port tuple.
+    """
     global active_sessions
     ip = client_addr[0]
 
