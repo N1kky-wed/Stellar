@@ -41,8 +41,10 @@ header:focus-within {
   opacity: 1;
 }
 
-body.browser-open header {
-  width: 50%;
+@media (min-width: 769px) {
+  body.browser-open header {
+    width: 50%;
+  }
 }
 
 /* Extends the hoverable area below the header */
@@ -56,8 +58,10 @@ header::after {
   background: transparent;
 }
 
-body.browser-open header::after {
-  right: 0;
+@media (min-width: 769px) {
+  body.browser-open header::after {
+    right: 0;
+  }
 }
 
 .code-controls .run-code-btn {
@@ -3526,7 +3530,7 @@ body.auth-page {
 }
 
 #chatScrollToBottomBtn {
-  position: fixed;
+  position: absolute;
   bottom: 125px;
   right: 40px;
   width: 44px;
