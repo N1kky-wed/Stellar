@@ -1,6 +1,7 @@
 import os
 import requests
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,10 @@ class TelegramBot:
             params = {"timeout": 10}
             if offset:
                 params["offset"] = offset
+            t0 = time.time()
             response = requests.get(url, params=params, timeout=15)
             response.raise_for_status()
+            logger.info("Telegram updates fetched duration_sec=%.2f", time.time() - t0)
             return response.json()
         except Exception as e:
             logger.error(f"Failed to get Telegram updates: {e}")
@@ -74,8 +77,9 @@ class TelegramBot:
                 "chat_id": self.chat_id,
                 "text": text
             }
+            t0 = time.time()
             response = requests.post(url, json=payload, timeout=10)
             response.raise_for_status()
-            logger.info(f"Telegram message sent to {self.chat_id}")
+            logger.info("Telegram message sent to chat_id=%s duration_sec=%.2f", self.chat_id, time.time() - t0)
         except Exception as e:
             logger.error(f"Failed to send Telegram message: {e}")

@@ -74,6 +74,8 @@ GATEWAY_SECRET = os.environ.get('SSH_GATEWAY_SECRET', 'stellar-ssh-internal-2024
 # ============================================================
 os.makedirs(LOG_DIR, exist_ok=True)
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+
 logger = logging.getLogger('stellar_ssh')
 logger.setLevel(logging.INFO)
 _handler = logging.FileHandler(os.path.join(LOG_DIR, 'ssh_gateway.log'))
