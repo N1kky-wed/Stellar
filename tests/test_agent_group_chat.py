@@ -366,3 +366,115 @@ def test_agent_group_chat_stream_transition(auth_client):
     finally:
         os.close(db_fd)
         os.unlink(temp_db_path)
+
+
+def test_orchestrator_status_anonymous(client):
+    """
+    Asserts that anonymous visitors are denied access to the orchestrator status route with 401.
+    """
+    response = client.get('/api/admin/orchestrator/status')
+    assert response.status_code == 401
+
+
+def test_orchestrator_status_non_admin(client):
+    """
+    Asserts that approved non-admin users get a 403 Forbidden for the orchestrator status route.
+    """
+    with client.application.app_context():
+        db = get_db()
+        db.execute('INSERT OR IGNORE INTO users (id, username, display_name, role, is_approved) VALUES (2, "user@gmail.com", "Normal User", "user", 1)')
+        db.commit()
+    with client.session_transaction() as sess:
+        sess['user_id'] = 2
+        sess['username'] = "user@gmail.com"
+        sess['display_name'] = "Normal User"
+        sess['role'] = "user"
+        sess['is_approved'] = True
+
+    response = client.get('/api/admin/orchestrator/status')
+    assert response.status_code == 403
+
+
+def test_orchestrator_status_no_db(auth_client):
+    """
+    Asserts that if the database doesn't exist, the route returns the default status.
+    """
+    with patch('sqlite3.connect', side_effect=sqlite3.OperationalError("Mock DB doesn't exist")):
+        response = auth_client.get('/api/admin/orchestrator/status')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data['cooldown'] == {'active': False}
+        assert data['running_agent'] is None
+
+
+def test_orchestrator_status_with_cooldown_and_running(auth_client):
+    """
+    Asserts that the orchestrator status route correctly reads the active cooldown and the running agent details from the DB.
+    """
+    import datetime
+    db_fd, temp_db_path = tempfile.mkstemp()
+    try:
+        conn = _real_sqlite3_connect(temp_db_path)
+        # Create tables
+        conn.execute("CREATE TABLE orchestrator_state (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("""
+            CREATE TABLE agent_runs (
+                id INTEGER PRIMARY KEY,
+                agent_id TEXT,
+                started_at TEXT,
+                finished_at TEXT,
+                status TEXT,
+                pr_number INTEGER,
+                pr_url TEXT,
+                branch_name TEXT,
+                error_message TEXT,
+                summary_message TEXT
+            )
+        """)
+        
+        # Set cooldown in future in IST timezone
+        from datetime import timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
+        future_dt = datetime.datetime.now(IST) + datetime.timedelta(hours=2)
+        conn.execute("INSERT INTO orchestrator_state VALUES ('quota_cooldown_until', ?)", (future_dt.isoformat(),))
+        
+        # Set running agent
+        conn.execute("""
+            INSERT INTO agent_runs VALUES (
+                1, 'researcher', '2026-06-10T16:00:00.000Z', NULL, 
+                'RUNNING', NULL, NULL, 'test-branch-1', 
+                NULL, NULL
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        def mock_exists(path):
+            if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
+                return True
+            return os.path.exists(path)
+
+        def mock_connect(path):
+            if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
+                return _real_sqlite3_connect(temp_db_path)
+            return _real_sqlite3_connect(path)
+
+        with patch('os.path.exists', side_effect=mock_exists):
+            with patch('sqlite3.connect', side_effect=mock_connect):
+                response = auth_client.get('/api/admin/orchestrator/status')
+                assert response.status_code == 200
+                data = json.loads(response.data)
+                
+                # Verify cooldown is active
+                assert data['cooldown']['active'] is True
+                assert 'remaining_seconds' in data['cooldown']
+                assert data['cooldown']['remaining_seconds'] > 0
+                
+                # Verify running agent is retrieved
+                assert data['running_agent'] is not None
+                assert data['running_agent']['agent_id'] == 'researcher'
+                assert data['running_agent']['started_at'] == '2026-06-10T16:00:00.000Z'
+    finally:
+        os.close(db_fd)
+        os.unlink(temp_db_path)
+
