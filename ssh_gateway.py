@@ -107,32 +107,58 @@ def get_console(width: int) -> Console:
     _thread_local.console.width = width
     return _thread_local.console
 
-_container_statuses_cache = None
-_container_statuses_timestamp = 0.0
+# Optimize container status caching using a background thread and non-blocking reads to eliminate UI lag & flickering.
+_container_statuses_cache = {}
 _cache_lock = threading.Lock()
+_refresher_started = False
+_refresher_lock = threading.Lock()
+_refresh_event = threading.Event()
+
+def _docker_status_refresher():
+    """Background loop to periodically fetch container status, waking up on invalidations."""
+    global _container_statuses_cache
+    logger.info("Docker status refresher thread started")
+    while True:
+        try:
+            client = get_docker_client()
+            containers = client.containers.list(all=True)
+            new_cache = {c.name: c.status for c in containers}
+            with _cache_lock:
+                _container_statuses_cache = new_cache
+        except Exception as e:
+            logger.error(f"Failed to list containers in background: {e}")
+        # Wait for 2 seconds or until woken up (e.g. by cache invalidation)
+        _refresh_event.wait(timeout=2.0)
+        _refresh_event.clear()
+
+def start_refresher_thread_if_needed():
+    """Start the background Docker status refresher thread if it is not already running."""
+    global _refresher_started
+    if not _refresher_started:
+        with _refresher_lock:
+            if not _refresher_started:
+                # Run the first status query synchronously so the initial page load has data
+                try:
+                    client = get_docker_client()
+                    containers = client.containers.list(all=True)
+                    global _container_statuses_cache
+                    _container_statuses_cache = {c.name: c.status for c in containers}
+                except Exception as e:
+                    logger.error(f"Initial container status fetch failed: {e}")
+                
+                t = threading.Thread(target=_docker_status_refresher, daemon=True, name="docker-status-refresher")
+                t.start()
+                _refresher_started = True
 
 def get_all_container_statuses() -> dict:
-    """Get status of all containers, cached for 2 seconds to avoid overloading Docker daemon."""
-    global _container_statuses_cache, _container_statuses_timestamp
-    now = time.time()
+    """Get status of all containers from a non-blocking background-refreshed cache."""
+    start_refresher_thread_if_needed()
     with _cache_lock:
-        if _container_statuses_cache is None or (now - _container_statuses_timestamp > 2.0):
-            try:
-                client = get_docker_client()
-                containers = client.containers.list(all=True)
-                _container_statuses_cache = {c.name: c.status for c in containers}
-                _container_statuses_timestamp = now
-            except Exception as e:
-                logger.error(f"Failed to list containers: {e}")
-                if _container_statuses_cache is None:
-                    _container_statuses_cache = {}
         return _container_statuses_cache.copy()
 
 def invalidate_container_cache():
-    """Invalidate the cached container statuses to force a fresh fetch."""
-    global _container_statuses_timestamp
-    with _cache_lock:
-        _container_statuses_timestamp = 0.0
+    """Wake up the background refresher thread to update the cache immediately."""
+    _refresh_event.set()
 
 
 # ============================================================
@@ -745,44 +771,91 @@ class TUI:
 # Input Reader
 # ============================================================
 def read_key(channel, timeout: float = 0.5) -> str | None:
-    """Read a single keypress or escape sequence from SSH channel."""
-    try:
-        ready = select.select([channel], [], [], timeout)
-        if not ready[0]:
-            return None
+    """Read a single keypress or escape sequence from SSH channel, using a thread-local buffer to prevent dropped keys and support pastes."""
+    # Ensure thread-local input buffer exists
+    if not hasattr(_thread_local, 'input_buffer'):
+        _thread_local.input_buffer = bytearray()
 
-        data = channel.recv(32)
-        if not data:
+    buf = _thread_local.input_buffer
+
+    # If buffer is empty, block up to timeout to read some data from channel
+    if not buf:
+        try:
+            ready = select.select([channel], [], [], timeout)
+            if not ready[0]:
+                return None
+            data = channel.recv(1024)  # Read up to 1024 bytes to handle rapid inputs/pastes
+            if not data:
+                return 'EOF'
+            buf.extend(data)
+        except Exception:
             return 'EOF'
 
-        # Escape sequences
-        if data == b'\x1b[A' or data == b'\x1bOA':
-            return 'UP'
-        if data == b'\x1b[B' or data == b'\x1bOB':
-            return 'DOWN'
-        if data == b'\x1b[C' or data == b'\x1bOC':
-            return 'RIGHT'
-        if data == b'\x1b[D' or data == b'\x1bOD':
-            return 'LEFT'
-        if data == b'\r' or data == b'\n':
-            return 'ENTER'
-        if data == b'\x7f' or data == b'\x08':
-            return 'BACKSPACE'
-        if data == b'\x03':
-            return 'CTRL_C'
-        if data == b'\x04':
-            return 'CTRL_D'
-        if data == b'\x1b':
-            return 'ESC'
-
-        # Regular characters
+    # If the buffer starts with ESC but is incomplete, wait briefly for the rest of the sequence
+    if len(buf) > 0 and buf[0] == 0x1b and len(buf) < 3:
         try:
-            return data.decode('utf-8')
-        except UnicodeDecodeError:
-            return None
+            # Wait up to 50ms for the rest of the sequence (e.g. arrow keys)
+            ready = select.select([channel], [], [], 0.05)
+            if ready[0]:
+                data = channel.recv(1024)
+                if data:
+                    buf.extend(data)
+        except Exception:
+            pass
 
-    except Exception:
-        return 'EOF'
+    # Now parse from the buffer
+    if not buf:
+        return None
+
+    # Check for recognized 3-byte escape sequences
+    if buf[0] == 0x1b:
+        if len(buf) >= 3:
+            seq = bytes(buf[:3])
+            if seq in (b'\x1b[A', b'\x1bOA'):
+                del buf[:3]
+                return 'UP'
+            if seq in (b'\x1b[B', b'\x1bOB'):
+                del buf[:3]
+                return 'DOWN'
+            if seq in (b'\x1b[C', b'\x1bOC'):
+                del buf[:3]
+                return 'RIGHT'
+            if seq in (b'\x1b[D', b'\x1bOD'):
+                del buf[:3]
+                return 'LEFT'
+        
+        # If we have at least 3 bytes and it's not a recognized arrow key,
+        # or if we waited 50ms and it's still less than 3 bytes:
+        # Treat the 0x1b as 'ESC' and leave the rest in the buffer.
+        del buf[:1]
+        return 'ESC'
+
+    first = buf[0]
+    if first in (0x0d, 0x0a):
+        del buf[:1]
+        return 'ENTER'
+    if first in (0x7f, 0x08):
+        del buf[:1]
+        return 'BACKSPACE'
+    if first == 0x03:
+        del buf[:1]
+        return 'CTRL_C'
+    if first == 0x04:
+        del buf[:1]
+        return 'CTRL_D'
+
+    # Decode UTF-8 char from the beginning of the buffer
+    for i in range(1, min(len(buf) + 1, 5)):
+        try:
+            char_str = buf[:i].decode('utf-8')
+            del buf[:i]
+            return char_str
+        except UnicodeDecodeError:
+            pass
+    
+    # If decoding failed, discard the first byte to avoid deadlock
+    del buf[:1]
+    return None
 
 
 def read_line(channel, prompt: str, mask: bool = False, max_len: int = 20) -> str | None:
@@ -1348,7 +1421,8 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 elif key in ('ENTER', '\n', '\r'):
                     mode = "NORMAL"
                     redraw()
-                elif isinstance(key, str) and len(key) == 1 and key.isprintable():
+                # Allow strings of any length to fully support pasted queries and rapid keypresses
+                elif isinstance(key, str) and len(key) >= 1 and key.isprintable():
                     search_query += key
                     repos = get_filtered_sorted_repos(all_repos, status_map)
                     selected_index = 0
