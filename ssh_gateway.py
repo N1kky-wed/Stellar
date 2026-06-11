@@ -1157,18 +1157,29 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
 
         send_raw(channel, '\x1b[?1049h\x1b[?25l')  # Enter alt screen, hide cursor
 
-        # Double-buffer / cache the rendered string and only print cursor reposition
-        # to home (\x1b[H) without clearing (\x1b[0J) to eliminate terminal flickering.
+        # Double-buffer / cache the rendered string and use line-by-line diffing
+        # to eliminate terminal flickering and reduce network payload.
         last_drawn_content = None
 
         def draw(content: str, clear: bool = False):
             nonlocal last_drawn_content
             if not clear and content == last_drawn_content:
                 return
-            if clear:
+            if clear or last_drawn_content is None:
+                # Clear screen and draw entire content when requested or initially
                 send_raw(channel, '\x1b[2J\x1b[H' + content)
             else:
-                send_raw(channel, '\x1b[H' + content)
+                new_lines = content.splitlines()
+                old_lines = last_drawn_content.splitlines()
+                # If number of lines changed, fallback to full draw
+                if len(new_lines) != len(old_lines):
+                    send_raw(channel, '\x1b[H' + content)
+                else:
+                    # Line-by-line diff: draw only lines that have changed to save bandwidth and prevent flickering
+                    for idx, (new_line, old_line) in enumerate(zip(new_lines, old_lines)):
+                        if new_line != old_line:
+                            # Move cursor to start of line (idx+1), print new content, clear rest of line
+                            send_raw(channel, f'\x1b[{idx+1};1H' + new_line + '\x1b[K')
             last_drawn_content = content
 
         # ---- PHASE 0: Theme Picker ----
@@ -1599,9 +1610,6 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             channel.close()
         except Exception:
             pass
-        with sessions_lock:
-            active_sessions -= 1
-        logger.info(f"Session closed for {client_addr}")
 
 
 # ============================================================
@@ -1631,8 +1639,10 @@ def handle_connection(client_socket, client_addr):
             return
         active_sessions += 1
 
+    session_active = True
     audit.info(f"CONNECTION_NEW | ip={ip} | active_sessions={active_sessions}")
 
+    transport = None
     try:
         transport = paramiko.Transport(client_socket)
 
@@ -1664,10 +1674,16 @@ def handle_connection(client_socket, client_addr):
     except Exception as e:
         logger.error(f"Connection handler error for {ip}: {e}", exc_info=True)
     finally:
-        try:
-            transport.close()
-        except Exception:
-            pass
+        if transport:
+            try:
+                transport.close()
+            except Exception:
+                pass
+        # Always decrement session count on connection teardown to prevent socket leak DoS
+        if session_active:
+            with sessions_lock:
+                active_sessions -= 1
+            logger.info(f"Session closed for {ip}")
 
 
 # ============================================================
