@@ -380,107 +380,132 @@ body.browser-open header::after {
 }
 
 :root {
-  --model-color-start: #7b61ff;
-  --model-color-end: #b554ff;
-  --model-color-border: rgba(181, 84, 255, 0.5);
-  --model-color-shadow: rgba(123, 97, 255, 0.3);
-  --model-color-shadow-inset: rgba(123, 97, 255, 0.2);
-  --model-hover-color-start: #b554ff;
-  --model-hover-color-end: #7b61ff;
-  --model-hover-color-border: rgba(123, 97, 255, 0.7);
-  --model-hover-color-shadow: rgba(123, 97, 255, 0.5);
-  --model-hover-color-shadow-inset: rgba(123, 97, 255, 0.3);
-  --model-hover-shadow-strong: rgba(123, 97, 255, 0.4);
-  --title-shadow-color: var(--model-color-shadow);
-  --body-bg-color1: #0f0c29;
-  --body-bg-color2: #302b63;
-  --body-bg-color3: #24243e;
-  --body-bg-color4: #302b63;
-  --primary-text-color: #f0f0f0;
-  --secondary-text-color: #a9a3c7;
-  --header-bg: rgba(20, 16, 50, 0.3);
-  --header-border: rgba(181, 84, 255, 0.15);
-  --input-bg: rgba(20, 16, 50, 0.4);
-  --input-border: rgba(181, 84, 255, 0.1);
-  --input-focus-bg: rgba(30, 26, 60, 0.5);
-  --input-focus-border: var(--model-color-border);
-  --user-msg-bg: rgba(123, 97, 255, 0.15);
-  --user-msg-border: rgba(123, 97, 255, 0.3);
-  --user-msg-hover-bg: rgba(123, 97, 255, 0.2);
-  --stellar-msg-bg: rgba(0, 0, 0, 0.25);
-  --stellar-msg-border: rgba(123, 97, 255, 0.2);
-  --stellar-msg-hover-bg: rgba(0, 0, 0, 0.35);
-  --link-color: var(--model-color-start);
-  --link-hover-color: var(--model-hover-color-start);
-  --scrollbar-thumb-start: var(--model-color-start);
-  --scrollbar-thumb-end: var(--model-color-end);
-  --scrollbar-thumb-border: var(--model-color-border);
-  --scrollbar-thumb-hover-start: var(--model-hover-color-start);
-  --scrollbar-thumb-hover-end: var(--model-hover-color-end);
-  --scrollbar-thumb-hover-border: var(--model-hover-color-border);
-  --scrollbar-track-bg: rgba(36, 36, 62, 0.6);
-  --table-border-color: rgba(123, 97, 255, 0.3);
-  --code-bg: rgba(10, 10, 25, 0.85);
-  --code-border: rgba(123, 97, 255, 0.4);
-  --code-text-color: #f5f5f5;
-  --inline-code-bg: rgba(0, 0, 0, 0.3);
-  --inline-code-text-color: var(--model-color-end);
-  --status-bar-bg: rgba(123, 97, 255, 0.2);
-  --status-bar-color: #e0d9ff;
-  --status-bar-shadow: rgba(123, 97, 255, 0.4);
-  --status-bar-idle-color: var(--secondary-text-color);
-  --status-bar-idle-bg: rgba(0, 0, 0, 0.2);
-  --code-btn-bg: rgba(50, 50, 50, 0.7);
-  /* Change from rgba(255, 255, 255, 0.1) to a darker, more opaque background */
-  --code-btn-hover-bg: rgba(70, 70, 70, 0.8);
-  /* Change from rgba(255, 255, 255, 0.2) to a slightly lighter, more opaque background on hover */
-  --code-btn-color: #ffffff;
-  /* Change from #c5bfff to pure white for better contrast */
-  --code-btn-hover-color: #ffffff;
-  /* Change from #f5f5f5 to pure white on hover */
-  --code-btn-border: 1px solid black;
-  --code-btn-hover-border: 1px solid black;
-  --copy-btn-copied-bg: var(--model-color-start);
+  /* =========================================================
+     ACCENT COLOR SIGNATURES (FIXED NEUTRAL ACCENTS)
+     =========================================================
+     We use a consistent, clean neutral/white accent design across the app. */
+  --model-color-start: #ffffff;
+  --model-color-start-rgb: 255, 255, 255;
+  --model-color-end: #ffffff;
+  --model-color-border: rgba(255, 255, 255, 0.15);
+  --model-color-shadow: rgba(255, 255, 255, 0.05);
+  --model-color-shadow-inset: rgba(255, 255, 255, 0.02);
+  --model-hover-color-start: #ffffff;
+  --model-hover-color-end: #ffffff;
+  --model-hover-color-border: rgba(255, 255, 255, 0.3);
+  --model-hover-color-shadow: rgba(255, 255, 255, 0.1);
+  --model-hover-color-shadow-inset: rgba(255, 255, 255, 0.05);
+  --model-hover-shadow-strong: rgba(255, 255, 255, 0.15);
+  --title-shadow-color: transparent;
+  --link-color: #3b82f6;
+  --link-hover-color: #60a5fa;
+  --scrollbar-thumb-start: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-end: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-border: rgba(255, 255, 255, 0.05);
+  --scrollbar-thumb-hover-start: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover-end: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover-border: rgba(255, 255, 255, 0.1);
+  --inline-code-text-color: #abb2bf;
+  --copy-btn-copied-bg: #22c55e;
   --copy-btn-copied-color: #ffffff;
+  --output-copy-btn-copied-bg: #22c55e;
+  --output-copy-btn-copied-color: #ffffff;
+  --auth-button-bg: rgba(255, 255, 255, 0.08);
+  --auth-button-shadow: none;
+  --auth-link-color: var(--link-color);
+
+  /* =========================================================
+     FIXED DEEP DARK LAYOUT THEME (UNIFIED CORE STYLING)
+     =========================================================
+     We use a consistent deep midnight/charcoal black layout for the page shell.
+     These variables are kept stable and are not modified by JavaScript when switching
+     models, ensuring the main layout remains dark and uniform. */
+  --body-bg-color1: #060608;        /* Deep black-charcoal background base */
+  --body-bg-color2: #0b0b0d;        /* Flat charcoal black step */
+  --body-bg-color3: #08080a;        /* Charcoal shadow step */
+  --body-bg-color4: #0b0b0d;        /* Deep charcoal step */
+  --base-bg: #060608;
+  
+  --primary-text-color: #f5f6f8;    /* Crisp off-white text for primary readability */
+  --secondary-text-color: #94a3b8;  /* Muted slate text for meta and labels */
+  
+  --header-bg: rgba(6, 6, 8, 0.7);  /* Translucent header overlay */
+  --header-border: #121216;
+  
+  --sidebar-bg: #08080a;            /* Sidebar base background */
+  --sidebar-border: #121216;
+  
+  --card-bg: #0e0e12;               /* Container background for items, modals, lists */
+  --card-border: rgba(255, 255, 255, 0.05);
+  
+  --input-bg: #08080a;              /* Code input and textareas base */
+  --input-border: rgba(255, 255, 255, 0.08);
+  --input-focus-bg: #0d0d12;        /* Subtle shift in color during active input */
+  --input-focus-border: var(--model-color-border);
+  
+  --user-msg-bg: #101014;           /* Message containers */
+  --user-msg-border: rgba(255, 255, 255, 0.05);
+  --user-msg-hover-bg: #15151b;
+  
+  --stellar-msg-bg: #08080a;
+  --stellar-msg-border: rgba(255, 255, 255, 0.03);
+  --stellar-msg-hover-bg: #0d0d12;
+
+  --scrollbar-track-bg: #060608;
+  --table-border-color: #121216;
+  
+  --code-bg: #05060b;               /* Code snippets layout styling */
+  --code-border: rgba(255, 255, 255, 0.05);
+  --code-text-color: #e2e8f0;
+  --inline-code-bg: rgba(255, 255, 255, 0.06);
+  
+  --code-btn-bg: #0d0e1a;           /* Copy & preview actions inside markdown */
+  --code-btn-hover-bg: #121424;
+  --code-btn-color: #abb2bf;
+  --code-btn-hover-color: #ffffff;
+  --code-btn-border: 1px solid #121422;
+  --code-btn-hover-border: 1px solid #121422;
+  
   --preview-btn-bg: var(--code-btn-bg);
   --preview-btn-hover-bg: var(--code-btn-hover-bg);
   --preview-btn-color: var(--code-btn-color);
   --preview-btn-hover-color: var(--code-btn-hover-color);
+
+  --output-copy-btn-bg: #0d0e1a;
+  --output-copy-btn-hover-bg: #121424;
+  --output-copy-btn-color: #abb2bf;
+  --output-copy-btn-hover-color: #ffffff;
+
+  --status-bar-bg: var(--sidebar-bg); /* Bottom model stats row */
+  --status-bar-color: var(--secondary-text-color);
+  --status-bar-shadow: rgba(0, 0, 0, 0.3);
+  --status-bar-idle-color: var(--secondary-text-color);
+  --status-bar-idle-bg: var(--sidebar-bg);
+  
+  --tooltip-bg: rgba(15, 23, 42, 0.95);
+  --tooltip-color: #ffffff;
+  --tooltip-transition-duration: 0.15s;
+  
+  --auth-form-bg: #06070e;
+  --auth-input-bg: #07080f;
+  --auth-input-border: #121422;
+  --auth-message-success: #00c292;
+  --auth-message-error: #ff6b6b;
+  
+  --chat-item-hover: rgba(255, 255, 255, 0.04);
+  --chat-item-active: rgba(255, 255, 255, 0.08);
+  --chat-item-active-border: var(--model-color-border);
+  
+  --token-bar-bg: rgba(0, 0, 0, 0.2);
+  --token-bar-fill-low: #00c292;
+  --token-bar-fill-medium: #fabd2f;
+  --token-bar-fill-high: #ff6b6b;
+
   --transition-duration-fast: 0.2s;
   --transition-duration-medium: 0.3s;
   --transition-duration-slow: 0.5s;
   --transition-timing-function: ease;
   --transition-cubic-bezier: cubic-bezier(0.25, 0.8, 0.25, 1);
-  --output-copy-btn-bg: rgba(50, 50, 50, 0.7);
-  --output-copy-btn-hover-bg: rgba(70, 70, 70, 0.8);
-  --output-copy-btn-color: #d1d5db;
-  --output-copy-btn-hover-color: #ffffff;
-  --output-copy-btn-copied-bg: #20a375;
-  --output-copy-btn-copied-color: #ffffff;
-  --tooltip-bg: rgba(30, 30, 30, 0.9);
-  --tooltip-color: #ffffff;
-  --tooltip-transition-duration: 0.15s;
-  --auth-form-bg: rgba(20, 16, 50, 0.7);
-  --auth-input-bg: rgba(0, 0, 0, 0.3);
-  --auth-input-border: rgba(181, 84, 255, 0.2);
-  --auth-button-bg: linear-gradient(
-    45deg,
-    var(--model-color-start),
-    var(--model-color-end)
-  );
-  --auth-button-shadow: 0 4px 10px var(--model-color-shadow);
-  --auth-link-color: var(--link-color);
-  --auth-message-success: #00c292;
-  --auth-message-error: #ff6b6b;
-  --sidebar-bg: rgba(20, 16, 50, 0.7);
-  --sidebar-border: rgba(181, 84, 255, 0.2);
-  --chat-item-hover: rgba(255, 255, 255, 0.05);
-  --chat-item-active: rgba(123, 97, 255, 0.2);
-  --chat-item-active-border: rgba(123, 97, 255, 0.5);
-  --token-bar-bg: rgba(0, 0, 0, 0.2);
-  --token-bar-fill-low: #00c292;
-  --token-bar-fill-medium: #fabd2f;
-  --token-bar-fill-high: #ff6b6b;
 }
 
 * {
@@ -940,80 +965,35 @@ body::before {
 .title-gradient {
   font-size: 1.8rem;
   font-weight: 600;
-  background: linear-gradient(
-    45deg,
-    var(--model-color-start),
-    var(--model-color-end)
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 15px var(--title-shadow-color);
+  color: #ffffff;
   letter-spacing: 1px;
   transition:
-    text-shadow var(--transition-duration-medium)
-      var(--transition-timing-function),
-    transform var(--transition-duration-fast) var(--transition-timing-function),
-    background var(--transition-duration-medium)
-      var(--transition-timing-function);
+    transform var(--transition-duration-fast) var(--transition-timing-function);
 }
 
 .title-gradient:hover {
-  text-shadow: 0 0 20px var(--model-hover-color-shadow);
   transform: translateY(-1px);
-}
-
-body.theme-emerald .title-gradient {
-  background: linear-gradient(45deg, #00c292, #00a77d 50%, #36d1dc);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 10px var(--title-shadow-color);
-}
-
-body.theme-crimson .title-gradient {
-  background: linear-gradient(45deg, #d31027, #9a0007 50%, #ff512f);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 10px var(--title-shadow-color);
-}
-
-body.theme-obsidian .title-gradient {
-  background: linear-gradient(45deg, #6e7a85, #485563 50%, #8a9aa3);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow:
-    0 0 12px var(--title-shadow-color),
-    0 0 1px rgba(200, 210, 220, 0.3);
-  filter: brightness(1.1);
 }
 
 #chatTitle {
   font-size: 1.8rem;
   font-weight: 600;
-  background: linear-gradient(
-    45deg,
-    var(--model-color-start),
-    var(--model-color-end)
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 15px var(--title-shadow-color);
+  color: #ffffff;
   letter-spacing: 1px;
   transition:
-    text-shadow var(--transition-duration-medium),
-    transform var(--transition-duration-fast),
-    background var(--transition-duration-medium);
+    transform var(--transition-duration-fast);
   margin-left: 20px;
+}
+
+#chatTitle:hover {
+  transform: translateY(-1px);
 }
 
 #profileIcon {
   width: 42px;
   height: 42px;
   border-radius: 12px;
-  background: linear-gradient(
-    45deg,
-    var(--model-color-start),
-    var(--model-color-end)
-  );
+  background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.2);
   display: flex;
   align-items: center;
@@ -1047,10 +1027,10 @@ body.theme-obsidian .title-gradient {
   left: 0;
   bottom: 0;
   width: 280px;
-  background: rgba(10, 10, 15, 0.95);
+  background: var(--sidebar-bg);
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid var(--sidebar-border);
   box-shadow: 4px 0 30px rgba(0, 0, 0, 0.6);
   transform: translateX(-100%);
   transition: transform 0.3s ease-in-out;
@@ -1131,27 +1111,28 @@ body.theme-obsidian .title-gradient {
 #newChatBtn {
   width: 100%;
   padding: 12px;
-  background: linear-gradient(
-    45deg,
-    var(--model-color-start),
-    var(--model-color-end)
-  );
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
   transition: all 0.3s ease;
   margin: 0 0 20px 0 !important;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
 }
 
 #newChatBtn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-  filter: brightness(1.1);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  transform: translateY(-1px);
 }
 
 #agentGroupChatBtn {
@@ -2593,16 +2574,14 @@ body.theme-obsidian .research-output:hover {
 }
 
 #confirmBtn {
-  background: linear-gradient(45deg, #d31027, #9a0007);
+  background: #d31027;
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 15px rgba(211, 16, 39, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 #confirmBtn:hover {
+  background: #b80d1e;
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(211, 16, 39, 0.5);
-  filter: brightness(1.1);
 }
 
 #regenerateWithoutFeedbackBtn {
@@ -3107,7 +3086,7 @@ body.theme-obsidian .research-output:hover {
   transform: translateX(-50%) translateY(-2px);
 }
 
-:root {
+body.auth-page {
   --color-1: #a972ff;
   --color-2: #82aaff;
   --color-3: #f77fbe;
@@ -5111,15 +5090,7 @@ select {
 .welcome-greeting {
   font-size: 2rem;
   font-weight: 600;
-  background: linear-gradient(
-    135deg,
-    #ffffff 0%,
-    var(--model-color-start) 50%,
-    var(--model-color-end) 100%
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #ffffff;
   margin-bottom: 8px;
   letter-spacing: 0.5px;
   z-index: 1;
@@ -5421,7 +5392,7 @@ select {
 }
 
 /* --- OVERRIDES FOR PURE BLACK & NO-GLOSS THEME --- */
-:root {
+body.pure-black {
   --body-bg-color1: #000000 !important;
   --body-bg-color2: #000000 !important;
   --body-bg-color3: #000000 !important;
@@ -5456,6 +5427,14 @@ select {
 }
 
 body {
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1000' height='800' viewBox='0 0 1000 800'%3E%3Cg stroke='%23ffffff' stroke-width='0.5' stroke-opacity='0.04' stroke-linejoin='round'%3E%3Cpolygon points='-250,-150 300,50 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3Cpolygon points='300,50 1200,-50 700,600' fill='%23ffffff' fill-opacity='0.02' /%3E%3Cpolygon points='1200,-50 1300,400 700,600' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='1300,400 1200,1100 700,600' fill='%23ffffff' fill-opacity='0.015' /%3E%3Cpolygon points='1200,1100 400,700 700,600' fill='%23ffffff' fill-opacity='0.025' /%3E%3Cpolygon points='400,700 -300,950 200,450' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='400,700 700,600 200,450' fill='%23ffffff' fill-opacity='0.018' /%3E%3Cpolygon points='-300,950 -250,-150 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3C/g%3E%3C/svg%3E");
+  background-attachment: fixed;
+  background-position: center;
+  animation: foldBreathe 60s infinite alternate ease-in-out;
+}
+
+body.pure-black {
   background-color: #030303 !important;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1000' height='800' viewBox='0 0 1000 800'%3E%3Cg stroke='%23ffffff' stroke-width='0.5' stroke-opacity='0.04' stroke-linejoin='round'%3E%3Cpolygon points='-250,-150 300,50 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3Cpolygon points='300,50 1200,-50 700,600' fill='%23ffffff' fill-opacity='0.02' /%3E%3Cpolygon points='1200,-50 1300,400 700,600' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='1300,400 1200,1100 700,600' fill='%23ffffff' fill-opacity='0.015' /%3E%3Cpolygon points='1200,1100 400,700 700,600' fill='%23ffffff' fill-opacity='0.025' /%3E%3Cpolygon points='400,700 -300,950 200,450' fill='%23ffffff' fill-opacity='0.01' /%3E%3Cpolygon points='400,700 700,600 200,450' fill='%23ffffff' fill-opacity='0.018' /%3E%3Cpolygon points='-300,950 -250,-150 200,450' fill='%23ffffff' fill-opacity='0.005' /%3E%3C/g%3E%3C/svg%3E") !important;
   background-attachment: fixed !important;
@@ -5464,12 +5443,12 @@ body {
 }
 
 /* Remove flowing background gradients */
-.dynamic-bg,
-#dynamic-bg-canvas,
-.orb,
-.particle,
-.glow-1,
-.glow-2 {
+body.pure-black .dynamic-bg,
+body.pure-black #dynamic-bg-canvas,
+body.pure-black .orb,
+body.pure-black .particle,
+body.pure-black .glow-1,
+body.pure-black .glow-2 {
   display: none !important;
   animation: none !important;
   opacity: 0 !important;
@@ -5477,27 +5456,27 @@ body {
 }
 
 /* Remove glassmorphism */
-* {
+body.pure-black * {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 
-header,
-.sidebar,
-.input-container,
-.message,
-.card,
-.glass-card,
-.chat-container {
+body.pure-black header,
+body.pure-black .sidebar,
+body.pure-black .input-container,
+body.pure-black .message,
+body.pure-black .card,
+body.pure-black .glass-card,
+body.pure-black .chat-container {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 
 /* Remove text gradients from specific headers, keeping them solid white */
-.welcome-greeting,
-.profile-modal-content h2,
-.settings-header h2,
-#adminWaitlistModal h2 {
+body.pure-black .welcome-greeting,
+body.pure-black .profile-modal-content h2,
+body.pure-black .settings-header h2,
+body.pure-black #adminWaitlistModal h2 {
   background: none !important;
   -webkit-text-fill-color: #ffffff !important;
   color: #ffffff !important;

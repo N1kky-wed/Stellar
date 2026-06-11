@@ -70,11 +70,7 @@
   transition: background 0.2s ease;
 }
 .custom-select-option:hover {
-  background: linear-gradient(
-    45deg,
-    var(--model-color-start, #4a4a75),
-    var(--model-color-end, #2a2a45)
-  );
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
 .custom-select-option.selected {
