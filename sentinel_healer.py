@@ -27,6 +27,9 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from typing import List
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 # Constants
 DATABASE_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stellar_local.db')
 SANDBOX_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sandbox_runs')
@@ -150,7 +153,7 @@ def stop_application_server(container, cmd):
         container (docker.models.containers.Container): The Docker container object.
         cmd (str): The startup command used to detect running process keywords.
     """
-    from app import logger
+    t_stop = time.time()
     try:
         kws = ['node', 'npm'] if ('node' in cmd or 'npm' in cmd) else ['app.py', 'python', 'flask']
         kws_str = ", ".join([f"'{kw}'" for kw in kws])
@@ -162,13 +165,14 @@ def stop_application_server(container, cmd):
         )
         container.exec_run(["python3", "-c", kill_script], user='root')
     except Exception as e:
-        logger.warning(f"Process PID kill script failed: {e}")
+        logger.warning("Process PID kill script failed container_id=%s cmd=%s error=%s", getattr(container, 'id', 'unknown'), cmd, e)
         
     container.exec_run("pkill -9 python || true", user='root')
     container.exec_run("pkill -f 'python app.py' || true", user='root')
     container.exec_run("pkill -9 node || true", user='root')
     container.exec_run("pkill -f 'node server.js' || true", user='root')
     container.exec_run("pkill -f 'npm' || true", user='root')
+    logger.info("stop_application_server completed container_id=%s cmd=%s duration_sec=%.2f", getattr(container, 'id', 'unknown'), cmd, time.time() - t_stop)
 
 # Pydantic models for structured output
 class EditBlock(BaseModel):
@@ -211,13 +215,13 @@ def heal_application(process_id, error_id, r_client):
         error_id (int): The database primary key ID of the sentinel_app_errors record.
         r_client (redis.StrictRedis): The Redis client instance used for locking and queue operations.
     """
-    from app import logger, KEY_MANAGER
+    from app import KEY_MANAGER
     logger.info("Initiating self-healing workflow process_id=%s error_id=%s", process_id, error_id)
     
     lock_key = f"lock:sentinel:heal:{process_id}"
     # Acquire Redis lock with 5-minute TTL
     if not r_client.set(lock_key, "locked", ex=300, nx=True):
-        logger.info(f"Self-healing already in progress for app {process_id}. Re-queueing task.")
+        logger.info("Self-healing already in progress for app process_id=%s. Re-queueing task.", process_id)
         time.sleep(2)
         payload = json.dumps({"error_id": error_id, "process_id": process_id})
         r_client.lpush("sentinel:queue", payload)
@@ -260,6 +264,7 @@ def heal_application(process_id, error_id, r_client):
         publish_log("info", "Sentinel healer activated. Inspecting database details...", stage="Initializing Healer")
         
         # Connect to DB
+        t_db = time.time()
         db = get_db_conn()
         
         # Fetch the error details
@@ -276,8 +281,10 @@ def heal_application(process_id, error_id, r_client):
         
         db.execute("UPDATE sentinel_app_errors SET status = 'fixing' WHERE id = ?", (error_id,))
         db.commit()
+        logger.info("Database initialization and error fetch completed error_id=%s duration_sec=%.2f", error_id, time.time() - t_db)
 
         # Connect to Docker
+        t_docker = time.time()
         d_client = docker.from_env()
         container_name = f"stellar-repo-{process_id}"
         try:
@@ -296,6 +303,7 @@ def heal_application(process_id, error_id, r_client):
                 break
         if not host_dir:
             raise ValueError(f"Could not find host directory mount for container {container_name}")
+        logger.info("Docker container check and host mount resolution completed container_name=%s duration_sec=%.2f", container_name, time.time() - t_docker)
 
         # Resolve dynamic port and startup command
         port = 5000
@@ -306,17 +314,19 @@ def heal_application(process_id, error_id, r_client):
                 snap = json.loads(repo_row['files_snapshot'])
                 port = int(snap.get('port', 5000))
         except Exception as e:
-            logger.warning(f"Failed to fetch port for process {process_id}: {e}")
+            logger.warning("Failed to fetch port for process process_id=%s error=%s", process_id, e)
             
         # Ensure we have permissions to the host directory before detecting startup command
         import subprocess
+        t_chown = time.time()
         try:
             subprocess.run(["sudo", "chown", "-R", "stellaradmin:www-data", host_dir], check=True, capture_output=True)
+            logger.info("Chown host directory completed host_dir=%s duration_sec=%.2f", host_dir, time.time() - t_chown)
         except Exception as perm_err:
-            logger.warning(f"Failed to chown host directory: {perm_err}")
+            logger.warning("Failed to chown host directory host_dir=%s error=%s duration_sec=%.2f", host_dir, perm_err, time.time() - t_chown)
 
         startup_cmd = detect_startup_command(host_dir)
-        logger.info(f"Detected app startup command: '{startup_cmd}' on internal port {port}")
+        logger.info("Detected app startup command process_id=%s startup_cmd=%s port=%d", process_id, startup_cmd, port)
 
         # Define directories to exclude from context and backups
         exclude_dirs = {
@@ -328,12 +338,16 @@ def heal_application(process_id, error_id, r_client):
         # Create workspace backup directory (ignoring heavy/git/dependency folders)
         os.makedirs(SANDBOX_DIR, exist_ok=True)
         backup_dir = os.path.join(SANDBOX_DIR, f"backup_{process_id}_{error_id}")
+        t_backup = time.time()
         shutil.copytree(
             host_dir, backup_dir,
             ignore=shutil.ignore_patterns(*exclude_dirs),
             dirs_exist_ok=True
         )
+        logger.info("Created temporary backup snapshot backup_dir=%s host_dir=%s duration_sec=%.2f", backup_dir, host_dir, time.time() - t_backup)
         publish_log("info", "Created temporary backup snapshot of the workspace.")
+        
+        t_walk = time.time()
         workspace_context = ""
         total_chars = 0
         MAX_TOTAL_CHARS = 500000 # Keep context safe from 250k token limit (~1 token ≈ 3-4 chars)
@@ -352,7 +366,7 @@ def heal_application(process_id, error_id, r_client):
                     try:
                         # Skip files larger than 100KB to prevent quota blowout
                         if os.path.getsize(full_path) > 100000:
-                            logger.info(f"Skipping large file in context: {rel_path}")
+                            logger.info("Skipping large file in context rel_path=%s size=%d", rel_path, os.path.getsize(full_path))
                             continue
                         with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
                             content = f.read()
@@ -362,7 +376,8 @@ def heal_application(process_id, error_id, r_client):
                         workspace_context += f"\n--- File: {rel_path} ---\n{content}\n"
                         total_chars += len(content)
                     except Exception as fe:
-                        logger.warning(f"Could not read {rel_path} for workspace context: {fe}")
+                        logger.warning("Could not read file for workspace context rel_path=%s error=%s", rel_path, fe)
+        logger.info("Workspace context gathering completed process_id=%s files_size_chars=%d duration_sec=%.2f", process_id, total_chars, time.time() - t_walk)
 
         # Construct system prompt and user prompt
         system_prompt = (
@@ -510,7 +525,7 @@ Please provide the corrected file contents to heal the application.
 
         # Phase 5: Pre-flight Sandbox Validation (Syntax & Startup)
         publish_log("info", "Starting syntax and runtime validation checks...", stage="Validating Patch")
-        
+        t_syntax = time.time()
         # Check syntax for Python/JS files inside the container
         for patch in gemini_response.patches:
             file_path = patch.file_path.strip().lstrip('/')
@@ -524,17 +539,21 @@ Please provide the corrected file contents to heal the application.
                 if res.exit_code != 0:
                     err_msg = res.output.decode('utf-8', 'replace')
                     raise ValueError(f"Syntax validation failed for JS file {file_path}:\n{err_msg}")
+        logger.info("Syntax validation checks completed process_id=%s duration_sec=%.2f", process_id, time.time() - t_syntax)
 
         # Restart server process inside container
         publish_log("info", "Restarting application server inside container...")
+        t_restart = time.time()
         stop_application_server(container, startup_cmd)
         time.sleep(1)
         
         container.exec_run(["sh", "-c", f"{startup_cmd} > app.log 2>&1"], detach=True)
+        logger.info("Application server process started inside container process_id=%s startup_cmd=%s duration_sec=%.2f", process_id, startup_cmd, time.time() - t_restart)
 
         # Health check
         is_ready = False
         status_code = 0
+        t_health = time.time()
         for i in range(1, 11):
             time.sleep(1)
             try:
@@ -545,7 +564,9 @@ Please provide the corrected file contents to heal the application.
                         is_ready = True
                         break
             except Exception as e:
-                logger.warning(f"Health check execution warning (attempt {i}): {e}")
+                logger.warning("Health check execution warning process_id=%s attempt=%d error=%s", process_id, i, e)
+
+        logger.info("Health check validation completed process_id=%s is_ready=%s status_code=%d duration_sec=%.2f", process_id, is_ready, status_code, time.time() - t_health)
 
         if not is_ready:
             app_log = ""
@@ -590,13 +611,14 @@ Please provide the corrected file contents to heal the application.
         publish_log("info", f"Error during healing: {heal_err}. Rolling back to baseline state...")
         
         if backup_dir and host_dir and os.path.exists(backup_dir):
+            t_rollback = time.time()
             try:
                 # Fix permissions using sudo before restoring
                 import subprocess
                 try:
                     subprocess.run(["sudo", "chown", "-R", "stellaradmin:www-data", host_dir], check=True, capture_output=True)
                 except Exception as perm_err:
-                    logger.warning(f"Failed to chown host directory during rollback: {perm_err}")
+                    logger.warning("Failed to chown host directory during rollback host_dir=%s error=%s", host_dir, perm_err)
 
                 # Inode-safe contents restoration (preserving heavy excluded dirs)
                 for item in os.listdir(host_dir):
@@ -626,8 +648,9 @@ Please provide the corrected file contents to heal the application.
                     time.sleep(1)
                     container.exec_run(["sh", "-c", f"{startup_cmd} > app.log 2>&1"], detach=True)
                     publish_log("info", "Original application server restarted.")
+                logger.info("Rollback to backup snapshot completed process_id=%s duration_sec=%.2f", process_id, time.time() - t_rollback)
             except Exception as restore_err:
-                logger.error(f"Restore from backup failed: {restore_err}", exc_info=True)
+                logger.error("Restore from backup failed process_id=%s error=%s duration_sec=%.2f", process_id, restore_err, time.time() - t_rollback, exc_info=True)
 
         if db:
             # Record failed patch
@@ -679,17 +702,14 @@ def _healer_loop():
                 process_id = payload.get("process_id")
                 error_id = payload.get("error_id")
                 if process_id and error_id:
-                    from app import logger
                     logger.info("Dequeued self-healing job process_id=%s error_id=%s", process_id, error_id)
                     try:
                         heal_application(process_id, error_id, r_client)
                     except Exception as e:
-                        from app import logger
-                        logger.error(f"Error executing self-healing for app {process_id}: {e}", exc_info=True)
+                        logger.error("Error executing self-healing for app process_id=%s: %s", process_id, e, exc_info=True)
         except Exception as queue_err:
             try:
-                from app import logger
-                logger.error(f"Error in sentinel healer loop: {queue_err}", exc_info=True)
+                logger.error("Error in sentinel healer loop: %s", queue_err, exc_info=True)
             except Exception:
                 pass
             time.sleep(2)
@@ -702,7 +722,6 @@ def start_sentinel_healer():
     global _healer_thread, _stop_event
     if _healer_thread is not None and _healer_thread.is_alive():
         return
-    from app import logger
     logger.info("Starting Sentinel self-healing daemon thread...")
     _stop_event.clear()
     _healer_thread = threading.Thread(target=_healer_loop, daemon=True)
@@ -714,6 +733,5 @@ def stop_sentinel_healer():
     Sets the stop event which causes the `_healer_loop` to exit.
     """
     global _stop_event
-    from app import logger
     logger.info("Stopping Sentinel self-healing daemon thread...")
     _stop_event.set()

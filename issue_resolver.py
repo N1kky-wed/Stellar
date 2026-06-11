@@ -80,7 +80,7 @@ def switch_account(account_name):
     config_dir = os.path.join(RESOLVER_HOME, ".gemini")
     os.makedirs(config_dir, exist_ok=True)
     src_dir = os.path.join(CREDENTIALS_BASE_DIR, account_name)
-    logger.info(f"Switching to account {account_name}")
+    logger.info("Switching to account account_name=%s", account_name)
     for f in os.listdir(src_dir):
         if f.endswith(".json"):
             import shutil
@@ -141,6 +141,7 @@ def main():
                             
                         conn.execute("UPDATE agent_feedback SET status = ? WHERE id = ?", (new_status, issue_id_cmd))
                         conn.commit()
+                        logger.info("Issue status updated via Telegram command issue_id=%d status=%s", issue_id_cmd, new_status)
 
                 # 2. Notify about 'open' issues
                 cursor = conn.execute("SELECT id, topic, issue_description, technical_context FROM agent_feedback WHERE status = 'open'")
@@ -149,6 +150,7 @@ def main():
                     bot.send_message(f"🚨 Issue #{issue['id']} Reported: {issue['topic']}\nDescription: {issue['issue_description']}\nContext: {issue['technical_context']}\n\nReply with:\n{issue['id']} 1 (Investigate)\n{issue['id']} 2 (Mark Resolved)\n{issue['id']} 3 (Mark Mishap)")
                     conn.execute("UPDATE agent_feedback SET status = 'pending' WHERE id = ?", (issue['id'],))
                     conn.commit()
+                    logger.info("Issue status transitioned from open to pending issue_id=%d topic=%s", issue['id'], issue['topic'])
 
                 # 3. Process ONE 'approved' issue
                 cursor = conn.execute("SELECT id, user_id, topic, issue_description, technical_context FROM agent_feedback WHERE status = 'approved' ORDER BY id ASC LIMIT 1")
@@ -162,6 +164,7 @@ def main():
                 
                 conn.execute("UPDATE agent_feedback SET status = 'in_progress' WHERE id = ?", (issue_id,))
                 conn.commit()
+                logger.info("Issue status transitioned from approved to in_progress issue_id=%d", issue_id)
 
                 target_user_id = issue['user_id']
                 topic = issue['topic']
@@ -220,7 +223,10 @@ Make sure your response ends with one of these statuses."""
                         env["PATH"] = f"{nvm_path}:{env.get('PATH', '')}"
 
                         # Force use of flash model for better availability
+                        t_cli = time.time()
                         result = subprocess.run([GEMINI_CLI_PATH, "-p", prompt, "--model", "gemini-3-flash-preview", "--yolo", "--skip-trust"], capture_output=True, text=True, env=env)
+                        duration_cli = time.time() - t_cli
+                        logger.info("Gemini CLI process finished issue_id=%d attempt=%d return_code=%d duration_sec=%.2f", issue_id, retry_count+1, result.returncode, duration_cli)
                         
                         raw_output = result.stdout + "\n" + result.stderr
                         import re
@@ -259,6 +265,7 @@ Make sure your response ends with one of these statuses."""
 
                 conn.execute("UPDATE agent_feedback SET status = ? WHERE id = ?", (final_status, issue_id))
                 conn.commit()
+                logger.info("Issue resolution completed issue_id=%d final_status=%s", issue_id, final_status)
 
                 if final_status == 'resolved':
                      email_body = f"✅ Issue #{issue_id} [{topic}] was resolved and the server has been reloaded successfully.\n\nDescription: {desc}\nContext: {context}\n\nTechnical Output:\n{output}"
