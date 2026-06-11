@@ -858,6 +858,7 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
     for current_key in keys_to_try:
         try:
             client = genai.Client(api_key=current_key)
+            t0 = time.time()
             resp = client.models.generate_content(
                 model=model_id,
                 contents=slide_plan_prompt,
@@ -866,6 +867,8 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
                     response_schema=PresentationPlan
                 )
             )
+            duration = time.time() - t0
+            logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=make_presentation_plan", model_id, duration)
             plan = json.loads(resp.text)
             break
         except Exception as e:
@@ -902,10 +905,14 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
             
             loop = asyncio.get_event_loop()
             def gen_sync():
-                return client.models.generate_content(
+                t0 = time.time()
+                res = client.models.generate_content(
                     model='gemini-3.1-flash-image-preview',
                     contents=full_image_prompt,
                 )
+                duration = time.time() - t0
+                logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=make_presentation_slide_image", 'gemini-3.1-flash-image-preview', duration)
+                return res
             result = await loop.run_in_executor(None, gen_sync)
             if result.candidates and result.candidates[0].content.parts:
                 for part in result.candidates[0].content.parts:
@@ -1035,6 +1042,7 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
             if existing_image_part:
                 contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
 
+            t0 = time.time()
             resp = client.models.generate_content(
                 model=model_id,
                 contents=contents,
@@ -1043,6 +1051,8 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
                     response_schema=Slide
                 )
             )
+            duration = time.time() - t0
+            logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=regenerate_slide_plan", model_id, duration)
             slide_data = json.loads(resp.text)
             
             full_image_prompt = (
@@ -1061,10 +1071,13 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
             if existing_image_part:
                 image_contents.append(types.Part.from_bytes(data=existing_image_part['data'], mime_type=existing_image_part['mime_type']))
 
+            t0 = time.time()
             result = client.models.generate_content(
                 model='gemini-3.1-flash-image-preview',
                 contents=image_contents,
             )
+            duration = time.time() - t0
+            logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=regenerate_slide_image", 'gemini-3.1-flash-image-preview', duration)
             
             if result.candidates and result.candidates[0].content.parts:
                 for part in result.candidates[0].content.parts:
@@ -1197,6 +1210,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                         with open(fpath, 'wb') as f:
                             f.write(content.encode('utf-8'))
 
+                t_run = time.time()
                 container = client.containers.run(
                     image=target_image,
                     command='sleep infinity',
@@ -1219,6 +1233,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                         "subdomain": subdomain
                     }
                 )
+                logger.info("Repo container created process_id=%s image=%s duration_sec=%.2f", process_id, target_image, time.time() - t_run)
                 time.sleep(2)
                 container.reload()
                 host_port = container.attrs['NetworkSettings']['Ports'][f"{port}/tcp"][0]['HostPort']
@@ -1432,6 +1447,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                     with open(fpath, 'wb') as f:
                         f.write(content.encode('utf-8'))
 
+            t_run = time.time()
             container = client.containers.run(
                 image='stellar-repo-host:latest',
                 command='sleep infinity',
@@ -1452,6 +1468,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                     "subdomain": subdomain
                 }
             )
+            logger.info("Repo container restarted process_id=%s image=%s duration_sec=%.2f", process_id, 'stellar-repo-host:latest', time.time() - t_run)
 
             time.sleep(2)
             container.reload()
@@ -1573,9 +1590,12 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
     try:
         container = client.containers.get(container_name)
         if container.status != 'running':
+            t_start = time.time()
             container.start()
+            logger.info("Lab container started name=%s duration_sec=%.2f", container_name, time.time() - t_start)
     except docker.errors.NotFound:
         try:
+            t_run = time.time()
             container = client.containers.run(
                 image_name,
                 name=container_name,
@@ -1593,6 +1613,7 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
                     "created_at_ts": str(time.time())
                 }
             )
+            logger.info("Lab container run completed name=%s duration_sec=%.2f", container_name, time.time() - t_run)
         except Exception as e:
             logger.exception("Error caught: %s", e)
             return f"Failed to start Lab sandbox: {str(e)}"
@@ -1883,10 +1904,13 @@ def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "
     for current_key in keys_to_try:
         try:
             client = genai.Client(api_key=current_key, http_options={'api_version': 'v1beta'})
+            t0 = time.time()
             response = client.models.generate_content(
                 model=model_id,
                 contents=contents
             )
+            duration = time.time() - t0
+            logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=analyze_youtube_video", model_id, duration)
             return response.text if response.text else "The model returned an empty response for the video analysis."
         except Exception as e:
             logger.error(f"Error in analyze_youtube_video tool: {e}", exc_info=True)
