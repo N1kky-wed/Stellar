@@ -94,7 +94,7 @@ def run_agent(agent_id: str, prompt_file: str, branch_name: str) -> subprocess.P
     cd {config.CONTAINER_WORKSPACE} && \
     git checkout main && \
     git pull && \
-    git checkout -b {branch_name}
+    git checkout -B {branch_name}
     """
     rc, out, err = exec_in_container(prepare_git_cmd)
     if rc != 0:
