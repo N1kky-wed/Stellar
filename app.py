@@ -42,12 +42,14 @@ from prompts import (
 
 class RequestIDFormatter(logging.Formatter):
     def format(self, record):
-        from flask import has_request_context, g, request
+        from flask import has_request_context, has_app_context, g, request
         import uuid
         try:
             if has_request_context():
                 if not getattr(g, 'request_id', None):
                     g.request_id = request.headers.get('X-Request-ID', str(uuid.uuid4())[:8])
+                record.request_id = g.request_id
+            elif has_app_context() and getattr(g, 'request_id', None):
                 record.request_id = g.request_id
             else:
                 record.request_id = 'system'
@@ -67,16 +69,16 @@ client = None
 try:
     client = docker.from_env()
     client.ping()
-    logging.info("Successfully connected to Docker daemon on startup.")
+    logger.info("Successfully connected to Docker daemon on startup.")
     try:
         client.networks.get("stellar_isolated")
-        logging.info("Found existing 'stellar_isolated' network.")
+        logger.info("Found existing 'stellar_isolated' network.")
     except docker.errors.NotFound:
-        logging.info("Creating 'stellar_isolated' network with ICC disabled.")
+        logger.info("Creating 'stellar_isolated' network with ICC disabled.")
         client.networks.create("stellar_isolated", driver="bridge", options={"com.docker.network.bridge.enable_icc": "false"})
 except Exception as e:
     logger.exception("Docker initialization failed on startup")
-    logging.error(f"Could not connect to Docker daemon on startup. Please ensure Docker is running. Code execution will fail. Error: {e}")
+    logger.error(f"Could not connect to Docker daemon on startup. Please ensure Docker is running. Code execution will fail. Error: {e}")
 
 from functools import wraps
 
@@ -3613,12 +3615,12 @@ def stop_generation():
             logger.info(f"Stop button clicked: Signalling thread termination for chat_id: {chat_id}")
             cancel_event.set()
 
-    logging.info(f"Stop flag set in Redis for query_id: {query_id}")
+    logger.info(f"Stop flag set in Redis for query_id: {query_id}")
     return jsonify({'success': True, 'message': 'Stop signal received.'})
 
 def check_and_log_stop(query_id, stage=""):
     if redis_client.exists(f"stop_flag:{query_id}"):
-        logging.info(f"Stop signal detected for query_id: {query_id} at stage: {stage}")
+        logger.info(f"Stop signal detected for query_id: {query_id} at stage: {stage}")
         return True
     return False
 
@@ -3652,8 +3654,14 @@ def stream_consumer(query_id):
 
 def background_thread_runner(app_obj, query_id, chat_id, cancel_event, task_func, *args):
     """Wrapper that runs generation streams in the background to decouple from HTTP requests."""
+    from flask import g
+    req_id = getattr(g, 'request_id', None)
+
     def run():
         with app_obj.app_context():
+            from flask import g
+            if req_id:
+                g.request_id = req_id
             try:
                 for chunk in task_func(cancel_event, *args):
                     redis_client.rpush(f"stream_history:{query_id}", chunk)
@@ -3744,7 +3752,7 @@ def delete_messages_after():
         )
         db.commit()
 
-        logging.info(f"User {user_id} deleted {deleted_count} message(s) in chat {chat_id} after message {message_id}.")
+        logger.info(f"User {user_id} deleted {deleted_count} message(s) in chat {chat_id} after message {message_id}.")
         return jsonify({'success': True, 'deleted_count': deleted_count})
 
     except Exception as e:
@@ -6075,7 +6083,7 @@ def manage_api_keys():
                 (user_id, key_name, encrypted_value)
             )
         db.commit()
-        logging.info(f"Successfully saved/updated API keys for user {user_id}.")
+        logger.info(f"Successfully saved/updated API keys for user {user_id}.")
         return jsonify({'success': True, 'message': 'API keys saved successfully.'}), 200
     except Exception as e:
         logger.error(f"Error saving API keys for user {user_id}: {e}", exc_info=True)
@@ -6345,10 +6353,10 @@ def cleanup_stale_containers():
                 ninety_hours_ago = (datetime.datetime.now() - datetime.timedelta(hours=90)).strftime('%Y-%m-%d %H:%M:%S')
                 db.execute("UPDATE repo_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created') AND created_at < ?", (ninety_hours_ago,))
                 db.commit()
-                logging.info(f"Database status for repo_history reset for apps older than {ninety_hours_ago}.")
+                logger.info(f"Database status for repo_history reset for apps older than {ninety_hours_ago}.")
         except Exception as db_err:
             logger.exception("Error caught: %s", db_err)
-            logging.error(f"Failed to reset database statuses: {db_err}")
+            logger.error(f"Failed to reset database statuses: {db_err}")
 
         client = docker.from_env()
         # Clean up by label first
@@ -6360,10 +6368,10 @@ def cleanup_stale_containers():
         all_stale = list(set(stale_labeled + stale_named))
 
         if not all_stale:
-            logging.info("No stale sandbox containers found on startup.")
+            logger.info("No stale sandbox containers found on startup.")
             return
 
-        logging.warning(f"Found {len(all_stale)} stale sandbox container(s). Checking creation times...")
+        logger.warning(f"Found {len(all_stale)} stale sandbox container(s). Checking creation times...")
         current_time = time.time()
         for container in all_stale:
             try:
@@ -6374,24 +6382,24 @@ def cleanup_stale_containers():
                     try:
                         created_ts = float(created_ts_str)
                         if current_time - created_ts < 90 * 60 * 60:
-                            logging.info(f"Skipping recently created orphan (within 90h): {container.name}")
+                            logger.info(f"Skipping recently created orphan (within 90h): {container.name}")
                             continue
                     except ValueError:
                         pass
 
-                logging.warning(f"Force-removing stale container: {container.name} ({container.short_id})")
+                logger.warning(f"Force-removing stale container: {container.name} ({container.short_id})")
                 container.remove(force=True)
             except docker.errors.NotFound:
-                logging.info(f"Container {container.name} was already removed.")
+                logger.info(f"Container {container.name} was already removed.")
             except Exception as e:
                 logger.error(f"Error during cleanup of container {container.name}: {e}")
-        logging.info("Stale container cleanup complete.")
+        logger.info("Stale container cleanup complete.")
 
     except docker.errors.DockerException as e:
-        logging.error(f"Docker is not available. Skipping stale container cleanup. Error: {e}")
+        logger.error(f"Docker is not available. Skipping stale container cleanup. Error: {e}")
     except Exception as e:
         logger.exception("Error caught: %s", e)
-        logging.error(f"An unexpected error occurred during stale container cleanup: {e}")
+        logger.error(f"An unexpected error occurred during stale container cleanup: {e}")
 
 # Start the orphan monitor - only in the main process to avoid multi-worker redundancy
 if not app.config.get('TESTING'):
@@ -6403,6 +6411,24 @@ if not app.config.get('TESTING'):
 
 active_apps = {}
 active_apps_lock = threading.Lock()
+
+@app.before_request
+def log_request_start():
+    g.start_time = time.time()
+    if not getattr(g, 'request_id', None):
+        g.request_id = request.headers.get('X-Request-ID', str(uuid.uuid4())[:8])
+    if request.path.startswith('/static/') or request.path == '/favicon.ico':
+        return
+    logger.info("Request received method=%s path=%s ip=%s", request.method, request.path, request.remote_addr)
+
+@app.after_request
+def log_request_end(response):
+    if request.path.startswith('/static/') or request.path == '/favicon.ico':
+        return response
+    duration = time.time() - getattr(g, 'start_time', time.time())
+    logger.info("Request completed method=%s path=%s status=%d duration_sec=%.3f",
+                request.method, request.path, response.status_code, duration)
+    return response
 
 @app.before_request
 def update_last_active():

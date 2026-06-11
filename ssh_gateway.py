@@ -70,16 +70,26 @@ MAX_CONCURRENT_SESSIONS = 50   # Total concurrent SSH sessions
 GATEWAY_SECRET = os.environ.get('SSH_GATEWAY_SECRET', 'stellar-ssh-internal-2024')
 
 # ============================================================
-# Logging
+# Logging & Thread-Local Storage
 # ============================================================
 os.makedirs(LOG_DIR, exist_ok=True)
+_thread_local = threading.local()
+
+class GatewayFormatter(logging.Formatter):
+    def format(self, record):
+        try:
+            session_id = getattr(_thread_local, 'session_id', 'system')
+            record.session_id = session_id
+        except Exception:
+            record.session_id = 'error'
+        return super().format(record)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 
 logger = logging.getLogger('stellar_ssh')
 logger.setLevel(logging.INFO)
 _handler = logging.FileHandler(os.path.join(LOG_DIR, 'ssh_gateway.log'))
-_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+_handler.setFormatter(GatewayFormatter('%(asctime)s [%(levelname)s] %(name)s [session=%(session_id)s]: %(message)s'))
 logger.addHandler(_handler)
 
 audit = logging.getLogger('stellar_ssh_audit')
@@ -96,9 +106,6 @@ sessions_lock = threading.Lock()
 
 # Shared Redis client connection pool to prevent socket descriptor leaks and connection overhead
 redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-
-# Thread-local Console and Container Status Cache to prevent performance lag & flickering
-_thread_local = threading.local()
 
 def get_console(width: int) -> Console:
     """Get a thread-local Console instance to avoid expensive creation overhead."""
@@ -1989,6 +1996,7 @@ def handle_connection(client_socket, client_addr):
         client_addr (tuple): The client IP address and port tuple.
     """
     global active_sessions
+    _thread_local.session_id = f"{client_addr[0]}:{client_addr[1]}"
     ip = client_addr[0]
 
     # Rate limit check
