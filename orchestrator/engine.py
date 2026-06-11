@@ -286,12 +286,18 @@ class OrchestratorEngine:
                         db_pr_status = 'CLOSED'
                         
                     self.state_db.complete_run(self.current_run_id, now_str, pr_number=pr_num, pr_url=pr_url, pr_status=db_pr_status, summary_message=summary)
+
+                    # If already merged (fast auto-merge), trigger reload immediately
+                    # so we don't wait for _check_for_merge_trigger to catch it
+                    if db_pr_status == 'MERGED':
+                        logger.info(f"PR #{pr_num} already merged — triggering immediate service reload.")
+                        self._pull_and_reload_services(pr_num)
                 else:
-                    logger.warn(f"Agent completed but no PR was detected on branch {self.branch_name}.")
+                    logger.warning(f"Agent completed but no PR was detected on branch {self.branch_name}.")
                     self.state_db.complete_run(self.current_run_id, now_str, pr_status='NONE', summary_message=summary)
             else:
                 self.state_db.fail_run(self.current_run_id, now_str, f"Process exited with non-zero code {retcode}.", summary_message=f"Agent process exited with non-zero code {retcode}.")
-            
+
             container.unload_agent_prompt()
             self._clear_active_run()
             return
@@ -341,19 +347,35 @@ class OrchestratorEngine:
     def _pull_and_reload_services(self, pr_num: int):
         logger.info(f"PR #{pr_num} merged. Pulling changes and checking for service updates on host...")
         try:
-            # 1. Pull changes on host
-            pull_res = subprocess.run(["git", "pull"], cwd="/home/stellaradmin/my_app", capture_output=True, text=True, check=True)
-            logger.info(f"Git pull output:\n{pull_res.stdout.strip()}")
-            
-            # 2. Get list of files modified in the merge commit
-            diff_res = subprocess.run(["git", "diff", "HEAD~1", "HEAD", "--name-only"], cwd="/home/stellaradmin/my_app", capture_output=True, text=True, check=True)
+            repo = "/home/stellaradmin/my_app"
+
+            # 1. Ensure we're on main (orchestrator may have left the repo on an agent branch)
+            checkout_res = subprocess.run(
+                ["sudo", "-u", "stellaradmin", "git", "checkout", "main"],
+                cwd=repo, capture_output=True, text=True
+            )
+            if checkout_res.returncode != 0:
+                logger.warning(f"git checkout main: {checkout_res.stderr.strip()}")
+
+            # 2. Pull as stellaradmin — they own the SSH key
+            pull_res = subprocess.run(
+                ["sudo", "-u", "stellaradmin", "git", "pull"],
+                cwd=repo, capture_output=True, text=True, check=True
+            )
+            logger.info(f"Git pull output: {pull_res.stdout.strip()}")
+
+            # 3. Get list of files modified in the merge commit
+            diff_res = subprocess.run(
+                ["sudo", "-u", "stellaradmin", "git", "diff", "HEAD~1", "HEAD", "--name-only"],
+                cwd=repo, capture_output=True, text=True, check=True
+            )
             files = [f.strip() for f in diff_res.stdout.strip().split('\n') if f.strip()]
             logger.info(f"Files modified in merge commit: {files}")
-            
+
             reload_stellar = False
             restart_ssh = False
             restart_orchestrator = False
-            
+
             for file in files:
                 if file.startswith("orchestrator/") or file == "stellar_orchestrator.service":
                     restart_orchestrator = True
@@ -361,22 +383,23 @@ class OrchestratorEngine:
                     restart_ssh = True
                 elif file in ["app.py", "sentinel_healer.py", "webscrapper.py", "agent_tools.py"] or file.startswith("templates/") or file.startswith("static/"):
                     reload_stellar = True
-                    
+
             if reload_stellar:
                 logger.info("Auto-reloading stellar.service...")
                 subprocess.run(["sudo", "systemctl", "reload", "stellar"], check=True)
-                
+
             if restart_ssh:
                 logger.info("Auto-restarting stellar-ssh.service...")
                 subprocess.run(["sudo", "systemctl", "restart", "stellar-ssh"], check=True)
-                
+
             if restart_orchestrator:
                 logger.info("Auto-restarting stellar_orchestrator.service...")
                 # Run detached so it doesn't kill this process before finishing the tick
                 subprocess.Popen(["sudo", "systemctl", "restart", "stellar_orchestrator"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
+
         except Exception as e:
             logger.error(f"Failed to auto-pull or reload services for PR #{pr_num}: {e}", exc_info=True)
+
 
     def _get_next_pipeline_agent(self, current_agent_id: str) -> Optional[Dict[str, Any]]:
         for i, agent in enumerate(config.AGENT_PIPELINE):
@@ -386,22 +409,30 @@ class OrchestratorEngine:
         return None
 
     def _get_due_agent(self, now: datetime) -> Optional[Dict[str, Any]]:
-        """Checks schedules to see if any agent is due to run and hasn't already run today."""
+        """Checks schedules to see if any agent is due to run and hasn't successfully completed today."""
         for agent in config.AGENT_PIPELINE:
             sched_str = agent['schedule']
             sched_time = datetime.strptime(sched_str, "%H:%M").time()
             sched_dt = datetime.combine(now.date(), sched_time).replace(tzinfo=IST)
-            
+
             if now >= sched_dt:
-                # Check if it ran today (since local midnight)
                 last_run = self.state_db.get_last_run_for_agent(agent['id'])
                 if last_run:
                     last_started = datetime.fromisoformat(last_run['started_at']).astimezone(IST)
                     if last_started.date() == now.date():
-                        # Already run today, skip
-                        continue
-                
-                # Verify that no agent ran *after* this one's scheduled time today, to avoid backward runs
+                        # Only skip if it COMPLETED successfully today.
+                        # FAILED / TIMEOUT / INTERRUPTED / RUNNING all allow a retry.
+                        if last_run['status'] == 'COMPLETED':
+                            continue
+                        elif last_run['status'] == 'RUNNING':
+                            # Already being handled by _check_running_agent
+                            continue
+                        else:
+                            logger.info(
+                                f"Agent {agent['id']} last run today had status "
+                                f"{last_run['status']} — scheduling retry."
+                            )
+
                 return agent
         return None
 

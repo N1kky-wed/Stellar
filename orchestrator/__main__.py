@@ -63,7 +63,7 @@ def main():
             
             if engine.current_run_id:
                 now_str = datetime.now().isoformat()
-                engine.state_db.fail_run(engine.current_run_id, now_str, f"Orchestrator shut down via signal {signum}")
+                engine.state_db.interrupt_run(engine.current_run_id, now_str, f"Orchestrator shut down via signal {signum}")
                 
         container.unload_agent_prompt()
         logger.info("Shutdown cleanup complete. Exiting.")
