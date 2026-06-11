@@ -5114,12 +5114,35 @@ def api_check_url():
     url = request.args.get('url')
     if not url:
         return jsonify({'error': 'Missing url parameter'}), 400
+    if not url.startswith(('http://', 'https://')):
+        return jsonify({'error': 'Invalid URL format. Scheme must be http or https.'}), 400
     try:
-        # Use a short timeout and don't verify SSL if we expect local dev certs (but regular requests is fine here)
-        response = requests.get(url, timeout=3, allow_redirects=True)
+        from urllib.parse import urlparse, urljoin
+        
+        curr_url = url
+        # Limit redirects to prevent infinite loops and check redirect targets for SSRF
+        for _ in range(5):
+            parsed = urlparse(curr_url)
+            safe, msg = is_safe_hostname(parsed.hostname)
+            if not safe:
+                # Security Fix: Block access to internal/private networks via check_url
+                logger.warning(f"Blocked check_url SSRF attempt: {msg} via {curr_url}")
+                return jsonify({'error': f'SSRF Protection: {msg}'}), 403
+
+            response = requests.get(curr_url, timeout=3, allow_redirects=False)
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get('Location')
+                if not location:
+                    break
+                curr_url = urljoin(curr_url, location)
+                if not curr_url.startswith(('http://', 'https://')):
+                    return jsonify({'error': 'Invalid redirect URL format'}), 400
+            else:
+                break
+
         return jsonify({'status': response.status_code}), 200
     except Exception as e:
-        logger.exception("Error caught: %s", e)
+        logger.exception("Error caught in api_check_url: %s", e)
         return jsonify({'status': 500, 'error': str(e)}), 200
 
 @app.route('/api/user/profile', methods=['GET'])

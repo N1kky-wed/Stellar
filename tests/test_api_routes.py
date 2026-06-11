@@ -224,7 +224,9 @@ def test_get_admin_waitlist(auth_client):
 
 
 @patch('requests.get')
-def test_api_check_url(mock_get, auth_client):
+@patch('app.is_safe_hostname')
+def test_api_check_url(mock_is_safe, mock_get, auth_client):
+    mock_is_safe.return_value = (True, 'Safe')
     # Success case
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -235,7 +237,15 @@ def test_api_check_url(mock_get, auth_client):
     data = json.loads(response.data)
     assert data['status'] == 200
 
+    # SSRF Blocked Case
+    mock_is_safe.return_value = (False, 'Access to internal networks is forbidden: 127.0.0.1')
+    response = auth_client.get('/api/utils/check_url?url=http://127.0.0.1')
+    assert response.status_code == 403
+    data = json.loads(response.data)
+    assert 'SSRF Protection' in data['error']
+
     # Exception case
+    mock_is_safe.return_value = (True, 'Safe')
     mock_get.side_effect = Exception("Connection error")
     response = auth_client.get('/api/utils/check_url?url=http://example.com')
     assert response.status_code == 200
