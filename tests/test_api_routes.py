@@ -693,6 +693,11 @@ def test_stop_container(mock_docker_client, auth_client):
 
 
 def test_stop_generation(auth_client):
+    from app import get_db
+    with auth_client.application.app_context():
+        db = get_db()
+        db.execute('INSERT OR IGNORE INTO chats (id, user_id, name) VALUES (1, 1, "Test Chat")')
+        db.commit()
     response = auth_client.post('/api/stop_generation', json={'query_id': 'fake_q', 'chat_id': 1})
     assert response.status_code == 200
     data = json.loads(response.data)
