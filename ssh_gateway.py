@@ -499,6 +499,7 @@ class TUI:
             return buf.getvalue()
             
         # Wrap everything in the master "app box"
+        # Optimize: Reduce height by 1 and use end="" to prevent terminal scrolling/flickering
         panel = Panel(
             content,
             style=f"{theme['text']} on {theme['bg']}",
@@ -506,10 +507,10 @@ class TUI:
             box=box.DOUBLE,
             padding=(1, 2),
             expand=True,
-            height=height
+            height=height - 1
         )
-        console.print(panel)
-        return buf.getvalue()
+        console.print(panel, end="")
+        return buf.getvalue().rstrip('\r\n')
 
     @staticmethod
     def theme_picker(selected_theme: int, selected_border: int, focus: str, width: int, height: int, is_default: bool = False) -> str:
@@ -1182,7 +1183,8 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default), clear=True)
         
         while True:
-            key = read_key(channel, timeout=5.0)
+            # Optimize: Reduce read_key timeout to 0.1s to handle terminal resizes instantly
+            key = read_key(channel, timeout=0.1)
             if not key:
                 if server.resize_event.is_set():
                     server.resize_event.clear()
@@ -1239,7 +1241,8 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, error_msg=error_msg, theme=active_theme), clear=first_draw)
                 first_draw = False
                 
-                key = read_key(channel, timeout=5.0)
+                # Optimize: Reduce read_key timeout to 0.1s to handle terminal resizes instantly
+                key = read_key(channel, timeout=0.1)
                 if not key:
                     if server.resize_event.is_set():
                         server.resize_event.clear()
@@ -1359,6 +1362,11 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         first_dashboard_draw = True
 
         while True:
+            # Optimize: Handle terminal resize events instantly at the start of the loop
+            if server.resize_event.is_set():
+                server.resize_event.clear()
+                redraw(clear=True)
+
             # Check idle timeout
             if time.time() - last_activity > SESSION_IDLE_TIMEOUT:
                 # Clear screen when entering goodbye screen
@@ -1402,9 +1410,6 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             # Read keypress
             key = read_key(channel, timeout=0.1)
             if not key:
-                if server.resize_event.is_set():
-                    server.resize_event.clear()
-                    redraw(clear=True)
                 continue
 
             last_activity = time.time()
@@ -1464,7 +1469,8 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 draw(TUI.theme_picker(t_sel_theme, t_sel_border, t_focus, server.term_width, server.term_height, t_is_default), clear=True)
                 
                 while True:
-                    t_key = read_key(channel, timeout=5.0)
+                    # Optimize: Reduce read_key timeout to 0.1s to handle terminal resizes instantly
+                    t_key = read_key(channel, timeout=0.1)
                     if not t_key:
                         if server.resize_event.is_set():
                             server.resize_event.clear()
@@ -1541,7 +1547,8 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                         draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme), clear=True)
                         
                         while True:
-                            log_key = read_key(channel, timeout=1.0)
+                            # Optimize: Reduce read_key timeout to 0.1s to handle terminal resizes and user exits instantly
+                            log_key = read_key(channel, timeout=0.1)
                             if log_key in ('q', 'Q', 'ESC', 'CTRL_C'):
                                 break
                             

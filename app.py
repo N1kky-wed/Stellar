@@ -5636,6 +5636,13 @@ def get_agent_group_chat_history():
                     'content': f"⚠️ Agent **{agent_name}** run timed out after exceeding limits.",
                     'type': 'system'
                 })
+            elif r['status'] == 'INTERRUPTED':
+                messages.append({
+                    'timestamp': finish_ts,
+                    'sender': 'Orchestrator',
+                    'content': f"↩️ Agent **{agent_name}** was interrupted by an orchestrator restart — retrying automatically.",
+                    'type': 'system'
+                })
     except Exception as e:
         logger.error(f"Error reading agent runs history: {e}")
 
@@ -5727,6 +5734,14 @@ def agent_group_chat_stream():
                                 'timestamp': finish_ts,
                                 'sender': 'Orchestrator',
                                 'content': f"⚠️ Agent **{agent_name}** run timed out after exceeding limits.",
+                                'type': 'system'
+                            }
+                            yield f"data: {json.dumps(msg)}\n\n"
+                        elif status == 'INTERRUPTED':
+                            msg = {
+                                'timestamp': finish_ts,
+                                'sender': 'Orchestrator',
+                                'content': f"↩️ Agent **{agent_name}** was interrupted by an orchestrator restart — retrying automatically.",
                                 'type': 'system'
                             }
                             yield f"data: {json.dumps(msg)}\n\n"
