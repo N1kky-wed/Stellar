@@ -382,6 +382,44 @@ document.addEventListener("DOMContentLoaded", () => {
   console.log("DOM LOADED FIRED IN MAIN JS!");
   applySettingsUI();
 
+  // Wire up the custom confirmation modal buttons
+  const cancelConfirmationBtn = document.getElementById(
+    "cancelConfirmationBtn",
+  );
+  const confirmBtn = document.getElementById("confirmBtn");
+  const confirmationModalBackdrop = document.getElementById(
+    "confirmationModalBackdrop",
+  );
+
+  if (cancelConfirmationBtn) {
+    cancelConfirmationBtn.addEventListener("click", hideConfirmationModal);
+  }
+  if (confirmBtn) {
+    confirmBtn.addEventListener("click", () => {
+      if (typeof confirmationCallback === "function") {
+        confirmationCallback();
+      }
+      hideConfirmationModal();
+    });
+  }
+  if (confirmationModalBackdrop) {
+    confirmationModalBackdrop.addEventListener("click", (e) => {
+      if (e.target === confirmationModalBackdrop) {
+        hideConfirmationModal();
+      }
+    });
+  }
+
+  // Handle global Escape key to close the confirmation modal
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      const backdrop = document.getElementById("confirmationModalBackdrop");
+      if (backdrop && backdrop.style.display === "flex") {
+        hideConfirmationModal();
+      }
+    }
+  });
+
   document
     .getElementById("closeBrowserPaneBtn")
     ?.addEventListener("click", () => {
@@ -706,6 +744,7 @@ let currentMode = "stellar";
 let currentStreamQueryId = null;
 let currentEditingMsg = null,
   currentEditingMsgId = null;
+let confirmationCallback = null;
 let lastRefinedQuery = "";
 let isProcessing = false;
 let taskStartTime = null;
@@ -2881,6 +2920,33 @@ function hideEditModal() {
   currentEditingMsg = null;
   currentEditingMsgId = null;
   if (editMarkdownInput) editMarkdownInput.value = "";
+}
+
+/* Helper functions for custom confirmation modal to prevent accidental deletion/clear actions */
+function showConfirmationModal(title, message, onConfirm) {
+  const backdrop = document.getElementById("confirmationModalBackdrop");
+  const titleEl = document.getElementById("confirmationModalTitle");
+  const messageEl = document.getElementById("confirmationModalMessage");
+
+  if (!backdrop || !titleEl || !messageEl) return;
+
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  confirmationCallback = onConfirm;
+
+  backdrop.style.display = "flex";
+
+  // Shift focus to cancel button by default to prevent accidental trigger
+  const cancelBtn = document.getElementById("cancelConfirmationBtn");
+  if (cancelBtn) cancelBtn.focus();
+}
+
+function hideConfirmationModal() {
+  const backdrop = document.getElementById("confirmationModalBackdrop");
+  if (backdrop) {
+    backdrop.style.display = "none";
+  }
+  confirmationCallback = null;
 }
 
 // REPLACE the existing handleModeChange function with this new one
@@ -5543,7 +5609,11 @@ async function loadChatList() {
         li.addEventListener("click", () => selectChat(chat.id));
         li.querySelector(".delete-chat-btn").addEventListener("click", (e) => {
           e.stopPropagation();
-          deleteChat(chat.id, chat.name);
+          showConfirmationModal(
+            "Delete Chat",
+            `Are you sure you want to delete the chat "${chat.name}"? This action cannot be undone.`,
+            () => deleteChat(chat.id, chat.name),
+          );
         });
         chatList.appendChild(li);
       });
@@ -5596,7 +5666,11 @@ async function createNewChat(selectNew = true) {
     li.addEventListener("click", () => selectChat(newChat.id));
     li.querySelector(".delete-chat-btn").addEventListener("click", (e) => {
       e.stopPropagation();
-      deleteChat(newChat.id, newChat.name);
+      showConfirmationModal(
+        "Delete Chat",
+        `Are you sure you want to delete the chat "${newChat.name}"? This action cannot be undone.`,
+        () => deleteChat(newChat.id, newChat.name),
+      );
     });
     chatList.prepend(li);
     if (selectNew) {
@@ -6562,50 +6636,56 @@ if (saveEditBtn) {
 }
 // REPLACE the old clearHistoryBtn block with this one
 if (clearHistoryBtn) {
-  clearHistoryBtn.addEventListener("click", async () => {
-    if (isProcessing && sseEventSource) {
-      sseEventSource.close();
-      sseEventSource = null;
-    }
-    cleanupStream(false, null, null);
+  clearHistoryBtn.addEventListener("click", () => {
+    showConfirmationModal(
+      "Clear Chat History",
+      "Are you sure you want to clear the entire chat history for this chat? This action cannot be undone.",
+      async () => {
+        if (isProcessing && sseEventSource) {
+          sseEventSource.close();
+          sseEventSource = null;
+        }
+        cleanupStream(false, null, null);
 
-    setStatus("Clearing...");
-    try {
-      const r = await fetch("/clear_history", { method: "POST" });
-      if (!r.ok) {
-        let m = `HTTP ${r.status}`;
+        setStatus("Clearing...");
         try {
-          m = (await r.json()).message || m;
-        } catch (e) {}
-        throw new Error(m);
-      }
-      const d = await r.json();
-      if (d.status !== "Success") throw new Error(d.message || "Fail");
+          const r = await fetch("/clear_history", { method: "POST" });
+          if (!r.ok) {
+            let m = `HTTP ${r.status}`;
+            try {
+              m = (await r.json()).message || m;
+            } catch (e) {}
+            throw new Error(m);
+          }
+          const d = await r.json();
+          if (d.status !== "Success") throw new Error(d.message || "Fail");
 
-      lastRefinedQuery = "";
-      historyLoaded = false;
-      stagedFiles = [];
-      updateStagedFilesUI();
-      messagesDiv.innerHTML = "";
+          lastRefinedQuery = "";
+          historyLoaded = false;
+          stagedFiles = [];
+          updateStagedFilesUI();
+          messagesDiv.innerHTML = "";
 
-      modeSelector.value = "stellar";
-      handleModeChange();
+          modeSelector.value = "stellar";
+          handleModeChange();
 
-      await loadHistory();
+          await loadHistory();
 
-      setStatus("History cleared");
-      setTimeout(() => {
-        const shouldBeIdle = !isProcessing && stagedFiles.length === 0;
-        if (shouldBeIdle) setStatus("Idle");
-      }, 1500);
-    } catch (err) {
-      appendStellarMessage(
-        `Clear err: ${err.message}`,
-        Date.now() + "_clr_err",
-      );
-      setStatus("Error clear", true);
-      setTimeout(() => setStatus(currentStatusText, false), 3000);
-    }
+          setStatus("History cleared");
+          setTimeout(() => {
+            const shouldBeIdle = !isProcessing && stagedFiles.length === 0;
+            if (shouldBeIdle) setStatus("Idle");
+          }, 1500);
+        } catch (err) {
+          appendStellarMessage(
+            `Clear err: ${err.message}`,
+            Date.now() + "_clr_err",
+          );
+          setStatus("Error clear", true);
+          setTimeout(() => setStatus(currentStatusText, false), 3000);
+        }
+      },
+    );
   });
 }
 

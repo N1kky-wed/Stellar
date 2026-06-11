@@ -1562,6 +1562,26 @@
       </div>
     </div>
 
+    <!-- Confirmation Modal Backdrop for destructive actions (Delete Chat, Clear History) -->
+    <div id="confirmationModalBackdrop" style="display: none">
+      <div class="modal-content confirmation-modal-content">
+        <h2 id="confirmationModalTitle">Confirm Action</h2>
+        <p
+          id="confirmationModalMessage"
+          style="
+            margin-bottom: 25px;
+            color: var(--secondary-text-color);
+            line-height: 1.5;
+            font-size: 1rem;
+          "
+        ></p>
+        <div class="modal-buttons">
+          <button id="cancelConfirmationBtn" class="cancel-btn">Cancel</button>
+          <button id="confirmBtn" class="confirm-btn">Confirm</button>
+        </div>
+      </div>
+    </div>
+
     <span id="modelSelectWidthHelper"></span>
 
     <div id="live-preview-container" style="display: none">

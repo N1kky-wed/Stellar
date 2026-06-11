@@ -2293,7 +2293,8 @@ body.theme-obsidian .research-output:hover {
 }
 
 #editModalBackdrop,
-#regenerateModalBackdrop {
+#regenerateModalBackdrop,
+#confirmationModalBackdrop {
   position: fixed;
   top: 0;
   left: 0;
@@ -2577,6 +2578,31 @@ body.theme-obsidian .research-output:hover {
   background: rgba(255, 255, 255, 0.15);
   transform: translateY(-2px);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Styled buttons specifically for custom confirmation modal */
+#cancelConfirmationBtn {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#cancelConfirmationBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+#confirmBtn {
+  background: linear-gradient(45deg, #d31027, #9a0007);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 15px rgba(211, 16, 39, 0.3);
+}
+
+#confirmBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(211, 16, 39, 0.5);
+  filter: brightness(1.1);
 }
 
 #regenerateWithoutFeedbackBtn {
