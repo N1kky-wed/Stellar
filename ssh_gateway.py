@@ -94,6 +94,9 @@ audit.addHandler(_audit_handler)
 active_sessions = 0
 sessions_lock = threading.Lock()
 
+# Shared Redis client connection pool to prevent socket descriptor leaks and connection overhead
+redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
 # Thread-local Console and Container Status Cache to prevent performance lag & flickering
 _thread_local = threading.local()
 
@@ -106,7 +109,8 @@ def get_console(width: int) -> Console:
             highlight=False,
             legacy_windows=False
         )
-    _thread_local.console.width = width
+    # Use width - 1 to prevent auto-wrap layout bugs in the terminal
+    _thread_local.console.width = max(20, width - 1)
     return _thread_local.console
 
 # Optimize container status caching using a background thread and non-blocking reads to eliminate UI lag & flickering.
@@ -196,7 +200,8 @@ class RateLimiter:
         """
         Initialize the Redis rate limiter client connection.
         """
-        self.r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        # Re-use global Redis client connection to optimize performance
+        self.r = redis_client
 
     def check_connection_rate(self, ip: str) -> bool:
         """
@@ -345,7 +350,8 @@ def verify_auth_code(code: str) -> dict | None:
         return None
 
     try:
-        r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        # Re-use global Redis client connection to optimize performance
+        r = redis_client
         key = f"ssh_auth_code:{clean_code}"
         data = r.get(key)
         if data:
@@ -1504,14 +1510,14 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             if not clear and content == last_drawn_content:
                 return
             if clear or last_drawn_content is None:
-                # Clear screen and draw entire content when requested or initially
-                send_raw(channel, '\x1b[2J\x1b[H' + content)
+                # Overwrite starting from home, then clear trailing lines to prevent flickering
+                send_raw(channel, '\x1b[H' + content + '\x1b[J')
             else:
                 new_lines = content.splitlines()
                 old_lines = last_drawn_content.splitlines()
-                # If number of lines changed, fallback to full draw
+                # If number of lines changed, fallback to full draw with trailing clear
                 if len(new_lines) != len(old_lines):
-                    send_raw(channel, '\x1b[H' + content)
+                    send_raw(channel, '\x1b[H' + content + '\x1b[J')
                 else:
                     # Line-by-line diff: draw only lines that have changed to save bandwidth and prevent flickering
                     for idx, (new_line, old_line) in enumerate(zip(new_lines, old_lines)):
@@ -1911,6 +1917,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                         # Draw the logs screen once and clear screen
                         draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme), clear=True)
                         
+                        last_log_refresh_time = time.time()
                         while True:
                             # Optimize: Reduce read_key timeout to 0.1s to handle terminal resizes and user exits instantly
                             log_key = read_key(channel, timeout=0.1)
@@ -1918,7 +1925,10 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                                 break
                             
                             # Live log refreshes: triggered on timeout or resize, and redraws only if content changes
-                            if log_key is None or server.resize_event.is_set():
+                            # Optimize: rate-limit log fetches to avoid high CPU and Docker socket overhead
+                            now = time.time()
+                            is_due = (now - last_log_refresh_time >= 2.0)
+                            if (log_key is None and is_due) or server.resize_event.is_set():
                                 clear_screen = False
                                 if server.resize_event.is_set():
                                     server.resize_event.clear()
@@ -1929,6 +1939,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                                     if new_logs != logs_raw or clear_screen:
                                         logs_raw = new_logs
                                         draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme), clear=clear_screen)
+                                    last_log_refresh_time = now
                                 except Exception:
                                     pass
                     except Exception as e:
