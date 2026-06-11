@@ -296,6 +296,16 @@ class OrchestratorEngine:
                 summary = self._get_summary()
                 # Query container for any newly created PRs on this branch
                 prs = container.check_new_prs(self.branch_name)
+                if not prs and summary:
+                    # Fallback: parse PR number/URL from the agent's summary message
+                    import re
+                    match = re.search(r"github\.com/[^/]+/[^/]+/pull/(\d+)", summary)
+                    if match:
+                        pr_num = int(match.group(1))
+                        pr_url = f"https://github.com/{config.GITHUB_REPO}/pull/{pr_num}"
+                        pr_state = container.check_pr_status(pr_num)
+                        prs = [{"number": pr_num, "url": pr_url, "state": pr_state}]
+                        logger.info(f"Fallback detected PR #{pr_num} from agent summary: {pr_url} (State: {pr_state})")
                 if prs:
                     # Found PR
                     pr = prs[0]
