@@ -2656,7 +2656,12 @@ function updateFavicon() {
   let link = document.getElementById("dynamic-favicon");
   if (!link) return;
 
-  let color = "#7b61ff"; // Primary brand color
+  // Dynamically retrieve the current theme color from body's CSS custom property
+  const activeColor =
+    getComputedStyle(document.body)
+      .getPropertyValue("--model-color-start")
+      .trim() || "#7b61ff";
+  let color = activeColor;
 
   let innerSVG =
     '<polygon points="12 2 2 7 2 17 12 22 22 17 22 7"/><circle cx="12" cy="12" r="4"/><path d="M12 2v6M22 7l-6 3M22 17l-6-3M12 22v-6M2 17l6-3M2 7l6 3"/>'; // Stellar (AI Core)
@@ -4993,8 +4998,13 @@ function showWelcomeScreen() {
       else if (hour < 18) timeGreeting = "Good afternoon";
       else timeGreeting = "Good evening";
 
-      let displayName = typeof currentUsername !== "undefined" ? currentUsername : "";
-      if (displayName === "Nikhil" || displayName === "Nikhil080905" || displayName === "nikhil080905@gmail.com") {
+      let displayName =
+        typeof currentUsername !== "undefined" ? currentUsername : "";
+      if (
+        displayName === "Nikhil" ||
+        displayName === "Nikhil080905" ||
+        displayName === "nikhil080905@gmail.com"
+      ) {
         displayName = "Nikky";
       }
       const name = displayName ? `, ${displayName}` : "";
@@ -6632,11 +6642,11 @@ window.addEventListener(
 
         if (!cachedColorStart) {
           cachedColorStart =
-            getComputedStyle(document.documentElement)
+            getComputedStyle(document.body)
               .getPropertyValue("--model-color-start")
               .trim() || "#a78bfa";
           cachedColorEnd =
-            getComputedStyle(document.documentElement)
+            getComputedStyle(document.body)
               .getPropertyValue("--model-color-end")
               .trim() || "#7b61ff";
         }
@@ -6681,6 +6691,8 @@ window.addEventListener(
           return;
         }
         if (audioContext) return;
+        cachedColorStart = null;
+        cachedColorEnd = null;
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
             audio: true,

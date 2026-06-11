@@ -420,52 +420,52 @@ body.browser-open header::after {
      We use a consistent deep midnight/charcoal black layout for the page shell.
      These variables are kept stable and are not modified by JavaScript when switching
      models, ensuring the main layout remains dark and uniform. */
-  --body-bg-color1: #060608;        /* Deep black-charcoal background base */
-  --body-bg-color2: #0b0b0d;        /* Flat charcoal black step */
-  --body-bg-color3: #08080a;        /* Charcoal shadow step */
-  --body-bg-color4: #0b0b0d;        /* Deep charcoal step */
+  --body-bg-color1: #060608; /* Deep black-charcoal background base */
+  --body-bg-color2: #0b0b0d; /* Flat charcoal black step */
+  --body-bg-color3: #08080a; /* Charcoal shadow step */
+  --body-bg-color4: #0b0b0d; /* Deep charcoal step */
   --base-bg: #060608;
-  
-  --primary-text-color: #f5f6f8;    /* Crisp off-white text for primary readability */
-  --secondary-text-color: #94a3b8;  /* Muted slate text for meta and labels */
-  
-  --header-bg: rgba(6, 6, 8, 0.7);  /* Translucent header overlay */
+
+  --primary-text-color: #f5f6f8; /* Crisp off-white text for primary readability */
+  --secondary-text-color: #94a3b8; /* Muted slate text for meta and labels */
+
+  --header-bg: rgba(6, 6, 8, 0.7); /* Translucent header overlay */
   --header-border: #121216;
-  
-  --sidebar-bg: #08080a;            /* Sidebar base background */
+
+  --sidebar-bg: #08080a; /* Sidebar base background */
   --sidebar-border: #121216;
-  
-  --card-bg: #0e0e12;               /* Container background for items, modals, lists */
+
+  --card-bg: #0e0e12; /* Container background for items, modals, lists */
   --card-border: rgba(255, 255, 255, 0.05);
-  
-  --input-bg: #08080a;              /* Code input and textareas base */
+
+  --input-bg: #08080a; /* Code input and textareas base */
   --input-border: rgba(255, 255, 255, 0.08);
-  --input-focus-bg: #0d0d12;        /* Subtle shift in color during active input */
+  --input-focus-bg: #0d0d12; /* Subtle shift in color during active input */
   --input-focus-border: var(--model-color-border);
-  
-  --user-msg-bg: #101014;           /* Message containers */
+
+  --user-msg-bg: #101014; /* Message containers */
   --user-msg-border: rgba(255, 255, 255, 0.05);
   --user-msg-hover-bg: #15151b;
-  
+
   --stellar-msg-bg: #08080a;
   --stellar-msg-border: rgba(255, 255, 255, 0.03);
   --stellar-msg-hover-bg: #0d0d12;
 
   --scrollbar-track-bg: #060608;
   --table-border-color: #121216;
-  
-  --code-bg: #05060b;               /* Code snippets layout styling */
+
+  --code-bg: #05060b; /* Code snippets layout styling */
   --code-border: rgba(255, 255, 255, 0.05);
   --code-text-color: #e2e8f0;
   --inline-code-bg: rgba(255, 255, 255, 0.06);
-  
-  --code-btn-bg: #0d0e1a;           /* Copy & preview actions inside markdown */
+
+  --code-btn-bg: #0d0e1a; /* Copy & preview actions inside markdown */
   --code-btn-hover-bg: #121424;
   --code-btn-color: #abb2bf;
   --code-btn-hover-color: #ffffff;
   --code-btn-border: 1px solid #121422;
   --code-btn-hover-border: 1px solid #121422;
-  
+
   --preview-btn-bg: var(--code-btn-bg);
   --preview-btn-hover-bg: var(--code-btn-hover-bg);
   --preview-btn-color: var(--code-btn-color);
@@ -481,21 +481,21 @@ body.browser-open header::after {
   --status-bar-shadow: rgba(0, 0, 0, 0.3);
   --status-bar-idle-color: var(--secondary-text-color);
   --status-bar-idle-bg: var(--sidebar-bg);
-  
+
   --tooltip-bg: rgba(15, 23, 42, 0.95);
   --tooltip-color: #ffffff;
   --tooltip-transition-duration: 0.15s;
-  
+
   --auth-form-bg: #06070e;
   --auth-input-bg: #07080f;
   --auth-input-border: #121422;
   --auth-message-success: #00c292;
   --auth-message-error: #ff6b6b;
-  
+
   --chat-item-hover: rgba(255, 255, 255, 0.04);
   --chat-item-active: rgba(255, 255, 255, 0.08);
   --chat-item-active-border: var(--model-color-border);
-  
+
   --token-bar-bg: rgba(0, 0, 0, 0.2);
   --token-bar-fill-low: #00c292;
   --token-bar-fill-medium: #fabd2f;
@@ -967,8 +967,8 @@ body::before {
   font-weight: 600;
   color: #ffffff;
   letter-spacing: 1px;
-  transition:
-    transform var(--transition-duration-fast) var(--transition-timing-function);
+  transition: transform var(--transition-duration-fast)
+    var(--transition-timing-function);
 }
 
 .title-gradient:hover {
@@ -980,8 +980,7 @@ body::before {
   font-weight: 600;
   color: #ffffff;
   letter-spacing: 1px;
-  transition:
-    transform var(--transition-duration-fast);
+  transition: transform var(--transition-duration-fast);
   margin-left: 20px;
 }
 
@@ -1737,6 +1736,14 @@ body.theme-obsidian .research-output {
 
 body.theme-obsidian .research-output:hover {
   border-color: rgba(72, 85, 99, 0.6);
+}
+
+body.theme-lunarity .research-output {
+  border-color: rgba(123, 97, 255, 0.4);
+}
+
+body.theme-lunarity .research-output:hover {
+  border-color: rgba(123, 97, 255, 0.6);
 }
 
 .research-output .message-content a,
@@ -6267,4 +6274,56 @@ body.pure-black #adminWaitlistModal h2 {
     grid-template-columns: 1fr !important;
     gap: 16px !important;
   }
+}
+
+body.theme-emerald {
+  --model-color-start: #00c292;
+  --model-color-start-rgb: 0, 194, 146;
+  --model-color-end: #00e6ad;
+  --model-color-border: rgba(0, 194, 146, 0.25);
+  --model-color-shadow: rgba(0, 194, 146, 0.1);
+  --model-hover-color-start: #00e6ad;
+  --model-hover-color-end: #33ffcc;
+  --model-hover-color-border: rgba(0, 194, 146, 0.45);
+  --link-color: #00c292;
+  --link-hover-color: #00e6ad;
+}
+
+body.theme-crimson {
+  --model-color-start: #d31027;
+  --model-color-start-rgb: 211, 16, 39;
+  --model-color-end: #ea384d;
+  --model-color-border: rgba(211, 16, 39, 0.25);
+  --model-color-shadow: rgba(211, 16, 39, 0.1);
+  --model-hover-color-start: #ff2a4b;
+  --model-hover-color-end: #ff5e75;
+  --model-hover-color-border: rgba(211, 16, 39, 0.45);
+  --link-color: #ea384d;
+  --link-hover-color: #ff2a4b;
+}
+
+body.theme-lunarity {
+  --model-color-start: #7b61ff;
+  --model-color-start-rgb: 123, 97, 255;
+  --model-color-end: #9164ff;
+  --model-color-border: rgba(123, 97, 255, 0.25);
+  --model-color-shadow: rgba(123, 97, 255, 0.1);
+  --model-hover-color-start: #9a85ff;
+  --model-hover-color-end: #a47eff;
+  --model-hover-color-border: rgba(123, 97, 255, 0.45);
+  --link-color: #9164ff;
+  --link-hover-color: #9a85ff;
+}
+
+body.theme-obsidian {
+  --model-color-start: #485563;
+  --model-color-start-rgb: 72, 85, 99;
+  --model-color-end: #29323c;
+  --model-color-border: rgba(72, 85, 99, 0.25);
+  --model-color-shadow: rgba(72, 85, 99, 0.1);
+  --model-hover-color-start: #5a6b7c;
+  --model-hover-color-end: #36414e;
+  --model-hover-color-border: rgba(72, 85, 99, 0.45);
+  --link-color: #8e9eab;
+  --link-hover-color: #a2b0be;
 }
