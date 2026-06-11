@@ -3091,6 +3091,17 @@ def inject_message():
         if not chat_id or not message:
             return jsonify({'error': 'Missing chat_id or message'}), 400
 
+        # Security: Verify that the current user owns the target chat to prevent unauthorized injection.
+        try:
+            chat_id_int = int(chat_id)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid chat_id format'}), 400
+
+        db = get_db()
+        cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id_int, session['user_id']))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Unauthorized or chat not found'}), 403
+
         # Check if there's an active stream for this chat
         active_query_str = redis_client.get(f"chat_active_query:{chat_id}")
         if not active_query_str:
@@ -3140,6 +3151,17 @@ def register_query():
 
         if not query or not model_id or not mode or not chat_id:
             return jsonify({'error': 'Missing required data: query, model_id, mode, chat_id'}), 400
+
+        # Security: Verify that the current user owns the target chat to prevent query hijacking/SSRF.
+        try:
+            chat_id_int = int(chat_id)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid chat_id format'}), 400
+
+        db = get_db()
+        cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id_int, session['user_id']))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Unauthorized or chat not found'}), 403
 
         if not isinstance(pending_files, list):
              pending_files =[]
@@ -3563,6 +3585,25 @@ def stop_generation():
 
     if not query_id:
         return jsonify({'error': 'Missing query_id.'}), 400
+
+    # Security: Verify query ownership via user_id stored in query_args.
+    if query_id:
+        query_data_str = redis_client.get(f"query_args:{query_id}")
+        if query_data_str:
+            query_data = json.loads(query_data_str)
+            if str(query_data.get('user_id')) != str(session.get('user_id')):
+                return jsonify({'error': 'Unauthorized'}), 403
+
+    # Security: Verify chat ownership if chat_id is provided.
+    if chat_id:
+        try:
+            chat_id_int = int(chat_id)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid chat_id format'}), 400
+        db = get_db()
+        cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id_int, session['user_id']))
+        if not cursor.fetchone():
+            return jsonify({'error': 'Unauthorized or chat not found'}), 403
 
     redis_client.setex(f"stop_flag:{query_id}", 3600, "1")
     if chat_id:
@@ -5451,7 +5492,17 @@ def index():
     chat_id = request.args.get('chat_id')
     if chat_id:
         try:
-            session['current_chat_id'] = int(chat_id)
+            chat_id_int = int(chat_id)
+            # Security: If user is logged in, verify ownership before setting current_chat_id.
+            if 'user_id' in session:
+                db = get_db()
+                cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id_int, session['user_id']))
+                if cursor.fetchone():
+                    session['current_chat_id'] = chat_id_int
+                else:
+                    session.pop('current_chat_id', None)
+            else:
+                session['current_chat_id'] = chat_id_int
         except ValueError:
             pass
 
@@ -5467,6 +5518,13 @@ def index():
 
     if 'user_id' not in session:
         return serve_no_cache('templates/login.html')
+
+    # Security: Ensure current_chat_id in session actually belongs to the authenticated user.
+    if session.get('current_chat_id'):
+        db = get_db()
+        cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (session['current_chat_id'], session['user_id']))
+        if not cursor.fetchone():
+            session.pop('current_chat_id', None)
 
     db = get_db()
     cursor = db.execute('SELECT is_approved FROM users WHERE id = ?', (session['user_id'],))
