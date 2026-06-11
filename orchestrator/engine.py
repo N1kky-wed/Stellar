@@ -160,7 +160,7 @@ class OrchestratorEngine:
         If found, parse 'Resets in XhYmZs' and return when quota will be restored.
         Returns None if no quota error found.
         """
-        if "RESOURCE_EXHAUSTED" not in log_tail and "429" not in log_tail:
+        if "RESOURCE_EXHAUSTED" not in log_tail and not re.search(r"\b429\b", log_tail):
             return None
 
         logger.warning("QUOTA ERROR detected in agy log!")
