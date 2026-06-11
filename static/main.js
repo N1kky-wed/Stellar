@@ -7204,6 +7204,42 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     observer.observe(browserPane, { attributes: true });
+
+    // Handle window resize to enforce constraints and handle mobile transition layout
+    window.addEventListener("resize", () => {
+      if (window.innerWidth <= 768) {
+        resizer.style.display = "none";
+        const header = document.querySelector("header");
+        if (header) {
+          header.style.width = "";
+        }
+      } else {
+        const display = window.getComputedStyle(browserPane).display;
+        if (display !== "none") {
+          resizer.style.display = "block";
+          const header = document.querySelector("header");
+          if (header) {
+            if (browserPane.style.width) {
+              header.style.width = `calc(100% - ${browserPane.style.width})`;
+            } else {
+              header.style.width = "50%";
+            }
+          }
+          // Enforce 300px min width for chatPane and browserPane on desktop
+          let currentWidth = parseFloat(browserPane.style.width);
+          if (currentWidth) {
+            const maxWidth = window.innerWidth - 300;
+            if (currentWidth > maxWidth) {
+              currentWidth = Math.max(300, maxWidth);
+              browserPane.style.width = `${currentWidth}px`;
+              if (header) {
+                header.style.width = `calc(100% - ${currentWidth}px)`;
+              }
+            }
+          }
+        }
+      }
+    });
   }
 });
 
