@@ -956,8 +956,7 @@ class TUI:
                 if i < len(repos) - 1:
                     table.add_row("", "", "", "", "")
 
-            from rich.align import Align
-            table_or_empty = Align.center(table)
+            table_or_empty = table
 
         nav_footer = Table.grid(expand=True)
         nav_footer.add_column(justify="left")
