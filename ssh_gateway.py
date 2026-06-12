@@ -917,7 +917,6 @@ class TUI:
             table.add_column("Project")
             table.add_column("Status", justify="left")
             table.add_column("Subdomain", style=theme['dim'])
-            table.add_column("Type", style=theme['dim'])
             table.add_column("Created", style=theme['dim'])
 
             for i, repo in enumerate(repos):
@@ -927,20 +926,20 @@ class TUI:
                 status_raw = status_map.get(repo['process_id']) if status_map else None
                 if not status_raw:
                     status_raw = get_container_status(repo['process_id'], repo.get('app_type', 'repo'))
+                
+                status_disp_raw = status_raw
                 if status_raw == 'running':
                     status_icon_sel = "[bold green]●[/bold green]"
                     status_icon_dim = "[dim green]●[/dim green]"
-                elif status_raw == 'exited':
+                else:
+                    status_disp_raw = 'stopped'
                     status_icon_sel = "[bold red]○[/bold red]"
                     status_icon_dim = "[dim red]○[/dim red]"
-                else:
-                    status_icon_sel = "[bold yellow]◌[/bold yellow]"
-                    status_icon_dim = "[dim yellow]◌[/dim yellow]"
                 
                 if is_sel:
-                    status_disp = f"{status_icon_sel} [{theme['text']}]{status_raw}[/{theme['text']}]"
+                    status_disp = f"{status_icon_sel} [{theme['text']}]{status_disp_raw}[/{theme['text']}]"
                 else:
-                    status_disp = f"[{theme['dim']}]{status_icon_dim} {status_raw}[/{theme['dim']}]"
+                    status_disp = f"[{theme['dim']}]{status_icon_dim} {status_disp_raw}[/{theme['dim']}]"
                 
                 name_style = f"bold {theme['text']}" if is_sel else theme['text']
                 name_disp = f"[{name_style}]{repo['name']}[/{name_style}]"
@@ -948,16 +947,14 @@ class TUI:
                 sub_style = theme['text'] if is_sel else theme['dim']
                 sub_disp = f"[{sub_style}]{repo['subdomain']}[/{sub_style}]"
                 
-                type_disp = f"[{sub_style}]{repo.get('app_type', 'repo')}[/{sub_style}]"
-                
                 created = repo.get('created', '-')
                 if len(created) > 10: created = created[:10]
                 created_disp = f"[{sub_style}]{created}[/{sub_style}]"
 
-                table.add_row(marker, name_disp, status_disp, sub_disp, type_disp, created_disp)
+                table.add_row(marker, name_disp, status_disp, sub_disp, created_disp)
                 # Add gap row if not the last item
                 if i < len(repos) - 1:
-                    table.add_row("", "", "", "", "", "")
+                    table.add_row("", "", "", "", "")
 
             from rich.align import Align
             table_or_empty = Align.center(table)
