@@ -35,7 +35,7 @@ class OrchestratorEngine:
     def _recover_state(self):
         current = self.state_db.get_current_run()
         if current:
-            logger.info(f"Recovering active run state: {current}")
+            logger.info("Recovering active run state run_id=%s agent_id=%s branch_name=%s", current['id'], current['agent_id'], current['branch_name'])
             self.current_agent_id = current['agent_id']
             self.current_run_id = current['id']
             self.branch_name = current['branch_name']
@@ -51,7 +51,7 @@ class OrchestratorEngine:
             # Let's inspect active exec processes. If not running, we mark it as FAILED (or let it timeout).
             rc, stdout, stderr = container.exec_in_container("ps aux | grep -i agy | grep -v grep")
             if rc == 0 and "agy" in stdout:
-                logger.info("Associated agy process is still active inside the container. Monitoring it...")
+                logger.info("Associated agy process is still active inside container container_name=%s", config.CONTAINER_NAME)
                 # We can't poll a non-existent Popen, but we can periodically check the container process list.
                 # However, for simplicity, we will wrap the check using a dummy process or let the watchdog handle it
                 # if it hangs, or check process presence inside self._check_running_agent.
@@ -67,7 +67,7 @@ class OrchestratorEngine:
                 self.current_process = RecoveredProcess()
                 self.agent_start_time = datetime.fromisoformat(current['started_at'])
             else:
-                logger.warn("No active agy process found in container for recovered run. Marking failed.")
+                logger.warning("No active agy process found in container for recovered run marking_failed=true run_id=%s", self.current_run_id)
                 now_str = datetime.now(IST).isoformat()
                 self.state_db.fail_run(self.current_run_id, now_str, "Orchestrator restarted and container process was not found.")
                 container.unload_agent_prompt()
@@ -109,14 +109,14 @@ class OrchestratorEngine:
                     self.quota_cooldown_until = cooldown_dt
                     remaining = (cooldown_dt - now).total_seconds() / 60
                     logger.warning(
-                        f"[STARTUP] Restored quota cooldown from DB. "
-                        f"{remaining:.1f} min remaining until {cooldown_dt.strftime('%H:%M:%S %Z')}."
+                        "[STARTUP] Restored quota cooldown from DB remaining_min=%.1f cooldown_until=%s",
+                        remaining, cooldown_dt.isoformat()
                     )
                 else:
-                    logger.info("[STARTUP] Stored quota cooldown has already expired. Clearing.")
+                    logger.info("[STARTUP] Stored quota cooldown has already expired clearing=true")
                     self.state_db.set_state("quota_cooldown_until", "")
             except Exception as e:
-                logger.error(f"Failed to restore cooldown from DB: {e}")
+                logger.error("Failed to restore cooldown from DB error=%s", str(e))
 
     def _get_agy_log_tail(self, start_time: datetime) -> str:
         """Read the last 100 lines of the current run's log file from inside the container.
@@ -146,7 +146,7 @@ class OrchestratorEngine:
         # If the log file was modified before the agent started, it's a stale log file
         # We allow a 5-second buffer for clock skew
         if log_mtime < start_epoch - 5:
-            logger.info(f"Log file {log_path} modification time ({log_mtime}) is older than agent start time ({start_epoch}). Ignoring stale log.")
+            logger.info("Log file modification time older than agent start time log_path=%s log_mtime=%.1f start_epoch=%.1f action=ignore", log_path, log_mtime, start_epoch)
             return ""
 
         # 3. Read the last 100 lines of this file
@@ -163,7 +163,7 @@ class OrchestratorEngine:
         if "RESOURCE_EXHAUSTED" not in log_tail and not re.search(r"\b429\b", log_tail):
             return None
 
-        logger.warning("QUOTA ERROR detected in agy log!")
+        logger.warning("Quota error detected in agy log run_id=%s agent_id=%s", self.current_run_id, self.current_agent_id)
 
         # Format is compact: 'Resets in 3h39m35s' (no spaces between parts)
         # Also handles partial: '45m12s', '2h30m', '90s'
@@ -177,12 +177,12 @@ class OrchestratorEngine:
             delta = timedelta(hours=h, minutes=m, seconds=s)
             # Add 2-minute buffer so we don't retry right at the boundary
             reset_at = now + delta + timedelta(minutes=2)
-            logger.warning(f"Quota resets in {h}h {m}m {s}s. Cooldown until {reset_at.strftime('%H:%M:%S %Z')}")
+            logger.warning("Quota resets cooldown_duration_sec=%d cooldown_until=%s", delta.total_seconds(), reset_at.isoformat())
             return reset_at
         else:
             # Couldn't parse reset time — default to 4-hour cooldown
             fallback = now + timedelta(hours=4)
-            logger.warning(f"Could not parse reset time from log. Defaulting to 4-hour cooldown until {fallback.strftime('%H:%M:%S %Z')}")
+            logger.warning("Could not parse reset time from log defaulting_cooldown=true cooldown_until=%s", fallback.isoformat())
             return fallback
 
     def _is_in_cooldown(self, now: datetime) -> bool:
@@ -190,13 +190,12 @@ class OrchestratorEngine:
         if self.quota_cooldown_until and now < self.quota_cooldown_until:
             remaining = (self.quota_cooldown_until - now).total_seconds() / 60
             logger.info(
-                f"[COOLDOWN] Quota not yet refreshed. "
-                f"{remaining:.1f} min remaining until {self.quota_cooldown_until.strftime('%H:%M:%S %Z')}. "
-                "Skipping tick."
+                "[COOLDOWN] Quota not yet refreshed remaining_min=%.1f cooldown_until=%s action=skip_tick",
+                remaining, self.quota_cooldown_until.isoformat()
             )
             return True
         if self.quota_cooldown_until and now >= self.quota_cooldown_until:
-            logger.info("[COOLDOWN] Quota cooldown lifted. Resuming normal scheduling.")
+            logger.info("[COOLDOWN] Quota cooldown lifted resuming_scheduling=true")
             self.quota_cooldown_until = None
         return False
 
@@ -268,7 +267,7 @@ class OrchestratorEngine:
             # Drain one last time to get final output
             self._drain_stdout()
             
-            logger.info(f"Agent {self.current_agent_id} process finished with exit code {retcode}.")
+            logger.info("Agent process finished agent_id=%s run_id=%s exit_code=%d", self.current_agent_id, self.current_run_id, retcode)
             now_str = now.isoformat()
 
             # --- Quota check: read cli.log BEFORE deciding success/failure ---
@@ -277,10 +276,7 @@ class OrchestratorEngine:
 
             if quota_reset_at:
                 # Agent hit quota — treat as failed and enter cooldown
-                logger.warning(
-                    f"Agent {self.current_agent_id} was terminated by quota exhaustion (429). "
-                    f"Marking FAILED. Cooldown until {quota_reset_at.strftime('%H:%M:%S %Z')}."
-                )
+                logger.warning("Agent terminated by quota exhaustion agent_id=%s run_id=%s cooldown_until=%s", self.current_agent_id, self.current_run_id, quota_reset_at.isoformat())
                 self.quota_cooldown_until = quota_reset_at
                 self.state_db.set_state("quota_cooldown_until", quota_reset_at.isoformat())
                 self.state_db.fail_run(
@@ -305,14 +301,14 @@ class OrchestratorEngine:
                         pr_url = f"https://github.com/{config.GITHUB_REPO}/pull/{pr_num}"
                         pr_state = container.check_pr_status(pr_num)
                         prs = [{"number": pr_num, "url": pr_url, "state": pr_state}]
-                        logger.info(f"Fallback detected PR #{pr_num} from agent summary: {pr_url} (State: {pr_state})")
+                        logger.info("Fallback PR detected from agent summary pr_num=%d pr_url=%s pr_state=%s", pr_num, pr_url, pr_state)
                 if prs:
                     # Found PR
                     pr = prs[0]
                     pr_num = pr.get("number")
                     pr_url = pr.get("url")
                     pr_state = pr.get("state")
-                    logger.info(f"Detected PR #{pr_num} created by agent: {pr_url} (State: {pr_state})")
+                    logger.info("Detected PR created by agent pr_num=%d pr_url=%s pr_state=%s", pr_num, pr_url, pr_state)
                     
                     db_pr_status = 'PENDING'
                     if pr_state == 'MERGED':
@@ -325,10 +321,10 @@ class OrchestratorEngine:
                     # If already merged (fast auto-merge), trigger reload immediately
                     # so we don't wait for _check_for_merge_trigger to catch it
                     if db_pr_status == 'MERGED':
-                        logger.info(f"PR #{pr_num} already merged — triggering immediate service reload.")
+                        logger.info("PR already merged triggering immediate service reload pr_num=%d", pr_num)
                         self._pull_and_reload_services(pr_num)
                 else:
-                    logger.warning(f"Agent completed but no PR was detected on branch {self.branch_name}.")
+                    logger.warning("Agent completed but no PR was detected branch_name=%s", self.branch_name)
                     self.state_db.complete_run(self.current_run_id, now_str, pr_status='NONE', summary_message=summary)
             else:
                 self.state_db.fail_run(self.current_run_id, now_str, f"Process exited with non-zero code {retcode}.", summary_message=f"Agent process exited with non-zero code {retcode}.")
@@ -340,7 +336,7 @@ class OrchestratorEngine:
         # Watchdog timeout check
         elapsed_minutes = (now - self.agent_start_time).total_seconds() / 60
         if elapsed_minutes > config.MAX_AGENT_RUNTIME_MINUTES:
-            logger.warn(f"Agent {self.current_agent_id} has exceeded max runtime ({config.MAX_AGENT_RUNTIME_MINUTES}m). Killing it.")
+            logger.warning("Agent exceeded max runtime killing_agent=true agent_id=%s run_id=%s max_runtime_min=%d elapsed_min=%.1f", self.current_agent_id, self.current_run_id, config.MAX_AGENT_RUNTIME_MINUTES, elapsed_minutes)
             self._handle_timeout(now)
 
     def _handle_timeout(self, now: datetime):
@@ -365,7 +361,7 @@ class OrchestratorEngine:
             current_status = container.check_pr_status(pr_num)
             
             if current_status == 'MERGED':
-                logger.info(f"PR #{pr_num} for agent {run['agent_id']} was MERGED.")
+                logger.info("PR merged pr_num=%d agent_id=%s", pr_num, run['agent_id'])
                 self.state_db.update_pr_status(run['id'], 'MERGED')
                 
                 # Auto pull and reload affected services
@@ -374,13 +370,13 @@ class OrchestratorEngine:
                 # Get the NEXT agent in pipeline
                 return self._get_next_pipeline_agent(run['agent_id'])
             elif current_status == 'CLOSED':
-                logger.info(f"PR #{pr_num} for agent {run['agent_id']} was CLOSED without merging.")
+                logger.info("PR closed without merging pr_num=%d agent_id=%s", pr_num, run['agent_id'])
                 self.state_db.update_pr_status(run['id'], 'CLOSED')
                 
         return None
 
     def _pull_and_reload_services(self, pr_num: int):
-        logger.info(f"PR #{pr_num} merged. Pulling changes and checking for service updates on host...")
+        logger.info("PR merged starting host service update pr_num=%d", pr_num)
         try:
             repo = "/home/stellaradmin/my_app"
 
@@ -390,14 +386,14 @@ class OrchestratorEngine:
                 cwd=repo, capture_output=True, text=True
             )
             if checkout_res.returncode != 0:
-                logger.warning(f"git checkout main: {checkout_res.stderr.strip()}")
+                logger.warning("git checkout main failed error=%s", checkout_res.stderr.strip())
 
             # 2. Pull as stellaradmin — they own the SSH key
             pull_res = subprocess.run(
                 ["sudo", "-u", "stellaradmin", "git", "pull"],
                 cwd=repo, capture_output=True, text=True, check=True
             )
-            logger.info(f"Git pull output: {pull_res.stdout.strip()}")
+            logger.info("git pull completed output=%s", pull_res.stdout.strip())
 
             # 3. Get list of files modified in the merge commit
             diff_res = subprocess.run(
@@ -405,7 +401,7 @@ class OrchestratorEngine:
                 cwd=repo, capture_output=True, text=True, check=True
             )
             files = [f.strip() for f in diff_res.stdout.strip().split('\n') if f.strip()]
-            logger.info(f"Files modified in merge commit: {files}")
+            logger.info("Files modified in merge commit files=%s", str(files))
 
             reload_stellar = False
             restart_ssh = False
@@ -420,20 +416,20 @@ class OrchestratorEngine:
                     reload_stellar = True
 
             if reload_stellar:
-                logger.info("Auto-reloading stellar.service...")
+                logger.info("Auto-reloading stellar.service")
                 subprocess.run(["sudo", "systemctl", "reload", "stellar"], check=True)
 
             if restart_ssh:
-                logger.info("Auto-restarting stellar-ssh.service...")
+                logger.info("Auto-restarting stellar-ssh.service")
                 subprocess.run(["sudo", "systemctl", "restart", "stellar-ssh"], check=True)
 
             if restart_orchestrator:
-                logger.info("Auto-restarting stellar_orchestrator.service...")
+                logger.info("Auto-restarting stellar_orchestrator.service")
                 # Run detached so it doesn't kill this process before finishing the tick
                 subprocess.Popen(["sudo", "systemctl", "restart", "stellar_orchestrator"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         except Exception as e:
-            logger.error(f"Failed to auto-pull or reload services for PR #{pr_num}: {e}", exc_info=True)
+            logger.error("Failed to auto-pull or reload services for PR pr_num=%d error=%s", pr_num, str(e), exc_info=True)
 
 
     def _get_next_pipeline_agent(self, current_agent_id: str) -> Optional[Dict[str, Any]]:
@@ -463,11 +459,8 @@ class OrchestratorEngine:
                             # Already being handled by _check_running_agent
                             continue
                         else:
-                            logger.info(
-                                f"Agent {agent['id']} last run today had status "
-                                f"{last_run['status']} — scheduling retry."
-                            )
-
+                            logger.info("Agent last run today failed scheduling retry agent_id=%s last_status=%s", agent['id'], last_run['status'])
+                            
                 return agent
         return None
 
@@ -494,7 +487,7 @@ class OrchestratorEngine:
                 branch_name=self.branch_name
             )
         except Exception as e:
-            logger.error(f"Failed to start agent {self.current_agent_id}: {e}")
+            logger.error("Failed to start agent agent_id=%s run_id=%s error=%s", self.current_agent_id, self.current_run_id, str(e))
             now_str = datetime.now(IST).isoformat()
             self.state_db.fail_run(self.current_run_id, now_str, str(e), summary_message=f"Failed to start agent: {e}")
             container.unload_agent_prompt()
