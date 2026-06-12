@@ -453,6 +453,23 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const profilePureBlackToggle = document.getElementById(
+    "profile-pure-black-toggle",
+  );
+  if (profilePureBlackToggle) {
+    profilePureBlackToggle.checked =
+      localStorage.getItem("pureBlackMode") === "true";
+    profilePureBlackToggle.addEventListener("change", (e) => {
+      if (e.target.checked) {
+        bodyElement.classList.add("pure-black");
+        localStorage.setItem("pureBlackMode", "true");
+      } else {
+        bodyElement.classList.remove("pure-black");
+        localStorage.setItem("pureBlackMode", "false");
+      }
+    });
+  }
+
   const toolsList = document.getElementById("agentToolsSettingsList");
   if (toolsList) {
     toolsList.addEventListener("change", function (e) {
@@ -619,6 +636,9 @@ const modelSelectWidthHelper = document.getElementById(
   "modelSelectWidthHelper",
 );
 const bodyElement = document.body;
+if (localStorage.getItem("pureBlackMode") === "true") {
+  bodyElement.classList.add("pure-black");
+}
 const regenerateModalBackdrop = document.getElementById(
   "regenerateModalBackdrop",
 );
