@@ -85,14 +85,14 @@ class StateDB:
             """, (finished_at, summary_message, run_id))
             conn.commit()
 
-    def interrupt_run(self, run_id: int, finished_at: str, error_message: str):
+    def interrupt_run(self, run_id: int, finished_at: str, error_message: str, summary_message: Optional[str] = None):
         """Mark a run as INTERRUPTED (orchestrator restart mid-run). Eligible for retry."""
         with self._get_conn() as conn:
             conn.execute("""
                 UPDATE agent_runs
-                SET status = 'INTERRUPTED', finished_at = ?, error_message = ?
+                SET status = 'INTERRUPTED', finished_at = ?, error_message = ?, summary_message = ?
                 WHERE id = ?
-            """, (finished_at, error_message, run_id))
+            """, (finished_at, error_message, summary_message, run_id))
             conn.commit()
 
     def set_pr_info(self, run_id: int, pr_number: int, pr_url: str, pr_status: str = 'PENDING'):

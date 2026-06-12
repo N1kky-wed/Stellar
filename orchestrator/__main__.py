@@ -51,19 +51,31 @@ def main():
 
     def handle_shutdown(signum, frame):
         logger.info(f"Shutdown signal ({signum}) received. Initiating graceful shutdown...")
-        if engine.current_process:
-            logger.info(f"Active agent process detected (Agent: {engine.current_agent_id}). Terminating...")
-            try:
-                engine.current_process.kill()
-            except Exception as e:
-                logger.error(f"Error killing agent process: {e}")
+        if engine.current_process or engine.current_run_id:
+            logger.info(f"Active run detected (Agent: {engine.current_agent_id}). Terminating...")
+            if engine.current_process:
+                try:
+                    engine.current_process.kill()
+                except Exception as e:
+                    logger.error(f"Error killing agent process: {e}")
             
             # Kill agy runs inside container
             container.exec_in_container("pkill -f agy")
             
             if engine.current_run_id:
                 now_str = datetime.now().isoformat()
-                engine.state_db.interrupt_run(engine.current_run_id, now_str, f"Orchestrator shut down via signal {signum}")
+                agent_name = "Agent"
+                for a in config.AGENT_PIPELINE:
+                    if a['id'] == engine.current_agent_id:
+                        agent_name = a['name']
+                        break
+                summary_msg = f"↩️ Agent {agent_name} was interrupted by an orchestrator restart — retrying automatically."
+                engine.state_db.interrupt_run(
+                    engine.current_run_id, 
+                    now_str, 
+                    f"Orchestrator shut down via signal {signum}",
+                    summary_message=summary_msg
+                )
                 
         container.unload_agent_prompt()
         logger.info("Shutdown cleanup complete. Exiting.")

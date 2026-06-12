@@ -1,0 +1,23 @@
+name: Delete Merged Branch
+
+on:
+  pull_request_target:
+    types: [closed]
+
+jobs:
+  delete-branch:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.pull_request.merged == true &&
+      (github.event.pull_request.user.login == 'N1kky-wed' || github.event.pull_request.user.login == 'stellar-remover') &&
+      startsWith(github.event.pull_request.head.ref, 'agent/')
+    permissions:
+      contents: write
+    steps:
+      - name: Delete merged agent branch
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          echo "Deleting branch: $BRANCH"
+          gh api "repos/${{ github.repository }}/git/refs/heads/${BRANCH}" -X DELETE
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

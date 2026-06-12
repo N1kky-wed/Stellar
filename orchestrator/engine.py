@@ -1,5 +1,6 @@
 # engine.py
 import re
+import sys
 import time
 import logging
 from datetime import datetime, timedelta
@@ -207,6 +208,16 @@ class OrchestratorEngine:
             logger.error(f"Docker container {config.CONTAINER_NAME} is not running! Skipping tick.")
             return
 
+        # 0. Check for any agent that was deferred due to an orchestrator restart
+        pending_immediate = self.state_db.get_state("pending_immediate_agent")
+        if pending_immediate and not self._is_in_cooldown(now):
+            self.state_db.set_state("pending_immediate_agent", "")
+            for agent in config.AGENT_PIPELINE:
+                if agent['id'] == pending_immediate:
+                    logger.info("Starting pending immediate agent %s after orchestrator restart", agent['name'])
+                    self._start_agent(agent)
+                    return
+
         # 1. Always monitor a running agent (even during cooldown — shouldn't happen, but be safe)
         if self.current_process:
             self._check_running_agent(now)
@@ -362,21 +373,33 @@ class OrchestratorEngine:
             
             if current_status == 'MERGED':
                 logger.info("PR merged pr_num=%d agent_id=%s", pr_num, run['agent_id'])
-                self.state_db.update_pr_status(run['id'], 'MERGED')
                 
                 # Auto pull and reload affected services
-                self._pull_and_reload_services(pr_num)
+                restart_orchestrator = self._pull_and_reload_services(pr_num)
                 
                 # Get the NEXT agent in pipeline
-                return self._get_next_pipeline_agent(run['agent_id'])
+                next_agent = self._get_next_pipeline_agent(run['agent_id'])
+                
+                if restart_orchestrator:
+                    if next_agent:
+                        logger.info("Orchestrator restart scheduled. Deferring next agent %s to DB state.", next_agent['name'])
+                        self.state_db.set_state("pending_immediate_agent", next_agent['id'])
+                    
+                    self.state_db.update_pr_status(run['id'], 'MERGED')
+                    logger.info("Exiting current orchestrator process to allow restart.")
+                    sys.exit(0)
+                
+                self.state_db.update_pr_status(run['id'], 'MERGED')
+                return next_agent
             elif current_status == 'CLOSED':
                 logger.info("PR closed without merging pr_num=%d agent_id=%s", pr_num, run['agent_id'])
                 self.state_db.update_pr_status(run['id'], 'CLOSED')
                 
         return None
 
-    def _pull_and_reload_services(self, pr_num: int):
+    def _pull_and_reload_services(self, pr_num: int) -> bool:
         logger.info("PR merged starting host service update pr_num=%d", pr_num)
+        restart_orchestrator = False
         try:
             repo = "/home/stellaradmin/my_app"
 
@@ -405,7 +428,6 @@ class OrchestratorEngine:
 
             reload_stellar = False
             restart_ssh = False
-            restart_orchestrator = False
 
             for file in files:
                 if file.startswith("orchestrator/") or file == "stellar_orchestrator.service":
@@ -430,6 +452,8 @@ class OrchestratorEngine:
 
         except Exception as e:
             logger.error("Failed to auto-pull or reload services for PR pr_num=%d error=%s", pr_num, str(e), exc_info=True)
+            
+        return restart_orchestrator
 
 
     def _get_next_pipeline_agent(self, current_agent_id: str) -> Optional[Dict[str, Any]]:

@@ -4,15 +4,10 @@ on:
   pull_request:
     types: [opened, reopened]
 
-  # Separate trigger to delete branch after merge
-  pull_request_target:
-    types: [closed]
-
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
     if: >
-      github.event_name == 'pull_request' &&
       (github.event.pull_request.user.login == 'N1kky-wed' || github.event.pull_request.user.login == 'stellar-remover') &&
       !startsWith(github.event.pull_request.head.ref, 'feat')
     permissions:
@@ -21,23 +16,5 @@ jobs:
     steps:
       - name: Enable auto-merge
         run: gh pr merge --auto --squash --repo "${{ github.repository }}" "${{ github.event.pull_request.number }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  delete-branch:
-    runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'pull_request_target' &&
-      github.event.pull_request.merged == true &&
-      (github.event.pull_request.user.login == 'N1kky-wed' || github.event.pull_request.user.login == 'stellar-remover') &&
-      startsWith(github.event.pull_request.head.ref, 'agent/')
-    permissions:
-      contents: write
-    steps:
-      - name: Delete merged agent branch
-        run: |
-          BRANCH="${{ github.event.pull_request.head.ref }}"
-          echo "Deleting branch: $BRANCH"
-          gh api "repos/${{ github.repository }}/git/refs/heads/${BRANCH}" -X DELETE
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
