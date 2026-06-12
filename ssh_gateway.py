@@ -612,12 +612,12 @@ class TUI:
     THEMES = [
         {
             "name": "Stellar Classic",
-            "bg": "#0E0E0E",
-            "border": "#444444",
-            "primary": "#E38B68",
-            "accent": "#6ECFFF",
+            "bg": "black",
+            "border": "white",
+            "primary": "white",
+            "accent": "grey74",
             "text": "white",
-            "dim": "#888888"
+            "dim": "grey50"
         },
         {
             "name": "Midnight Cyan",
@@ -638,13 +638,13 @@ class TUI:
             "dim": "dark_green"
         },
         {
-            "name": "Monochrome",
-            "bg": "black",
-            "border": "white",
-            "primary": "white",
-            "accent": "grey74",
+            "name": "Claude Classic",
+            "bg": "#0E0E0E",
+            "border": "#444444",
+            "primary": "#E38B68",
+            "accent": "#6ECFFF",
             "text": "white",
-            "dim": "grey50"
+            "dim": "#888888"
         }
     ]
 
@@ -1563,62 +1563,10 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                         send_raw(channel, ''.join(buffer))
             last_drawn_content = content
 
-        # ---- PHASE 0: Theme Picker ----
-        saved = load_theme()
-        selected_theme = saved.get("theme_idx", 0)
-        selected_border = saved.get("border_idx", 0)
-        is_default = False
-        focus = "theme"
-        theme_picked = False
-        
-        # Clear screen on the initial theme picker draw
-        draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default), clear=True)
-        
-        while True:
-            # Optimize: Reduce read_key timeout to 0.1s to handle terminal resizes instantly
-            key = read_key(channel, timeout=0.1)
-            if not key:
-                if server.resize_event.is_set():
-                    server.resize_event.clear()
-                    # Clear screen on resize to remove layout artifacts
-                    draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default), clear=True)
-                continue
-            
-            needs_redraw = True
-            if key == "RIGHT" and focus == "theme":
-                focus = "border"
-            elif key == "LEFT" and focus == "border":
-                focus = "theme"
-            elif key == "UP":
-                if focus == "theme" and selected_theme > 0: selected_theme -= 1
-                elif focus == "border" and selected_border > 0: selected_border -= 1
-            elif key == "DOWN":
-                if focus == "theme" and selected_theme < len(TUI.THEMES) - 1: selected_theme += 1
-                elif focus == "border" and selected_border < len(TUI.BORDER_COLORS) - 1: selected_border += 1
-            elif key == " ": # Spacebar toggle
-                is_default = not is_default
-            elif key == "ENTER":
-                theme_picked = True
-                break
-            elif key == "ESC":
-                selected_theme, selected_border = 0, 0
-                theme_picked = False
-                break
-            elif key in ('CTRL_C', 'CTRL_D', 'EOF'):
-                send_raw(channel, '\x1b[?1049l\x1b[?25h')
-                return
-            else:
-                needs_redraw = False
-                
-            if needs_redraw:
-                draw(TUI.theme_picker(selected_theme, selected_border, focus, server.term_width, server.term_height, is_default))
-        
-        base_theme = TUI.THEMES[selected_theme].copy()
-        b_val = TUI.BORDER_COLORS[selected_border]["value"]
-        if b_val: base_theme["border"] = b_val
-        active_theme = base_theme
-
         # ---- PHASE 1: Authentication ----
+        # Use default theme for authentication screen
+        active_theme = TUI.THEMES[0].copy()
+        
         auth_attempts = 0
         while auth_attempts < MAX_AUTH_ATTEMPTS:
             error_msg = ""
@@ -1629,7 +1577,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             code = ""
             first_draw = True
             while len(code) < 6:
-                # Clear screen on first draw of auth screen to remove theme picker
+                # Clear screen on first draw of auth screen to remove anything previous
                 draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, error_msg=error_msg, theme=active_theme), clear=first_draw)
                 first_draw = False
                 
@@ -1677,17 +1625,21 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         username = user_info.get('display_name') or user_info.get('username', 'User')
         audit.info(f"SESSION_START | ip={real_ip} | user_id={user_id} | username={username}")
 
-        # Load or save user-scoped theme preferences
-        if is_default:
-            save_theme(user_id, selected_theme, selected_border)
-        elif not theme_picked:
-            saved = load_theme(user_id)
-            selected_theme = saved.get("theme_idx", 0)
-            selected_border = saved.get("border_idx", 0)
-            
+        # Load user-scoped theme preferences or use default (Theme 0)
+        saved = load_theme(user_id)
+        selected_theme = saved.get("theme_idx", 0)
+        selected_border = saved.get("border_idx", 0)
+        
+        # Ensure values are within bounds
+        if not (0 <= selected_theme < len(TUI.THEMES)):
+            selected_theme = 0
+        if not (0 <= selected_border < len(TUI.BORDER_COLORS)):
+            selected_border = 0
+
         base_theme = TUI.THEMES[selected_theme].copy()
         b_val = TUI.BORDER_COLORS[selected_border]["value"]
-        if b_val: base_theme["border"] = b_val
+        if b_val:
+            base_theme["border"] = b_val
         active_theme = base_theme
 
         # ---- PHASE 2: Dashboard ----
