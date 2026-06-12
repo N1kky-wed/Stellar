@@ -838,7 +838,7 @@ class TUI:
         content.append(Text.from_markup(f"Enter Code: {formatted}"))
         
         if error_msg:
-            content.append(f"\n\n[bold red]![/bold red] {error_msg}")
+            content.append(Text.from_markup(f"\n\n[bold red]![/bold red] {error_msg}"))
             
         from rich.align import Align
         return TUI._render(width, height, Align(content, vertical="middle", align="center"), theme)
