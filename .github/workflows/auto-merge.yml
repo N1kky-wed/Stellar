@@ -13,7 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       github.event_name == 'pull_request' &&
-      (github.event.pull_request.user.login == 'N1kky-wed' || github.event.pull_request.user.login == 'stellar-remover')
+      (github.event.pull_request.user.login == 'N1kky-wed' || github.event.pull_request.user.login == 'stellar-remover') &&
+      !startsWith(github.event.pull_request.head.ref, 'feat/')
     permissions:
       pull-requests: write
       contents: write
