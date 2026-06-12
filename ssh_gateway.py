@@ -966,14 +966,14 @@ class TUI:
             controls = Text.from_markup(f"  [bold {theme['text']}]ESC[/bold {theme['text']}] [{theme['dim']}]Exit Search[/{theme['dim']}]   [bold {theme['text']}]Backspace[/bold {theme['text']}] [{theme['dim']}]Delete[/{theme['dim']}]")
         else:
             controls = Text.from_markup(
-                f"\n  [bold {theme['text']}]↑↓[/bold {theme['text']}] [{theme['dim']}]Nav[/{theme['dim']}]  "
-                f"[bold {theme['text']}]Enter[/bold {theme['text']}] [{theme['dim']}]Open[/{theme['dim']}]  "
-                f"[bold {theme['text']}]/[/bold {theme['text']}] [{theme['dim']}]Search[/{theme['dim']}]  "
-                f"[bold {theme['text']}]F[/bold {theme['text']}] [{theme['dim']}]Filter[/{theme['dim']}]  "
-                f"[bold {theme['text']}]O[/bold {theme['text']}] [{theme['dim']}]Sort[/{theme['dim']}]  "
-                f"[bold {theme['text']}]L[/bold {theme['text']}] [{theme['dim']}]Logs[/{theme['dim']}]  "
-                f"[bold {theme['text']}]R/S[/bold {theme['text']}] [{theme['dim']}]Restart/Stop[/{theme['dim']}]  "
-                f"[bold {theme['text']}]T[/bold {theme['text']}] [{theme['dim']}]Theme[/{theme['dim']}]  "
+                f"\n  [bold {theme['text']}]↑↓[/bold {theme['text']}] [{theme['dim']}]Nav[/{theme['dim']}] "
+                f"[bold {theme['text']}]Enter[/bold {theme['text']}] [{theme['dim']}]Open[/{theme['dim']}] "
+                f"[bold {theme['text']}]/[/bold {theme['text']}] [{theme['dim']}]Find[/{theme['dim']}] "
+                f"[bold {theme['text']}]F[/bold {theme['text']}] [{theme['dim']}]Filt[/{theme['dim']}] "
+                f"[bold {theme['text']}]O[/bold {theme['text']}] [{theme['dim']}]Sort[/{theme['dim']}] "
+                f"[bold {theme['text']}]L[/bold {theme['text']}] [{theme['dim']}]Logs[/{theme['dim']}] "
+                f"[bold {theme['text']}]R/S[/bold {theme['text']}] [{theme['dim']}]Restart/Stop[/{theme['dim']}] "
+                f"[bold {theme['text']}]T[/bold {theme['text']}] [{theme['dim']}]Theme[/{theme['dim']}] "
                 f"[bold {theme['text']}]Q[/bold {theme['text']}] [{theme['dim']}]Quit[/{theme['dim']}]"
             )
         
