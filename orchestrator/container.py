@@ -82,6 +82,10 @@ def unload_agent_prompt():
     exec_in_container(f"{config.AGY_BINARY} plugin uninstall code-review")
     
     remove_from_container(config.CONTAINER_REVIEWER_DIR)
+    
+    # Kill any runaway or stale agent-spawned processes inside the container
+    exec_in_container("pkill -f pytest; pkill -f python; pkill -f node; pkill -f npm; pkill -f git; pkill -f gh")
+    
     remove_from_container(config.CONTAINER_WORKSPACE)
     logger.info("Unloaded successfully.")
 
