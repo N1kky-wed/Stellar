@@ -54,9 +54,9 @@ from rich import box
 # ============================================================
 SSH_HOST = '0.0.0.0'
 SSH_PORT = 2222
-HOST_KEY_PATH = '/home/stellaradmin/my_app/ssh_gateway_host_key'
+HOST_KEY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ssh_gateway_host_key')
 DATABASE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stellar_local.db')
-LOG_DIR = '/home/stellaradmin/my_app/logs'
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
 
 # Security tuning
 MAX_AUTH_ATTEMPTS = 3           # Max wrong codes per session
