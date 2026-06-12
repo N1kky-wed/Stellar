@@ -1639,16 +1639,21 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 if len(new_lines) != len(old_lines):
                     send_raw(channel, '\x1b[H' + content + '\x1b[J')
                 else:
-                    # Accumulate updates to avoid sending multiple small TCP packets, eliminating flicker
-                    # (Bolt - Performance optimization: batching raw socket writes).
-                    buffer = []
-                    # Line-by-line diff: draw only lines that have changed to save bandwidth and prevent flickering
-                    for idx, (new_line, old_line) in enumerate(zip(new_lines, old_lines)):
-                        if new_line != old_line:
+                    # Count how many lines changed
+                    changed_indices = [idx for idx, (new_line, old_line) in enumerate(zip(new_lines, old_lines)) if new_line != old_line]
+                    if len(changed_indices) > 3:
+                        # Overwrite the whole screen from home without clearing to eliminate flickering (Bolt - Performance optimization)
+                        send_raw(channel, '\x1b[H' + content)
+                    else:
+                        # Accumulate updates to avoid sending multiple small TCP packets, eliminating flicker
+                        # (Bolt - Performance optimization: batching raw socket writes).
+                        buffer = []
+                        # Line-by-line diff: draw only lines that have changed to save bandwidth and prevent flickering
+                        for idx in changed_indices:
                             # Move cursor to start of line (idx+1), print new content, clear rest of line
-                            buffer.append(f'\x1b[{idx+1};1H' + new_line + '\x1b[K')
-                    if buffer:
-                        send_raw(channel, ''.join(buffer))
+                            buffer.append(f'\x1b[{idx+1};1H' + new_lines[idx] + '\x1b[K')
+                        if buffer:
+                            send_raw(channel, ''.join(buffer))
             last_drawn_content = content
 
         # ---- PHASE 1: Authentication ----
@@ -2067,6 +2072,7 @@ def handle_connection(client_socket, client_addr):
         client_addr (tuple): The client IP address and port tuple.
     """
     global active_sessions
+    session_active = False  # Initialize early to prevent UnboundLocalError in finally block (Bolt - Stability fix)
     _thread_local.session_id = f"{client_addr[0]}:{client_addr[1]}"
     ip = client_addr[0]
 
