@@ -436,7 +436,7 @@ class OrchestratorEngine:
                     restart_orchestrator = True
                     reload_stellar = True
                     restart_ssh = True
-                elif file.startswith("orchestrator/") or file == "stellar_orchestrator.service":
+                elif file.startswith("orchestrator/") or file == "deploy/stellar_orchestrator.service":
                     restart_orchestrator = True
                 elif file == "ssh_gateway.py":
                     restart_ssh = True
