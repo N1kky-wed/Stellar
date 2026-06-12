@@ -1681,7 +1681,8 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 current_filter = filter_states[filter_idx]
                 if current_filter == "Running" and r_status != "running":
                     continue
-                if current_filter == "Stopped" and r_status != "exited":
+                # Bolt - Stability/Consistency fix: align filter logic with TUI dashboard display logic, treating non-running states as stopped.
+                if current_filter == "Stopped" and r_status == "running":
                     continue
                     
                 f_repos.append(r)

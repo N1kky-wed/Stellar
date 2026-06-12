@@ -4942,12 +4942,11 @@ def get_user_chats():
     user_id = session['user_id']
     db = get_db()
     try:
+        # Bolt - Performance optimization: Replace LEFT JOIN + GROUP BY with a correlated subquery to avoid massive tables aggregation.
         cursor = db.execute('''
-            SELECT c.id, c.name, COALESCE(MAX(m.timestamp), c.created_at) as last_active
+            SELECT c.id, c.name, COALESCE((SELECT MAX(m.timestamp) FROM messages m WHERE m.chat_id = c.id), c.created_at) as last_active
             FROM chats c
-            LEFT JOIN messages m ON c.id = m.chat_id
             WHERE c.user_id = ? AND c.is_temp = 0
-            GROUP BY c.id
             ORDER BY last_active DESC
         ''', (user_id,))
         chats = _fetch_as_dict(cursor)
@@ -5910,21 +5909,25 @@ def search_messages_route():
 
     db = get_db()
     try:
+        # Bolt - Performance optimization: Replace full LEFT JOIN + scan with localized index search for matches, fixing redundant joins.
         cursor = db.execute('''
             SELECT
-                T1.id AS chat_id,
-                T1.name AS chat_name,
-                T2.id AS message_id,
-                T2.message_content,
-                T2.message_type
-            FROM chats AS T1
-            LEFT JOIN messages AS T2 ON T1.id = T2.chat_id
-            WHERE T1.user_id = ? AND T1.is_temp = 0 AND (
-                T1.name LIKE ? OR
-                T2.message_content LIKE ?
+                c.id AS chat_id,
+                c.name AS chat_name,
+                m.id AS message_id,
+                m.message_content,
+                m.message_type
+            FROM chats c
+            LEFT JOIN messages m ON m.id = (
+                SELECT id FROM messages
+                WHERE chat_id = c.id AND message_content LIKE ?
+                ORDER BY timestamp ASC LIMIT 1
             )
-            ORDER BY T1.created_at DESC, T2.timestamp ASC
-        ''', (user_id, f'%{search_term}%', f'%{search_term}%'))
+            WHERE c.user_id = ? AND c.is_temp = 0 AND (
+                c.name LIKE ? OR m.id IS NOT NULL
+            )
+            ORDER BY c.created_at DESC
+        ''', (f'%{search_term}%', user_id, f'%{search_term}%'))
 
         raw_results = _fetch_as_dict(cursor)
 
