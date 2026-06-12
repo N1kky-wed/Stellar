@@ -5472,6 +5472,18 @@ def sentinel_status():
 @app.route('/api/sentinel/stream/<process_id>')
 def sentinel_stream(process_id):
     """SSE endpoint for the healing overlay to receive live progress logs."""
+    # Sentinel Security Fix: Ensure caller is authenticated and is the owner of the process or an admin to prevent unauthorized leakage of codebase/error details.
+    if 'user_id' not in session:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    db = get_db()
+    row = db.execute("SELECT user_id FROM repo_history WHERE process_id = ? ORDER BY id DESC LIMIT 1", (process_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Process not found"}), 404
+        
+    if session.get('role') != 'admin' and row['user_id'] != session['user_id']:
+        return jsonify({"error": "Forbidden"}), 403
+
     def event_stream():
         log_history_key = f"sentinel:log_history:{process_id}"
 
@@ -6458,6 +6470,7 @@ def intercept_subdomains():
         cursor = db.execute("SELECT process_id, subdomain, user_id FROM repo_history WHERE subdomain = ? ORDER BY id DESC LIMIT 1", (subdomain,))
         row = cursor.fetchone()
 
+        owner_id = None
         if row:
             # Verify owner approval
             owner_id = row['user_id']
@@ -6550,8 +6563,11 @@ def intercept_subdomains():
                 except Exception as docker_err:
                     container_logs = f"Failed to retrieve container logs: {docker_err}"
                 body_snippet = resp.text[:2000] if 'text/html' in resp.headers.get('Content-Type', '').lower() else ""
+                # Sentinel Security Fix: Only trigger self-healing if the visitor is the authenticated owner of the application.
+                is_owner = (owner_id is not None and 'user_id' in session and session['user_id'] == owner_id)
                 log_backend_crash(process_id, f"HTTP Server Error {resp.status_code}",
-                    f"HTTP STATUS {resp.status_code}\n\nCONTAINER LOGS:\n{container_logs}\n\nHTTP RESPONSE:\n{body_snippet}")
+                    f"HTTP STATUS {resp.status_code}\n\nCONTAINER LOGS:\n{container_logs}\n\nHTTP RESPONSE:\n{body_snippet}",
+                    trigger_heal=is_owner)
 
             # Inject Sentinel telemetry JS hook into HTML responses
             content_type = resp.headers.get('Content-Type', '')
@@ -6646,8 +6662,11 @@ def intercept_subdomains():
                 container_logs = container.logs(tail=100, stdout=True, stderr=True).decode('utf-8', 'replace')
             except Exception as docker_err:
                 container_logs = f"Failed to retrieve container logs: {docker_err}"
+            # Sentinel Security Fix: Only trigger self-healing if the visitor is the authenticated owner of the application.
+            is_owner = (owner_id is not None and 'user_id' in session and session['user_id'] == owner_id)
             log_backend_crash(process_id, f"Connection Failure: {str(e)}",
-                f"PROXY ERROR: {str(e)}\n\nCONTAINER LOGS:\n{container_logs}")
+                f"PROXY ERROR: {str(e)}\n\nCONTAINER LOGS:\n{container_logs}",
+                trigger_heal=is_owner)
 
             # Passive Health Check: If connection is refused/reset, invalidate local cache
             # The port might be stale. Removing it forces a Redis re-fetch on the next request.

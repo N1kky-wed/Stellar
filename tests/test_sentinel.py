@@ -319,7 +319,7 @@ def test_sentinel_status_healing(mock_redis, setup_repo_history, client):
     mock_redis.get.assert_called_with("sentinel:healing:test-process-123")
 
 @patch('app.redis_client')
-def test_sentinel_stream_flow(mock_redis, client):
+def test_sentinel_stream_flow(mock_redis, setup_repo_history, client):
     """
     Asserts that the sentinel stream SSE endpoint connects, replays history from Redis,
     drains live events from pubsub, and terminates when a healed/failed event is received.
@@ -346,6 +346,10 @@ def test_sentinel_stream_flow(mock_redis, client):
         }
     ]
 
+    # Authenticate client as the owner of the process (user_id = 1)
+    with client.session_transaction() as sess:
+        sess['user_id'] = 1
+
     response = client.get('/api/sentinel/stream/test-process-123')
     assert response.status_code == 200
     assert response.is_streamed
@@ -364,6 +368,39 @@ def test_sentinel_stream_flow(mock_redis, client):
     mock_pubsub.subscribe.assert_called_once_with("sentinel:logs:test-process-123")
     mock_pubsub.unsubscribe.assert_called_once_with("sentinel:logs:test-process-123")
     mock_pubsub.close.assert_called_once()
+
+def test_sentinel_stream_unauthorized(client):
+    """
+    Asserts that accessing the sentinel stream without authentication returns 401.
+    """
+    response = client.get('/api/sentinel/stream/test-process-123')
+    assert response.status_code == 401
+    data = json.loads(response.data)
+    assert data['error'] == 'Authentication required'
+
+def test_sentinel_stream_forbidden(setup_repo_history, client):
+    """
+    Asserts that accessing the sentinel stream as a non-owner returns 403.
+    """
+    with client.session_transaction() as sess:
+        sess['user_id'] = 999  # Owner is user_id = 1
+
+    response = client.get('/api/sentinel/stream/test-process-123')
+    assert response.status_code == 403
+    data = json.loads(response.data)
+    assert data['error'] == 'Forbidden'
+
+def test_sentinel_stream_not_found(client):
+    """
+    Asserts that accessing a non-existent process returns 404.
+    """
+    with client.session_transaction() as sess:
+        sess['user_id'] = 1
+
+    response = client.get('/api/sentinel/stream/non-existent-process')
+    assert response.status_code == 404
+    data = json.loads(response.data)
+    assert data['error'] == 'Process not found'
 
 def test_test_sentinel_overlay_route(client):
     """
