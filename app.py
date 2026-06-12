@@ -40,6 +40,8 @@ from prompts import (
     get_refinement_prompt
 )
 
+thread_local_ctx = threading.local()
+
 class RequestIDFormatter(logging.Formatter):
     def format(self, record):
         from flask import has_request_context, has_app_context, g, request
@@ -51,6 +53,8 @@ class RequestIDFormatter(logging.Formatter):
                 record.request_id = g.request_id
             elif has_app_context() and getattr(g, 'request_id', None):
                 record.request_id = g.request_id
+            elif getattr(thread_local_ctx, 'request_id', None):
+                record.request_id = thread_local_ctx.request_id
             else:
                 record.request_id = 'system'
         except Exception:
@@ -653,6 +657,8 @@ def close_db(error):
         db.close()
 
 def initialize_database():
+    global t_db_init_start
+    t_db_init_start = time.time()
     with app.app_context():
         db = get_db()
         db.execute("PRAGMA journal_mode=WAL;")
@@ -986,6 +992,7 @@ def initialize_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_repo_history_user_id ON repo_history(user_id)")
 
         db.commit()
+    logger.info("Database initialization completed duration_sec=%.3f", time.time() - t_db_init_start)
 
 initialize_database()
 
@@ -1066,24 +1073,33 @@ def insert_message(chat_id, message_type, message_content,
             db.commit()
             last_id = cursor.lastrowid
 
+            req_id = 'system'
+            from flask import has_request_context, has_app_context, g
+            if has_request_context() and getattr(g, 'request_id', None):
+                req_id = g.request_id
+            elif has_app_context() and getattr(g, 'request_id', None):
+                req_id = g.request_id
+
             if message_type == "user" and user_query_for_name and not hidden:
                 num_messages_in_chat = db.execute('SELECT COUNT(*) FROM messages WHERE chat_id = ?', (chat_id,)).fetchone()[0]
                 if num_messages_in_chat == 1 or (num_messages_in_chat -1) % 10 == 0:
-                    def thread_target(app_instance, target_chat_id, target_query):
+                    def thread_target(app_instance, target_chat_id, target_query, r_id):
+                        thread_local_ctx.request_id = r_id
                         with app_instance.app_context():
                             generate_chat_name(target_chat_id, target_query)
 
-                    threading.Thread(target=thread_target, args=(current_app._get_current_object(), chat_id, user_query_for_name), daemon=True).start()
+                    threading.Thread(target=thread_target, args=(current_app._get_current_object(), chat_id, user_query_for_name, req_id), daemon=True).start()
 
             # Trigger Token Count update in background
-            def token_update_thread(app_instance, target_chat_id):
+            def token_update_thread(app_instance, target_chat_id, r_id):
+                thread_local_ctx.request_id = r_id
                 with app_instance.app_context():
                     try:
                         count_chat_tokens(target_chat_id)
                     except Exception as e:
                         logger.error(f"Error in token_update_thread: {e}")
 
-            threading.Thread(target=token_update_thread, args=(current_app._get_current_object(), chat_id), daemon=True).start()
+            threading.Thread(target=token_update_thread, args=(current_app._get_current_object(), chat_id, req_id), daemon=True).start()
 
             # Broadcast to other devices syncing this user's state
             try:
@@ -1715,7 +1731,18 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     from flask import g
     g.model_id = model_id # Set ground-truth model for tools
     display_name = model_display_name or MODEL_NAMES.get(model_id)
-    logger.info(f"Initiating gemini_generate with model: {model_id} ({display_name})")
+    if isinstance(prompt, str):
+        prompt_len = len(prompt)
+    elif isinstance(prompt, list):
+        prompt_len = 0
+        for p in prompt:
+            if isinstance(p, str):
+                prompt_len += len(p)
+            elif hasattr(p, 'text') and p.text:
+                prompt_len += len(p.text)
+    else:
+        prompt_len = len(str(prompt))
+    logger.info("Initiating gemini_generate model=%s display_name=%s username=%s chat_id=%s prompt_len=%d", model_id, display_name, username, chat_id, prompt_len)
 
     def record_tool_call(t_name, t_input, t_result):
         if not chat_id: return
@@ -2667,6 +2694,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             _put_event({'type': 'phase', 'phase': 'installing'})
             _put_event({'type': 'log', 'content': '📦 Installing dependencies from requirements.txt...'})
 
+            t_pip_start = time.time()
             try:
                 # Run pip install with streaming output
                 exec_result = container.exec_run(
@@ -2687,9 +2715,11 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                             if line.strip():
                                 _put_event({'type': 'install_log', 'content': line})
 
+                duration = time.time() - t_pip_start
                 _put_event({'type': 'log', 'content': '✅ Dependencies installed successfully.'})
+                logger.info("Dependencies installation complete process_id=%s duration_sec=%.2f", process_id, duration)
             except Exception as pip_err:
-                logger.error(f"Pip install error for {process_id}: {pip_err}")
+                logger.error("Pip install error process_id=%s duration_sec=%.2f error=%s", process_id, time.time() - t_pip_start, str(pip_err), exc_info=True)
                 _put_event({'type': 'error', 'content': f'Failed to install dependencies: {pip_err}'})
                 return
 
@@ -6826,9 +6856,9 @@ class TaskSchedulerMonitor:
                 WHERE lock_id = ? AND status = 'running'
             ''', (worker_id,))
             task = cursor.fetchone()
-
             if task:
                 def run_task_wrapper(t):
+                    thread_local_ctx.request_id = f"sched-{t['id']}"
                     try:
                         self._execute_ai_task(t['id'], t['user_id'], t['chat_id'], t['task_prompt'], t['model_id'], t['metadata'])
                         with self.app_instance.app_context():
