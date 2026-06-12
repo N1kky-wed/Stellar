@@ -317,6 +317,7 @@ def login_google():
         if user['is_approved']:
             get_current_chat_id(session['user_id'])
 
+        logger.info("User login successful email=%s role=%s is_approved=%s is_new_user=%s", email, user['role'], bool(user['is_approved']), is_new_user)
         return jsonify({"success": True, "is_approved": bool(user['is_approved'])}), 200
 
     except ValueError:
@@ -643,11 +644,14 @@ def _fetchone_as_dict(cursor):
 
 def get_db():
     if 'db' not in g:
+        t0 = time.time()
         g.db = sqlite3.connect(DATABASE_NAME)
         g.db.row_factory = sqlite3.Row
         # Enable WAL mode and set timeout for concurrency
         g.db.execute("PRAGMA journal_mode=WAL;")
         g.db.execute("PRAGMA busy_timeout=5000;")
+        duration = time.time() - t0
+        logger.info("Database connection established duration_sec=%.3f", duration)
     return g.db
 
 @app.teardown_appcontext
@@ -2213,14 +2217,14 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                             if 'data:image' in llm_safe_res:
                                 llm_safe_res = "Image successfully generated and rendered to the user's UI. Do not attempt to output the image markdown yourself."
                             elif func_name not in ['read_tool_output', 'obtain_talent'] and (len(llm_safe_res) > 10000 or len(llm_safe_res.split('\n')) > 100):
-                                # Get the ID of the record we JUST inserted
                                 last_tool_id = "unknown"
                                 try:
                                     db = get_db()
                                     cursor = db.execute('SELECT id FROM tool_calls WHERE chat_id = ? ORDER BY id DESC LIMIT 1', (chat_id,))
                                     row = cursor.fetchone()
                                     if row: last_tool_id = row[0]
-                                except: pass
+                                except Exception as db_err:
+                                    logger.error(f"Failed to query last tool call ID: {db_err}")
 
                                 num_lines = len(llm_safe_res.split('\n'))
                                 llm_safe_res = f"[Output truncated for context efficiency. ID: {last_tool_id}, Lines: {num_lines}, Length: {len(llm_safe_res)} chars. Use read_tool_output(output_id={last_tool_id}) to view the full text if necessary.]"
@@ -2820,14 +2824,14 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
 
                  update_history(status='failed', final_logs="\n".join(logs_buffer))
                  try: redis_client.hset(redis_key, mapping={"status": "failed"})
-                 except: pass
+                 except Exception as redis_err: logger.error("Failed to set status to failed in Redis for %s: %s", process_id, redis_err)
 
         if not public_url_found:
             logger.error("Deployment failed to get public URL for process_id=%s, container may have crashed.", process_id)
             _put_event({'type': 'error', 'content': 'Failed to get public URL. Container may have crashed.'})
             update_history(status='failed', final_logs="\n".join(logs_buffer))
             try: redis_client.hset(redis_key, mapping={"status": "failed"})
-            except: pass
+            except Exception as redis_err: logger.error(f"Failed to set status to failed in Redis for {process_id}: {redis_err}")
             try:
                 crashed_logs = container.logs().decode('utf-8', 'replace') if container else "No container"
                 _put_event({'type': 'log', 'content': f'--- CRASH LOGS ---\n{crashed_logs}\n--- END LOGS ---'})
@@ -2849,7 +2853,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         _put_event({'type': 'error', 'content': str(e)})
         update_history(status='failed', final_logs="\n".join(logs_buffer))
         try: redis_client.hset(redis_key, mapping={"status": "failed"})
-        except: pass
+        except Exception as redis_err: logger.error(f"Failed to set status to failed in Redis for {process_id}: {redis_err}")
 
     finally:
         # Check current status before marking as stopped
@@ -2857,7 +2861,8 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         try:
             val = redis_client.hget(redis_key, "status")
             if val: current_status = val
-        except: pass
+        except Exception as redis_err:
+            logger.error(f"Failed to get status from Redis for {process_id}: {redis_err}")
 
         if current_status != 'failed':
             update_history(status='stopped', final_logs="\n".join(logs_buffer))
@@ -3656,31 +3661,35 @@ def check_and_log_stop(query_id, stage=""):
 
 def stream_consumer(query_id):
     """Consumer for replaying historical events and subscribing to live events."""
+    logger.info("SSE client connected to stream_consumer query_id=%s", query_id)
     pubsub = redis_client.pubsub()
-    pubsub.subscribe(f"stream:{query_id}")
+    try:
+        pubsub.subscribe(f"stream:{query_id}")
 
-    # Replay historical state so page reloads rebuild perfectly
-    history = redis_client.lrange(f"stream_history:{query_id}", 0, -1)
-    for item in history:
-        if isinstance(item, bytes):
-            item = item.decode('utf-8')
-        if item == "__STREAM_END__":
-            pubsub.close()
-            yield f"data: {json.dumps({'status': 'Stream ended.', 'error': True, 'stopped': True})}\n\n"
-            return
-        yield item
-
-    # Listen to live updates
-    for message in pubsub.listen():
-        if message['type'] == 'message':
-            data = message['data']
-            if isinstance(data, bytes):
-                data = data.decode('utf-8')
-            if data == "__STREAM_END__":
+        # Replay historical state so page reloads rebuild perfectly
+        history = redis_client.lrange(f"stream_history:{query_id}", 0, -1)
+        for item in history:
+            if isinstance(item, bytes):
+                item = item.decode('utf-8')
+            if item == "__STREAM_END__":
+                pubsub.close()
                 yield f"data: {json.dumps({'status': 'Stream ended.', 'error': True, 'stopped': True})}\n\n"
-                break
-            yield data
-    pubsub.close()
+                return
+            yield item
+
+        # Listen to live updates
+        for message in pubsub.listen():
+            if message['type'] == 'message':
+                data = message['data']
+                if isinstance(data, bytes):
+                    data = data.decode('utf-8')
+                if data == "__STREAM_END__":
+                    yield f"data: {json.dumps({'status': 'Stream ended.', 'error': True, 'stopped': True})}\n\n"
+                    break
+                yield data
+    finally:
+        logger.info("SSE client disconnected from stream_consumer query_id=%s", query_id)
+        pubsub.close()
 
 def background_thread_runner(app_obj, query_id, chat_id, cancel_event, task_func, *args):
     """Wrapper that runs generation streams in the background to decouple from HTTP requests."""
@@ -3816,7 +3825,8 @@ def clear_history():
                 q_id = active_query.get('query_id')
                 if q_id:
                     redis_client.setex(f"stop_flag:{q_id}", 3600, "1")
-            except: pass
+            except Exception as parse_err:
+                logger.error(f"Failed to parse active query data from Redis during clear: {parse_err}")
             redis_client.delete(f"chat_active_query:{chat_id}")
 
         cursor = db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
@@ -5032,7 +5042,8 @@ def delete_chat_route(chat_id):
                 q_id = active_query.get('query_id')
                 if q_id:
                     redis_client.setex(f"stop_flag:{q_id}", 3600, "1")
-            except: pass
+            except Exception as parse_err:
+                logger.error(f"Failed to parse active query data from Redis during delete: {parse_err}")
             redis_client.delete(f"chat_active_query:{chat_id}")
 
         db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
@@ -5786,100 +5797,105 @@ def agent_group_chat_stream():
         return make_response('Forbidden', 403)
 
     def log_stream():
-        db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
-        if not os.path.exists(db_path):
-            yield "data: {}\n\n"
-            return
-
-        yielded_states = {} # rid -> status
+        user_id = session.get('user_id')
+        logger.info("SSE client connected to agent_group_chat_stream user_id=%s", user_id)
         try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            runs = conn.execute("SELECT id, status FROM agent_runs").fetchall()
-            for r in runs:
-                yielded_states[r['id']] = r['status']
-            conn.close()
-        except Exception as e:
-            logger.error(f"Error seeding SSE stream yielded states: {e}")
+            db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
+            if not os.path.exists(db_path):
+                yield "data: {}\n\n"
+                return
 
-        while True:
+            yielded_states = {} # rid -> status
             try:
                 conn = sqlite3.connect(db_path)
                 conn.row_factory = sqlite3.Row
-                runs = conn.execute("""
-                    SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message
-                    FROM agent_runs
-                    ORDER BY id ASC
-                """).fetchall()
-                conn.close()
-
+                runs = conn.execute("SELECT id, status FROM agent_runs").fetchall()
                 for r in runs:
-                    rid = r['id']
-                    status = r['status']
-                    agent_name = r['agent_id'].capitalize()
-                    start_ts = r['started_at'].replace('T', ' ').split('.')[0]
-                    finish_ts = (r['finished_at'] or r['started_at']).replace('T', ' ').split('.')[0]
+                    yielded_states[r['id']] = r['status']
+                conn.close()
+            except Exception as e:
+                logger.error(f"Error seeding SSE stream yielded states: {e}")
 
-                    if rid not in yielded_states:
-                        yielded_states[rid] = status
-                        msg = {
-                            'timestamp': start_ts,
-                            'sender': 'Orchestrator',
-                            'content': f"🚀 Starting agent **{agent_name}** on branch `{r['branch_name']}`...",
-                            'type': 'system'
-                        }
-                        yield f"data: {json.dumps(msg)}\n\n"
+            while True:
+                try:
+                    conn = sqlite3.connect(db_path)
+                    conn.row_factory = sqlite3.Row
+                    runs = conn.execute("""
+                        SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message
+                        FROM agent_runs
+                        ORDER BY id ASC
+                    """).fetchall()
+                    conn.close()
 
-                    elif yielded_states[rid] == 'RUNNING' and status != 'RUNNING':
-                        yielded_states[rid] = status
+                    for r in runs:
+                        rid = r['id']
+                        status = r['status']
+                        agent_name = r['agent_id'].capitalize()
+                        start_ts = r['started_at'].replace('T', ' ').split('.')[0]
+                        finish_ts = (r['finished_at'] or r['started_at']).replace('T', ' ').split('.')[0]
 
-                        if status == 'COMPLETED':
-                            if r['summary_message']:
+                        if rid not in yielded_states:
+                            yielded_states[rid] = status
+                            msg = {
+                                'timestamp': start_ts,
+                                'sender': 'Orchestrator',
+                                'content': f"🚀 Starting agent **{agent_name}** on branch `{r['branch_name']}`...",
+                                'type': 'system'
+                            }
+                            yield f"data: {json.dumps(msg)}\n\n"
+
+                        elif yielded_states[rid] == 'RUNNING' and status != 'RUNNING':
+                            yielded_states[rid] = status
+
+                            if status == 'COMPLETED':
+                                if r['summary_message']:
+                                    msg = {
+                                        'timestamp': finish_ts,
+                                        'sender': f"{agent_name} (Agent)",
+                                        'content': r['summary_message'],
+                                        'type': 'agent'
+                                    }
+                                    yield f"data: {json.dumps(msg)}\n\n"
+
+                                pr_text = f" (PR #{r['pr_number']})" if r['pr_number'] else ""
+                                pr_link = f"\nPull Request: {r['pr_url']}" if r['pr_url'] else ""
                                 msg = {
                                     'timestamp': finish_ts,
-                                    'sender': f"{agent_name} (Agent)",
-                                    'content': r['summary_message'],
-                                    'type': 'agent'
+                                    'sender': 'Orchestrator',
+                                    'content': f"✅ Agent **{agent_name}** completed successfully!{pr_text}{pr_link}",
+                                    'type': 'system'
                                 }
                                 yield f"data: {json.dumps(msg)}\n\n"
+                            elif status == 'FAILED':
+                                msg = {
+                                    'timestamp': finish_ts,
+                                    'sender': 'Orchestrator',
+                                    'content': f"❌ Agent **{agent_name}** run failed.\nError: {r['error_message'] or 'Unknown error'}",
+                                    'type': 'system'
+                                }
+                                yield f"data: {json.dumps(msg)}\n\n"
+                            elif status == 'TIMEOUT':
+                                msg = {
+                                    'timestamp': finish_ts,
+                                    'sender': 'Orchestrator',
+                                    'content': f"⚠️ Agent **{agent_name}** run timed out after exceeding limits.",
+                                    'type': 'system'
+                                }
+                                yield f"data: {json.dumps(msg)}\n\n"
+                            elif status == 'INTERRUPTED':
+                                msg = {
+                                    'timestamp': finish_ts,
+                                    'sender': 'Orchestrator',
+                                    'content': f"↩️ Agent **{agent_name}** was interrupted by an orchestrator restart — retrying automatically.",
+                                    'type': 'system'
+                                }
+                                yield f"data: {json.dumps(msg)}\n\n"
+                except Exception as e:
+                    logger.error(f"Error in database log SSE stream: {e}")
 
-                            pr_text = f" (PR #{r['pr_number']})" if r['pr_number'] else ""
-                            pr_link = f"\nPull Request: {r['pr_url']}" if r['pr_url'] else ""
-                            msg = {
-                                'timestamp': finish_ts,
-                                'sender': 'Orchestrator',
-                                'content': f"✅ Agent **{agent_name}** completed successfully!{pr_text}{pr_link}",
-                                'type': 'system'
-                            }
-                            yield f"data: {json.dumps(msg)}\n\n"
-                        elif status == 'FAILED':
-                            msg = {
-                                'timestamp': finish_ts,
-                                'sender': 'Orchestrator',
-                                'content': f"❌ Agent **{agent_name}** run failed.\nError: {r['error_message'] or 'Unknown error'}",
-                                'type': 'system'
-                            }
-                            yield f"data: {json.dumps(msg)}\n\n"
-                        elif status == 'TIMEOUT':
-                            msg = {
-                                'timestamp': finish_ts,
-                                'sender': 'Orchestrator',
-                                'content': f"⚠️ Agent **{agent_name}** run timed out after exceeding limits.",
-                                'type': 'system'
-                            }
-                            yield f"data: {json.dumps(msg)}\n\n"
-                        elif status == 'INTERRUPTED':
-                            msg = {
-                                'timestamp': finish_ts,
-                                'sender': 'Orchestrator',
-                                'content': f"↩️ Agent **{agent_name}** was interrupted by an orchestrator restart — retrying automatically.",
-                                'type': 'system'
-                            }
-                            yield f"data: {json.dumps(msg)}\n\n"
-            except Exception as e:
-                logger.error(f"Error in database log SSE stream: {e}")
-
-            time.sleep(2)
+                time.sleep(2)
+        finally:
+            logger.info("SSE client disconnected from agent_group_chat_stream user_id=%s", user_id)
 
     return Response(stream_with_context(log_stream()), mimetype="text/event-stream")
 
@@ -6233,7 +6249,8 @@ def generate_visualization():
                 cursor = db.execute('SELECT chat_id FROM messages WHERE id = ?', (message_id,))
                 msg_row = cursor.fetchone()
                 if msg_row: chat_id = msg_row['chat_id']
-            except: pass
+            except Exception as db_err:
+                logger.error(f"Failed to query chat_id from messages: {db_err}")
 
         generator = gemini_generate(prompt, model_id, api_key, chat_id=chat_id)
         full_response = ""
@@ -6400,12 +6417,14 @@ def cleanup_stale_containers():
             logger.exception("Error caught: %s", db_err)
             logger.error(f"Failed to reset database statuses: {db_err}")
 
+        t_list = time.time()
         client = docker.from_env()
         # Clean up by label first
         stale_labeled = client.containers.list(all=True, filters={"label": "stellar_type"})
 
         # Also clean up by name pattern for backward compatibility
         stale_named = client.containers.list(all=True, filters={'name': 'stellar-sandbox-*'})
+        logger.info("Docker stale container query completed duration_sec=%.2f", time.time() - t_list)
 
         all_stale = list(set(stale_labeled + stale_named))
 
@@ -6859,6 +6878,7 @@ class TaskSchedulerMonitor:
             if task:
                 def run_task_wrapper(t):
                     thread_local_ctx.request_id = f"sched-{t['id']}"
+                    logger.info("Executing scheduled task task_id=%d user_id=%d chat_id=%d model_id=%s", t['id'], t['user_id'], t['chat_id'], t['model_id'])
                     try:
                         self._execute_ai_task(t['id'], t['user_id'], t['chat_id'], t['task_prompt'], t['model_id'], t['metadata'])
                         with self.app_instance.app_context():
@@ -6873,6 +6893,7 @@ class TaskSchedulerMonitor:
                             else:
                                 db.execute("UPDATE scheduled_tasks SET is_active = 0, status = 'completed', last_run = datetime('now', 'localtime'), lock_id = NULL WHERE id = ?", (t['id'],))
                             db.commit()
+                        logger.info("Scheduled task completed successfully task_id=%d", t['id'])
                     except Exception as e:
                         logger.error(f"Task Execution Failed (ID {t['id']}): {e}")
                         with self.app_instance.app_context():

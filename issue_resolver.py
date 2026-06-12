@@ -50,8 +50,12 @@ def get_db():
     Returns:
         sqlite3.Connection: The database connection object.
     """
+    t0 = time.time()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
+    logger.info("Database connection established in issue_resolver duration_sec=%.3f", time.time() - t0)
     return conn
 
 def get_available_accounts():
@@ -115,7 +119,8 @@ def main():
                 try:
                     with open(ACTIVE_ACC_FILE, 'r') as f:
                         active_idx = int(f.read().strip())
-                except: pass
+                except Exception as read_err:
+                    logger.warning("Failed to read active account index from %s: %s", ACTIVE_ACC_FILE, read_err)
 
             while True:
                 # 1. Process Telegram commands
