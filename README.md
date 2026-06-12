@@ -149,22 +149,22 @@ The application will start on `http://0.0.0.0:5000`. For development, Flask's bu
 
 All secrets and configuration are loaded from `keys.env` at startup. This file must never be committed to version control (it is already listed in `.gitignore`).
 
-| Variable                       | Description                                                         | Required |
-| ------------------------------ | ------------------------------------------------------------------- | -------- |
-| `FLASK_SECRET_KEY`             | Flask session signing secret. Use a long random string.             | ✅       |
-| `GEMINI_API_KEY`               | Primary Gemini API key (Google AI Studio)                           | ✅       |
-| `GEMINI_BACKUP_KEY_1` ... `_N` | Additional Gemini API keys for automatic quota rotation             | Optional |
-| `TAVILY_API_KEY`               | Primary Tavily search/crawl API key                                 | ✅       |
-| `TAVILY_BACKUP_KEY_1` ... `_N` | Backup Tavily keys for rotation                                     | Optional |
-| `YOUTUBE_API_KEY`              | YouTube Data API v3 key (for `analyze_youtube_video` search action) | ✅       |
-| `EMAIL_USER`                   | Gmail address used by `send_self_email`                             | ✅       |
-| `EMAIL_PASS`                   | Gmail app password (not account password)                           | ✅       |
-| `FIREBASE_PROJECT_ID`          | Firebase project ID for Google OAuth token verification             | ✅       |
-| `TWILIO_ACCOUNT_SID`           | Twilio SID for SMS notifications                                    | Optional |
-| `TWILIO_AUTH_TOKEN`            | Twilio auth token                                                   | Optional |
-| `TWILIO_FROM_NUMBER`           | Twilio phone number                                                 | Optional |
-| `DATABASE_NAME`                | Path to SQLite DB file (default: `stellar_local.db`)                | Optional |
-| `ENCRYPTION_KEY`               | Fernet encryption key for sensitive stored data                     | ✅       |
+| Variable                           | Description                                                         | Required |
+| ---------------------------------- | ------------------------------------------------------------------- | -------- |
+| `FLASK_SECRET_KEY`                 | Flask session signing secret. Use a long random string.             | ✅       |
+| `PRIMARY_API_KEY`                  | Primary Gemini API key (Google AI Studio)                           | ✅       |
+| `BACKUP_API_KEY_1` ... `_N`        | Additional Gemini API keys for automatic quota rotation             | Optional |
+| `TAVILY_API_KEY`                   | Primary Tavily search/crawl API key                                 | ✅       |
+| `TAVILY_BACKUP_API_KEY_1` ... `_N` | Backup Tavily keys for rotation                                     | Optional |
+| `YOUTUBE_API_KEY`                  | YouTube Data API v3 key (for `analyze_youtube_video` search action) | ✅       |
+| `EMAIL_USER`                       | Gmail address used by `send_self_email`                             | ✅       |
+| `EMAIL_PASS`                       | Gmail app password (not account password)                           | ✅       |
+| `FIREBASE_PROJECT_ID`              | Firebase project ID for Google OAuth token verification             | ✅       |
+| `TWILIO_ACCOUNT_SID`               | Twilio SID for SMS notifications                                    | Optional |
+| `TWILIO_AUTH_TOKEN`                | Twilio auth token                                                   | Optional |
+| `TWILIO_FROM_NUMBER`               | Twilio phone number                                                 | Optional |
+| `DATABASE_NAME`                    | Path to SQLite DB file (default: `stellar_local.db`)                | Optional |
+| `ENCRYPTION_KEY`                   | Fernet encryption key for sensitive stored data                     | ✅       |
 
 > **Generating a Fernet Key:**
 >
@@ -293,14 +293,14 @@ Key Nginx settings:
 
 ## Agent Models & Personas
 
-Stellar supports four AI personas, each mapped to a specific Gemini model tier:
+Stellar supports four AI personas, each mapped to a specific Gemini / Gemma model tier:
 
-| Persona      | Model                    | Infrastructure Access | Best For                                 |
-| ------------ | ------------------------ | --------------------- | ---------------------------------------- |
-| **Obsidian** | `gemini-3.5-flash`       | Lab + Repo            | Complex reasoning, long multi-step tasks |
-| **Crimson**  | `gemini-3-flash-preview` | Lab + Repo            | Fast execution, lower quota usage        |
-| **Lunarity** | `gemini-3.1-flash-lite`  | Lab only              | Lightweight tasks, error explanations    |
-| **Emerald**  | `gemini-2.5-flash-lite`  | None                  | Standard Q&A, no infrastructure          |
+| Persona      | Model                    | Infrastructure Access | Best For                                      |
+| ------------ | ------------------------ | --------------------- | --------------------------------------------- |
+| **Obsidian** | `gemini-3.5-flash`       | Lab + Repo            | Complex reasoning, long multi-step tasks      |
+| **Crimson**  | `gemini-3-flash-preview` | Lab + Repo            | Fast execution, lower quota usage             |
+| **Lunarity** | `gemma-4-31b-it`         | Lab + Repo            | Advanced diagnostics, high reasoning capacity |
+| **Emerald**  | `gemini-3.1-flash-lite`  | None                  | Standard Q&A, lightweight tasks               |
 
 All models share access to YouTube intelligence and standard tools. The agent dynamically selects which persona processes a request based on user preference and current quota availability.
 
@@ -510,6 +510,19 @@ The agent generates a complete, self-contained HTML/CSS/JS widget. The user inte
 **Autonomous self-healing feedback loop.** When the agent encounters a genuine technical failure during tool execution, it immediately logs a structured bug report to `agent_feedback` in SQLite and triggers `issue_resolver.py` as a background subprocess for developer review.
 
 - Strict protocol: only for empirically verified internal failures — not for feature requests or user-reported issues that haven't been reproduced.
+
+---
+
+### Sentinel Healer Daemon (`sentinel_healer.py`)
+
+**Autonomous self-healing daemon for user applications.** Monitors the Redis healing queue (`sentinel:queue`) for runtime exceptions or compilation errors reported by deployed user repositories. When a failure is detected, the daemon:
+
+1. **Locks the application** — Acquires a Redis lock for the corresponding application process to prevent race conditions.
+2. **Backs up workspace** — Creates a workspace backup prior to modification.
+3. **Synthesizes a patch** — Uses Gemini (`gemini-3.5-flash`) with structured outputs to generate a corrective code patch based on error details and stack trace from SQLite.
+4. **Applies & validates** — Applies the corrective patch and performs syntax validation inside the application's Docker container.
+5. **Rolls back on failure** — If validation or health checks fail, the healer restores the workspace from backup.
+6. **Commits changes** — Updates SQLite tables with the final status and saves the applied patch diff.
 
 ---
 
@@ -767,18 +780,20 @@ pkill -f gemini
 
 The application uses a single SQLite file (`stellar_local.db`) in WAL journal mode. Key tables:
 
-| Table                | Purpose                                                                                                                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `users`              | User accounts: `id`, `username` (email), `is_approved`, `display_name`, `password_hash`                                                                                                                       |
-| `chats`              | Chat sessions per user. Includes `is_temp` flag for ephemeral sessions.                                                                                                                                       |
-| `messages`           | All chat messages: `message_type` (user/stellar), `message_content`, `hidden` (boolean), `visualization_html`, `attached_files` (JSON). Hidden messages are excluded from the UI but included in LLM context. |
-| `tool_calls`         | Full tool input/output for paginated retrieval by `read_tool_output`. Includes `hidden` flag for memory compression.                                                                                          |
-| `repo_history`       | Deployment history: `process_id`, `project_name`, `subdomain`, `files_snapshot` (JSON), `status`                                                                                                              |
-| `scheduled_tasks`    | Autonomous task queue: `task_prompt`, `execute_at`, `recurring_minutes`, `metadata`, `is_active`                                                                                                              |
-| `user_logs_prefs`    | Persistent agent memory: `user_id`, `log_entry`, `created_at`                                                                                                                                                 |
-| `agent_feedback`     | Bug reports filed by `report_process_issue`: `topic`, `issue_description`, `technical_context`                                                                                                                |
-| `push_subscriptions` | Web Push subscription endpoints per user/device for background notifications                                                                                                                                  |
-| `talents`            | Operational guidelines (formerly mandates): `name`, `content`, `user_id`, `chat_id`                                                                                                                           |
+| Table                  | Purpose                                                                                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`                | User accounts: `id`, `username` (email), `is_approved`, `display_name`, `password_hash`                                                                                                                       |
+| `chats`                | Chat sessions per user. Includes `is_temp` flag for ephemeral sessions.                                                                                                                                       |
+| `messages`             | All chat messages: `message_type` (user/stellar), `message_content`, `hidden` (boolean), `visualization_html`, `attached_files` (JSON). Hidden messages are excluded from the UI but included in LLM context. |
+| `tool_calls`           | Full tool input/output for paginated retrieval by `read_tool_output`. Includes `hidden` flag for memory compression.                                                                                          |
+| `repo_history`         | Deployment history: `process_id`, `project_name`, `subdomain`, `files_snapshot` (JSON), `status`                                                                                                              |
+| `scheduled_tasks`      | Autonomous task queue: `task_prompt`, `execute_at`, `recurring_minutes`, `metadata`, `is_active`                                                                                                              |
+| `user_logs_prefs`      | Persistent agent memory: `user_id`, `log_entry`, `created_at`                                                                                                                                                 |
+| `agent_feedback`       | Bug reports filed by `report_process_issue`: `topic`, `issue_description`, `technical_context`                                                                                                                |
+| `push_subscriptions`   | Web Push subscription endpoints per user/device for background notifications                                                                                                                                  |
+| `talents`              | Operational guidelines (formerly mandates): `name`, `content`, `user_id`, `chat_id`                                                                                                                           |
+| `sentinel_app_errors`  | Runtime exceptions and compilation errors encountered by deployed repositories: `process_id`, `error_type`, `error_message`, `stack_trace`, `affected_file`, `affected_line`, `status`, `created_at`          |
+| `sentinel_app_patches` | Self-healing patches synthesized by the Sentinel Healer for errors: `error_id`, `patch_diff`, `status`, `created_at`                                                                                          |
 
 WAL mode and `busy_timeout=5000` are set on all connections to handle concurrent access from multiple Gunicorn threads.
 
