@@ -1138,6 +1138,23 @@ def read_key(channel, timeout: float = 0.5) -> str | None:
         del buf[:1]
         return 'CTRL_D'
 
+    # Batch decode consecutive printable characters to handle rapid typing and pastes efficiently,
+    # reducing redrawing and network overhead (Bolt - Performance optimization).
+    if first >= 0x20 and first != 0x7f:
+        limit = 0
+        while limit < len(buf) and buf[limit] >= 0x20 and buf[limit] != 0x7f:
+            limit += 1
+        decoded = None
+        for l in range(limit, 0, -1):
+            try:
+                decoded = buf[:l].decode('utf-8')
+                del buf[:l]
+                break
+            except UnicodeDecodeError:
+                continue
+        if decoded:
+            return decoded
+
     # Decode UTF-8 char from the beginning of the buffer
     for i in range(1, min(len(buf) + 1, 5)):
         try:
@@ -1342,6 +1359,10 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
         duration = time.time() - start_time
         logger.info(f"Container restart complete for {container_name} in {duration:.2f}s")
         audit.info(f"CONTAINER_RESTART_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
+        # Optimize: Update local container status cache directly to prevent race conditions and stale UI states
+        # (Bolt - Performance optimization: direct cache update).
+        with _cache_lock:
+            _container_statuses_cache[container_name] = 'running'
         # Invalidate container cache so it updates instantly
         invalidate_container_cache()
         return f"✓ {container_name} restarted successfully"
@@ -1375,6 +1396,10 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
         duration = time.time() - start_time
         logger.info(f"Container stop complete for {container_name} in {duration:.2f}s")
         audit.info(f"CONTAINER_STOP_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
+        # Optimize: Update local container status cache directly to prevent race conditions and stale UI states
+        # (Bolt - Performance optimization: direct cache update).
+        with _cache_lock:
+            _container_statuses_cache[container_name] = 'exited'
         # Invalidate container cache so it updates instantly
         invalidate_container_cache()
         return f"✓ {container_name} stopped"
@@ -1408,6 +1433,10 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
         duration = time.time() - start_time
         logger.info(f"Container start complete for {container_name} in {duration:.2f}s")
         audit.info(f"CONTAINER_START_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
+        # Optimize: Update local container status cache directly to prevent race conditions and stale UI states
+        # (Bolt - Performance optimization: direct cache update).
+        with _cache_lock:
+            _container_statuses_cache[container_name] = 'running'
         # Invalidate container cache so it updates instantly
         invalidate_container_cache()
         return f"✓ {container_name} started"
@@ -1526,11 +1555,16 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 if len(new_lines) != len(old_lines):
                     send_raw(channel, '\x1b[H' + content + '\x1b[J')
                 else:
+                    # Accumulate updates to avoid sending multiple small TCP packets, eliminating flicker
+                    # (Bolt - Performance optimization: batching raw socket writes).
+                    buffer = []
                     # Line-by-line diff: draw only lines that have changed to save bandwidth and prevent flickering
                     for idx, (new_line, old_line) in enumerate(zip(new_lines, old_lines)):
                         if new_line != old_line:
                             # Move cursor to start of line (idx+1), print new content, clear rest of line
-                            send_raw(channel, f'\x1b[{idx+1};1H' + new_line + '\x1b[K')
+                            buffer.append(f'\x1b[{idx+1};1H' + new_line + '\x1b[K')
+                    if buffer:
+                        send_raw(channel, ''.join(buffer))
             last_drawn_content = content
 
         # ---- PHASE 0: Theme Picker ----
@@ -2099,6 +2133,10 @@ def main():
 
     # Generate host key if needed
     ensure_host_key()
+
+    # Pre-populate status cache and start refresher thread immediately to prevent login lag
+    # (Bolt - Performance optimization: pre-warm cache).
+    start_refresher_thread_if_needed()
 
     # Create server socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
