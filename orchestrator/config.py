@@ -3,12 +3,12 @@ import os
 
 # Agent execution order with schedules (3-hour gaps starting 6 AM IST)
 AGENT_PIPELINE = [
-    {"id": "bolt",     "name": "Bolt",     "role": "Performance Engineer",    "schedule": "06:00", "prompt_file": "bolt.txt"},
-    {"id": "sentinel", "name": "Sentinel", "role": "Security Engineer",       "schedule": "09:00", "prompt_file": "sentinel.txt"},
-    {"id": "palette",  "name": "Palette",  "role": "UI Engineer",             "schedule": "12:00", "prompt_file": "palette.txt"},
-    {"id": "newton",   "name": "Newton",   "role": "Test Engineer",           "schedule": "15:00", "prompt_file": "newton.txt"},
-    {"id": "lucios",   "name": "Lucios",   "role": "Observability Engineer",  "schedule": "18:00", "prompt_file": "lucios.txt"},
-    {"id": "proton",   "name": "Proton",   "role": "Documentation Engineer",  "schedule": "21:00", "prompt_file": "proton.txt"},
+    {"id": "bolt",     "name": "Bolt",     "role": "Performance Engineer",    "schedule": "06:00", "prompt_file": "bolt.md"},
+    {"id": "sentinel", "name": "Sentinel", "role": "Security Engineer",       "schedule": "09:00", "prompt_file": "sentinel.md"},
+    {"id": "palette",  "name": "Palette",  "role": "UI Engineer",             "schedule": "12:00", "prompt_file": "palette.md"},
+    {"id": "newton",   "name": "Newton",   "role": "Test Engineer",           "schedule": "15:00", "prompt_file": "newton.md"},
+    {"id": "lucios",   "name": "Lucios",   "role": "Observability Engineer",  "schedule": "18:00", "prompt_file": "lucios.md"},
+    {"id": "proton",   "name": "Proton",   "role": "Documentation Engineer",  "schedule": "21:00", "prompt_file": "proton.md"},
 ]
 
 CONTAINER_NAME = 'stellar-persistent'
