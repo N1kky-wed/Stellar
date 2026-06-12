@@ -89,8 +89,27 @@ def unload_agent_prompt():
     remove_from_container(config.CONTAINER_WORKSPACE)
     logger.info("Unloaded successfully.")
 
+
+def restart_container():
+    """Restart the agent container to clean up any leftover processes and zombies."""
+    logger.info(f"Restarting container {config.CONTAINER_NAME} to ensure a clean slate...")
+    try:
+        subprocess.run(["docker", "restart", config.CONTAINER_NAME], check=True, capture_output=True)
+        logger.info(f"Container {config.CONTAINER_NAME} restarted successfully.")
+    except Exception as e:
+        logger.error(f"Failed to restart container {config.CONTAINER_NAME}: {e}")
+        # Fallback: try to start it if it was stopped
+        try:
+            subprocess.run(["docker", "start", config.CONTAINER_NAME], check=True, capture_output=True)
+        except Exception as start_err:
+            logger.error(f"Failed to start container {config.CONTAINER_NAME} as fallback: {start_err}")
+
+
 def run_agent(agent_id: str, prompt_file: str, branch_name: str) -> subprocess.Popen:
     """Launch the agent's work cycle in a background process."""
+    # Restart container before agent starts to guarantee clean environment
+    restart_container()
+
     # Ensure agent prompt is loaded
     load_agent_prompt(agent_id, prompt_file)
     

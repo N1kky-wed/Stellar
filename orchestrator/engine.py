@@ -428,14 +428,32 @@ class OrchestratorEngine:
 
             reload_stellar = False
             restart_ssh = False
+            update_packages = False
 
             for file in files:
-                if file.startswith("orchestrator/") or file == "stellar_orchestrator.service":
+                if file == "requirements.txt":
+                    update_packages = True
+                    restart_orchestrator = True
+                    reload_stellar = True
+                    restart_ssh = True
+                elif file.startswith("orchestrator/") or file == "stellar_orchestrator.service":
                     restart_orchestrator = True
                 elif file == "ssh_gateway.py":
                     restart_ssh = True
                 elif file in ["app.py", "sentinel_healer.py", "webscrapper.py", "agent_tools.py"] or file.startswith("templates/") or file.startswith("static/"):
                     reload_stellar = True
+
+            if update_packages:
+                logger.info("requirements.txt changed. Installing package updates in host venv...")
+                try:
+                    subprocess.run([
+                        "sudo", "-u", "stellaradmin",
+                        "/home/stellaradmin/my_app/venv/bin/pip", "install",
+                        "-r", "/home/stellaradmin/my_app/requirements.txt"
+                    ], check=True, capture_output=True, text=True)
+                    logger.info("Package updates installed successfully.")
+                except subprocess.CalledProcessError as cpe:
+                    logger.error("Failed to install packages in host venv: %s", cpe.stderr.strip())
 
             if reload_stellar:
                 logger.info("Auto-reloading stellar.service")
