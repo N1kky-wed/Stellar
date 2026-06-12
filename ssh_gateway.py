@@ -76,6 +76,10 @@ os.makedirs(LOG_DIR, exist_ok=True)
 _thread_local = threading.local()
 
 class GatewayFormatter(logging.Formatter):
+    """
+    Custom logging formatter for the SSH gateway.
+    Injects the thread-local SSH session ID into the log record to ensure traceability of actions.
+    """
     def format(self, record):
         try:
             session_id = getattr(_thread_local, 'session_id', 'system')
@@ -128,7 +132,10 @@ _refresher_lock = threading.Lock()
 _refresh_event = threading.Event()
 
 def _docker_status_refresher():
-    """Background loop to periodically fetch container status, waking up on invalidations."""
+    """
+    Background worker loop that periodically queries the Docker daemon for container statuses.
+    Caches the statuses in a thread-safe global cache and blocks/wakes up on invalidation events.
+    """
     global _container_statuses_cache
     logger.info("Docker status refresher thread started")
     while True:
@@ -145,7 +152,10 @@ def _docker_status_refresher():
         _refresh_event.clear()
 
 def start_refresher_thread_if_needed():
-    """Start the background Docker status refresher thread if it is not already running."""
+    """
+    Initializes and starts the background Docker status refresher thread if it is not already running.
+    Performs a synchronous pre-warm status query on first invocation so the initial dashboard load is populated.
+    """
     global _refresher_started
     if not _refresher_started:
         with _refresher_lock:
@@ -164,13 +174,20 @@ def start_refresher_thread_if_needed():
                 _refresher_started = True
 
 def get_all_container_statuses() -> dict:
-    """Get status of all containers from a non-blocking background-refreshed cache."""
+    """
+    Retrieves the current state mapping of all Docker containers from the thread-safe status cache.
+
+    Returns:
+        dict: A dictionary mapping container names to their active status (e.g., 'running', 'exited').
+    """
     start_refresher_thread_if_needed()
     with _cache_lock:
         return _container_statuses_cache.copy()
 
 def invalidate_container_cache():
-    """Wake up the background refresher thread to update the cache immediately."""
+    """
+    Signals the background status refresher thread to refresh the Docker container cache immediately.
+    """
     _refresh_event.set()
 
 
@@ -184,7 +201,14 @@ RESET_STYLE = '\x1b[0m'
 
 
 def send_raw(channel, text):
-    """Send raw text to SSH channel."""
+    """
+    Transmits raw text or byte data over the SSH channel.
+    Normalizes line endings to '\r\n' for proper carriage return rendering on terminal clients.
+
+    Args:
+        channel (paramiko.Channel): The active SSH channel.
+        text (str or bytes): The string content or raw bytes to send.
+    """
     try:
         if isinstance(text, str):
             text = text.replace('\r\n', '\n').replace('\n', '\r\n')
@@ -273,7 +297,16 @@ rate_limiter = RateLimiter()
 # Database Helper
 # ============================================================
 def get_user_repos(user_id: int) -> list:
-    """Fetch all repos for a user from the database with WAL mode and busy timeout."""
+    """
+    Fetches all repository deployment records from the SQLite database for a specific user.
+    Enables WAL mode and handles lock contentions with a busy timeout.
+
+    Args:
+        user_id (int): The unique database identifier of the user.
+
+    Returns:
+        list of dict: A list of dicts containing project details (id, name, process_id, container_id, status, subdomain, created, app_type).
+    """
     repos = []
     conn = None
     try:
@@ -311,7 +344,18 @@ def get_user_repos(user_id: int) -> list:
 
 
 def get_container(client, process_id: str, app_type: str):
-    """Retrieve Docker container checking both the specific and fallback names."""
+    """
+    Looks up a Docker container associated with a deployment using standard naming patterns.
+    Checks the specific app type name prefix first and falls back to generic repo naming conventions if not found.
+
+    Args:
+        client (docker.DockerClient): The Docker client instance.
+        process_id (str): The process identifier of the application.
+        app_type (str): The application type configuration.
+
+    Returns:
+        docker.models.containers.Container: The container instance matching the process ID.
+    """
     try:
         return client.containers.get(f"stellar-{app_type}-{process_id}")
     except docker.errors.NotFound:
@@ -322,7 +366,12 @@ _docker_client = None
 _docker_client_lock = threading.Lock()
 
 def get_docker_client():
-    """Get a thread-safe shared Docker client instance."""
+    """
+    Returns a thread-safe, shared Docker client instance initialized from the system environment.
+
+    Returns:
+        docker.DockerClient: The system-wide Docker client.
+    """
     global _docker_client
     if _docker_client is None:
         with _docker_client_lock:
@@ -332,7 +381,16 @@ def get_docker_client():
 
 
 def get_container_status(process_id: str, app_type: str = 'repo') -> str:
-    """Get live Docker container status from cached container statuses."""
+    """
+    Looks up the cached container status for a specific deployment process from the background-refreshed status map.
+
+    Args:
+        process_id (str): The process identifier of the application.
+        app_type (str, optional): The application type. Defaults to 'repo'.
+
+    Returns:
+        str: The status of the container (e.g. 'running', 'exited'), or 'not_found'.
+    """
     statuses = get_all_container_statuses()
     name1 = f"stellar-{app_type}-{process_id}"
     name2 = f"stellar-repo-{process_id}"
@@ -349,8 +407,15 @@ def get_container_status(process_id: str, app_type: str = 'repo') -> str:
 # ============================================================
 def verify_auth_code(code: str) -> dict | None:
     """
-    Verify an auth code against Redis directly.
-    Returns user dict or None.
+    Verify a user's one-time authentication code against Redis directly.
+    Invalidates the code immediately on successful validation to ensure one-time usage security,
+    decrements the active code count, and records the event to the audit log.
+
+    Args:
+        code (str): The 6-character authentication code entered by the user.
+
+    Returns:
+        dict | None: The user session info dictionary containing user_id and username if valid; None otherwise.
     """
     clean_code = code.strip().replace('-', '').replace(' ', '').upper()
     if len(clean_code) != 6:
@@ -607,7 +672,10 @@ from rich.columns import Columns
 from rich.console import Group
 
 class TUI:
-    """Renders beautiful terminal UI screens via Rich."""
+    """
+    Terminal User Interface rendering engine for the SSH Gateway.
+    Uses the Rich library to assemble panels, layouts, tables, and color themes.
+    """
 
     THEMES = [
         {
@@ -694,7 +762,18 @@ class TUI:
 
     @staticmethod
     def _render(width: int, height: int, content, theme: dict) -> str:
-        """Wrap content in a themed box and render to string, filling the screen, reusing Console instance."""
+        """
+        Wraps the given UI component in a themed box and prints it to the console buffer.
+
+        Args:
+            width (int): Current terminal column width.
+            height (int): Current terminal row height.
+            content (rich.console.RenderableType): The rich UI renderable content.
+            theme (dict): The active color theme mapping.
+
+        Returns:
+            str: The rendered ANSI escape-coded output string buffer.
+        """
         from rich.align import Align
         buf = StringIO()
         
@@ -1218,8 +1297,17 @@ def read_line(channel, prompt: str, mask: bool = False, max_len: int = 20) -> st
 # ============================================================
 def attach_container_shell(channel, server: StellarSSHServer, process_id: str, app_type: str, user_id: int):
     """
-    Attach an interactive shell to a Docker container.
-    Pipes SSH channel ↔ Docker exec PTY bidirectionally.
+    Attach an interactive terminal session to the target Docker container.
+    Launches /bin/bash inside the container and pipes bidirectional I/O between the SSH channel
+    and the container's exec socket. Automatically handles terminal window resize events
+    and enforces session inactivity idle timeout.
+
+    Args:
+        channel (paramiko.Channel): The active SSH client channel.
+        server (StellarSSHServer): The SSH server instance tracking connection settings.
+        process_id (str): The unique process identifier of the application.
+        app_type (str): The application environment type.
+        user_id (int): The ID of the authenticated user.
     """
     try:
         # Re-use global docker client to avoid expensive initialization overhead
@@ -2052,7 +2140,10 @@ def handle_connection(client_socket, client_addr):
 # Host Key Generation
 # ============================================================
 def ensure_host_key():
-    """Generate Ed25519 host key if it doesn't exist."""
+    """
+    Generate Ed25519 host key if it doesn't exist.
+    Saves the key to the configured HOST_KEY_PATH and sets secure file permissions.
+    """
     if os.path.exists(HOST_KEY_PATH):
         key = paramiko.Ed25519Key(filename=HOST_KEY_PATH)
         logger.info(f"Using existing host key: {HOST_KEY_PATH} (fingerprint: {key.get_fingerprint().hex()})")
@@ -2076,7 +2167,12 @@ def ensure_host_key():
 # Main Server
 # ============================================================
 def main():
-    """Start the SSH gateway server."""
+    """
+    Start the SSH gateway server daemon.
+    Generates host keys, registers signal handlers for graceful shutdown, pre-warms the Docker status
+    cache, binds to the configured host and port, and loops to accept incoming TCP connections
+    delegated to session threads.
+    """
     logger.info(f"=== Stellar SSH Gateway starting on {SSH_HOST}:{SSH_PORT} ===")
 
     # Generate host key if needed
