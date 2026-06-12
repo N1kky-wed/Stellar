@@ -124,13 +124,20 @@ from telegram_bot import TelegramBot
 telegram_bot = TelegramBot()
 
 def send_login_notification(username, display_name=None, is_waitlist=False):
+    t0 = time.time()
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
     name_str = f"{display_name} ({username})" if display_name else username
     if is_waitlist:
         message_body = f"⏳ New Waitlist Registration\nUser: {name_str}\nTime: {timestamp}"
     else:
         message_body = f"✅ User Login on Stellar\nUser: {name_str}\nTime: {timestamp}"
-    telegram_bot.send_message(message_body)
+    try:
+        telegram_bot.send_message(message_body)
+        duration = time.time() - t0
+        logger.info("Login notification sent via Telegram successfully username=%s duration_sec=%.3f", username, duration)
+    except Exception as e:
+        duration = time.time() - t0
+        logger.error("Failed to send login notification via Telegram username=%s error=%s duration_sec=%.3f", username, e, duration)
 
 # --- LOGGING AND ENV LOADING ---
 
@@ -239,13 +246,15 @@ def login_google():
         # For Firebase, the audience is the Firebase Project ID
         # and the issuer must be https://securetoken.google.com/<project_id>
         try:
+            t_verify = time.time()
             id_info = id_token.verify_firebase_token(
                 token,
                 google_requests.Request(),
                 audience=FIREBASE_PROJECT_ID
             )
+            logger.info("Firebase token verified successfully duration_sec=%.3f", time.time() - t_verify)
         except Exception as ve:
-            logger.error(f"Token verification failed: {ve}")
+            logger.error("Token verification failed duration_sec=%.3f error=%s", time.time() - t_verify, ve)
             return jsonify({"success": False, "message": f"Verification failed: {ve}"}), 401
 
         # Additional Firebase-specific checks
@@ -294,9 +303,14 @@ def login_google():
 
         try:
             is_waitlist = not bool(user['is_approved'])
+            req_id = g.request_id if getattr(g, 'request_id', None) else 'system'
+            def send_login_notification_thread_target(username, display_name, is_waitlist, r_id):
+                thread_local_ctx.request_id = r_id
+                send_login_notification(username, display_name, is_waitlist)
+
             notification_thread = threading.Thread(
-                target=send_login_notification,
-                args=(email, name, is_waitlist),
+                target=send_login_notification_thread_target,
+                args=(email, name, is_waitlist, req_id),
                 daemon=True
             )
             notification_thread.start()
@@ -2903,7 +2917,9 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         except Exception:
             logger.exception("Failed to publish __STREAM_END__ for %s", process_id)
 
-        def _delayed_cleanup(pid, r_key, delay=GRACE_PERIOD_SECONDS):
+        req_id = g.request_id if getattr(g, 'request_id', None) else 'system'
+        def _delayed_cleanup(pid, r_key, r_id, delay=GRACE_PERIOD_SECONDS):
+            thread_local_ctx.request_id = r_id
             time.sleep(delay)
             with active_apps_lock:
                 active_apps.pop(pid, None)
@@ -2912,7 +2928,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
             except Exception:
                 logger.exception("Failed to delete redis key for %s", pid)
 
-        cleanup_thread = threading.Thread(target=_delayed_cleanup, args=(process_id, redis_key,), daemon=True)
+        cleanup_thread = threading.Thread(target=_delayed_cleanup, args=(process_id, redis_key, req_id), daemon=True)
         cleanup_thread.start()
 
 def stop_and_cleanup_app_by_process_id(process_id, app_type='repo'):
@@ -3697,6 +3713,8 @@ def background_thread_runner(app_obj, query_id, chat_id, cancel_event, task_func
     req_id = getattr(g, 'request_id', None)
 
     def run():
+        if req_id:
+            thread_local_ctx.request_id = req_id
         with app_obj.app_context():
             from flask import g
             if req_id:
@@ -4042,13 +4060,17 @@ def send_approval_email(recipient_email, display_name):
     msg.set_content(f"Welcome to Stellar, {display_name}! Your account has been approved. Visit https://stellarai.live to access the platform.")
     msg.add_alternative(html_content, subtype='html')
 
+    logger.info("Sending approval email to recipient_email=%s", recipient_email)
+    t0 = time.time()
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(sender, password)
             smtp.send_message(msg)
-        logger.info(f"SUCCESS: Approval email sent successfully to {recipient_email}.")
+        duration = time.time() - t0
+        logger.info(f"SUCCESS: Approval email sent successfully to {recipient_email} duration_sec={duration:.3f}.")
     except Exception as e:
-        logger.error(f"FAILURE sending approval email: {str(e)}")
+        duration = time.time() - t0
+        logger.error(f"FAILURE sending approval email to {recipient_email} duration_sec={duration:.3f}: {str(e)}")
 
 def send_revocation_email(recipient_email, display_name):
     sender = os.getenv("EMAIL_USER")
@@ -4091,13 +4113,17 @@ def send_revocation_email(recipient_email, display_name):
     msg.set_content(f"Hello {display_name}, your access to Stellar has been revoked and you have been placed back on the waitlist.")
     msg.add_alternative(html_content, subtype='html')
 
+    logger.info("Sending revocation email to recipient_email=%s", recipient_email)
+    t0 = time.time()
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(sender, password)
             smtp.send_message(msg)
-        logger.info(f"SUCCESS: Revocation email sent successfully to {recipient_email}.")
+        duration = time.time() - t0
+        logger.info(f"SUCCESS: Revocation email sent successfully to {recipient_email} duration_sec={duration:.3f}.")
     except Exception as e:
-        logger.error(f"FAILURE sending revocation email: {str(e)}")
+        duration = time.time() - t0
+        logger.error(f"FAILURE sending revocation email to {recipient_email} duration_sec={duration:.3f}: {str(e)}")
 
 @app.route('/api/admin/keys', methods=['GET'])
 def get_admin_keys():
@@ -4182,10 +4208,15 @@ def toggle_user_access():
 
         recipient = user['username'] if '@' in user['username'] else None
         if recipient:
+            req_id = g.request_id if getattr(g, 'request_id', None) else 'system'
+            def run_email_thread(target_func, *args):
+                thread_local_ctx.request_id = req_id
+                target_func(*args)
+
             if new_status and not user['is_approved']:
-                threading.Thread(target=send_approval_email, args=(recipient, user['username']), daemon=True).start()
+                threading.Thread(target=run_email_thread, args=(send_approval_email, recipient, user['username']), daemon=True).start()
             elif not new_status and user['is_approved']:
-                threading.Thread(target=send_revocation_email, args=(recipient, user['username']), daemon=True).start()
+                threading.Thread(target=run_email_thread, args=(send_revocation_email, recipient, user['username']), daemon=True).start()
 
         return jsonify({'success': True}), 200
     except Exception as e:
@@ -4218,7 +4249,11 @@ def approve_user():
         recipient = user_email or (user['username'] if '@' in user['username'] else None)
 
         if recipient:
-            threading.Thread(target=send_approval_email, args=(recipient, user['username']), daemon=True).start()
+            req_id = g.request_id if getattr(g, 'request_id', None) else 'system'
+            def run_email_thread(target_func, *args):
+                thread_local_ctx.request_id = req_id
+                target_func(*args)
+            threading.Thread(target=run_email_thread, args=(send_approval_email, recipient, user['username']), daemon=True).start()
 
         return jsonify({'success': True, 'message': f"User {user['username']} approved."}), 200
     except sqlite3.Error as e:

@@ -1185,6 +1185,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
 
             subdomain = generate_unique_subdomain(project_title)
             
+            logger.info("Initiating deploy action project_title=%s subdomain=%s port=%d env_type=%s process_id=%s", project_title, subdomain, port, env_type, process_id)
+
             # Prepare initial files snapshot
             initial_files = existing_snapshot if existing_snapshot else ({"repo": repo_url, "port": port} if repo_url else {"port": port})
             if repo_url: initial_files['repo'] = repo_url
@@ -1270,6 +1272,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             snapshot = json.loads(row['files_snapshot'])
             port = snapshot.get('port', 5000)
             
+            logger.info("Executing command in repo container app_id=%s process_id=%s command=%s", app_id, p_id, command)
+            t_exec = time.time()
             try:
                 client = docker.from_env()
                 container = client.containers.get(f"stellar-repo-{p_id}")
@@ -1278,6 +1282,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                 # --- OCI RUNTIME FIX: Avoid explicit workdir to prevent namespace errors ---
                 exec_result = container.exec_run(wrapped_cmd, demux=False)
                 output = exec_result.output.decode('utf-8', 'replace')
+                duration = time.time() - t_exec
+                logger.info("Command execution completed app_id=%s process_id=%s duration_sec=%.3f exit_code=%d", app_id, p_id, duration, exec_result.exit_code)
 
                 # --- OCI RUNTIME ERROR RECOVERY ---
                 if exec_result.exit_code == 128 and ("mount namespace root" in output or "container breakout" in output or "exec failed" in output):
@@ -1352,6 +1358,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             new_subdomain = generate_unique_subdomain(project_name)
             new_url = f"https://{new_subdomain}.stellarai.live/"
             
+            logger.info("Renaming deployment app_id=%s process_id=%s to new_name=%s new_subdomain=%s", app_id, actual_id, project_name, new_subdomain)
+            
             db.execute("UPDATE repo_history SET project_name = ?, subdomain = ?, deployment_url = ? WHERE process_id = ?", (project_name, new_subdomain, new_url, actual_id))
             db.commit()
             return f"Deployment renamed to '{project_name}'! New URL: {new_url}"
@@ -1404,6 +1412,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             
             current_snapshot = json.loads(row['files_snapshot'])
             
+            logger.info("Stopping deployment app_id=%s process_id=%s", app_id, p_id)
+            
             stop_and_cleanup_app_by_process_id(p_id, app_type='repo')
             db.execute("UPDATE repo_history SET status = 'stopped' WHERE process_id = ?", (p_id,))
             db.commit()
@@ -1424,6 +1434,9 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             
             current_snapshot = json.loads(row['files_snapshot'])
             
+            logger.info("Restarting deployment app_id=%s process_id=%s subdomain=%s", app_id, process_id, subdomain)
+            t_restart = time.time()
+
             # Reload updated snapshot
             cursor = db.execute('SELECT files_snapshot FROM repo_history WHERE process_id = ?', (process_id,))
             row = cursor.fetchone()
@@ -1502,6 +1515,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                 except Exception as health_err:
                     logger.debug("Container restart health check failed on port %d: %s", port, health_err)
             
+            logger.info("Restart completed app_id=%s process_id=%s status_code=%d duration_sec=%.3f", app_id, process_id, status_code, time.time() - t_restart)
+
             if 0 < status_code < 500:
                 ready_msg = f"and server is READY (Status {status_code})!"
             elif status_code >= 500:
@@ -1625,6 +1640,8 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
             return f"Failed to start Lab sandbox: {str(e)}"
     
     # Execute the command
+    logger.info("Executing command in Lab sandbox container_name=%s command=%s", container_name, command)
+    t_cmd = time.time()
     try:
         # Wrap command to capture stdout and stderr together and handle errors gracefully
         wrapped_cmd = f"bash -c {subprocess.list2cmdline([command])}"
@@ -1638,6 +1655,8 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
         
         output = exec_result.output.decode('utf-8', 'replace')
         exit_code = exec_result.exit_code
+        duration = time.time() - t_cmd
+        logger.info("Lab command executed container_name=%s duration_sec=%.3f exit_code=%d", container_name, duration, exit_code)
         
         # --- OCI RUNTIME ERROR RECOVERY ---
         # Detects 'current working directory is outside of container mount namespace root'
