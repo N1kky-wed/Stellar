@@ -26,11 +26,25 @@ function createCustomSelect(selectId) {
   Array.from(select.options).forEach((option) => {
     const customOption = document.createElement("div");
     customOption.className = "custom-select-option";
-    customOption.textContent = option.text;
     customOption.dataset.value = option.value;
+
+    // Render option title inline if present as description text
     if (option.title) {
+      const label = document.createElement("div");
+      label.className = "custom-option-label";
+      label.textContent = option.text;
+
+      const desc = document.createElement("div");
+      desc.className = "custom-option-desc";
+      desc.textContent = option.title;
+
+      customOption.appendChild(label);
+      customOption.appendChild(desc);
       customOption.title = option.title;
+    } else {
+      customOption.textContent = option.text;
     }
+
     if (option.selected) {
       trigger.innerHTML = `${option.text}`;
       if (option.title) {
@@ -58,6 +72,7 @@ function createCustomSelect(selectId) {
       // Dispatch change event on original select
       select.dispatchEvent(new Event("change"));
       optionsContainer.classList.remove("open");
+      wrapper.classList.remove("open");
     });
     optionsContainer.appendChild(customOption);
   });
@@ -65,11 +80,15 @@ function createCustomSelect(selectId) {
   // Toggle options
   trigger.addEventListener("click", function (e) {
     e.stopPropagation();
-    const isOpen = optionsContainer.classList.contains("open");
-    document
-      .querySelectorAll(".custom-select-options")
-      .forEach((el) => el.classList.remove("open")); // Close all others
+    const isOpen = wrapper.classList.contains("open");
+    // Close all other dropdowns
+    document.querySelectorAll(".custom-select-wrapper").forEach((el) => {
+      el.classList.remove("open");
+      const opts = el.querySelector(".custom-select-options");
+      if (opts) opts.classList.remove("open");
+    });
     if (!isOpen) {
+      wrapper.classList.add("open");
       optionsContainer.classList.add("open");
     }
   });
@@ -77,19 +96,21 @@ function createCustomSelect(selectId) {
   // Update on original select change (if changed programmatically)
   select.addEventListener("change", function () {
     const selectedOption = select.options[select.selectedIndex];
-    trigger.innerHTML = `${selectedOption.text}`;
-    if (selectedOption && selectedOption.title) {
-      trigger.title = selectedOption.title;
-    } else {
-      trigger.removeAttribute("title");
-    }
-    Array.from(optionsContainer.children).forEach((child) => {
-      if (child.dataset.value === selectedOption.value) {
-        child.classList.add("selected");
+    if (selectedOption) {
+      trigger.innerHTML = `${selectedOption.text}`;
+      if (selectedOption.title) {
+        trigger.title = selectedOption.title;
       } else {
-        child.classList.remove("selected");
+        trigger.removeAttribute("title");
       }
-    });
+      Array.from(optionsContainer.children).forEach((child) => {
+        if (child.dataset.value === selectedOption.value) {
+          child.classList.add("selected");
+        } else {
+          child.classList.remove("selected");
+        }
+      });
+    }
   });
 }
 
@@ -99,6 +120,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Close dropdowns on outside click
   document.addEventListener("click", function () {
+    document
+      .querySelectorAll(".custom-select-wrapper")
+      .forEach((el) => el.classList.remove("open"));
     document
       .querySelectorAll(".custom-select-options")
       .forEach((el) => el.classList.remove("open"));
