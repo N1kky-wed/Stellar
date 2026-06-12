@@ -2077,7 +2077,6 @@ def ensure_host_key():
 # ============================================================
 def main():
     """Start the SSH gateway server."""
-    print(f"Stellar SSH Gateway starting on {SSH_HOST}:{SSH_PORT}")
     logger.info(f"=== Stellar SSH Gateway starting on {SSH_HOST}:{SSH_PORT} ===")
 
     # Generate host key if needed
@@ -2094,22 +2093,19 @@ def main():
     try:
         server_socket.bind((SSH_HOST, SSH_PORT))
     except OSError as e:
-        logger.critical(f"Cannot bind to {SSH_HOST}:{SSH_PORT}: {e}")
-        print(f"FATAL: Cannot bind to {SSH_HOST}:{SSH_PORT}: {e}")
+        logger.critical(f"FATAL: Cannot bind to {SSH_HOST}:{SSH_PORT}: {e}")
         sys.exit(1)
 
     server_socket.listen(10)
     server_socket.settimeout(1.0)  # For graceful shutdown
 
     logger.info(f"Listening for SSH connections on port {SSH_PORT}")
-    print(f"Listening on port {SSH_PORT}. Press Ctrl+C to stop.")
 
     # Graceful shutdown
     shutdown_event = threading.Event()
 
     def signal_handler(signum, frame):
-        print("\nShutting down...")
-        logger.info("Shutdown signal received")
+        logger.info("Shutdown signal received, shutting down SSH gateway...")
         shutdown_event.set()
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -2142,7 +2138,6 @@ def main():
     finally:
         server_socket.close()
         logger.info("SSH Gateway stopped.")
-        print("SSH Gateway stopped.")
 
 
 if __name__ == '__main__':

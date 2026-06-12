@@ -1,16 +1,24 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 def scrape_url(url):
     headers = {'User-Agent': 'Mozilla/5.0 (compatible; MyScraper/1.0)'}
+    t0 = time.time()
     try:
         # Added a timeout for robustness and disabled redirects to prevent SSRF bypasses
         response = requests.get(url, headers=headers, timeout=15, allow_redirects=False)
 
         # If a redirect occurs, block it for safety as we've already validated the initial URL
         if response.status_code in (301, 302, 303, 307, 308):
-            return f"Redirects are not allowed for security reasons (attempted to redirect to {response.headers.get('Location')})"
+            redirect_target = response.headers.get('Location')
+            duration = time.time() - t0
+            logger.warning("Scrape blocked: redirect to %s detected url=%s duration_sec=%.3f", redirect_target, url, duration)
+            return f"Redirects are not allowed for security reasons (attempted to redirect to {redirect_target})"
 
         # Raise an exception for bad status codes
         response.raise_for_status()
@@ -32,18 +40,24 @@ def scrape_url(url):
         clean_title = re.sub(r'[^a-zA-Z0-9\s]', '', title)
         clean_title = re.sub(r'\s+', ' ', clean_title).strip()
 
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info("Scraped Title: %s", clean_title)
+        duration = time.time() - t0
+        logger.info("URL scraped successfully url=%s title=%s duration_sec=%.3f", url, clean_title, duration)
         
         # Return the cleaned text
         return f"context from {url}: is \n{clean_text}"
 
-    except requests.exceptions.Timeout:
+    except requests.exceptions.Timeout as e:
+        duration = time.time() - t0
+        logger.warning("Scrape failed: timeout url=%s duration_sec=%.3f error=%s", url, duration, e)
         return "The request took too long and timed out."
 
     except requests.exceptions.RequestException as e:
+        duration = time.time() - t0
+        logger.error("Scrape failed: request exception url=%s duration_sec=%.3f error=%s", url, duration, e)
         return f"An error occurred while fetching the URL: {e}"
     
     except Exception as e:
+        duration = time.time() - t0
+        logger.exception("Scrape failed: unexpected error url=%s duration_sec=%.3f error=%s", url, duration, e)
         return f"An unexpected error occurred: {e}"
+
