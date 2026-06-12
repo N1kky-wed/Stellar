@@ -702,11 +702,21 @@ def _healer_loop():
                 process_id = payload.get("process_id")
                 error_id = payload.get("error_id")
                 if process_id and error_id:
+                    try:
+                        from app import thread_local_ctx
+                        thread_local_ctx.request_id = f"heal-{process_id[:8]}"
+                    except Exception:
+                        pass
                     logger.info("Dequeued self-healing job process_id=%s error_id=%s", process_id, error_id)
                     try:
                         heal_application(process_id, error_id, r_client)
                     except Exception as e:
                         logger.error("Error executing self-healing for app process_id=%s: %s", process_id, e, exc_info=True)
+                    finally:
+                        try:
+                            thread_local_ctx.request_id = None
+                        except Exception:
+                            pass
         except Exception as queue_err:
             try:
                 logger.error("Error in sentinel healer loop: %s", queue_err, exc_info=True)

@@ -130,14 +130,17 @@ def web_search(
             for key in tavily_keys:
                 try:
                     t_client = TavilyClient(api_key=key)
+                    t0 = time.time()
                     if operation == 'search':
-                        return t_client.search(**kwargs)
+                        res = t_client.search(**kwargs)
                     elif operation == 'extract':
-                        return t_client.extract(**kwargs)
+                        res = t_client.extract(**kwargs)
                     elif operation == 'crawl':
-                        return t_client.crawl(**kwargs)
+                        res = t_client.crawl(**kwargs)
                     elif operation == 'map':
-                        return t_client.map(**kwargs)
+                        res = t_client.map(**kwargs)
+                    logger.info("Tavily %s call completed duration_sec=%.2f", operation, time.time() - t0)
+                    return res
                 except Exception as e:
                     logger.error(f"Error in Tavily {operation} with key ending in ...{key[-4:] if key else ''}: {e}")
                     last_error = e
@@ -158,8 +161,8 @@ def web_search(
                     r = requests.get(url, stream=True, timeout=3)
                     r.close()
                     return r.status_code == 200
-                except Exception:
-                    logger.exception("Error caught.")
+                except Exception as err:
+                    logger.debug("Tavily image URL %s offline: %s", url, err)
                     return False
             
             urls = set()
@@ -919,7 +922,8 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
                     if hasattr(part, 'inline_data') and part.inline_data:
                         return part.inline_data.data
             return None
-        except:
+        except Exception as e:
+            logger.exception("Error generating slide image: %s", e)
             return None
 
     async def fetch_all_images():
@@ -1282,7 +1286,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                         # Attempt a quick stop and restart to refresh mounts
                         container.stop(timeout=2)
                         container.remove(force=True)
-                    except: pass
+                    except Exception as clean_err:
+                        logger.warning("Failed to clean up container on OCI error process_id=%s: %s", p_id, clean_err)
                     
                     restart_res = repo_control(action="restart", status="Restarting for recovery...", app_id=p_id)
                     if "Error" in restart_res: return restart_res
@@ -1494,7 +1499,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                             break
                         elif status_code >= 500:
                             break # Fail fast on server error
-                except: pass
+                except Exception as health_err:
+                    logger.debug("Container restart health check failed on port %d: %s", port, health_err)
             
             if 0 < status_code < 500:
                 ready_msg = f"and server is READY (Status {status_code})!"
