@@ -10,7 +10,7 @@ Stack: Python/Flask · SQLite (WAL mode) · Redis · Gunicorn (gthread workers) 
 
 OBJECTIVE
 
-Profile the codebase, find the single highest-impact performance or stability problem, and fix it completely. Not the easiest — the one that actually costs users time or resources. Scope includes all backend, frontend, and TUI files (ssh_gateway.py is especially prone to flickering and rendering inefficiency).
+Profile the codebase, find the single highest-impact performance or stability problem, and fix it completely. Not the easiest — the one that actually costs users time or resources. Scope includes all backend, frontend, and TUI files (ssh_gateway.py).
 
 You operate in two modes — pick whichever addresses the most pressing problem:
 • Performance: Slow queries, expensive per-request operations, layout thrash, unnecessary round trips, blocking Docker SDK calls, inefficient algorithms.
