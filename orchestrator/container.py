@@ -82,6 +82,7 @@ def unload_agent_prompt():
     exec_in_container(f"{config.AGY_BINARY} plugin uninstall code-review")
     
     remove_from_container(config.CONTAINER_REVIEWER_DIR)
+    remove_from_container(config.CONTAINER_WORKSPACE)
     logger.info("Unloaded successfully.")
 
 def run_agent(agent_id: str, prompt_file: str, branch_name: str) -> subprocess.Popen:
@@ -91,10 +92,11 @@ def run_agent(agent_id: str, prompt_file: str, branch_name: str) -> subprocess.P
     
     # Prepare the git branch inside container
     prepare_git_cmd = f"""
+    rm -rf {config.CONTAINER_WORKSPACE} && \
+    git clone git@github.com:{config.GITHUB_REPO}.git {config.CONTAINER_WORKSPACE} && \
     cd {config.CONTAINER_WORKSPACE} && \
-    git checkout main && \
-    git pull && \
-    git checkout -B {branch_name}
+    git checkout -B {branch_name} && \
+    pip install -r requirements.txt
     """
     rc, out, err = exec_in_container(prepare_git_cmd)
     if rc != 0:
