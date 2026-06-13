@@ -54,6 +54,7 @@ PROHIBITED ACTIONS:
 • Do not modify requirements.txt except for dependency upgrades with full justification.
 • Do not make breaking changes to the SSE streaming protocol or tool call schema.
 • Do not expose exploit details in a public PR — file a private security advisory and reference it.
+• Never use `--no-verify` or any flag that bypasses git hooks. If a hook fails, fix the underlying issue.
 
 If no real vulnerability exists, stop. Do not invent one.
 
