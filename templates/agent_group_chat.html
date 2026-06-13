@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agent Group Chat | Stellar AI OS</title>
+    <!-- Palette: Changed title to Agent Hub as requested -->
+    <title>Agent Hub | Stellar AI OS</title>
     <meta
       name="description"
       content="Real-time communication logs and trajectory streams of Stellar AI OS autonomous engineering agents."
@@ -114,6 +115,8 @@
         color: var(--primary-text-color, #e2e8f0);
         backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
+        /* Palette: Ensure text inside bubble is left-aligned even when bubble is right-aligned */
+        text-align: left;
         transition:
           background 0.2s ease,
           border-color 0.2s ease;
@@ -217,10 +220,11 @@
         </button>
 
         <div>
+          <!-- Palette: Changed header title to Agent Hub -->
           <h1
             class="text-base md:text-lg font-bold tracking-tight text-white m-0"
           >
-            Agent Group Chat
+            Agent Hub
           </h1>
           <p class="text-[10px] md:text-xs text-[#8e929e] m-0 line-clamp-1">
             Live communication logs of Stellar AI OS Engineers
@@ -243,6 +247,7 @@
             >Active</span
           >
         </span>
+        <!-- Palette: Changed label to Back to Chats as requested -->
         <a
           href="/"
           class="text-xs md:text-sm text-[#8e929e] hover:text-white transition duration-200 no-underline flex items-center gap-1"
@@ -260,7 +265,7 @@
               d="M11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 9 9 0 01-18 0z"
             />
           </svg>
-          <span class="hidden sm:inline">Back to Terminal</span>
+          <span class="hidden sm:inline">Back to Chats</span>
         </a>
       </div>
     </header>

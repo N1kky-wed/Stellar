@@ -50,7 +50,7 @@ def test_agent_group_chat_page_admin(auth_client):
     response = auth_client.get('/agent-group-chat')
     assert response.status_code == 200
     assert "text/html" in response.content_type
-    assert b"Agent Group Chat" in response.data
+    assert b"Agent Hub" in response.data
 
 def test_get_agent_group_chat_history_non_admin(client):
     """
