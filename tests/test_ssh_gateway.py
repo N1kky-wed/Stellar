@@ -8,6 +8,45 @@ import paramiko
 from unittest.mock import patch, MagicMock
 from rich.console import Console
 
+# Retrieve and configure MockRedisClass with required rate limiting methods
+from app import redis_client
+MockRedisClass = type(redis_client)
+
+if not hasattr(MockRedisClass, 'incr'):
+    def incr(self, name, amount=1):
+        val = self.get(name)
+        if val is None:
+            val = amount
+        else:
+            val = int(val) + amount
+        self.set(name, str(val))
+        return val
+    MockRedisClass.incr = incr
+
+if not hasattr(MockRedisClass, 'decr'):
+    def decr(self, name, amount=1):
+        val = self.get(name)
+        if val is None:
+            val = -amount
+        else:
+            val = int(val) - amount
+        self.set(name, str(val))
+        return val
+    MockRedisClass.decr = decr
+
+if not hasattr(MockRedisClass, 'expire'):
+    def expire(self, name, time):
+        return True
+    MockRedisClass.expire = expire
+
+@pytest.fixture(autouse=True)
+def clear_redis():
+    if hasattr(redis_client, 'store'):
+        redis_client.store.clear()
+    yield
+    if hasattr(redis_client, 'store'):
+        redis_client.store.clear()
+
 # Import the module under test
 import ssh_gateway
 
@@ -196,10 +235,12 @@ def test_container_not_found(mock_get_container, mock_get_docker_client):
     """
     Asserts that lifecycle actions handle NotFound exceptions gracefully.
     """
-    mock_get_container.side_effect = docker.errors.NotFound("Not found")
-    
-    res = ssh_gateway.restart_container("proc123", "web", 5)
-    assert "Container not found" in res
+    class LocalNotFound(Exception):
+        pass
+    with patch.object(docker.errors, 'NotFound', LocalNotFound):
+        mock_get_container.side_effect = LocalNotFound("Not found")
+        res = ssh_gateway.restart_container("proc123", "web", 5)
+        assert "Container not found" in res
 
 
 def test_ssh_server_auth_interface():
@@ -217,3 +258,69 @@ def test_ssh_server_auth_interface():
     
     # check_channel_request and checking forwarding should return denied/false
     assert server.check_port_forward_request("127.0.0.1", 80) is False
+
+
+# Brief comment: Asserts that check_connection_rate correctly increments and returns True within limit.
+def test_rate_limiter_check_connection_rate_success():
+    ssh_gateway.redis_client.store.clear()
+    limiter = ssh_gateway.RateLimiter()
+    assert limiter.check_connection_rate("1.2.3.4") is True
+    assert ssh_gateway.redis_client.store.get("ssh_conn_rate:1.2.3.4") == "1"
+
+# Brief comment: Asserts that check_connection_rate returns False when rate limit is exceeded.
+def test_rate_limiter_check_connection_rate_exceeded():
+    ssh_gateway.redis_client.store["ssh_conn_rate:1.2.3.4"] = "10"
+    limiter = ssh_gateway.RateLimiter()
+    assert limiter.check_connection_rate("1.2.3.4") is False
+
+# Brief comment: Asserts that check_connection_rate fails open (returns True) when Redis raises an exception.
+def test_rate_limiter_check_connection_rate_redis_exception():
+    limiter = ssh_gateway.RateLimiter()
+    with patch.object(limiter.r, 'incr', side_effect=Exception("Redis connection timed out")):
+        assert limiter.check_connection_rate("1.2.3.4") is True
+
+# Brief comment: Asserts that record_auth_failure increments key and sets failure count.
+def test_rate_limiter_record_auth_failure_success():
+    ssh_gateway.redis_client.store.clear()
+    limiter = ssh_gateway.RateLimiter()
+    assert limiter.record_auth_failure("1.2.3.4") == 1
+    assert ssh_gateway.redis_client.store.get("ssh_verify_fail:1.2.3.4") == "1"
+
+# Brief comment: Asserts that record_auth_failure returns 0 when Redis fails.
+def test_rate_limiter_record_auth_failure_redis_exception():
+    limiter = ssh_gateway.RateLimiter()
+    with patch.object(limiter.r, 'incr', side_effect=Exception("Redis error")):
+        assert limiter.record_auth_failure("1.2.3.4") == 0
+
+# Brief comment: Asserts that is_ip_blocked returns True when failure count meets threshold.
+def test_rate_limiter_is_ip_blocked_true():
+    ssh_gateway.redis_client.store["ssh_verify_fail:1.2.3.4"] = "10"
+    limiter = ssh_gateway.RateLimiter()
+    assert limiter.is_ip_blocked("1.2.3.4") is True
+
+# Brief comment: Asserts that is_ip_blocked returns False when failure count is below threshold or absent.
+def test_rate_limiter_is_ip_blocked_false():
+    ssh_gateway.redis_client.store["ssh_verify_fail:1.2.3.4"] = "9"
+    limiter = ssh_gateway.RateLimiter()
+    assert limiter.is_ip_blocked("1.2.3.4") is False
+
+    ssh_gateway.redis_client.store.clear()
+    assert limiter.is_ip_blocked("1.2.3.4") is False
+
+# Brief comment: Asserts that is_ip_blocked fails open (returns False) when Redis fails.
+def test_rate_limiter_is_ip_blocked_redis_exception():
+    limiter = ssh_gateway.RateLimiter()
+    with patch.object(limiter.r, 'get', side_effect=Exception("Redis error")):
+        assert limiter.is_ip_blocked("1.2.3.4") is False
+
+# Brief comment: Asserts that get_container_status correctly matches cached container status or falls back.
+@patch("ssh_gateway.get_all_container_statuses")
+def test_get_container_status(mock_get_all):
+    mock_get_all.return_value = {
+        "stellar-web-proc1": "running",
+        "stellar-repo-proc2": "exited"
+    }
+    assert ssh_gateway.get_container_status("proc1", "web") == "running"
+    assert ssh_gateway.get_container_status("proc2", "web") == "exited"
+    assert ssh_gateway.get_container_status("proc3", "web") == "not_found"
+
