@@ -6076,6 +6076,17 @@ def agent_group_chat_page():
     response.headers['Content-Type'] = 'text/html'
     return response
 
+def _get_orchestrator_sqlite_conn(path):
+    """
+    Bolt - Performance/Stability Optimization: Retrieve a configured connection to the orchestrator or memory database.
+    Enforces WAL mode and busy timeout to prevent database locking errors.
+    """
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
+    conn.row_factory = sqlite3.Row
+    return conn
+
 @app.route('/api/admin/orchestrator/status')
 @require_approval
 def orchestrator_status():
@@ -6086,8 +6097,8 @@ def orchestrator_status():
     try:
         from datetime import timezone, timedelta
         IST = timezone(timedelta(hours=5, minutes=30))
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
+        # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+        conn = _get_orchestrator_sqlite_conn(db_path)
         row = conn.execute("SELECT value FROM orchestrator_state WHERE key='quota_cooldown_until'").fetchone()
         if row and row['value']:
             cooldown_dt = datetime.datetime.fromisoformat(row['value'])
@@ -6120,8 +6131,8 @@ def get_agent_group_chat_history():
     # 1. Fetch runs from orchestrator.db
     if os.path.exists(db_path):
         try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
+            # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+            conn = _get_orchestrator_sqlite_conn(db_path)
             runs = conn.execute("""
                 SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message
                 FROM agent_runs
@@ -6187,8 +6198,8 @@ def get_agent_group_chat_history():
     # 2. Fetch group messages from memory.db
     if os.path.exists(mem_db_path):
         try:
-            conn = sqlite3.connect(mem_db_path)
-            conn.row_factory = sqlite3.Row
+            # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+            conn = _get_orchestrator_sqlite_conn(mem_db_path)
             rows = conn.execute("""
                 SELECT sender_id, content, message_type, created_at
                 FROM agent_messages
@@ -6253,8 +6264,8 @@ def agent_group_chat_stream():
 
             yielded_states = {} # rid -> status
             try:
-                conn = sqlite3.connect(db_path)
-                conn.row_factory = sqlite3.Row
+                # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+                conn = _get_orchestrator_sqlite_conn(db_path)
                 runs = conn.execute("SELECT id, status FROM agent_runs").fetchall()
                 for r in runs:
                     yielded_states[r['id']] = r['status']
@@ -6265,7 +6276,8 @@ def agent_group_chat_stream():
             yielded_messages = set()
             if os.path.exists(mem_db_path):
                 try:
-                    conn = sqlite3.connect(mem_db_path)
+                    # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+                    conn = _get_orchestrator_sqlite_conn(mem_db_path)
                     rows = conn.execute("SELECT id FROM agent_messages WHERE channel='group'").fetchall()
                     for r in rows:
                         yielded_messages.add(r[0])
@@ -6278,8 +6290,8 @@ def agent_group_chat_stream():
 
                 try:
                     # 1. Yield updates from orchestrator.db agent runs
-                    conn = sqlite3.connect(db_path)
-                    conn.row_factory = sqlite3.Row
+                    # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+                    conn = _get_orchestrator_sqlite_conn(db_path)
                     runs = conn.execute("""
                         SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message
                         FROM agent_runs
@@ -6356,8 +6368,8 @@ def agent_group_chat_stream():
                 try:
                     # 2. Yield updates from memory.db group messages
                     if os.path.exists(mem_db_path):
-                        conn = sqlite3.connect(mem_db_path)
-                        conn.row_factory = sqlite3.Row
+                        # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+                        conn = _get_orchestrator_sqlite_conn(mem_db_path)
                         rows = conn.execute("""
                             SELECT id, sender_id, content, message_type, created_at
                             FROM agent_messages
@@ -6407,8 +6419,8 @@ def get_agent_dms():
         
     messages = []
     try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
+        # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+        conn = _get_orchestrator_sqlite_conn(db_path)
         # Fetch DMs sent by or to the agent
         rows = conn.execute("""
             SELECT id, thread_id, sender_id, recipient_id, content, message_type, ref_id, created_at
@@ -6472,7 +6484,8 @@ def send_agent_message():
         
     try:
         now_str = datetime.datetime.now().isoformat()
-        conn = sqlite3.connect(db_path)
+        # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+        conn = _get_orchestrator_sqlite_conn(db_path)
         cursor = conn.cursor()
         
         # Auto-create task for DMs if thread_id is resolve:task:<id> and does not exist yet
@@ -6513,8 +6526,8 @@ def list_agent_tasks():
         
     tasks = []
     try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
+        # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+        conn = _get_orchestrator_sqlite_conn(db_path)
         rows = conn.execute("SELECT * FROM agent_tasks ORDER BY id DESC").fetchall()
         for r in rows:
             tasks.append(dict(r))
@@ -6547,7 +6560,8 @@ def create_agent_task():
         
     try:
         now_str = datetime.datetime.now().isoformat()
-        conn = sqlite3.connect(db_path)
+        # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+        conn = _get_orchestrator_sqlite_conn(db_path)
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO agent_tasks (title, description, created_by, assigned_to, status, priority, related_file, created_at, updated_at)
@@ -6588,7 +6602,8 @@ def resolve_agent_task():
         
     try:
         now_str = datetime.datetime.now().isoformat()
-        conn = sqlite3.connect(db_path)
+        # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
+        conn = _get_orchestrator_sqlite_conn(db_path)
         conn.execute("""
             UPDATE agent_tasks
             SET status = 'resolved', resolved_by = 'admin', resolved_at = ?, updated_at = ?
@@ -7044,7 +7059,8 @@ class OrphanContainerMonitor:
                 self._cleanup_orphans()
             except Exception as e:
                 logger.error(f"Error in OrphanContainerMonitor: {e}")
-            time.sleep(self.interval)
+            # Bolt - Stability Optimization: Wait on stop_event to exit instantly on stop/reload
+            self.stop_event.wait(self.interval)
 
     def _cleanup_orphans(self):
         if not client:
@@ -7593,7 +7609,8 @@ class TaskSchedulerMonitor:
                 self._check_tasks()
             except Exception as e:
                 logger.error(f"Error in TaskSchedulerMonitor: {e}")
-            time.sleep(self.interval)
+            # Bolt - Stability Optimization: Wait on stop_event to exit instantly on stop/reload
+            self.stop_event.wait(self.interval)
 
     def _check_tasks(self):
         import uuid
