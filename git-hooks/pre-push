@@ -51,7 +51,11 @@ echo "✅ HTML and CSS files passed syntax validation."
 
 # 4. Run Pytest unit tests
 echo "Running pytest test suite..."
-venv/bin/pytest
+if [ -f "venv/bin/pytest" ]; then
+    venv/bin/pytest
+else
+    pytest
+fi
 if [ $? -ne 0 ]; then
     echo "❌ Pytest unit tests failed."
     exit 1
