@@ -769,3 +769,41 @@ def test_get_admin_keys(auth_client):
         assert 'blocks' in key_data
         assert 'global' in key_data['blocks']
 
+
+def test_dns_pinning_ssrf_protection():
+    import app
+    # Test localhost and internal ranges are blocked
+    safe, msg = app.is_safe_hostname('localhost')
+    assert not safe
+    
+    safe, msg = app.is_safe_hostname('127.0.0.1')
+    assert not safe
+
+    # Test a public hostname is accepted and returns its IP
+    safe, ip = app.is_safe_hostname('google.com')
+    assert safe
+    import ipaddress
+    # Ensure it returned a valid IP address
+    ipaddress.ip_address(ip)
+
+    # Test that patched_create_connection actually resolves pinned hosts
+    import urllib3.util.connection as connection
+    assert connection.create_connection == app.patched_create_connection
+
+    # Set up pin
+    app.dns_cache.pinned_ips = {'dummy-pin-host.com': '9.9.9.9'}
+    
+    # We mock connection._orig_create_connection to see if it receives the pinned IP
+    with patch('app._orig_create_connection') as mock_orig:
+        app.patched_create_connection(('dummy-pin-host.com', 80))
+        mock_orig.assert_called_once_with(('9.9.9.9', 80))
+
+    # Test unpinned hosts behave normally
+    with patch('app._orig_create_connection') as mock_orig:
+        app.patched_create_connection(('google.com', 80))
+        mock_orig.assert_called_once_with(('google.com', 80))
+
+    # Clean up
+    app.dns_cache.pinned_ips = {}
+
+

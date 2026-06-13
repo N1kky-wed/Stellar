@@ -67,6 +67,21 @@ logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+# Thread-local storage for DNS pinning (SSRF / DNS Rebinding protection)
+import urllib3.util.connection as connection
+dns_cache = threading.local()
+_orig_create_connection = connection.create_connection
+
+def patched_create_connection(address, *args, **kwargs):
+    host, port = address
+    pinned_ips = getattr(dns_cache, 'pinned_ips', None)
+    if pinned_ips and host in pinned_ips:
+        logger.info("DNS Pinning: routing %s to %s", host, pinned_ips[host])
+        return _orig_create_connection((pinned_ips[host], port), *args, **kwargs)
+    return _orig_create_connection(address, *args, **kwargs)
+
+connection.create_connection = patched_create_connection
+
 redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
 
 client = None
@@ -1913,6 +1928,7 @@ def is_safe_hostname(hostname):
         return False, "Invalid hostname"
     try:
         addr_info = socket.getaddrinfo(hostname, None)
+        resolved_ips = []
         for family, kind, proto, canonname, sockaddr in addr_info:
             ip_str = sockaddr[0]
             try:
@@ -1920,11 +1936,17 @@ def is_safe_hostname(hostname):
                 if (ip.is_private or ip.is_loopback or ip.is_link_local or
                     ip.is_multicast or ip.is_reserved or ip.is_unspecified):
                     return False, f"Access to internal networks is forbidden: {ip_str}"
+                resolved_ips.append(ip_str)
             except ValueError:
                 continue
     except socket.gaierror:
         return False, "Failed to resolve hostname"
-    return True, "Safe"
+    
+    if not resolved_ips:
+        return False, "No valid IP addresses resolved"
+        
+    # Return the first resolved safe IP address so the caller can pin it
+    return True, resolved_ips[0]
 
 def scrape_url(url: str) -> str:
     """
@@ -1944,14 +1966,27 @@ def scrape_url(url: str) -> str:
 
     try:
         parsed = urlparse(url)
-        safe, msg = is_safe_hostname(parsed.hostname)
+        safe, ip_or_msg = is_safe_hostname(parsed.hostname)
         if not safe:
-            logger.warning(f"Blocked scraping SSRF attempt: {msg} via {url}")
-            return f"Error scraping {url}: {msg}"
+            logger.warning(f"Blocked scraping SSRF attempt: {ip_or_msg} via {url}")
+            return f"Error scraping {url}: {ip_or_msg}"
 
-        apron=webscrapper.scrape_url(url)
-        logger.info("Scraped URL successfully url=%s content_length=%d", url, len(apron) if apron else 0)
-        return apron
+        # Pin the resolved safe IP address in the thread-local cache to prevent DNS rebinding TOCTOU
+        dns_cache.pinned_ips = getattr(dns_cache, 'pinned_ips', {})
+        try:
+            ipaddress.ip_address(ip_or_msg)
+            dns_cache.pinned_ips[parsed.hostname] = ip_or_msg
+        except ValueError:
+            pass
+
+        try:
+            apron=webscrapper.scrape_url(url)
+            logger.info("Scraped URL successfully url=%s content_length=%d", url, len(apron) if apron else 0)
+            return apron
+        finally:
+            # Clear DNS pinning for this host
+            if parsed.hostname in dns_cache.pinned_ips:
+                del dns_cache.pinned_ips[parsed.hostname]
     except Exception as e:
         logger.exception("Failed to scrape URL url=%s", url)
         return f"Error scraping {url}: {str(e)}"
@@ -4209,10 +4244,18 @@ def image_proxy():
     try:
         # 1. SSRF Protection: Prevent access to internal/private networks
         parsed = urlparse(image_url)
-        safe, msg = is_safe_hostname(parsed.hostname)
+        safe, ip_or_msg = is_safe_hostname(parsed.hostname)
         if not safe:
-            logger.warning(f"Blocked SSRF attempt: {msg} via {image_url}")
-            return msg, 403
+            logger.warning(f"Blocked SSRF attempt: {ip_or_msg} via {image_url}")
+            return ip_or_msg, 403
+
+        # Pin DNS to prevent TOCTOU DNS rebinding
+        dns_cache.pinned_ips = getattr(dns_cache, 'pinned_ips', {})
+        try:
+            ipaddress.ip_address(ip_or_msg)
+            dns_cache.pinned_ips[parsed.hostname] = ip_or_msg
+        except ValueError:
+            pass
 
         # 2. Fetch the image with a strict timeout and prevent redirects (SSRF Protection)
         resp = None
@@ -4264,6 +4307,10 @@ def image_proxy():
                     pass
             logger.error(f"Image proxy request failed for {image_url}: {e}")
             return "Failed to fetch image", 502
+        finally:
+            # Clear DNS pinning for this host
+            if parsed.hostname in dns_cache.pinned_ips:
+                del dns_cache.pinned_ips[parsed.hostname]
     except socket.gaierror:
         return "Failed to resolve hostname", 400
     except Exception as e:
@@ -5560,13 +5607,27 @@ def api_check_url():
         # Limit redirects to prevent infinite loops and check redirect targets for SSRF
         for _ in range(5):
             parsed = urlparse(curr_url)
-            safe, msg = is_safe_hostname(parsed.hostname)
+            safe, ip_or_msg = is_safe_hostname(parsed.hostname)
             if not safe:
                 # Security Fix: Block access to internal/private networks via check_url
-                logger.warning(f"Blocked check_url SSRF attempt: {msg} via {curr_url}")
-                return jsonify({'error': f'SSRF Protection: {msg}'}), 403
+                logger.warning(f"Blocked check_url SSRF attempt: {ip_or_msg} via {curr_url}")
+                return jsonify({'error': f'SSRF Protection: {ip_or_msg}'}), 403
 
-            response = requests.get(curr_url, timeout=3, allow_redirects=False)
+            # Pin DNS to prevent TOCTOU DNS rebinding
+            dns_cache.pinned_ips = getattr(dns_cache, 'pinned_ips', {})
+            try:
+                ipaddress.ip_address(ip_or_msg)
+                dns_cache.pinned_ips[parsed.hostname] = ip_or_msg
+            except ValueError:
+                pass
+
+            try:
+                response = requests.get(curr_url, timeout=3, allow_redirects=False)
+            finally:
+                # Clear DNS pinning for this host
+                if parsed.hostname in dns_cache.pinned_ips:
+                    del dns_cache.pinned_ips[parsed.hostname]
+
             if response.status_code in (301, 302, 303, 307, 308):
                 location = response.headers.get('Location')
                 if not location:
