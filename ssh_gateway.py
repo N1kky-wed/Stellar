@@ -1468,12 +1468,12 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
         container_name = container.name
-        audit.info(f"CONTAINER_RESTART | user_id={user_id} | container={container_name}")
+        audit.info("CONTAINER_RESTART | user_id=%s | container=%s", user_id, container_name)
         start_time = time.time()
         container.restart(timeout=10)
         duration = time.time() - start_time
-        logger.info(f"Container restart complete for {container_name} in {duration:.2f}s")
-        audit.info(f"CONTAINER_RESTART_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
+        logger.info("Container restart complete container_name=%s duration_sec=%.2f", container_name, duration)
+        audit.info("CONTAINER_RESTART_SUCCESS | user_id=%s | container=%s | duration_sec=%.2f", user_id, container_name, duration)
         # Optimize: Update local container status cache directly to prevent race conditions and stale UI states
         # (Bolt - Performance optimization: direct cache update).
         with _cache_lock:
@@ -1505,12 +1505,12 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
         container_name = container.name
-        audit.info(f"CONTAINER_STOP | user_id={user_id} | container={container_name}")
+        audit.info("CONTAINER_STOP | user_id=%s | container=%s", user_id, container_name)
         start_time = time.time()
         container.stop(timeout=10)
         duration = time.time() - start_time
-        logger.info(f"Container stop complete for {container_name} in {duration:.2f}s")
-        audit.info(f"CONTAINER_STOP_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
+        logger.info("Container stop complete container_name=%s duration_sec=%.2f", container_name, duration)
+        audit.info("CONTAINER_STOP_SUCCESS | user_id=%s | container=%s | duration_sec=%.2f", user_id, container_name, duration)
         # Optimize: Update local container status cache directly to prevent race conditions and stale UI states
         # (Bolt - Performance optimization: direct cache update).
         with _cache_lock:
@@ -1542,12 +1542,12 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
         container_name = container.name
-        audit.info(f"CONTAINER_START | user_id={user_id} | container={container_name}")
+        audit.info("CONTAINER_START | user_id=%s | container=%s", user_id, container_name)
         start_time = time.time()
         container.start()
         duration = time.time() - start_time
-        logger.info(f"Container start complete for {container_name} in {duration:.2f}s")
-        audit.info(f"CONTAINER_START_SUCCESS | user_id={user_id} | container={container_name} | duration_sec={duration:.2f}")
+        logger.info("Container start complete container_name=%s duration_sec=%.2f", container_name, duration)
+        audit.info("CONTAINER_START_SUCCESS | user_id=%s | container=%s | duration_sec=%.2f", user_id, container_name, duration)
         # Optimize: Update local container status cache directly to prevent race conditions and stale UI states
         # (Bolt - Performance optimization: direct cache update).
         with _cache_lock:

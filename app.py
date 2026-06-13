@@ -2463,13 +2463,19 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                     from flask import current_app, g
 
                                     app_obj = current_app._get_current_object()
-                                    g_state = {k: getattr(g, k) for k in ['user_id', 'username', 'chat_id', 'session_id', 'model_id'] if hasattr(g, k)}
+                                    g_state = {k: getattr(g, k) for k in ['user_id', 'username', 'chat_id', 'session_id', 'model_id', 'request_id'] if hasattr(g, k)}
 
                                     def _run_tool_with_context(**kwargs):
+                                        if 'request_id' in g_state:
+                                            thread_local_ctx.request_id = g_state['request_id']
                                         with app_obj.app_context():
                                             for k, v in g_state.items():
                                                 setattr(g, k, v)
-                                            return func_to_call(**kwargs)
+                                            try:
+                                                return func_to_call(**kwargs)
+                                            finally:
+                                                if hasattr(thread_local_ctx, 'request_id'):
+                                                    del thread_local_ctx.request_id
 
                                     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
                                     logger.info("Executing tool name=%s chat_id=%s args=%s", func_name, chat_id, args_dict)

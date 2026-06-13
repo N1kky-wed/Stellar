@@ -159,7 +159,7 @@ def web_search(
                     logger.info("Tavily %s call completed duration_sec=%.2f", operation, time.time() - t0)
                     return res
                 except Exception as e:
-                    logger.error(f"Error in Tavily {operation} with key ending in ...{key[-4:] if key else ''}: {e}")
+                    logger.error("Error in Tavily operation=%s key_suffix=%s error=%s", operation, key[-4:] if key else '', e, exc_info=True)
                     last_error = e
                     continue
             raise Exception(f"All Tavily API keys exhausted. Last error: {str(last_error)}")
@@ -331,7 +331,7 @@ def send_self_email(subject: str, body: str, status: str, timeout: int, attachme
                 user_email = user['username']
             conn.close()
         except Exception as db_e:
-            logger.error(f"Error fetching email for background task: {db_e}")
+            logger.error("Error fetching email for background task error=%s", db_e, exc_info=True)
 
     if not user_email:
         return "Error: Could not determine recipient email address (Session/Context missing)."
@@ -376,7 +376,7 @@ def send_self_email(subject: str, body: str, status: str, timeout: int, attachme
         """
         msg.add_alternative(html_content, subtype='html')
     except Exception as md_e:
-        logger.error(f"Markdown rendering failed: {md_e}")
+        logger.error("Markdown rendering failed error=%s", md_e, exc_info=True)
 
     # Robust Attachment Handling
     if attachment_path:
@@ -418,9 +418,9 @@ def send_self_email(subject: str, body: str, status: str, timeout: int, attachme
                     )
                 logger.info(f"Successfully attached file: {resolved_path}")
             except Exception as att_e:
-                logger.error(f"Failed to attach file {resolved_path}: {att_e}")
+                logger.error("Failed to attach file path=%s error=%s", resolved_path, att_e, exc_info=True)
         else:
-            logger.warning(f"Attachment path invalid, denied, or not found: {attachment_path}")
+            logger.warning("Attachment path invalid denied or not found path=%s", attachment_path)
 
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
@@ -428,7 +428,7 @@ def send_self_email(subject: str, body: str, status: str, timeout: int, attachme
             smtp.send_message(msg)
         return f"Success: Email sent to {user_email}."
     except Exception as e:
-        logger.error(f"Mail Failure: {str(e)}")
+        logger.error("Mail Failure error=%s", e, exc_info=True)
         return f"Mail Failure: {str(e)}"
 
 def schedule_task(task_prompt: str, status: str, timeout: int, action: str = "schedule", task_id: int = None, execute_at: str = None, recurring_minutes: int = 0, metadata: str = None) -> str:
@@ -591,7 +591,7 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                     with open(img_path, "rb") as f:
                         parts.append(types.Part.from_bytes(data=f.read(), mime_type=mime_type or "image/png"))
         except Exception as e:
-            logger.error(f"Error loading reference images: {e}")
+            logger.error("Error loading reference images error=%s", e, exc_info=True)
 
     last_error = None
     for current_key in keys_to_try:
@@ -630,13 +630,13 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                     return f"![Generated Image](https://stellarai.live/view/{filename})"
             return "Error: Image model returned no visual data. Since image generation failed, please use the web search tool to find relevant images on the web instead."
         except Exception as e:
-            logger.error(f"Error in generate_image tool: {e}", exc_info=True)
+            logger.error("Error in generate_image tool error=%s", e, exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
                 block_duration, block_reason = parse_quota_block_duration(error_string)
                 block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model
                 KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in generate_image.")
+                logger.warning("Globally blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=generate_image", hash(current_key), block_duration, block_scope, block_reason)
                 last_error = e
                 continue
             return f"Error generating image: {str(e)}. Since image generation failed, please use the web search tool to find relevant images on the web instead."
@@ -925,13 +925,13 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
             plan = json.loads(resp.text)
             break
         except Exception as e:
-            logger.error(f"Error in make_presentation tool: {e}", exc_info=True)
+            logger.error("Error in make_presentation tool error=%s", e, exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
                 block_duration, block_reason = parse_quota_block_duration(error_string)
                 block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
                 KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in make_presentation.")
+                logger.warning("Globally blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=make_presentation", hash(current_key), block_duration, block_scope, block_reason)
                 last_error = e
                 continue
             return f"Error: Failed to plan presentation: {str(e)}. Since presentation generation failed, please perform a web search for relevant images and place them in a nice UI for the user."
@@ -1160,13 +1160,13 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
             break # Success!
             
         except Exception as e:
-            logger.error(f"Error in regenerate_presentation_slide tool: {e}", exc_info=True)
+            logger.error("Error in regenerate_presentation_slide tool error=%s", e, exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
                 block_duration, block_reason = parse_quota_block_duration(error_string)
                 block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
                 KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in regenerate_presentation_slide.")
+                logger.warning("Globally blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=regenerate_presentation_slide", hash(current_key), block_duration, block_scope, block_reason)
                 last_error = e
                 continue
             return f"Error: Failed to re-plan or generate slide: {str(e)}. Since slide regeneration failed, please perform a web search for relevant images and place them in a nice UI for the user."
@@ -2016,13 +2016,13 @@ def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "
             logger.info("Gemini API call completed model=%s duration_sec=%.2f purpose=analyze_youtube_video", model_id, duration)
             return response.text if response.text else "The model returned an empty response for the video analysis."
         except Exception as e:
-            logger.error(f"Error in analyze_youtube_video tool: {e}", exc_info=True)
+            logger.error("Error in analyze_youtube_video tool error=%s", e, exc_info=True)
             error_string = str(e).lower()
             if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
                 block_duration, block_reason = parse_quota_block_duration(error_string)
                 block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
                 KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in analyze_youtube_video.")
+                logger.warning("Globally blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=analyze_youtube_video", hash(current_key), block_duration, block_scope, block_reason)
                 last_error = e
                 continue
             return f"Error analyzing YouTube video: {str(e)}"
