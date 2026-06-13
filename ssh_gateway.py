@@ -1159,25 +1159,40 @@ def read_key(channel, timeout: float = 0.5) -> str | None:
     # If buffer is empty, block up to timeout to read some data from channel
     if not buf:
         try:
-            ready = select.select([channel], [], [], timeout)
-            if not ready[0]:
-                return None
-            data = channel.recv(1024)  # Read up to 1024 bytes to handle rapid inputs/pastes
-            if not data:
-                return 'EOF'
-            buf.extend(data)
+            # Bolt - Performance optimization: check if paramiko has data buffered internally
+            # to avoid blocking on select.select() when data is already available.
+            if channel.recv_ready():
+                data = channel.recv(1024)
+                if not data:
+                    return 'EOF'
+                buf.extend(data)
+            else:
+                ready = select.select([channel], [], [], timeout)
+                if not ready[0]:
+                    return None
+                data = channel.recv(1024)  # Read up to 1024 bytes to handle rapid inputs/pastes
+                if not data:
+                    return 'EOF'
+                buf.extend(data)
         except Exception:
             return 'EOF'
 
     # If the buffer starts with ESC but is incomplete, wait briefly for the rest of the sequence
     if len(buf) > 0 and buf[0] == 0x1b and len(buf) < 3:
         try:
-            # Wait up to 50ms for the rest of the sequence (e.g. arrow keys)
-            ready = select.select([channel], [], [], 0.05)
-            if ready[0]:
+            # Bolt - Performance optimization: check if paramiko has data buffered internally
+            # to avoid blocking on select.select() for escape sequences when data is already available.
+            if channel.recv_ready():
                 data = channel.recv(1024)
                 if data:
                     buf.extend(data)
+            else:
+                # Wait up to 50ms for the rest of the sequence (e.g. arrow keys)
+                ready = select.select([channel], [], [], 0.05)
+                if ready[0]:
+                    data = channel.recv(1024)
+                    if data:
+                        buf.extend(data)
         except Exception:
             pass
 
@@ -1388,7 +1403,12 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
                 break
 
             try:
-                r_list, _, _ = select.select([channel, raw_sock], [], [], 1.0)
+                # Bolt - Performance optimization: Check if Paramiko has data buffered internally
+                # to process immediately, bypassing select.select and avoiding terminal/typing lag.
+                if channel.recv_ready():
+                    r_list = [channel]
+                else:
+                    r_list, _, _ = select.select([channel, raw_sock], [], [], 1.0)
             except Exception:
                 break
 
