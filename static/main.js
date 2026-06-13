@@ -458,7 +458,7 @@ document.addEventListener("DOMContentLoaded", () => {
   );
   if (profilePureBlackToggle) {
     profilePureBlackToggle.checked =
-      localStorage.getItem("pureBlackMode") === "true";
+      localStorage.getItem("pureBlackMode") !== "false";
     profilePureBlackToggle.addEventListener("change", (e) => {
       if (e.target.checked) {
         bodyElement.classList.add("pure-black");
@@ -636,7 +636,7 @@ const modelSelectWidthHelper = document.getElementById(
   "modelSelectWidthHelper",
 );
 const bodyElement = document.body;
-if (localStorage.getItem("pureBlackMode") === "true") {
+if (localStorage.getItem("pureBlackMode") !== "false") {
   bodyElement.classList.add("pure-black");
 }
 const regenerateModalBackdrop = document.getElementById(
