@@ -348,11 +348,22 @@ class OrchestratorEngine:
                         message_type="system"
                     )
 
-                    # If already merged (fast auto-merge), trigger reload immediately
-                    # so we don't wait for _check_for_merge_trigger to catch it
+                    # If already merged (fast auto-merge), trigger reload and start the next agent immediately
                     if db_pr_status == 'MERGED':
                         logger.info("PR already merged triggering immediate service reload pr_num=%d", pr_num)
-                        self._pull_and_reload_services(pr_num)
+                        restart_orchestrator = self._pull_and_reload_services(pr_num)
+                        
+                        next_agent = self._get_next_pipeline_agent(self.current_agent_id)
+                        if restart_orchestrator:
+                            if next_agent:
+                                logger.info("Orchestrator restart scheduled. Deferring next agent %s to DB state.", next_agent['name'])
+                                self.state_db.set_state("pending_immediate_agent", next_agent['id'])
+                            logger.info("Exiting current orchestrator process to allow restart.")
+                            sys.exit(0)
+                        elif next_agent:
+                            logger.info("PR already merged: Starting next agent %s immediately!", next_agent['name'])
+                            self._start_agent(next_agent)
+                            return
                 else:
                     logger.warning("Agent completed but no PR was detected branch_name=%s", self.branch_name)
                     self.state_db.complete_run(self.current_run_id, now_str, pr_status='NONE', summary_message=summary)

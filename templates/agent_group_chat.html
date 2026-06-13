@@ -140,6 +140,16 @@
         color: var(--secondary-text-color, #a5b4fc);
       }
 
+      .message-bubble.dm-highlight {
+        background: rgba(16, 185, 129, 0.08) !important;
+        border-color: rgba(16, 185, 129, 0.35) !important;
+        color: #e2e8f0;
+      }
+
+      .message-bubble.dm-highlight:hover {
+        background: rgba(16, 185, 129, 0.12) !important;
+      }
+
       /* Custom scrollbars matching main index.html scrollbar style */
       #chatFeed::-webkit-scrollbar,
       #agentSidebar::-webkit-scrollbar,
@@ -1116,7 +1126,7 @@
                     <span class="text-xs font-semibold text-white">${msg.sender}</span>
                     <span class="text-[10px] text-[#8e929e]">${msg.timestamp}</span>
                   </div>
-                  <div class="message-bubble text-sm inline-block ${isSelf ? "bg-indigo-600/10 border-indigo-500/30" : ""}">
+                  <div class="message-bubble dm-highlight text-sm inline-block ${isSelf ? "bg-indigo-600/10 border-indigo-500/30" : ""}">
                     ${contentHtml}
                   </div>
                 </div>
