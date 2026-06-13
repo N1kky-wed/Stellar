@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timedelta
 import pytz
 import subprocess
-from typing import Optional, Dict, Any
+from typing import Optional, List, Dict, Any
 
 import orchestrator.config as config
 from orchestrator.state import StateDB
@@ -206,6 +206,9 @@ class OrchestratorEngine:
 
     def _tick(self):
         now = datetime.now(IST)
+        
+        # Check and execute memory summarization if due
+        self._check_memory_summarization(now)
         
         # Verify container is running
         if not container.is_container_running():
@@ -798,3 +801,190 @@ class OrchestratorEngine:
             finally:
                 if os.path.exists(host_outbox_path):
                     os.remove(host_outbox_path)
+
+    def _check_memory_summarization(self, now: datetime):
+        """Check if memory summarization is due (every 12 hours) and run it."""
+        stored = self.state_db.get_state("last_memory_summarization_time")
+        is_due = False
+        if not stored:
+            # First time running, let's trigger it
+            is_due = True
+        else:
+            try:
+                last_time = datetime.fromisoformat(stored)
+                if last_time.tzinfo is None:
+                    last_time = IST.localize(last_time)
+                if (now - last_time) >= timedelta(hours=12):
+                    is_due = True
+            except Exception as e:
+                logger.error("Failed to parse last_memory_summarization_time: %s", e)
+                is_due = True
+
+        if is_due:
+            logger.info("Memory summarization is due. Running now...")
+            try:
+                self._run_memory_summarization()
+                self.state_db.set_state("last_memory_summarization_time", now.isoformat())
+                logger.info("Memory summarization completed successfully.")
+            except Exception as e:
+                logger.error("Failed to execute memory summarization: %s", e, exc_info=True)
+
+    def _run_memory_summarization(self):
+        """Fetch unarchived memories, summarize them using gemini-3.5-flash to update or create facts."""
+        with self.memory_db._get_conn() as conn:
+            rows = conn.execute("""
+                SELECT * FROM agent_memories
+                WHERE archived = 0
+                ORDER BY id ASC
+            """).fetchall()
+            memories = [dict(r) for r in rows]
+
+        if not memories:
+            logger.info("No unarchived memories found. Skipping memory summarization.")
+            return
+
+        active_facts = self.memory_db.get_active_facts()
+
+        # Get API keys from environment
+        raw_keys = []
+        if os.environ.get("PRIMARY_API_KEY"):
+            raw_keys.append(os.environ["PRIMARY_API_KEY"])
+        for k in sorted(os.environ.keys()):
+            if k.startswith("BACKUP_API_KEY_"):
+                raw_keys.append(os.environ[k])
+
+        # Deduplicate keys while preserving order
+        keys_to_try = []
+        for key in raw_keys:
+            if key and key not in keys_to_try:
+                keys_to_try.append(key)
+
+        if not keys_to_try:
+            logger.error("No API keys found in environment variables for memory summarization.")
+            return
+
+        from google import genai
+        from google.genai import types
+        from pydantic import BaseModel, Field
+
+        class FactItem(BaseModel):
+            id: Optional[int] = Field(None, description="The ID of the existing active fact if this updates or supersedes it, otherwise null.")
+            fact: str = Field(description="The semantic fact, constraint, architecture detail, convention, or bug pattern.")
+            category: str = Field(description="The category of the fact. Must be one of: 'constraint', 'convention', 'architecture', 'bug_pattern'.")
+
+        class FactList(BaseModel):
+            facts: List[FactItem] = Field(description="List of semantic facts extracted or synthesized from the provided memories.")
+
+        memories_formatted = ""
+        for m in memories:
+            memories_formatted += (
+                f"- [ID: {m['id']}] Agent: {m['agent_id']}, Type: {m['memory_type']}, Scope: {m['scope']}, "
+                f"Content: {m['content']}, Created: {m['created_at']}\n"
+            )
+
+        active_facts_formatted = ""
+        for f in active_facts:
+            active_facts_formatted += f"- [ID: {f['id']}] [{f['category']}] {f['fact']}\n"
+
+        prompt = (
+            "You are the memory summarization system for a team of autonomous software engineering agents.\n"
+            "Your task is to analyze a list of raw, unarchived agent memories and the current list of active facts. "
+            "You need to produce a list of updated or new facts that synthesize the raw memories.\n\n"
+            "Existing Active Facts:\n"
+            f"{active_facts_formatted if active_facts_formatted else '(None)'}\n\n"
+            "New Raw Memories:\n"
+            f"{memories_formatted}\n\n"
+            "Instructions:\n"
+            "1. Synthesize the new raw memories into high-level, meaningful, and actionable facts.\n"
+            "2. If a new memory updates, refines, or supersedes one of the 'Existing Active Facts', output a fact item "
+            "containing the `id` of that active fact. The system will archive the old fact and link it to this new one.\n"
+            "3. If a memory introduces a brand new constraint, convention, architectural decision, or bug pattern that "
+            "does not relate to any existing fact, output it with `id` set to null (or omit it).\n"
+            "4. Each fact MUST belong to one of these categories: 'constraint', 'convention', 'architecture', 'bug_pattern'.\n"
+            "5. Return the result as a JSON object matching the requested schema."
+        )
+
+        model_id = "gemini-3.5-flash"
+        client = None
+        resp = None
+        last_err = None
+
+        for key in keys_to_try:
+            try:
+                masked_key = key[:4] + "..." + key[-4:] if len(key) > 8 else "..."
+                logger.info("Attempting summarization with API key %s", masked_key)
+                client = genai.Client(api_key=key, http_options={'api_version': 'v1beta'})
+                
+                resp = client.models.generate_content(
+                    model=model_id,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=FactList,
+                        temperature=0.1,
+                    )
+                )
+                if resp and resp.text:
+                    break
+            except Exception as e:
+                logger.warning("Gemini summarization API call failed: %s", e)
+                last_err = e
+
+        if not resp or not resp.text:
+            raise RuntimeError(f"All API keys failed for memory summarization. Last error: {last_err}")
+
+        try:
+            result = json.loads(resp.text)
+        except Exception as je:
+            logger.error("Failed to parse JSON response from Gemini: %s", resp.text)
+            raise je
+
+        facts_data = result.get("facts", [])
+        logger.info("Successfully synthesized %d facts from %d memories.", len(facts_data), len(memories))
+
+        for item in facts_data:
+            fact_id = item.get("id")
+            fact_content = item.get("fact")
+            category = item.get("category")
+
+            if not fact_content or not category:
+                continue
+
+            if fact_id is not None:
+                try:
+                    new_fid = self.memory_db.update_fact(
+                        fact_id=int(fact_id),
+                        new_fact=fact_content,
+                        updated_by="orchestrator",
+                        category=category
+                    )
+                    if new_fid != -1:
+                        logger.info("Fact ID %s updated/superseded by new Fact ID %d", fact_id, new_fid)
+                    else:
+                        new_fid = self.memory_db.add_fact(
+                            fact=fact_content,
+                            added_by="orchestrator",
+                            category=category
+                        )
+                        logger.info("Fact ID %s not found. Added as new Fact ID %d", fact_id, new_fid)
+                except Exception as fe:
+                    logger.error("Error updating fact ID %s: %s", fact_id, fe)
+            else:
+                new_fid = self.memory_db.add_fact(
+                    fact=fact_content,
+                    added_by="orchestrator",
+                    category=category
+                )
+                logger.info("Added new Fact ID %d", new_fid)
+
+        memory_ids = [m["id"] for m in memories]
+        with self.memory_db._get_conn() as conn:
+            placeholders = ",".join("?" for _ in memory_ids)
+            conn.execute(f"""
+                UPDATE agent_memories
+                SET archived = 1
+                WHERE id IN ({placeholders})
+            """, memory_ids)
+            conn.commit()
+
+        logger.info("Archived %d summarized memories.", len(memory_ids))
