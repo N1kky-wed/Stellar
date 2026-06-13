@@ -960,35 +960,66 @@ Tests mock Docker and external API calls to run without live infrastructure.
 ## Project Structure
 
 ```
-my_app/
-├── app.py                  # Main Flask application, routes, scheduling daemon, GlobalKeyManager
-├── agent_tools.py          # All agent tool implementations (15 tools, ~2300 lines)
-├── prompts.py              # System prompt construction, persona definitions
-├── dockersetup.py          # Docker image build and network initialization script
-├── webscrapper.py          # Lightweight web scraping utility
-├── send_email.py           # Standalone email utility
-├── telegram_bot.py         # Telegram notification bot for login alerts
-├── issue_resolver.py       # Background subprocess for processing agent_feedback
-├── requirements.txt        # Pinned Python dependencies
-├── keys.env                # ⚠️ Secret keys and configuration (never commit this)
-├── encryption.key          # ⚠️ Fernet key file (never commit this)
-├── vapid_private.pem       # ⚠️ VAPID private key for Web Push (never commit this)
-├── stellar_local.db        # SQLite database (WAL mode)
-├── deploy/
-│   ├── gunicorn_stellar.service   # systemd unit file
-│   └── nginx_stellar.conf         # Nginx reverse proxy config
-├── credentials/            # Gemini CLI OAuth credentials per account
+Stellar/
+├── app.py                      # Main Flask application, routes, scheduling daemon, GlobalKeyManager
+├── agent_tools.py              # All agent tool implementations (15 tools, ~2300 lines)
+├── prompts.py                  # System prompt construction, persona definitions
+├── sentinel_healer.py          # Autonomous self-healing daemon for user deployments
+├── ssh_gateway.py              # Secure SSH TUI Gateway server for sandboxed container shell access
+├── dockersetup.py              # Docker image build and network initialization script
+├── webscrapper.py              # Lightweight web scraping utility
+├── telegram_bot.py             # Telegram notification bot for login alerts
+├── issue_resolver.py           # Background subprocess for processing agent_feedback
+├── pytest.ini                  # Pytest configuration file
+├── requirements.txt            # Pinned Python dependencies
+├── keys.env                    # ⚠️ Secret keys and configuration (never commit this)
+├── encryption.key              # ⚠️ Fernet key file (never commit this)
+├── vapid_private.pem           # ⚠️ VAPID private key for Web Push (never commit this)
+├── stellar_local.db            # SQLite database (WAL mode)
+├── agents/                     # System instruction prompt files for specialized autonomous agents
+│   ├── bolt.md                 # Bolt (Performance & Stability Engineer) prompt
+│   ├── lucios.md               # Lucios (Observability Engineer) prompt
+│   ├── newton.md               # Newton (Test Suite Engineer) prompt
+│   ├── palette.md              # Palette (UI/UX Engineer) prompt
+│   ├── proton.md               # Proton (Documentation Engineer) prompt
+│   └── sentinel.md             # Sentinel (Security Engineer) prompt
+├── orchestrator/               # Autonomous agent orchestration loop & pipelines
+│   ├── __init__.py             # Package initialization
+│   ├── __main__.py             # Orchestrator daemon entrypoint and execution loop
+│   ├── config.py               # Orchestrator config, pipeline execution schedules, and timeouts
+│   ├── container.py            # Subprocess and docker wrapper for running sandbox tasks
+│   ├── engine.py               # Orchestration workflow loop and verification coordinator
+│   ├── memory.py               # Shared memory DB interface (memories, DMs, tasks, facts)
+│   └── state.py                # Run state logger tracking execution statuses and PR updates
+├── deploy/                     # Deployment service units and configurations
+│   ├── gunicorn_stellar.service   # Systemd service unit for Gunicorn web server
+│   ├── nginx_stellar.conf         # Nginx reverse proxy config
+│   ├── stellar-ssh.service        # Systemd service unit for custom SSH gateway TUI
+│   └── stellar_orchestrator.service # Systemd service unit for the Autonomous Orchestrator
+├── dockerfiles/                # Sandbox environments and language-specific Dockerfiles
+│   ├── Dockerfile.lab          # Core lab sandbox image with baseline tools
+│   └── Dockerfile.<lang>       # Dockerfiles for specific languages (C, C++, Go, Java, Py, Node, etc.)
+├── git-hooks/                  # Git hooks
+│   └── pre-push                # Runs pytest suite validation checks before push
+├── credentials/                # Gemini CLI OAuth credentials per account
 │   └── account_X/
-├── static/
-│   ├── main.css            # Core stylesheet
-│   ├── main.js             # Core frontend logic (SSE, chat, interrupts)
-│   ├── manifest.json       # PWA manifest
-│   └── service-worker.js   # Push notification and offline caching
-├── templates/              # Jinja2 HTML templates
-├── uploads/                # User-uploaded files (per chat session)
-├── outputs/                # Generated files (images, PDFs, presentations)
-├── sandbox_runs/           # Lab container workspace directories (host-side)
-└── tests/                  # pytest test suite
+├── static/                     # Static assets (CSS, JS, manifest, vendor libraries)
+│   ├── main.css                # Core stylesheet
+│   ├── main.js                 # Core frontend logic (SSE, chat, interrupts)
+│   ├── manifest.json           # PWA manifest
+│   ├── service-worker.js       # Push notification and offline caching
+│   ├── custom_select.js/.css   # Custom interactive selection UI components
+│   └── marked.min.js/turndown.js/highlight.min.js # Markdown, HTML parsing & code highlight libraries
+├── templates/                  # Jinja2 HTML templates
+│   ├── agent_group_chat.html   # Main Agent Hub interface template
+│   ├── index.html              # Main dashboard / landing page
+│   ├── login.html              # Login screen
+│   ├── sentinel_healing_overlay.html # Real-time self-healing logs dashboard
+│   └── waitlist.html           # Waitlist registration page
+├── uploads/                    # User-uploaded files (per chat session)
+├── outputs/                    # Generated files (images, PDFs, presentations)
+├── sandbox_runs/               # Lab container workspace directories (host-side)
+└── tests/                      # pytest unit, integration, and extended test suite
 ```
 
 ---
