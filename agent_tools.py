@@ -719,6 +719,8 @@ def compress_memory(target: str, state_document: str, status: str, timeout: int)
             return "Error: state_document is too short. You must write a thorough summary of the current state before compressing."
         
         conn = sqlite3.connect(DATABASE_NAME)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
         conn.row_factory = sqlite3.Row
         tools_archived = 0
         msgs_archived = 0
@@ -832,6 +834,8 @@ def logs_and_preferences(status: str, timeout: int, write: str = "", user_id: st
             return "Error: 'write' string was empty."
 
         conn = sqlite3.connect(DATABASE_NAME)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
         cursor = conn.cursor()
         
         # Insert new log
@@ -1798,6 +1802,8 @@ def obtain_talent(talent_names: list[str], status: str, timeout: int, search_que
     db_path = os.path.join(os.path.dirname(__file__), 'stellar_local.db')
     try:
         conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
         c = conn.cursor()
         
         results = []
@@ -1846,6 +1852,8 @@ def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = N
     try:
         from app import DATABASE_NAME
         conn = sqlite3.connect(DATABASE_NAME)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
         conn.row_factory = sqlite3.Row
         cursor = conn.execute('SELECT result FROM tool_calls WHERE id = ?', (output_id,))
         row = cursor.fetchone()
