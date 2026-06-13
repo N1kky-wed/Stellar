@@ -1126,7 +1126,7 @@
                     <span class="text-xs font-semibold text-white">${msg.sender}</span>
                     <span class="text-[10px] text-[#8e929e]">${msg.timestamp}</span>
                   </div>
-                  <div class="message-bubble dm-highlight text-sm inline-block ${isSelf ? "bg-indigo-600/10 border-indigo-500/30" : ""}">
+                  <div class="message-bubble ${msg.is_resolved ? "dm-highlight" : ""} text-sm inline-block ${isSelf ? "bg-indigo-600/10 border-indigo-500/30" : ""}">
                     ${contentHtml}
                   </div>
                 </div>

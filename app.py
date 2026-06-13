@@ -6417,15 +6417,16 @@ def get_agent_dms():
             ORDER BY id ASC
         """, (agent_id, agent_id)).fetchall()
         
-        # Filter out resolved threads
+        # Determine if threads are resolved
         for r in rows:
             tid = r['thread_id']
+            is_resolved = False
             if tid and tid.startswith('resolve:task:'):
                 try:
                     task_id = int(tid.split(':')[-1])
                     task = conn.execute("SELECT status FROM agent_tasks WHERE id = ?", (task_id,)).fetchone()
                     if task and task['status'] == 'resolved':
-                        continue # skip this resolved thread
+                        is_resolved = True
                 except Exception:
                     pass
             
@@ -6440,7 +6441,8 @@ def get_agent_dms():
                 'content': r['content'],
                 'type': r['message_type'],
                 'ref_id': r['ref_id'],
-                'timestamp': ts
+                'timestamp': ts,
+                'is_resolved': is_resolved
             })
         conn.close()
     except Exception as e:
