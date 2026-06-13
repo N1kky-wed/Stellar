@@ -633,6 +633,8 @@ class OrchestratorEngine:
                 ts = dm['created_at'].replace('T', ' ').split('.')[0]
                 context_lines.append(f"- [{sender} → You] ({ts})")
                 context_lines.append(f"  \"{dm['content']}\"")
+                if dm['thread_id']:
+                    context_lines.append(f"  Thread ID: {dm['thread_id']}")
                 if dm['ref_id']:
                     context_lines.append(f"  Reference: {dm['ref_id']}")
         else:

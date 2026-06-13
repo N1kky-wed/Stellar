@@ -6473,7 +6473,23 @@ def send_agent_message():
     try:
         now_str = datetime.datetime.now().isoformat()
         conn = sqlite3.connect(db_path)
-        conn.execute("""
+        cursor = conn.cursor()
+        
+        # Auto-create task for DMs if thread_id is resolve:task:<id> and does not exist yet
+        if channel == 'dm' and thread_id and thread_id.startswith('resolve:task:'):
+            try:
+                task_id = int(thread_id.split(':')[-1])
+                existing = cursor.execute("SELECT id FROM agent_tasks WHERE id = ?", (task_id,)).fetchone()
+                if not existing:
+                    title = content[:50] + ("..." if len(content) > 50 else "")
+                    cursor.execute("""
+                        INSERT INTO agent_tasks (id, title, description, created_by, assigned_to, status, priority, created_at, updated_at)
+                        VALUES (?, ?, ?, 'admin', ?, 'open', 'normal', ?, ?)
+                    """, (task_id, title, content, recipient_id, now_str, now_str))
+            except Exception as te:
+                logger.error(f"Error auto-creating task for DM message: {te}")
+                
+        cursor.execute("""
             INSERT INTO agent_messages (channel, thread_id, sender_id, recipient_id, content, message_type, created_at)
             VALUES (?, ?, 'admin', ?, ?, 'text', ?)
         """, (channel, thread_id, recipient_id, content, now_str))
