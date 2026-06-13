@@ -122,3 +122,46 @@ def test_send_message_exception(mock_post, mock_env):
     # Should not raise exception
     bot.send_message("Hello Test")
 
+
+def test_get_updates_no_token():
+    """Asserts that get_updates returns None early when token is not set."""
+    bot = TelegramBot(token=None)
+    bot.token = None # Force override
+    assert bot.get_updates() is None
+
+
+def test_discover_chat_id_already_set():
+    """Asserts that _discover_chat_id returns early if chat_id is already set."""
+    bot = TelegramBot(token="fake_token", default_chat_id="already_set")
+    assert bot._discover_chat_id() == "already_set"
+
+
+@patch('telegram_bot.requests.get')
+def test_discover_chat_id_no_private_chats(mock_get):
+    """Asserts that _discover_chat_id returns None if no private chat updates exist."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "ok": True,
+        "result": [
+            {"message": {"chat": {"id": 111, "type": "group"}}}
+        ]
+    }
+    mock_get.return_value = mock_response
+
+    bot = TelegramBot(token="fake_token", default_chat_id=None)
+    assert bot._discover_chat_id() is None
+
+
+@patch('telegram_bot.requests.get')
+def test_send_message_discover_fails(mock_get):
+    """Asserts that send_message returns early if chat_id discovery fails."""
+    # get_updates returns no updates
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"ok": True, "result": []}
+    mock_get.return_value = mock_response
+
+    bot = TelegramBot(token="fake_token", default_chat_id=None)
+    # This should call _discover_chat_id which returns None, then return without sending
+    bot.send_message("Hello Test")
+
+
