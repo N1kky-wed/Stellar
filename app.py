@@ -1656,6 +1656,8 @@ def upload_files():
             file.save(filepath)
             successful_uploads.append(filename)
 
+    logger.info("Uploaded files saved context_id=%s count=%d files=%s", context_id, len(successful_uploads), successful_uploads)
+
     return jsonify({
         'status': f"Saved {len(successful_uploads)} file(s) locally.",
         'uploaded_files': successful_uploads
@@ -4213,6 +4215,8 @@ def toggle_user_access():
         db.execute("UPDATE users SET is_approved = ? WHERE id = ?", (1 if new_status else 0, user_id))
         db.commit()
 
+        logger.info("User access toggled by admin admin_user_id=%s target_user_id=%s new_status=%s", session.get('user_id'), user_id, new_status)
+
         recipient = user['username'] if '@' in user['username'] else None
         if recipient:
             req_id = g.request_id if getattr(g, 'request_id', None) else 'system'
@@ -4227,7 +4231,7 @@ def toggle_user_access():
 
         return jsonify({'success': True}), 200
     except Exception as e:
-        logger.exception("Error caught: %s", e)
+        logger.exception("Error toggling user access target_user_id=%s: %s", user_id, e)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/admin/approve', methods=['POST'])
@@ -4252,6 +4256,8 @@ def approve_user():
         db.execute("UPDATE users SET is_approved = 1 WHERE id = ?", (user_id,))
         db.commit()
 
+        logger.info("User approved by admin admin_user_id=%s target_user_id=%s username=%s", session.get('user_id'), user_id, user['username'])
+
         # If user_email is not provided, try to use username if it looks like an email
         recipient = user_email or (user['username'] if '@' in user['username'] else None)
 
@@ -4264,6 +4270,7 @@ def approve_user():
 
         return jsonify({'success': True, 'message': f"User {user['username']} approved."}), 200
     except sqlite3.Error as e:
+        logger.error("Database error in approve_user error=%s", e, exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/admin/impersonate', methods=['POST'])
@@ -4282,6 +4289,7 @@ def admin_impersonate():
     if not user:
          return jsonify({'error': 'User not found'}), 404
 
+    admin_user_id = session.get('user_id')
     session['user_id'] = user['id']
     session['username'] = user['username']
     session['display_name'] = user['display_name']
@@ -4289,6 +4297,7 @@ def admin_impersonate():
     session['is_approved'] = bool(user['is_approved'])
     session.pop('current_chat_id', None)
 
+    logger.warning("Admin impersonated user admin_user_id=%s target_user_id=%s username=%s", admin_user_id, user['id'], user['username'])
     return jsonify({'success': True, 'message': f"Impersonating {user['username']}"}), 200
 
 @app.route('/logout', methods=['POST'])
@@ -4303,7 +4312,9 @@ def logout_user():
                 prefix = app.config.get('SESSION_KEY_PREFIX', 'session:')
                 app.session_interface.redis.delete(prefix + sid)
     except Exception as e:
-        logger.warning(f"Could not delete Redis session on logout: {e}")
+        logger.warning("Could not delete Redis session on logout error=%s", e)
+    
+    logger.info("User logged out successfully username=%s", session.get('username'))
     session.clear()
     response = jsonify({"success": True, "message": "Logged out successfully."})
     # Explicitly expire the session cookie so browser drops it immediately
@@ -4872,6 +4883,7 @@ def ssh_generate_code():
 
     # Format as XXX-XXX for display
     display_code = f'{code[:3]}-{code[3:]}'
+    logger.info("SSH auth code generated user_id=%s username=%s", user_id, username)
     return jsonify({'code': display_code}), 200
 
 @app.route('/api/ssh/verify-code', methods=['POST'])
@@ -4880,6 +4892,7 @@ def ssh_verify_code():
     gateway_secret = os.environ.get('SSH_GATEWAY_SECRET', 'stellar-ssh-internal-2024')
     data = request.get_json(silent=True)
     if not data or data.get('secret') != gateway_secret:
+        logger.warning("SSH code verification unauthorized client_ip=%s", request.remote_addr or 'unknown')
         return jsonify({'valid': False, 'error': 'Unauthorized'}), 403
 
     # Rate limit failed attempts per IP
@@ -4887,10 +4900,12 @@ def ssh_verify_code():
     fail_key = f'ssh_verify_fail:{client_ip}'
     fail_count = redis_client.get(fail_key)
     if fail_count and int(fail_count) >= _SSH_VERIFY_FAIL_LIMIT:
+        logger.warning("SSH code verification rate limited client_ip=%s", client_ip)
         return jsonify({'valid': False, 'error': 'Too many failed attempts. Try again later.'}), 429
 
     raw_code = data.get('code', '').upper().replace('-', '').replace(' ', '')
     if not raw_code or len(raw_code) != _SSH_CODE_LENGTH:
+        logger.warning("SSH code verification invalid code client_ip=%s", client_ip)
         return jsonify({'valid': False}), 200
 
     code_key = f'ssh_auth_code:{raw_code}'
@@ -4901,6 +4916,7 @@ def ssh_verify_code():
         pipe.incr(fail_key)
         pipe.expire(fail_key, _SSH_VERIFY_FAIL_WINDOW)
         pipe.execute()
+        logger.warning("SSH code verification invalid code client_ip=%s", client_ip)
         return jsonify({'valid': False}), 200
 
     # Valid code - delete it (one-time use) and decrement user counter
@@ -4916,6 +4932,7 @@ def ssh_verify_code():
     except (json.JSONDecodeError, KeyError):
         parsed = {}
 
+    logger.info("SSH code verification success client_ip=%s user_id=%s username=%s", client_ip, parsed.get('user_id'), parsed.get('username'))
     return jsonify({
         'valid': True,
         'user_id': parsed.get('user_id'),
@@ -5015,12 +5032,13 @@ def create_new_chat():
         session['current_chat_id'] = new_chat_id
         session.modified = True
 
+        logger.info("Chat created user_id=%s chat_id=%s", user_id, new_chat_id)
         return jsonify({'success': True, 'chat_id': new_chat_id, 'name': 'New Chat'}), 201
     except sqlite3.Error as e:
-        logger.error(f"Database error in create_new_chat: {e}", exc_info=True)
+        logger.error("Database error in create_new_chat error=%s", e, exc_info=True)
         return jsonify({'error': f'Database error: {str(e)}'}), 500
     except Exception as e:
-        logger.error(f"Unexpected error in create_new_chat: {e}", exc_info=True)
+        logger.error("Unexpected error in create_new_chat error=%s", e, exc_info=True)
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/chats/new_temp', methods=['POST'])
@@ -5041,9 +5059,10 @@ def create_temp_chat():
         session['current_chat_id'] = new_chat_id
         session.modified = True
 
+        logger.info("Temporary chat created user_id=%s chat_id=%s", user_id, new_chat_id)
         return jsonify({'success': True, 'chat_id': new_chat_id}), 201
     except Exception as e:
-        logger.error(f"Error in create_temp_chat: {e}", exc_info=True)
+        logger.error("Error in create_temp_chat error=%s", e, exc_info=True)
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/set_active_chat', methods=['POST'])
@@ -5064,6 +5083,7 @@ def set_active_chat():
     session['current_chat_id'] = chat_id
     session.modified = True
 
+    logger.info("Active chat set user_id=%s chat_id=%s", user_id, chat_id)
     return jsonify({'success': True, 'message': f'Active chat set to {chat_id}'})
 @app.route('/api/chats/<int:chat_id>/delete', methods=['DELETE'])
 @require_approval
@@ -5084,7 +5104,7 @@ def delete_chat_route(chat_id):
                 if q_id:
                     redis_client.setex(f"stop_flag:{q_id}", 3600, "1")
             except Exception as parse_err:
-                logger.error(f"Failed to parse active query data from Redis during delete: {parse_err}")
+                logger.error("Failed to parse active query data from Redis during delete error=%s", parse_err)
             redis_client.delete(f"chat_active_query:{chat_id}")
 
         db.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
@@ -5096,12 +5116,13 @@ def delete_chat_route(chat_id):
             session.pop('current_chat_id', None)
             session.modified = True
 
+        logger.info("Chat deleted user_id=%s chat_id=%s", user_id, chat_id)
         return jsonify({'success': True, 'message': 'Chat deleted successfully.'}), 200
     except sqlite3.Error as e:
-        logger.error(f"Database error in delete_chat_route: {e}", exc_info=True)
+        logger.error("Database error in delete_chat_route error=%s", e, exc_info=True)
         return jsonify({'error': f'Database error: {str(e)}'}), 500
     except Exception as e:
-        logger.error(f"Unexpected error in delete_chat_route: {e}", exc_info=True)
+        logger.error("Unexpected error in delete_chat_route error=%s", e, exc_info=True)
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/chats/<int:chat_id>/name', methods=['POST'])

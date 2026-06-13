@@ -146,7 +146,7 @@ def _docker_status_refresher():
             with _cache_lock:
                 _container_statuses_cache = new_cache
         except Exception as e:
-            logger.error(f"Failed to list containers in background: {e}")
+            logger.error("Failed to list containers in background error=%s", e)
         # Wait for 2 seconds or until woken up (e.g. by cache invalidation)
         _refresh_event.wait(timeout=2.0)
         _refresh_event.clear()
@@ -167,7 +167,7 @@ def start_refresher_thread_if_needed():
                     global _container_statuses_cache
                     _container_statuses_cache = {c.name: c.status for c in containers}
                 except Exception as e:
-                    logger.error(f"Initial container status fetch failed: {e}")
+                    logger.error("Initial container status fetch failed error=%s", e)
                 
                 t = threading.Thread(target=_docker_status_refresher, daemon=True, name="docker-status-refresher")
                 t.start()
@@ -251,7 +251,7 @@ class RateLimiter:
                 self.r.expire(key, RATE_LIMIT_WINDOW)
             return count <= RATE_LIMIT_CONNECTIONS
         except Exception as e:
-            logger.error(f"Rate limiter Redis error: {e}")
+            logger.error("Rate limiter Redis error error=%s", e)
             return True  # Fail open to avoid lockout on Redis issues
 
     def record_auth_failure(self, ip: str) -> int:
@@ -333,7 +333,7 @@ def get_user_repos(user_id: int) -> list:
                 'app_type': row['app_type'] or 'forge',
             })
     except Exception as e:
-        logger.error(f"DB error fetching repos for user {user_id}: {e}")
+        logger.error("DB error fetching repos user_id=%s error=%s", user_id, e)
     finally:
         if conn:
             try:
@@ -441,7 +441,7 @@ def verify_auth_code(code: str) -> dict | None:
             return user_data
         return None
     except Exception as e:
-        logger.error(f"Auth code verification error: {e}")
+        logger.error("Auth code verification error error=%s", e)
         return None
 
 
@@ -482,7 +482,7 @@ class StellarSSHServer(paramiko.ServerInterface):
         """
         if kind == 'session':
             return paramiko.OPEN_SUCCEEDED
-        logger.warning(f"Rejected channel request kind='{kind}' from {self.client_addr}")
+        logger.warning("Rejected channel request kind=%s from=%s", kind, self.client_addr)
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
     def check_auth_none(self, username):
@@ -602,7 +602,7 @@ class StellarSSHServer(paramiko.ServerInterface):
         Returns:
             bool: False.
         """
-        logger.warning(f"BLOCKED port forward request from {self.client_addr}: {address}:{port}")
+        logger.warning("BLOCKED port forward request from=%s target=%s:%s", self.client_addr, address, port)
         return False
 
     def check_channel_direct_tcpip_request(self, chanid, origin, destination):
@@ -617,7 +617,7 @@ class StellarSSHServer(paramiko.ServerInterface):
         Returns:
             int: paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED.
         """
-        logger.warning(f"BLOCKED direct-tcpip from {self.client_addr}: {origin} -> {destination}")
+        logger.warning("BLOCKED direct-tcpip from=%s origin=%s destination=%s", self.client_addr, origin, destination)
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
     def check_channel_env_request(self, channel, name, value):
@@ -648,7 +648,7 @@ class StellarSSHServer(paramiko.ServerInterface):
         Returns:
             bool: False.
         """
-        logger.warning(f"BLOCKED X11 forwarding from {self.client_addr}")
+        logger.warning("BLOCKED X11 forwarding from=%s", self.client_addr)
         return False
 
     def check_channel_forward_agent_request(self, channel):
@@ -661,7 +661,7 @@ class StellarSSHServer(paramiko.ServerInterface):
         Returns:
             bool: False.
         """
-        logger.warning(f"BLOCKED agent forwarding from {self.client_addr}")
+        logger.warning("BLOCKED agent forwarding from=%s", self.client_addr)
         return False
 
 
@@ -1409,7 +1409,7 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
         send_raw(channel, "\r\n\x1b[31m  Container not found. It may have been removed.\x1b[0m\r\n")
         time.sleep(1.5)
     except Exception as e:
-        logger.error(f"Shell attach error for {container_name}: {e}", exc_info=True)
+        logger.error("Shell attach error container_name=%s error=%s", container_name, e, exc_info=True)
         send_raw(channel, f"\r\n\x1b[31m  Error: {str(e)[:80]}\x1b[0m\r\n")
         time.sleep(1.5)
 
@@ -1453,7 +1453,7 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
     except docker.errors.NotFound:
         return "✗ Container not found"
     except Exception as e:
-        logger.error(f"Container restart failed for process_id={process_id}: {e}", exc_info=True)
+        logger.error("Container restart failed process_id=%s error=%s", process_id, e, exc_info=True)
         return f"✗ Restart failed: {str(e)[:60]}"
 
 
@@ -1490,7 +1490,7 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
     except docker.errors.NotFound:
         return "✗ Container not found"
     except Exception as e:
-        logger.error(f"Container stop failed for process_id={process_id}: {e}", exc_info=True)
+        logger.error("Container stop failed process_id=%s error=%s", process_id, e, exc_info=True)
         return f"✗ Stop failed: {str(e)[:60]}"
 
 
@@ -1527,7 +1527,7 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
     except docker.errors.NotFound:
         return "✗ Container not found"
     except Exception as e:
-        logger.error(f"Container start failed for process_id={process_id}: {e}", exc_info=True)
+        logger.error("Container start failed process_id=%s error=%s", process_id, e, exc_info=True)
         return f"✗ Start failed: {str(e)[:60]}"
 
 
@@ -1554,7 +1554,7 @@ def load_theme(user_id=None):
             with open(theme_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception as e:
-        logger.error(f"Failed to load theme for user {user_id}: {e}")
+        logger.error("Failed to load theme user_id=%s error=%s", user_id, e)
     return {"theme_idx": 0, "border_idx": 0}
 
 def save_theme(user_id, theme_idx, border_idx):
@@ -1585,7 +1585,7 @@ def save_theme(user_id, theme_idx, border_idx):
             json.dump({"theme_idx": theme_idx, "border_idx": border_idx}, f)
         os.replace(temp_path, theme_path)
     except Exception as e:
-        logger.error(f"Failed to save theme for user {user_id}: {e}")
+        logger.error("Failed to save theme user_id=%s error=%s", user_id, e)
         try:
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -1606,7 +1606,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
     try:
         # Wait for shell request
         if not server.event.wait(timeout=10):
-            logger.warning(f"Client {client_addr} didn't request shell in time")
+            logger.warning("Client shell request timeout client_addr=%s", client_addr)
             return
 
         channel.settimeout(SESSION_IDLE_TIMEOUT)
@@ -1853,7 +1853,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                     
                     repos = get_filtered_sorted_repos(all_repos, status_map)
                 except Exception as e:
-                    logger.error(f"Error querying deployments: {e}")
+                    logger.error("Error querying deployments error=%s", e)
                 needs_refresh = False
                 last_refresh_time = time.time()
                 if selected_index >= len(repos):
@@ -2051,7 +2051,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
     except socket.timeout:
         audit.info(f"SESSION_SOCKET_TIMEOUT | ip={client_addr}")
     except Exception as e:
-        logger.error(f"Session error for {client_addr}: {e}", exc_info=True)
+        logger.error("Session error client_addr=%s error=%s", client_addr, e, exc_info=True)
     finally:
         send_raw(channel, '\x1b[?1049l\x1b[?25h') # Ensure exit alt screen
         try:
@@ -2090,7 +2090,7 @@ def handle_connection(client_socket, client_addr):
 
     with sessions_lock:
         if active_sessions >= MAX_CONCURRENT_SESSIONS:
-            logger.warning(f"Max concurrent sessions reached ({MAX_CONCURRENT_SESSIONS}), rejecting {ip}")
+            logger.warning("Max concurrent sessions reached concurrent_limit=%s ip=%s", MAX_CONCURRENT_SESSIONS, ip)
             client_socket.close()
             return
         active_sessions += 1
@@ -2115,20 +2115,20 @@ def handle_connection(client_socket, client_addr):
         try:
             transport.start_server(server=server)
         except paramiko.SSHException as e:
-            logger.error(f"SSH negotiation failed for {ip}: {e}")
+            logger.error("SSH negotiation failed ip=%s error=%s", ip, e)
             return
 
         # Wait for a channel
         channel = transport.accept(timeout=20)
         if channel is None:
-            logger.warning(f"No channel opened by {ip}")
+            logger.warning("No channel opened by ip=%s", ip)
             return
 
         # Handle the session
         handle_session(channel, server, ip)
 
     except Exception as e:
-        logger.error(f"Connection handler error for {ip}: {e}", exc_info=True)
+        logger.error("Connection handler error ip=%s error=%s", ip, e, exc_info=True)
     finally:
         if transport:
             try:
