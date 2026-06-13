@@ -55,7 +55,7 @@ class TelegramBot:
                 for update in reversed(results):
                     if "message" in update and "chat" in update["message"] and update["message"]["chat"]["type"] == "private":
                          self.chat_id = str(update["message"]["chat"]["id"])
-                         logger.info(f"Discovered Telegram Chat ID: {self.chat_id}")
+                         logger.info("Discovered Telegram Chat ID chat_id=%s", self.chat_id)
                          return self.chat_id
         return None
 

@@ -431,7 +431,7 @@ Please provide the corrected file contents to heal the application.
             k = active_keys[current_key_index]
             masked = k[:4] + "..." + k[-4:] if len(k) > 8 else k
             try:
-                logger.info(f"Attempting Gemini generation using key context: {masked}")
+                logger.info("Attempting Gemini generation using key context masked=%s", masked)
                 # Mirror gemini_generate exactly: create fresh client AND fresh chat on every rotation
                 client = genai.Client(api_key=k, http_options={'api_version': 'v1beta'})
                 chat_config = types.GenerateContentConfig(
@@ -460,17 +460,17 @@ Please provide the corrected file contents to heal the application.
                     raise ValueError("Empty response received from Gemini.")
 
                 gemini_response = SelfHealingPatch.model_validate_json(full_text)
-                logger.info(f"Gemini generation successful using key context: {masked}")
+                logger.info("Gemini generation successful using key context masked=%s", masked)
                 break
 
             except Exception as ge:
-                logger.error(f"Gemini API call failed with key context {masked}: {ge}")
+                logger.error("Gemini API call failed with key context masked=%s error=%s", masked, ge, exc_info=True)
                 last_genai_error = ge
                 err_str = str(ge).lower()
                 if '429' in err_str or 'quota' in err_str or 'resource_exhausted' in err_str:
                     KEY_MANAGER.block_key(k, "gemini-3.5-flash", 60, "RPM")
                     current_key_index += 1
-                    logger.warning(f"429 on key {masked}, rotating to next key ({current_key_index}/{len(active_keys)})")
+                    logger.warning("429 on key masked=%s rotating to next key (%d/%d)", masked, current_key_index, len(active_keys))
                     time.sleep(0.5)
                 elif '403' in err_str or 'permission_denied' in err_str or 'invalid' in err_str:
                     KEY_MANAGER.block_key(k, "gemini-3.5-flash", 3600, "INVALID")
@@ -616,7 +616,7 @@ Please provide the corrected file contents to heal the application.
         publish_log("healed", "Application healed successfully! Restoring subdomain access.", stage="Application Healed")
 
     except Exception as heal_err:
-        logger.error(f"Healer failure: {heal_err}", exc_info=True)
+        logger.error("Healer failure error=%s", heal_err, exc_info=True)
         publish_log("info", f"Error during healing: {heal_err}. Rolling back to baseline state...")
         
         if backup_dir and host_dir and os.path.exists(backup_dir):

@@ -220,7 +220,7 @@ If you successfully implement and verify a fix, reply exactly with 'STATUS: FIXE
 If you cannot resolve it, reply exactly with 'STATUS: ESCALATED'.
 Make sure your response ends with one of these statuses."""
 
-                logger.info(f"Running Bug Fixer Agent for issue {issue_id}")
+                logger.info("Running Bug Fixer Agent for issue_id=%d", issue_id)
 
                 accounts = get_available_accounts()
                 max_retries = len(accounts) if accounts else 1
@@ -253,10 +253,10 @@ Make sure your response ends with one of these statuses."""
                         output = re.sub(r'Ripgrep is not available\. Falling back to GrepTool\.\n?', '', output)
                         output = output.strip()
                         
-                        logger.info(f"Bug Fixer Agent Output for issue {issue_id} (Attempt {retry_count+1}):\n{output}")
+                        logger.info("Bug Fixer Agent Output issue_id=%d attempt=%d output=%s", issue_id, retry_count+1, output)
 
                         if any(kw in output.lower() for kw in ["quota", "429", "exhausted", "rate limit"]):
-                            logger.warning(f"Quota exhausted for account {accounts[active_idx] if accounts else 'default'}")
+                            logger.warning("Quota exhausted for account account=%s", accounts[active_idx] if accounts else 'default')
                             active_idx += 1
                             retry_count += 1
                             with open(ACTIVE_ACC_FILE, 'w') as f: f.write(str(active_idx))
