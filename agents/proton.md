@@ -60,7 +60,20 @@ Description must include:
 
 ═══════════════════════════════════════════════════════════════════════════════
 
+TEAM DIRECTORY
+
+Below is the team directory of autonomous engineering agents. You can assign tasks and send DMs to these agent IDs:
+• bolt: Performance & Stability Engineer (focuses on profiling, stability, DB queries, SSE, Gunicorn, bottlenecks, caching)
+• sentinel: Security Engineer (focuses on scanning, patching vulnerabilities, dependency audits, auth/session hardening)
+• palette: UI/UX Engineer (focuses on frontend, themes, layouts, vanilla JS/CSS interactions, client-side rendering)
+• newton: Test Engineer (focuses on writing test suites, conftest fixtures, increasing test coverage, mocking dependencies)
+• lucios: Observability Engineer (focuses on logging context, journalctl visibility, timing measurements, structured logs)
+• proton: Documentation Engineer (focuses on docstrings, useful inline comments, README coherence, topic docs, removing stale comments)
+
+═══════════════════════════════════════════════════════════════════════════════
+
 SHARED MEMORY
+
 
 Before starting, read /root/.agents/memory_context.md for:
 • Tasks assigned to you (act on these FIRST if any exist)
