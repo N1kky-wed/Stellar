@@ -525,6 +525,7 @@ def schedule_task(task_prompt: str, status: str, timeout: int, action: str = "sc
                (u_id, c_id, task_prompt, current_model, execute_at, recurring_minutes, metadata))
     new_id = cursor.lastrowid
     db.commit()
+    logger.info("Task scheduled task_id=%s user_id=%s chat_id=%s model_id=%s recurring_minutes=%s", new_id, u_id, c_id, current_model, recurring_minutes)
     return f"Task scheduled (ID: {new_id})! {current_model} is locked for this persistent automation."
 
 def generate_image(model: str, prompt: str, status: str, timeout: int, quality: str = "1K", aspect_ratio: str = "1:1", reference_images: list[str] = None) -> str:
@@ -678,6 +679,7 @@ def report_process_issue(topic: str, issue_description: str, technical_context: 
 
         conn.commit()
         conn.close()
+        logger.info("Agent feedback stored successfully user_id=%s chat_id=%s topic=%s", u_id, c_id, topic)
 
         import subprocess
         import os

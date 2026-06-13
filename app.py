@@ -152,8 +152,10 @@ def ensure_user_network(docker_client, user_id):
     except docker.errors.NotFound:
         try:
             docker_client.networks.create(network_name, driver="bridge", options={"com.docker.network.bridge.enable_icc": "false"})
-        except docker.errors.APIError:
-            pass # Ignore if created concurrently
+            logger.info("Created isolated Docker network network_name=%s user_id=%s", network_name, user_id)
+        except docker.errors.APIError as api_err:
+            logger.warning("Docker network creation skipped (likely concurrent creation) network_name=%s user_id=%s error=%s", network_name, user_id, api_err)
+            pass  # Ignore if created concurrently
     return network_name
 
 from telegram_bot import TelegramBot
@@ -1338,17 +1340,17 @@ def insert_message(chat_id, message_type, message_content,
                     }
                     redis_client.publish(f"user_events:{owner_id}", json.dumps(event_payload))
             except Exception as e:
-                logger.error(f"Failed to broadcast new message: {e}")
+                logger.error("Failed to broadcast new message chat_id=%s message_id=%s error=%s", chat_id, last_id, e)
 
             return last_id
         except sqlite3.OperationalError as e:
-            logger.error(f"Database error in insert_message (Attempt {attempt + 1}/{max_retries}): {e}", exc_info=True)
+            logger.error("Database error in insert_message attempt=%d/%d chat_id=%s message_type=%s error=%s", attempt + 1, max_retries, chat_id, message_type, e, exc_info=True)
             if attempt < max_retries - 1:
                 time.sleep(retry_delay_seconds)
             else:
                 return None
         except Exception as e:
-            logger.error(f"Unexpected error in insert_message: {e}", exc_info=True)
+            logger.error("Unexpected error in insert_message chat_id=%s message_type=%s error=%s", chat_id, message_type, e, exc_info=True)
             return None
 
 
@@ -3611,6 +3613,7 @@ def register_query():
         redis_client.setex(f"query_args:{query_id}", 3600 * 24, json.dumps(query_data))
         redis_client.setex(f"chat_active_query:{chat_id}", 3600 * 24, json.dumps({'query_id': query_id, 'mode': mode}))
 
+        logger.info("Query registered query_id=%s chat_id=%s model_id=%s mode=%s user_id=%s", query_id, chat_id, model_id, mode, session.get('user_id'))
         return jsonify({'query_id': query_id}), 200
 
     except Exception as e:
@@ -3654,13 +3657,14 @@ def refine_stream():
     is_running = redis_client.exists(f"stream_started:{query_id}")
 
     if not is_running:
+        logger.info("Starting new SSE stream query_id=%s chat_id=%s model_id=%s username=%s", query_id, chat_id, model_id, username)
         redis_client.setex(f"stream_started:{query_id}", 3600 * 24, "1")
 
         cancel_event = threading.Event()
         if chat_id:
             old_event = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
             if old_event:
-                logger.info(f"Dynamic interrupt/cancellation requested for chat_id: {chat_id}. Terminating old thread.")
+                logger.info("Dynamic interrupt/cancellation requested for chat_id: %s. Terminating old thread.", chat_id)
                 old_event.set()
             ACTIVE_CHATS_CANCEL_EVENTS[chat_id] = cancel_event
 
@@ -4085,6 +4089,8 @@ def background_thread_runner(app_obj, query_id, chat_id, cancel_event, task_func
     def run():
         if req_id:
             thread_local_ctx.request_id = req_id
+        t_bg_start = time.time()
+        logger.info("Background stream thread started query_id=%s chat_id=%s", query_id, chat_id)
         with app_obj.app_context():
             from flask import g
             if req_id:
@@ -4094,7 +4100,7 @@ def background_thread_runner(app_obj, query_id, chat_id, cancel_event, task_func
                     redis_client.rpush(f"stream_history:{query_id}", chunk)
                     redis_client.publish(f"stream:{query_id}", chunk)
             except Exception as e:
-                logger.error(f"Stream background task error for {query_id}: {e}", exc_info=True)
+                logger.error("Stream background task error query_id=%s error=%s", query_id, e, exc_info=True)
                 err_str = f"data: {json.dumps({'status': f'Internal Background Error: {str(e)}', 'error': True})}\n\n"
                 redis_client.rpush(f"stream_history:{query_id}", err_str)
                 redis_client.publish(f"stream:{query_id}", err_str)
@@ -4104,6 +4110,7 @@ def background_thread_runner(app_obj, query_id, chat_id, cancel_event, task_func
                 redis_client.rpush(f"stream_history:{query_id}", "__STREAM_END__")
                 redis_client.publish(f"stream:{query_id}", "__STREAM_END__")
                 redis_client.delete(f"chat_active_query:{chat_id}")
+                logger.info("Background stream thread finished query_id=%s chat_id=%s duration_sec=%.2f", query_id, chat_id, time.time() - t_bg_start)
     threading.Thread(target=run, daemon=True).start()
 
 @app.route('/api/messages/delete', methods=['POST'])
@@ -5795,10 +5802,11 @@ def send_push_notification(user_id, title, body, url=None):
     if expired_endpoints:
         try:
             r_client.hdel(redis_key, *expired_endpoints)
-            logger.info(f"Cleaned up {len(expired_endpoints)} expired push subscriptions from Redis.")
+            logger.info("Cleaned up expired push subscriptions user_id=%s count=%d", user_id, len(expired_endpoints))
         except Exception as e:
-            logger.error(f"Error cleaning up expired push subscriptions from Redis: {e}")
+            logger.error("Error cleaning up expired push subscriptions from Redis user_id=%s error=%s", user_id, e)
 
+    logger.info("Push notification dispatched user_id=%s title=%s success_count=%d total_endpoints=%d", user_id, title, success_count, len(subscriptions_dict))
     return success_count
 
 @app.route('/api/pwa/vapid_public_key', methods=['GET'])
@@ -7183,7 +7191,7 @@ class OrphanContainerMonitor:
                         except docker.errors.NotFound:
                             pass
                         except Exception as e:
-                            logger.error(f"Failed to remove orphan {container.short_id}: {e}")
+                            logger.error("OrphanContainerMonitor: Failed to remove orphan container_id=%s process_id=%s error=%s", container.short_id, process_id, e, exc_info=True)
                     else:
                         # Runtime Health Check for active apps
                         try:
@@ -7395,7 +7403,6 @@ def intercept_subdomains():
 
         if not app_info or not app_info.get("port"):
             return f"Application '{subdomain}' is stopped or unavailable. Start it in Repo Control.", 503
-
         # Critical Fix: Don't even try to proxy if we know it's exited
         if app_info.get("status") == "exited":
             return f"Application '{subdomain}' has stopped. Please restart it.", 404
@@ -7405,8 +7412,9 @@ def intercept_subdomains():
         target_url = f"http://127.0.0.1:{target_port}{path}"
 
         resp = None
+        t_proxy = time.time()
         try:
-            logger.debug(f"Proxying request for {subdomain} ({process_id}) to port {target_port}")
+            logger.info("Proxying request subdomain=%s process_id=%s target_port=%s method=%s path=%s", subdomain, process_id, target_port, request.method, request.path)
             # Strip the main session cookie to prevent user containers from hijacking the user's session
             proxy_cookies = {k: v for k, v in request.cookies.items() if k != 'stellar_session_main'}
             proxy_headers = {key: value for (key, value) in request.headers if key.lower() not in ['host', 'cookie']}
@@ -7420,6 +7428,7 @@ def intercept_subdomains():
                 stream=True,
                 timeout=3600
             )
+            logger.info("Proxy request completed subdomain=%s process_id=%s status=%d duration_sec=%.3f", subdomain, process_id, resp.status_code, time.time() - t_proxy)
 
             excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
             headers =[(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
@@ -7724,7 +7733,7 @@ class TaskSchedulerMonitor:
                             db.commit()
                         logger.info("Scheduled task completed successfully task_id=%d", t['id'])
                     except Exception as e:
-                        logger.error(f"Task Execution Failed (ID {t['id']}): {e}")
+                        logger.error("Scheduled task execution failed task_id=%d user_id=%d chat_id=%d error=%s", t['id'], t['user_id'], t['chat_id'], e, exc_info=True)
                         with self.app_instance.app_context():
                             db = get_db()
                             db.execute("UPDATE scheduled_tasks SET status = 'failed', lock_id = NULL WHERE id = ?", (t['id'],))
