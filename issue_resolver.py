@@ -89,14 +89,24 @@ def switch_account(account_name):
     Args:
         account_name (str): The name of the credentials directory to copy from.
     """
+    import time
+    t0 = time.time()
     config_dir = os.path.join(RESOLVER_HOME, ".gemini")
-    os.makedirs(config_dir, exist_ok=True)
-    src_dir = os.path.join(CREDENTIALS_BASE_DIR, account_name)
-    logger.info("Switching to account account_name=%s", account_name)
-    for f in os.listdir(src_dir):
-        if f.endswith(".json"):
-            import shutil
-            shutil.copy2(os.path.join(src_dir, f), os.path.join(config_dir, f))
+    try:
+        os.makedirs(config_dir, exist_ok=True)
+        src_dir = os.path.join(CREDENTIALS_BASE_DIR, account_name)
+        logger.info("Switching resolver account to account_name=%s", account_name)
+        copied_files = []
+        for f in os.listdir(src_dir):
+            if f.endswith(".json"):
+                import shutil
+                shutil.copy2(os.path.join(src_dir, f), os.path.join(config_dir, f))
+                copied_files.append(f)
+        duration = time.time() - t0
+        logger.info("Switched resolver account to account_name=%s copied_files=%s duration_sec=%.3f", account_name, copied_files, duration)
+    except Exception as e:
+        logger.error("Failed to switch resolver account to account_name=%s error=%s duration_sec=%.3f", account_name, str(e), time.time() - t0)
+        raise
 
 def main():
     """
@@ -112,8 +122,9 @@ def main():
     try:
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            logger.info("Lock acquired successfully. Starting issue resolver daemon.")
         except BlockingIOError:
-            logger.info("Another instance is running. Exiting.")
+            logger.info("Another instance of issue resolver is already running. Exiting.")
             sys.exit(0)
 
         from app import app
@@ -271,6 +282,9 @@ Make sure your response ends with one of these statuses."""
                         logger.exception("Error caught: %s", e)
                         output = f"Error running Bug Fixer Agent: {str(e)}\nSTATUS: ESCALATED"
                         break
+
+                if retry_count >= max_retries:
+                    logger.error("All available accounts exhausted/rate-limited for issue_id=%d", issue_id)
 
                 if "STATUS: MISHAP" in output:
                     final_status = 'temporary_mishap'

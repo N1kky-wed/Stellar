@@ -10,10 +10,17 @@ class StateDB:
         self._init_db()
 
     def _get_conn(self):
+        import time
+        import logging
+        t0 = time.time()
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA busy_timeout=5000;")
         conn.row_factory = sqlite3.Row
+        duration = time.time() - t0
+        if duration > 0.05:
+            logger = logging.getLogger("stellar-orchestrator")
+            logger.warning("Slow database connection path=%s duration_sec=%.3f", self.db_path, duration)
         return conn
 
     def _init_db(self):
