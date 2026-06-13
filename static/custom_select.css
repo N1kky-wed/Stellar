@@ -26,6 +26,13 @@
 .custom-select-trigger:hover {
   filter: brightness(1.1);
 }
+.custom-select-trigger:focus {
+  outline: none;
+  border-color: var(--model-color-start, #ffffff);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.25),
+    0 0 10px var(--model-color-shadow, rgba(0, 0, 0, 0.3));
+}
 .custom-select-options {
   position: absolute;
   bottom: 100%;
@@ -69,7 +76,8 @@
   text-align: center;
   transition: background 0.2s ease;
 }
-.custom-select-option:hover {
+.custom-select-option:hover,
+.custom-select-option.highlighted {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
