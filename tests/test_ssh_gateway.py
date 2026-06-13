@@ -324,3 +324,76 @@ def test_get_container_status(mock_get_all):
     assert ssh_gateway.get_container_status("proc2", "web") == "exited"
     assert ssh_gateway.get_container_status("proc3", "web") == "not_found"
 
+
+# Brief comment: Test read_key uses recv_ready first to read without select blocking
+@patch("ssh_gateway.select.select")
+def test_read_key_recv_ready(mock_select):
+    mock_channel = MagicMock()
+    mock_channel.recv_ready.return_value = True
+    mock_channel.recv.return_value = b'A'
+
+    # We need to clear thread-local buffer if any
+    if hasattr(ssh_gateway._thread_local, 'input_buffer'):
+        ssh_gateway._thread_local.input_buffer.clear()
+
+    res = ssh_gateway.read_key(mock_channel, timeout=0.1)
+
+    assert res == 'A'
+    mock_channel.recv_ready.assert_called_once()
+    mock_select.assert_not_called()
+
+
+# Brief comment: Test read_key falls back to select when recv_ready is False
+@patch("ssh_gateway.select.select")
+def test_read_key_select_fallback(mock_select):
+    mock_channel = MagicMock()
+    mock_channel.recv_ready.return_value = False
+    mock_select.return_value = ([mock_channel], [], [])
+    mock_channel.recv.return_value = b'B'
+
+    if hasattr(ssh_gateway._thread_local, 'input_buffer'):
+        ssh_gateway._thread_local.input_buffer.clear()
+
+    res = ssh_gateway.read_key(mock_channel, timeout=0.1)
+
+    assert res == 'B'
+    mock_channel.recv_ready.assert_called_once()
+    mock_select.assert_called_once()
+
+
+# Brief comment: Test attach_container_shell handles recv_ready bypass of select.select
+@patch("ssh_gateway.get_docker_client")
+@patch("ssh_gateway.get_container")
+@patch("ssh_gateway.select.select")
+def test_attach_container_shell_recv_ready(mock_select, mock_get_container, mock_get_docker_client):
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_container.status = 'running'
+    mock_container.name = 'stellar-web-proc123'
+    mock_get_docker_client.return_value = mock_client
+    mock_get_container.return_value = mock_container
+
+    # Mock exec_create and exec_start
+    mock_client.api.exec_create.return_value = {'Id': 'exec_123'}
+    mock_sock = MagicMock()
+    mock_client.api.exec_start.return_value = mock_sock
+
+    mock_channel = MagicMock()
+    mock_server = MagicMock()
+    mock_server.term_width = 80
+    mock_server.term_height = 24
+
+    # First loop iteration: recv_ready is True, channel.recv returns key, raw_sock.sendall called.
+    # Second loop iteration: channel.recv raises exception to break loop.
+    mock_channel.recv_ready.side_effect = [True, False]
+    mock_channel.recv.side_effect = [b'input_data', Exception("break loop")]
+
+    # Run container shell
+    ssh_gateway.attach_container_shell(mock_channel, mock_server, "proc123", "web", 5)
+
+    # Assert raw_sock.sendall was called with channel data
+    mock_sock._sock.sendall.assert_called_with(b'input_data')
+    # select.select should not be called on first iteration (since recv_ready was True),
+    # but could be called on second iteration since recv_ready is False.
+    mock_select.assert_called_once()
+
