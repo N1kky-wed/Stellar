@@ -97,7 +97,9 @@ class GatewayFormatter(logging.Formatter):
             record.session_id = 'error'
         return super().format(record)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+_console_handler = logging.StreamHandler()
+_console_handler.setFormatter(GatewayFormatter('%(asctime)s [%(levelname)s] %(name)s [session=%(session_id)s]: %(message)s'))
+logging.basicConfig(level=logging.INFO, handlers=[_console_handler], force=True)
 
 logger = logging.getLogger('stellar_ssh')
 logger.setLevel(logging.INFO)

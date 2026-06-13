@@ -26,7 +26,7 @@ class TelegramBot:
             logger.info("Telegram updates fetched duration_sec=%.2f", time.time() - t0)
             return response.json()
         except Exception as e:
-            logger.error(f"Failed to get Telegram updates: {e}")
+            logger.error("Failed to get Telegram updates: %s", e, exc_info=True)
             return None
             
     def get_new_messages(self):
@@ -82,4 +82,4 @@ class TelegramBot:
             response.raise_for_status()
             logger.info("Telegram message sent to chat_id=%s duration_sec=%.2f", self.chat_id, time.time() - t0)
         except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}")
+            logger.error("Failed to send Telegram message: %s", e, exc_info=True)
