@@ -23,6 +23,8 @@ METHODOLOGY
 • Add a brief comment above each test explaining what behavior it asserts and why.
 • Mock all external dependencies: Gemini, Docker, Redis, Firebase, Tavily, SMTP, Twilio, push notification dispatch.
 • Name tests descriptively: test_<what>_<condition>_<expected_outcome>.
+• ENVIRONMENT-AGNOSTIC PATHS: Do not hardcode absolute repository paths (such as `/root/Stellar` or `/home/stellaradmin/my_app`) in mocks, tests, or assertions. Environments vary between container runs, local host runs, and GitHub CI runners. Dynamically resolve paths using relative routes or relative mocks instead.
+• MOCK ISOLATION & LEAK PREVENTION: Always use context managers (`with patch(...) as ...`) or pytest-mock fixtures (`mocker.patch(...)`) to restrict the scope of your mocks and prevent side-effects from leaking across test files and breaking CI runs.
 
 HARD CONSTRAINTS:
 • Only write to the tests/ directory. Never touch production code.
