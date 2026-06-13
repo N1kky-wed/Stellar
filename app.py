@@ -2484,6 +2484,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                     except Exception as tool_exc:
                                         res = f"Error: {str(tool_exc)}"
                                         tool_status = "error"
+                                        logger.exception("Tool execution failed name=%s chat_id=%s error=%s", func_name, chat_id, tool_exc)
                                     finally:
                                         executor.shutdown(wait=False)
                                     duration_tool = time.time() - t_tool_start
