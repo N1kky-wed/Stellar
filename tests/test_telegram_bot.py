@@ -137,8 +137,9 @@ def test_discover_chat_id_already_set():
 
 
 @patch('telegram_bot.requests.get')
-def test_discover_chat_id_no_private_chats(mock_get):
+def test_discover_chat_id_no_private_chats(mock_get, monkeypatch):
     """Asserts that _discover_chat_id returns None if no private chat updates exist."""
+    monkeypatch.delenv("TELEGRAM_ADMIN_CHAT_ID", raising=False)
     mock_response = MagicMock()
     mock_response.json.return_value = {
         "ok": True,
@@ -153,8 +154,9 @@ def test_discover_chat_id_no_private_chats(mock_get):
 
 
 @patch('telegram_bot.requests.get')
-def test_send_message_discover_fails(mock_get):
+def test_send_message_discover_fails(mock_get, monkeypatch):
     """Asserts that send_message returns early if chat_id discovery fails."""
+    monkeypatch.delenv("TELEGRAM_ADMIN_CHAT_ID", raising=False)
     # get_updates returns no updates
     mock_response = MagicMock()
     mock_response.json.return_value = {"ok": True, "result": []}
