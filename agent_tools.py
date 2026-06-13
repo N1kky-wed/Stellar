@@ -1849,7 +1849,8 @@ def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "
                 "type": "video",
                 "key": YOUTUBE_API_KEY
             }
-            search_response = requests.get(search_url, params=search_params).json()
+            # Bolt - Stability Optimization: Add timeout=15 to prevent threads hanging indefinitely on external API calls
+            search_response = requests.get(search_url, params=search_params, timeout=15).json()
             if "error" in search_response:
                 return f"YouTube Search API Error: {json.dumps(search_response['error'])}"
             
@@ -1865,7 +1866,8 @@ def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "
                 "id": ",".join(video_ids),
                 "key": YOUTUBE_API_KEY
             }
-            stats_response = requests.get(stats_url, params=stats_params).json()
+            # Bolt - Stability Optimization: Add timeout=15 to prevent threads hanging indefinitely on external API calls
+            stats_response = requests.get(stats_url, params=stats_params, timeout=15).json()
             
             enriched_results = []
             for stat_item in stats_response.get("items", []):

@@ -334,8 +334,8 @@ def test_sentinel_stream_flow(mock_redis, setup_repo_history, client):
     mock_pubsub = MagicMock()
     mock_redis.pubsub.return_value = mock_pubsub
     
-    # Mock pubsub listen to yield one live status event and then a terminal healed event
-    mock_pubsub.listen.return_value = [
+    # Mock pubsub get_message to yield one live status event and then a terminal healed event
+    events = [
         {
             'type': 'message',
             'data': json.dumps({'event': 'testing', 'message': 'Running build tests'}).encode('utf-8')
@@ -345,6 +345,11 @@ def test_sentinel_stream_flow(mock_redis, setup_repo_history, client):
             'data': json.dumps({'event': 'healed', 'message': 'Healed successfully!'}).encode('utf-8')
         }
     ]
+    def get_message_mock(*args, **kwargs):
+        if events:
+            return events.pop(0)
+        return None
+    mock_pubsub.get_message.side_effect = get_message_mock
 
     # Authenticate client as the owner of the process (user_id = 1)
     with client.session_transaction() as sess:

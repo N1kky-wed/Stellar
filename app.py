@@ -2135,13 +2135,11 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                                         from flask import g
                                         p_user_id = getattr(g, 'user_id', None)
                                         if not p_user_id and chat_id:
-                                            import sqlite3
-                                            db_temp = sqlite3.connect(DATABASE_NAME)
-                                            db_temp.row_factory = sqlite3.Row
+                                            # Bolt - Stability Optimization: Reuse get_db() to inherit WAL and busy_timeout configurations
+                                            db_temp = get_db()
                                             row = db_temp.execute('SELECT user_id FROM chats WHERE id = ?', (chat_id,)).fetchone()
                                             if row:
                                                 p_user_id = row['user_id']
-                                            db_temp.close()
 
                                         if p_user_id:
                                             prompt_desc = args_dict.get('status', 'Stellar needs your interaction to proceed with the task.')
@@ -3587,6 +3585,8 @@ def refine_stream():
                                  import sqlite3
                                  db_temp = sqlite3.connect(DATABASE_NAME)
                                  db_temp.row_factory = sqlite3.Row
+                                 db_temp.execute("PRAGMA journal_mode=WAL;")
+                                 db_temp.execute("PRAGMA busy_timeout=5000;")
                                  row = db_temp.execute('SELECT user_id FROM chats WHERE id = ?', (chat_id,)).fetchone()
                                  if row:
                                      p_user_id = row['user_id']
@@ -3694,15 +3694,22 @@ def stream_consumer(query_id):
             yield item
 
         # Listen to live updates
-        for message in pubsub.listen():
-            if message['type'] == 'message':
-                data = message['data']
-                if isinstance(data, bytes):
-                    data = data.decode('utf-8')
-                if data == "__STREAM_END__":
-                    yield f"data: {json.dumps({'status': 'Stream ended.', 'error': True, 'stopped': True})}\n\n"
-                    break
-                yield data
+        while True:
+            # Bolt - Performance/Stability Optimization: Use non-blocking get_message with timeout
+            # to prevent Gunicorn threads from hanging indefinitely when clients disconnect from SSE.
+            message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+            if message:
+                if message['type'] == 'message':
+                    data = message['data']
+                    if isinstance(data, bytes):
+                        data = data.decode('utf-8')
+                    if data == "__STREAM_END__":
+                        yield f"data: {json.dumps({'status': 'Stream ended.', 'error': True, 'stopped': True})}\n\n"
+                        break
+                    yield data
+            else:
+                # Heartbeat comment forces a socket write to let Gunicorn detect closed client connections
+                yield ": heartbeat\n\n"
     finally:
         logger.info("SSE client disconnected from stream_consumer query_id=%s", query_id)
         pubsub.close()
@@ -5586,15 +5593,22 @@ def sentinel_stream(process_id):
                 return  # Already done — no need to subscribe to live channel
 
             # Now drain live pub/sub for any events published during/after replay
-            for message in pubsub.listen():
-                if message['type'] == 'message':
-                    data = message['data'].decode('utf-8') if isinstance(message['data'], bytes) else message['data']
-                    yield f"data: {data}\n\n"
-                    try:
-                        if json.loads(data).get('event') in ['healed', 'failed']:
-                            break
-                    except Exception:
-                        pass
+            while True:
+                # Bolt - Performance/Stability Optimization: Use non-blocking get_message with timeout
+                # to prevent Gunicorn threads from hanging indefinitely when clients disconnect from SSE.
+                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
+                if message:
+                    if message['type'] == 'message':
+                        data = message['data'].decode('utf-8') if isinstance(message['data'], bytes) else message['data']
+                        yield f"data: {data}\n\n"
+                        try:
+                            if json.loads(data).get('event') in ['healed', 'failed']:
+                                break
+                        except Exception:
+                            pass
+                else:
+                    # Heartbeat comment forces a socket write to let Gunicorn detect closed client connections
+                    yield ": heartbeat\n\n"
         finally:
             pubsub.unsubscribe(f"sentinel:logs:{process_id}")
             pubsub.close()
@@ -5851,6 +5865,9 @@ def agent_group_chat_stream():
                 logger.error(f"Error seeding SSE stream yielded states: {e}")
 
             while True:
+                # Bolt - Performance/Stability Optimization: Send periodic heartbeat to detect client disconnects in Gunicorn/Flask
+                yield ": heartbeat\n\n"
+
                 try:
                     conn = sqlite3.connect(db_path)
                     conn.row_factory = sqlite3.Row
@@ -6137,10 +6154,38 @@ def run_code():
                 if not public_url_found:
                     yield f"data: {json.dumps({'type': 'error', 'content': 'Failed to get public URL for the app.'})}\n\n"
 
-            for line_bytes in container.logs(stream=True, follow=True):
-                cleaned_line = line_bytes.decode('utf-8', 'replace').strip()
-                if cleaned_line:
-                    yield f"data: {json.dumps({'type': 'log', 'content': cleaned_line})}\n\n"
+            from queue import Queue, Empty
+            log_queue = Queue()
+            
+            # Bolt - Performance/Stability Optimization: Run container.logs reader in a background thread
+            # and consume via a non-blocking queue with timeout to allow heartbeat emission.
+            # This allows Gunicorn to detect client disconnection instantly.
+            def read_logs():
+                try:
+                    for line_bytes in container.logs(stream=True, follow=True):
+                        log_queue.put(line_bytes)
+                except Exception as e:
+                    log_queue.put(e)
+                finally:
+                    log_queue.put(None)
+
+            log_thread = threading.Thread(target=read_logs, daemon=True)
+            log_thread.start()
+
+            while True:
+                try:
+                    item = log_queue.get(timeout=2.0)
+                    if item is None:
+                        break
+                    if isinstance(item, Exception):
+                        raise item
+                    cleaned_line = item.decode('utf-8', 'replace').strip()
+                    if cleaned_line:
+                        yield f"data: {json.dumps({'type': 'log', 'content': cleaned_line})}\n\n"
+                except Empty:
+                    # Heartbeat message forces socket write to let Gunicorn detect closed client connections
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+            
             container.wait()
 
         except Exception as e:

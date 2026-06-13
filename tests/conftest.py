@@ -53,6 +53,7 @@ class MockRedisClass:
     def pubsub(self, **kwargs):
         mock_pubsub = MagicMock()
         mock_pubsub.listen.return_value = []
+        mock_pubsub.get_message.return_value = None
         return mock_pubsub
     def rpush(self, key, *values):
         if key not in self.store:
