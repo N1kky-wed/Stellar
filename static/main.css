@@ -5493,22 +5493,22 @@ body.pure-black #adminWaitlistModal h2 {
   color: #ffffff !important;
 }
 
-/* Remove glow from sendBtn and modelSelect, matching mic/file upload */
-#sendBtn,
-#modelSelect,
-.custom-select-trigger,
-#stopBtn {
+/* Remove glow from sendBtn and modelSelect, matching mic/file upload - scoped strictly to body.pure-black */
+body.pure-black #sendBtn,
+body.pure-black #modelSelect,
+body.pure-black .custom-select-trigger,
+body.pure-black #stopBtn {
   background: transparent !important;
   color: var(--secondary-text-color) !important;
   box-shadow: none !important;
   border: 1px solid transparent !important;
   filter: none !important;
 }
-#sendBtn:hover,
-#modelSelect:hover,
-#modelSelect:focus,
-.custom-select-trigger:hover,
-.custom-select-trigger:focus {
+body.pure-black #sendBtn:hover,
+body.pure-black #modelSelect:hover,
+body.pure-black #modelSelect:focus,
+body.pure-black .custom-select-trigger:hover,
+body.pure-black .custom-select-trigger:focus {
   background: rgba(255, 255, 255, 0.1) !important;
   color: var(--primary-text-color) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
@@ -5516,7 +5516,7 @@ body.pure-black #adminWaitlistModal h2 {
   transform: translateY(-1px) !important;
   filter: none !important;
 }
-#sendBtn:active {
+body.pure-black #sendBtn:active {
   transform: translateY(0) !important;
 }
 
