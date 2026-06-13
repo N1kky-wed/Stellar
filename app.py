@@ -7201,6 +7201,19 @@ def log_request_end(response):
                 request.method, request.path, response.status_code, duration)
     return response
 
+@app.after_request
+def add_security_headers(response):
+    # Sentinel Security Fix: Prevent MIME-sniffing, clickjacking, and referrer leakage
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    
+    # Sentinel Security Fix: Apply strict sandbox Content-Security-Policy for files viewed in browser
+    # to isolate them from the main origin and prevent script execution (stored XSS protection)
+    if request.endpoint == 'view_file':
+        response.headers['Content-Security-Policy'] = "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; media-src 'self';"
+    return response
+
 @app.before_request
 def update_last_active():
     if 'user_id' in session:

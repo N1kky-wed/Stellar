@@ -179,3 +179,25 @@ def test_view_mimetypes(mock_send_from_dir, auth_client):
             mock_send_from_dir.assert_called_once()
             args, kwargs = mock_send_from_dir.call_args
             assert kwargs.get('mimetype') == expected_mimetype
+
+# Brief comment: Asserts that standard security headers and CSP sandbox headers are correctly set.
+def test_security_headers(auth_client):
+    # Standard request (e.g. check_auth) should have security headers but no CSP sandbox
+    response = auth_client.get('/check_auth')
+    assert response.headers.get('X-Content-Type-Options') == 'nosniff'
+    assert response.headers.get('X-Frame-Options') == 'SAMEORIGIN'
+    assert response.headers.get('Referrer-Policy') == 'strict-origin-when-cross-origin'
+    assert 'Content-Security-Policy' not in response.headers
+
+    # View request should have both security headers and strict CSP sandbox header
+    with patch('os.path.exists', return_value=True), \
+         patch('os.path.isfile', return_value=True), \
+         patch('os.path.realpath', side_effect=lambda x: x), \
+         patch('app.send_from_directory', return_value=auth_client.application.response_class("content", mimetype="text/html")):
+        
+        response_view = auth_client.get('/view/test.html')
+        assert response_view.status_code == 200
+        assert response_view.headers.get('X-Content-Type-Options') == 'nosniff'
+        assert response_view.headers.get('X-Frame-Options') == 'SAMEORIGIN'
+        assert response_view.headers.get('Referrer-Policy') == 'strict-origin-when-cross-origin'
+        assert response_view.headers.get('Content-Security-Policy') == "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; media-src 'self';"
