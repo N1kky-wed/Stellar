@@ -3,6 +3,8 @@ import re
 import sys
 import time
 import logging
+import os
+import json
 from datetime import datetime, timedelta
 import pytz
 import subprocess
@@ -11,6 +13,7 @@ from typing import Optional, Dict, Any
 import orchestrator.config as config
 from orchestrator.state import StateDB
 import orchestrator.container as container
+from orchestrator.memory import MemoryDB
 
 logger = logging.getLogger("stellar-orchestrator")
 IST = pytz.timezone(config.TIMEZONE)
@@ -18,6 +21,7 @@ IST = pytz.timezone(config.TIMEZONE)
 class OrchestratorEngine:
     def __init__(self):
         self.state_db = StateDB(config.DB_PATH)
+        self.memory_db = MemoryDB(config.MEMORY_DB_PATH)
         self.current_process: Optional[subprocess.Popen] = None
         self.current_agent_id: Optional[str] = None
         self.current_run_id: Optional[int] = None
@@ -313,6 +317,10 @@ class OrchestratorEngine:
                         pr_state = container.check_pr_status(pr_num)
                         prs = [{"number": pr_num, "url": pr_url, "state": pr_state}]
                         logger.info("Fallback PR detected from agent summary pr_num=%d pr_url=%s pr_state=%s", pr_num, pr_url, pr_state)
+                
+                # Process agent memory outbox
+                self._process_agent_memory_outbox(self.current_agent_id, self.current_run_id, summary)
+
                 if prs:
                     # Found PR
                     pr = prs[0]
@@ -329,6 +337,14 @@ class OrchestratorEngine:
                         
                     self.state_db.complete_run(self.current_run_id, now_str, pr_number=pr_num, pr_url=pr_url, pr_status=db_pr_status, summary_message=summary)
 
+                    # Add system message to group chat
+                    self.memory_db.add_message(
+                        channel="group",
+                        sender_id="orchestrator",
+                        content=f"✅ Agent **{self.current_agent_id.capitalize()}** completed successfully! (PR #{pr_num})\nPull Request: {pr_url}",
+                        message_type="system"
+                    )
+
                     # If already merged (fast auto-merge), trigger reload immediately
                     # so we don't wait for _check_for_merge_trigger to catch it
                     if db_pr_status == 'MERGED':
@@ -337,8 +353,24 @@ class OrchestratorEngine:
                 else:
                     logger.warning("Agent completed but no PR was detected branch_name=%s", self.branch_name)
                     self.state_db.complete_run(self.current_run_id, now_str, pr_status='NONE', summary_message=summary)
+
+                    # Add system message to group chat
+                    self.memory_db.add_message(
+                        channel="group",
+                        sender_id="orchestrator",
+                        content=f"✅ Agent **{self.current_agent_id.capitalize()}** completed successfully!",
+                        message_type="system"
+                    )
             else:
                 self.state_db.fail_run(self.current_run_id, now_str, f"Process exited with non-zero code {retcode}.", summary_message=f"Agent process exited with non-zero code {retcode}.")
+                
+                # Add failure system message
+                self.memory_db.add_message(
+                    channel="group",
+                    sender_id="orchestrator",
+                    content=f"❌ Agent **{self.current_agent_id.capitalize()}** run failed.\nError: Process exited with non-zero code {retcode}.",
+                    message_type="system"
+                )
 
             container.unload_agent_prompt()
             self._clear_active_run()
@@ -361,6 +393,15 @@ class OrchestratorEngine:
         
         now_str = now.isoformat()
         self.state_db.timeout_run(self.current_run_id, now_str, summary_message="Agent execution timed out after exceeding limits.")
+        
+        # Add timeout system message
+        self.memory_db.add_message(
+            channel="group",
+            sender_id="orchestrator",
+            content=f"⚠️ Agent **{self.current_agent_id.capitalize()}** run timed out after exceeding limits.",
+            message_type="system"
+        )
+        
         container.unload_agent_prompt()
         self._clear_active_run()
 
@@ -523,6 +564,9 @@ class OrchestratorEngine:
         )
         
         try:
+            # Prepare and load memory context into container
+            self._prepare_and_load_memory_context(self.current_agent_id)
+            
             self.current_process = container.run_agent(
                 agent_id=self.current_agent_id,
                 prompt_file=self.prompt_file,
@@ -534,3 +578,223 @@ class OrchestratorEngine:
             self.state_db.fail_run(self.current_run_id, now_str, str(e), summary_message=f"Failed to start agent: {e}")
             container.unload_agent_prompt()
             self._clear_active_run()
+
+    def _prepare_and_load_memory_context(self, agent_id: str):
+        context_lines = []
+        context_lines.append("=" * 80)
+        context_lines.append("SHARED MEMORY CONTEXT")
+        context_lines.append("(auto-injected by orchestrator — read this before starting your work)")
+        context_lines.append("=" * 80)
+        context_lines.append("")
+
+        # 1. Assigned Tasks
+        context_lines.append("## 🔴 Assigned Tasks (act on these first)")
+        tasks = self.memory_db.get_active_tasks(agent_id)
+        if tasks:
+            for i, t in enumerate(tasks, 1):
+                priority_str = f"[{t['priority'].upper()}]"
+                context_lines.append(f"{i}. {priority_str} {t['title']} (ID: {t['id']})")
+                if t['description']:
+                    context_lines.append(f"   - Description: {t['description']}")
+                context_lines.append(f"   - Created by: {t['created_by']}")
+                if t['status'] == 'fix_submitted':
+                    context_lines.append(f"   - Status: FIX SUBMITTED (verification pending by creator {t['created_by']})")
+                if t['related_pr']:
+                    context_lines.append(f"   - Related PR: #{t['related_pr']}")
+                if t['related_file']:
+                    context_lines.append(f"   - Related File: {t['related_file']}")
+            context_lines.append("")
+            context_lines.append("If you have pending assigned tasks above, fix at least one and submit a PR.")
+            context_lines.append("If you are verifying a task you created that is marked 'fix_submitted', inspect the changes, and if correct, mark it as 'resolved' in your outbox.")
+        else:
+            context_lines.append("None — search for improvements according to your role.")
+        context_lines.append("")
+
+        # 2. Unread DMs
+        context_lines.append("## 💬 Unread DMs")
+        dms = self.memory_db.get_unread_dms(agent_id)
+        if dms:
+            for dm in dms:
+                sender = dm['sender_id'].capitalize()
+                ts = dm['created_at'].replace('T', ' ').split('.')[0]
+                context_lines.append(f"- [{sender} → You] ({ts})")
+                context_lines.append(f"  \"{dm['content']}\"")
+                if dm['ref_id']:
+                    context_lines.append(f"  Reference: {dm['ref_id']}")
+        else:
+            context_lines.append("None.")
+        context_lines.append("")
+
+        # 3. Recent Group Chat
+        context_lines.append("## 📢 Recent Group Chat (last 24h)")
+        group_msgs = self.memory_db.get_recent_group_messages(hours=24)
+        if group_msgs:
+            # Only show last 15 messages to avoid blowing up context
+            for msg in group_msgs[-15:]:
+                sender = msg['sender_id'].capitalize()
+                ts = msg['created_at'].replace('T', ' ').split('.')[0]
+                content = msg['content'].replace('\n', '\n  ')
+                context_lines.append(f"- [{sender}] ({ts})")
+                context_lines.append(f"  {content}")
+        else:
+            context_lines.append("No recent group chat messages.")
+        context_lines.append("")
+
+        # 4. Your Last Run Summary
+        context_lines.append("## 🧠 Your Last Run Summary")
+        last_run = self.state_db.get_last_run_for_agent(agent_id)
+        if last_run:
+            status = last_run['status']
+            finished = (last_run['finished_at'] or "unknown").replace('T', ' ').split('.')[0]
+            summary = last_run['summary_message'] or "No summary provided."
+            context_lines.append(f"Your last run completed at {finished} with status: {status}")
+            context_lines.append(f"Summary: {summary}")
+        else:
+            context_lines.append("This is your first run in this environment.")
+        context_lines.append("")
+
+        # 5. Relevant Facts
+        context_lines.append("## 📌 Relevant Facts")
+        facts = self.memory_db.get_active_facts()
+        if facts:
+            for f in facts:
+                cat_str = f" [{f['category']}]" if f['category'] else ""
+                context_lines.append(f"- {f['fact']}{cat_str} (Fact ID: {f['id']})")
+        else:
+            context_lines.append("No active facts/constraints registered.")
+        context_lines.append("")
+        context_lines.append("=" * 80)
+
+        markdown_content = "\n".join(context_lines)
+        
+        host_context_path = "/home/stellaradmin/my_app/orchestrator/memory_context.md"
+        try:
+            with open(host_context_path, "w") as f:
+                f.write(markdown_content)
+            container.copy_memory_context_to_container(host_context_path)
+        finally:
+            if os.path.exists(host_context_path):
+                os.remove(host_context_path)
+
+    def _process_agent_memory_outbox(self, agent_id: str, run_id: Optional[int], summary: Optional[str]):
+        host_outbox_path = "/home/stellaradmin/my_app/orchestrator/memory_outbox.json"
+        
+        copied = container.read_memory_outbox_from_container(host_outbox_path)
+        
+        # Add run summary to group chat and memory DB
+        if summary:
+            self.memory_db.add_memory(
+                agent_id=agent_id,
+                run_id=run_id,
+                memory_type="outcome",
+                content=f"Completed run: {summary}",
+                scope="global",
+                tags=["run_summary"]
+            )
+            self.memory_db.add_message(
+                channel="group",
+                sender_id=agent_id,
+                content=summary,
+                message_type="text"
+            )
+            
+        if copied and os.path.exists(host_outbox_path):
+            try:
+                with open(host_outbox_path, "r") as f:
+                    outbox = json.load(f)
+                
+                logger.info("Processing memory outbox for agent %s...", agent_id)
+                
+                # 1. Memories
+                for mem in outbox.get("memories", []):
+                    m_type = mem.get("type", "observation")
+                    content = mem.get("content")
+                    scope = mem.get("scope", "global")
+                    tags = mem.get("tags", [])
+                    if content:
+                        self.memory_db.add_memory(
+                            agent_id=agent_id,
+                            run_id=run_id,
+                            memory_type=m_type,
+                            content=content,
+                            scope=scope,
+                            tags=tags
+                        )
+                
+                # 2. Messages
+                for msg in outbox.get("messages", []):
+                    channel = msg.get("channel", "group")
+                    to = msg.get("to")
+                    content = msg.get("content")
+                    thread_id = msg.get("thread_id")
+                    m_type = msg.get("message_type", "text")
+                    ref_id = msg.get("ref")
+                    
+                    if content:
+                        self.memory_db.add_message(
+                            channel=channel,
+                            sender_id=agent_id,
+                            recipient_id=to if channel == "dm" else None,
+                            content=content,
+                            thread_id=thread_id,
+                            message_type=m_type,
+                            ref_id=ref_id
+                        )
+                
+                # 3. Tasks resolved
+                for task_id in outbox.get("tasks_resolved", []):
+                    try:
+                        t_id = int(task_id)
+                        success = self.memory_db.update_task_status(t_id, agent_id, 'resolved')
+                        logger.info("Task %d resolved update by %s status=%s", t_id, agent_id, success)
+                    except Exception as te:
+                        logger.error("Failed to process resolved task ID %s: %s", task_id, te)
+                
+                # 4. Tasks created
+                for task in outbox.get("tasks_created", []):
+                    title = task.get("title")
+                    desc = task.get("description")
+                    assigned_to = task.get("assigned_to")
+                    priority = task.get("priority", "normal")
+                    tags = task.get("tags", [])
+                    related_pr = task.get("related_pr")
+                    related_file = task.get("related_file")
+                    
+                    if title:
+                        t_id = self.memory_db.create_task(
+                            title=title,
+                            description=desc,
+                            created_by=agent_id,
+                            assigned_to=assigned_to,
+                            priority=priority,
+                            tags=tags,
+                            related_pr=related_pr,
+                            related_file=related_file
+                        )
+                        logger.info("Task created with ID %d: %s", t_id, title)
+                
+                # 5. Facts added
+                for fact in outbox.get("facts", []):
+                    f_content = fact.get("fact")
+                    cat = fact.get("category")
+                    if f_content:
+                        f_id = self.memory_db.add_fact(f_content, agent_id, cat)
+                        logger.info("Fact added with ID %d", f_id)
+                
+                # 6. Facts updated/superseded
+                for fact in outbox.get("facts_updated", []):
+                    f_id = fact.get("id")
+                    f_content = fact.get("fact")
+                    cat = fact.get("category")
+                    if f_id and f_content:
+                        try:
+                            new_f_id = self.memory_db.update_fact(int(f_id), f_content, agent_id, cat)
+                            logger.info("Fact %d superseded by new fact %d", f_id, new_f_id)
+                        except Exception as fe:
+                            logger.error("Failed to update fact %s: %s", f_id, fe)
+                            
+            except Exception as e:
+                logger.error("Error reading/parsing memory outbox for agent %s: %s", agent_id, e, exc_info=True)
+            finally:
+                if os.path.exists(host_outbox_path):
+                    os.remove(host_outbox_path)

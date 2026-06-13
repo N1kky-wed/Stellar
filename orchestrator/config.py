@@ -22,6 +22,7 @@ CONTAINER_AGENTS_DIR = '/root/.agents'
 CONTAINER_REVIEWER_DIR = '/root/.gemini/antigravity-cli/plugins/code-review'
 
 DB_PATH = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
+MEMORY_DB_PATH = '/home/stellaradmin/my_app/orchestrator/memory.db'
 LOG_PATH = '/home/stellaradmin/my_app/orchestrator/orchestrator.log'
 TIMEZONE = 'Asia/Kolkata'
 

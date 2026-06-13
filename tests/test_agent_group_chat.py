@@ -11,6 +11,7 @@ from app import get_db, agent_group_chat_stream
 
 # Save original sqlite3.connect to avoid recursion in mocks
 _real_sqlite3_connect = sqlite3.connect
+_real_os_path_exists = os.path.exists
 
 class StopLoopException(Exception):
     """Custom exception to stop the infinite stream loop in tests."""
@@ -132,7 +133,7 @@ def test_get_agent_group_chat_history_with_runs(auth_client):
         def mock_exists(path):
             if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
                 return True
-            return os.path.exists(path)
+            return _real_os_path_exists(path)
 
         def mock_connect(path):
             if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
@@ -241,7 +242,7 @@ def test_agent_group_chat_stream_with_new_runs(auth_client):
         def mock_exists(path):
             if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
                 return True
-            return os.path.exists(path)
+            return _real_os_path_exists(path)
 
         def mock_connect(path):
             if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
@@ -312,7 +313,7 @@ def test_agent_group_chat_stream_transition(auth_client):
         def mock_exists(path):
             if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
                 return True
-            return os.path.exists(path)
+            return _real_os_path_exists(path)
 
         query_count = 0
         def mock_connect(path):
@@ -452,7 +453,7 @@ def test_orchestrator_status_with_cooldown_and_running(auth_client):
         def mock_exists(path):
             if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
                 return True
-            return os.path.exists(path)
+            return _real_os_path_exists(path)
 
         def mock_connect(path):
             if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':

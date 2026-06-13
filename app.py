@@ -6107,76 +6107,108 @@ def get_agent_group_chat_history():
         return jsonify({'error': 'Forbidden'}), 403
 
     db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
-    if not os.path.exists(db_path):
-        return jsonify([])
-
+    mem_db_path = '/home/stellaradmin/my_app/orchestrator/memory.db'
     messages = []
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        runs = conn.execute("""
-            SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message
-            FROM agent_runs
-            ORDER BY id ASC
-        """).fetchall()
-        conn.close()
 
-        for r in runs:
-            agent_name = r['agent_id'].capitalize()
-            start_ts = r['started_at'].replace('T', ' ').split('.')[0]
-            finish_ts = (r['finished_at'] or r['started_at']).replace('T', ' ').split('.')[0]
+    # 1. Fetch runs from orchestrator.db
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            runs = conn.execute("""
+                SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message
+                FROM agent_runs
+                ORDER BY id ASC
+            """).fetchall()
+            conn.close()
 
-            # 1. Starting system message
-            messages.append({
-                'timestamp': start_ts,
-                'sender': 'Orchestrator',
-                'content': f"🚀 Starting agent **{agent_name}** on branch `{r['branch_name']}`...",
-                'type': 'system'
-            })
+            for r in runs:
+                agent_name = r['agent_id'].capitalize()
+                start_ts = r['started_at'].replace('T', ' ').split('.')[0]
+                finish_ts = (r['finished_at'] or r['started_at']).replace('T', ' ').split('.')[0]
 
-            # 2. Final messages if not running
-            if r['status'] == 'COMPLETED':
-                if r['summary_message']:
+                # Starting system message
+                messages.append({
+                    'timestamp': start_ts,
+                    'sender': 'Orchestrator',
+                    'content': f"🚀 Starting agent **{agent_name}** on branch `{r['branch_name']}`...",
+                    'type': 'system'
+                })
+
+                # Final messages if not running
+                if r['status'] == 'COMPLETED':
+                    if r['summary_message']:
+                        messages.append({
+                            'timestamp': finish_ts,
+                            'sender': f"{agent_name} (Agent)",
+                            'content': r['summary_message'],
+                            'type': 'agent'
+                        })
+
+                    pr_text = f" (PR #{r['pr_number']})" if r['pr_number'] else ""
+                    pr_link = f"\nPull Request: {r['pr_url']}" if r['pr_url'] else ""
                     messages.append({
                         'timestamp': finish_ts,
-                        'sender': f"{agent_name} (Agent)",
-                        'content': r['summary_message'],
-                        'type': 'agent'
+                        'sender': 'Orchestrator',
+                        'content': f"✅ Agent **{agent_name}** completed successfully!{pr_text}{pr_link}",
+                        'type': 'system'
                     })
+                elif r['status'] == 'FAILED':
+                    messages.append({
+                        'timestamp': finish_ts,
+                        'sender': 'Orchestrator',
+                        'content': f"❌ Agent **{agent_name}** run failed.\nError: {r['error_message'] or 'Unknown error'}",
+                        'type': 'system'
+                    })
+                elif r['status'] == 'TIMEOUT':
+                    messages.append({
+                        'timestamp': finish_ts,
+                        'sender': 'Orchestrator',
+                        'content': f"⚠️ Agent **{agent_name}** run timed out after exceeding limits.",
+                        'type': 'system'
+                    })
+                elif r['status'] == 'INTERRUPTED':
+                    messages.append({
+                        'timestamp': finish_ts,
+                        'sender': 'Orchestrator',
+                        'content': f"↩️ Agent **{agent_name}** was interrupted by an orchestrator restart — retrying automatically.",
+                        'type': 'system'
+                    })
+        except Exception as e:
+            logger.error(f"Error reading agent runs history: {e}")
 
-                pr_text = f" (PR #{r['pr_number']})" if r['pr_number'] else ""
-                pr_link = f"\nPull Request: {r['pr_url']}" if r['pr_url'] else ""
-                messages.append({
-                    'timestamp': finish_ts,
-                    'sender': 'Orchestrator',
-                    'content': f"✅ Agent **{agent_name}** completed successfully!{pr_text}{pr_link}",
-                    'type': 'system'
-                })
-            elif r['status'] == 'FAILED':
-                messages.append({
-                    'timestamp': finish_ts,
-                    'sender': 'Orchestrator',
-                    'content': f"❌ Agent **{agent_name}** run failed.\nError: {r['error_message'] or 'Unknown error'}",
-                    'type': 'system'
-                })
-            elif r['status'] == 'TIMEOUT':
-                messages.append({
-                    'timestamp': finish_ts,
-                    'sender': 'Orchestrator',
-                    'content': f"⚠️ Agent **{agent_name}** run timed out after exceeding limits.",
-                    'type': 'system'
-                })
-            elif r['status'] == 'INTERRUPTED':
-                messages.append({
-                    'timestamp': finish_ts,
-                    'sender': 'Orchestrator',
-                    'content': f"↩️ Agent **{agent_name}** was interrupted by an orchestrator restart — retrying automatically.",
-                    'type': 'system'
-                })
-    except Exception as e:
-        logger.error(f"Error reading agent runs history: {e}")
+    # 2. Fetch group messages from memory.db
+    if os.path.exists(mem_db_path):
+        try:
+            conn = sqlite3.connect(mem_db_path)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT sender_id, content, message_type, created_at
+                FROM agent_messages
+                WHERE channel = 'group'
+                ORDER BY id ASC
+            """).fetchall()
+            conn.close()
 
+            for r in rows:
+                ts = r['created_at'].replace('T', ' ').split('.')[0]
+                sender_name = r['sender_id'].capitalize() if r['sender_id'] not in ('admin', 'orchestrator') else r['sender_id'].upper()
+                msg_type = 'system' if r['message_type'] == 'system' else 'agent'
+                if r['sender_id'] == 'admin':
+                    msg_type = 'admin'
+                messages.append({
+                    'timestamp': ts,
+                    'sender': sender_name,
+                    'content': r['content'],
+                    'type': msg_type
+                })
+        except Exception as e:
+            logger.error(f"Error reading group messages from memory.db: {e}")
+
+    # Sort messages by timestamp
+    messages.sort(key=lambda x: x['timestamp'])
     return jsonify(messages)
+
 
 @app.route('/api/admin/agent_group_chat/stream')
 @require_approval
@@ -6189,6 +6221,7 @@ def agent_group_chat_stream():
         logger.info("SSE client connected to agent_group_chat_stream user_id=%s", user_id)
         try:
             db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
+            mem_db_path = '/home/stellaradmin/my_app/orchestrator/memory.db'
             if not os.path.exists(db_path):
                 yield "data: {}\n\n"
                 return
@@ -6204,11 +6237,22 @@ def agent_group_chat_stream():
             except Exception as e:
                 logger.error(f"Error seeding SSE stream yielded states: {e}")
 
+            yielded_messages = set()
+            if os.path.exists(mem_db_path):
+                try:
+                    conn = sqlite3.connect(mem_db_path)
+                    rows = conn.execute("SELECT id FROM agent_messages WHERE channel='group'").fetchall()
+                    for r in rows:
+                        yielded_messages.add(r[0])
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Error seeding SSE stream yielded messages: {e}")
+
             while True:
-                # Bolt - Performance/Stability Optimization: Send periodic heartbeat to detect client disconnects in Gunicorn/Flask
                 yield ": heartbeat\n\n"
 
                 try:
+                    # 1. Yield updates from orchestrator.db agent runs
                     conn = sqlite3.connect(db_path)
                     conn.row_factory = sqlite3.Row
                     runs = conn.execute("""
@@ -6282,13 +6326,237 @@ def agent_group_chat_stream():
                                 }
                                 yield f"data: {json.dumps(msg)}\n\n"
                 except Exception as e:
-                    logger.error(f"Error in database log SSE stream: {e}")
+                    logger.error(f"Error in database log SSE stream runs section: {e}")
+
+                try:
+                    # 2. Yield updates from memory.db group messages
+                    if os.path.exists(mem_db_path):
+                        conn = sqlite3.connect(mem_db_path)
+                        conn.row_factory = sqlite3.Row
+                        rows = conn.execute("""
+                            SELECT id, sender_id, content, message_type, created_at
+                            FROM agent_messages
+                            WHERE channel = 'group'
+                            ORDER BY id ASC
+                        """).fetchall()
+                        conn.close()
+
+                        for r in rows:
+                            mid = r['id']
+                            if mid not in yielded_messages:
+                                yielded_messages.add(mid)
+                                ts = r['created_at'].replace('T', ' ').split('.')[0]
+                                sender_name = r['sender_id'].capitalize() if r['sender_id'] not in ('admin', 'orchestrator') else r['sender_id'].upper()
+                                msg_type = 'system' if r['message_type'] == 'system' else 'agent'
+                                if r['sender_id'] == 'admin':
+                                    msg_type = 'admin'
+                                msg = {
+                                    'timestamp': ts,
+                                    'sender': sender_name,
+                                    'content': r['content'],
+                                    'type': msg_type
+                                }
+                                yield f"data: {json.dumps(msg)}\n\n"
+                except Exception as e:
+                    logger.error(f"Error in database log SSE stream messages section: {e}")
 
                 time.sleep(2)
         finally:
             logger.info("SSE client disconnected from agent_group_chat_stream user_id=%s", user_id)
 
     return Response(stream_with_context(log_stream()), mimetype="text/event-stream")
+
+
+@app.route('/api/admin/agent_messages/dms')
+@require_approval
+def get_agent_dms():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+    agent_id = request.args.get('agent_id')
+    if not agent_id:
+        return jsonify({'error': 'Missing agent_id'}), 400
+        
+    db_path = '/home/stellaradmin/my_app/orchestrator/memory.db'
+    if not os.path.exists(db_path):
+        return jsonify([])
+        
+    messages = []
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        # Fetch DMs sent by or to the agent
+        rows = conn.execute("""
+            SELECT id, thread_id, sender_id, recipient_id, content, message_type, ref_id, created_at
+            FROM agent_messages
+            WHERE channel = 'dm' AND (sender_id = ? OR recipient_id = ?)
+            ORDER BY id ASC
+        """, (agent_id, agent_id)).fetchall()
+        
+        # Filter out resolved threads
+        for r in rows:
+            tid = r['thread_id']
+            if tid and tid.startswith('resolve:task:'):
+                try:
+                    task_id = int(tid.split(':')[-1])
+                    task = conn.execute("SELECT status FROM agent_tasks WHERE id = ?", (task_id,)).fetchone()
+                    if task and task['status'] == 'resolved':
+                        continue # skip this resolved thread
+                except Exception:
+                    pass
+            
+            sender_name = r['sender_id'].capitalize() if r['sender_id'] not in ('admin', 'orchestrator') else r['sender_id'].upper()
+            ts = r['created_at'].replace('T', ' ').split('.')[0]
+            messages.append({
+                'id': r['id'],
+                'thread_id': r['thread_id'],
+                'sender': sender_name,
+                'sender_id': r['sender_id'],
+                'recipient_id': r['recipient_id'],
+                'content': r['content'],
+                'type': r['message_type'],
+                'ref_id': r['ref_id'],
+                'timestamp': ts
+            })
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error fetching agent DMs: {e}")
+        
+    return jsonify(messages)
+
+
+@app.route('/api/admin/agent_messages/send', methods=['POST'])
+@require_approval
+def send_agent_message():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+        
+    data = request.get_json() or {}
+    channel = data.get('channel', 'group')
+    recipient_id = data.get('recipient_id')
+    content = data.get('content')
+    thread_id = data.get('thread_id')
+    
+    if not content:
+        return jsonify({'error': 'Missing content'}), 400
+        
+    db_path = '/home/stellaradmin/my_app/orchestrator/memory.db'
+    if not os.path.exists(db_path):
+        return jsonify({'error': 'Memory database not found'}), 500
+        
+    try:
+        now_str = datetime.datetime.now().isoformat()
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            INSERT INTO agent_messages (channel, thread_id, sender_id, recipient_id, content, message_type, created_at)
+            VALUES (?, ?, 'admin', ?, ?, 'text', ?)
+        """, (channel, thread_id, recipient_id, content, now_str))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error sending agent message: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/agent_tasks/list')
+@require_approval
+def list_agent_tasks():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+        
+    db_path = '/home/stellaradmin/my_app/orchestrator/memory.db'
+    if not os.path.exists(db_path):
+        return jsonify([])
+        
+    tasks = []
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM agent_tasks ORDER BY id DESC").fetchall()
+        for r in rows:
+            tasks.append(dict(r))
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error listing tasks: {e}")
+        
+    return jsonify(tasks)
+
+
+@app.route('/api/admin/agent_tasks/create', methods=['POST'])
+@require_approval
+def create_agent_task():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+        
+    data = request.get_json() or {}
+    title = data.get('title')
+    description = data.get('description')
+    assigned_to = data.get('assigned_to')
+    priority = data.get('priority', 'normal')
+    related_file = data.get('related_file')
+    
+    if not title:
+        return jsonify({'error': 'Missing title'}), 400
+        
+    db_path = '/home/stellaradmin/my_app/orchestrator/memory.db'
+    if not os.path.exists(db_path):
+        return jsonify({'error': 'Memory database not found'}), 500
+        
+    try:
+        now_str = datetime.datetime.now().isoformat()
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO agent_tasks (title, description, created_by, assigned_to, status, priority, related_file, created_at, updated_at)
+            VALUES (?, ?, 'admin', ?, 'open', ?, ?, ?, ?)
+        """, (title, description, assigned_to, priority, related_file, now_str, now_str))
+        task_id = cursor.lastrowid
+        
+        # Link a DM thread to this task automatically if assigned
+        if assigned_to:
+            thread_id = f"resolve:task:{task_id}"
+            conn.execute("""
+                INSERT INTO agent_messages (channel, thread_id, sender_id, recipient_id, content, message_type, ref_id, created_at)
+                VALUES ('dm', ?, 'admin', ?, ?, 'task_ref', ?, ?)
+            """, (thread_id, assigned_to, f"New task assigned: **{title}**\nDescription: {description or 'None'}", str(task_id), now_str))
+            
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'task_id': task_id})
+    except Exception as e:
+        logger.error(f"Error creating agent task: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/agent_tasks/resolve', methods=['POST'])
+@require_approval
+def resolve_agent_task():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+        
+    data = request.get_json() or {}
+    task_id = data.get('task_id')
+    if not task_id:
+        return jsonify({'error': 'Missing task_id'}), 400
+        
+    db_path = '/home/stellaradmin/my_app/orchestrator/memory.db'
+    if not os.path.exists(db_path):
+        return jsonify({'error': 'Memory database not found'}), 500
+        
+    try:
+        now_str = datetime.datetime.now().isoformat()
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            UPDATE agent_tasks
+            SET status = 'resolved', resolved_by = 'admin', resolved_at = ?, updated_at = ?
+            WHERE id = ?
+        """, (now_str, now_str, task_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error resolving agent task: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/chats/search_messages', methods=['GET'])
 @require_approval

@@ -54,3 +54,26 @@ Description must include:
 • Which mode you ran in and why
 • Coverage delta measurements (pytest --cov) if applicable
 • Explicit explanations of new assertions or why old assertions were updated
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SHARED MEMORY
+
+Before starting, read /root/.agents/memory_context.md for:
+• Tasks assigned to you (act on these FIRST if any exist)
+• Unread DMs from other agents
+• Recent team activity and relevant facts
+
+Before submitting your PR, write your observations, messages, and task
+updates to /root/.agents/memory_outbox.json using this format:
+{
+  "memories": [{"type": "outcome|observation|warning", "content": "...", "scope": "global|<agent_id>", "tags": [...]}],
+  "messages": [{"channel": "dm|group", "to": "<agent_id>", "content": "...", "ref": "PR#N", "thread_id": "resolve:task:<task_id>"}],
+  "tasks_resolved": [<task_id>, ...],
+  "tasks_created": [{"title": "...", "assigned_to": "<agent_id>", "priority": "low|normal|high|critical", "description": "..."}],
+  "facts": [{"fact": "...", "category": "constraint|convention|architecture|bug_pattern"}],
+  "facts_updated": [{"id": <fact_id>, "fact": "...", "category": "..."}]
+}
+
+═══════════════════════════════════════════════════════════════════════════════
+

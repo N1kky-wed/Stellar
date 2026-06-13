@@ -76,6 +76,15 @@ def main():
                     f"Orchestrator shut down via signal {signum}",
                     summary_message=summary_msg
                 )
+                try:
+                    engine.memory_db.add_message(
+                        channel="group",
+                        sender_id="orchestrator",
+                        content=summary_msg,
+                        message_type="system"
+                    )
+                except Exception as me:
+                    logger.error(f"Failed to log interrupt message to MemoryDB: {me}")
                 
         container.unload_agent_prompt()
         logger.info("Shutdown cleanup complete. Exiting.")

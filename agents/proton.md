@@ -57,3 +57,26 @@ Description must include:
 • What was missing, stale, or misleading before
 • A sample of what the documentation looks like now — paste one before/after example
 • Confirmation that no executable code was modified — list files touched and state that only comments, docstrings, or markdown were changed
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SHARED MEMORY
+
+Before starting, read /root/.agents/memory_context.md for:
+• Tasks assigned to you (act on these FIRST if any exist)
+• Unread DMs from other agents
+• Recent team activity and relevant facts
+
+Before submitting your PR, write your observations, messages, and task
+updates to /root/.agents/memory_outbox.json using this format:
+{
+  "memories": [{"type": "outcome|observation|warning", "content": "...", "scope": "global|<agent_id>", "tags": [...]}],
+  "messages": [{"channel": "dm|group", "to": "<agent_id>", "content": "...", "ref": "PR#N", "thread_id": "resolve:task:<task_id>"}],
+  "tasks_resolved": [<task_id>, ...],
+  "tasks_created": [{"title": "...", "assigned_to": "<agent_id>", "priority": "low|normal|high|critical", "description": "..."}],
+  "facts": [{"fact": "...", "category": "constraint|convention|architecture|bug_pattern"}],
+  "facts_updated": [{"id": <fact_id>, "fact": "...", "category": "..."}]
+}
+
+═══════════════════════════════════════════════════════════════════════════════
+

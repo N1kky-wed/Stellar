@@ -77,6 +77,8 @@ def unload_agent_prompt():
     """Cleans up the loaded agent prompt and plugins to prevent leakage."""
     logger.info("Unloading agent prompt and plugins from container...")
     remove_from_container(os.path.join(config.CONTAINER_AGENTS_DIR, "AGENTS.md"))
+    remove_from_container(os.path.join(config.CONTAINER_AGENTS_DIR, "memory_context.md"))
+    remove_from_container(os.path.join(config.CONTAINER_AGENTS_DIR, "memory_outbox.json"))
     
     # Uninstall the plugin via agy CLI
     exec_in_container(f"{config.AGY_BINARY} plugin uninstall code-review")
@@ -88,6 +90,32 @@ def unload_agent_prompt():
     
     remove_from_container(config.CONTAINER_WORKSPACE)
     logger.info("Unloaded successfully.")
+
+
+def copy_memory_context_to_container(host_path: str):
+    """Copies the memory context markdown file to the container's agent directory."""
+    container_path = os.path.join(config.CONTAINER_AGENTS_DIR, "memory_context.md")
+    logger.info(f"Loading memory context into container {container_path}")
+    copy_to_container(host_path, container_path)
+
+
+def read_memory_outbox_from_container(host_path: str) -> bool:
+    """Attempts to copy memory_outbox.json from the container to the host. Returns True if file exists."""
+    container_path = os.path.join(config.CONTAINER_AGENTS_DIR, "memory_outbox.json")
+    
+    # Check if file exists inside container first
+    rc, _, _ = exec_in_container(f"[ -f {container_path} ]")
+    if rc != 0:
+        logger.info("No memory outbox file found in container.")
+        return False
+        
+    try:
+        logger.info(f"Copying memory outbox from container {container_path} to host {host_path}")
+        subprocess.run(["docker", "cp", f"{config.CONTAINER_NAME}:{container_path}", host_path], check=True, capture_output=True)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to copy memory outbox from container: {e}")
+        return False
 
 
 def restart_container():
