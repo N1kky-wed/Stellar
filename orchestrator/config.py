@@ -30,3 +30,7 @@ MAX_AGENT_RUNTIME_MINUTES = 45  # watchdog timeout
 PR_CHECK_INTERVAL_SECONDS = 60
 GITHUB_REPO = 'N1kky-wed/Stellar'
 GITHUB_BRANCH_PREFIX = 'agent/'
+
+# Models
+MODEL_GEMINI = "Gemini 3.5 Flash (High)"
+MODEL_CLAUDE = "Claude Sonnet 4.6 (Thinking)"

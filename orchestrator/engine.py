@@ -28,8 +28,11 @@ class OrchestratorEngine:
         self.agent_start_time: Optional[datetime] = None
         self.branch_name: Optional[str] = None
         self.prompt_file: Optional[str] = None
-        # Quota cooldown: don't start any agent until this time
+        # Quota cooldowns (global and model-specific)
         self.quota_cooldown_until: Optional[datetime] = None
+        self.gemini_cooldown_until: Optional[datetime] = None
+        self.claude_cooldown_until: Optional[datetime] = None
+        self.current_model: Optional[str] = None
 
         # Recover from previous crash/restart if there's a running run in database
         self._recover_state()
@@ -85,6 +88,7 @@ class OrchestratorEngine:
         self.agent_start_time = None
         self.branch_name = None
         self.prompt_file = None
+        self.current_model = None
 
     def run(self):
         logger.info("Stellar Agent Orchestrator Engine Started.")
@@ -104,7 +108,38 @@ class OrchestratorEngine:
     # ------------------------------------------------------------------
 
     def _restore_cooldown_from_db(self):
-        """On startup, restore any persisted quota cooldown so restarts don't bypass it."""
+        """On startup, restore any persisted model/quota cooldowns so restarts don't bypass them."""
+        # 1. Restore Gemini cooldown
+        stored_gemini = self.state_db.get_state("gemini_cooldown_until")
+        if stored_gemini:
+            try:
+                cooldown_dt = datetime.fromisoformat(stored_gemini)
+                now = datetime.now(IST)
+                if cooldown_dt > now:
+                    self.gemini_cooldown_until = cooldown_dt
+                    remaining = (cooldown_dt - now).total_seconds() / 60
+                    logger.warning("[STARTUP] Restored Gemini quota cooldown remaining_min=%.1f cooldown_until=%s", remaining, cooldown_dt.isoformat())
+                else:
+                    self.state_db.set_state("gemini_cooldown_until", "")
+            except Exception as e:
+                logger.error("Failed to restore Gemini cooldown: %s", e)
+
+        # 2. Restore Claude cooldown
+        stored_claude = self.state_db.get_state("claude_cooldown_until")
+        if stored_claude:
+            try:
+                cooldown_dt = datetime.fromisoformat(stored_claude)
+                now = datetime.now(IST)
+                if cooldown_dt > now:
+                    self.claude_cooldown_until = cooldown_dt
+                    remaining = (cooldown_dt - now).total_seconds() / 60
+                    logger.warning("[STARTUP] Restored Claude quota cooldown remaining_min=%.1f cooldown_until=%s", remaining, cooldown_dt.isoformat())
+                else:
+                    self.state_db.set_state("claude_cooldown_until", "")
+            except Exception as e:
+                logger.error("Failed to restore Claude cooldown: %s", e)
+
+        # 3. Restore global cooldown
         stored = self.state_db.get_state("quota_cooldown_until")
         if stored:
             try:
@@ -114,11 +149,11 @@ class OrchestratorEngine:
                     self.quota_cooldown_until = cooldown_dt
                     remaining = (cooldown_dt - now).total_seconds() / 60
                     logger.warning(
-                        "[STARTUP] Restored quota cooldown from DB remaining_min=%.1f cooldown_until=%s",
+                        "[STARTUP] Restored global quota cooldown from DB remaining_min=%.1f cooldown_until=%s",
                         remaining, cooldown_dt.isoformat()
                     )
                 else:
-                    logger.info("[STARTUP] Stored quota cooldown has already expired clearing=true")
+                    logger.info("[STARTUP] Stored global quota cooldown has already expired clearing=true")
                     self.state_db.set_state("quota_cooldown_until", "")
             except Exception as e:
                 logger.error("Failed to restore cooldown from DB error=%s", str(e))
@@ -191,17 +226,45 @@ class OrchestratorEngine:
             return fallback
 
     def _is_in_cooldown(self, now: datetime) -> bool:
-        """Return True if the engine is currently in quota cooldown."""
-        if self.quota_cooldown_until and now < self.quota_cooldown_until:
+        """Return True if the engine is currently in a global quota cooldown (i.e. both models are exhausted)."""
+        # Clear expired model cooldowns
+        if self.gemini_cooldown_until and now >= self.gemini_cooldown_until:
+            logger.info("[COOLDOWN] Gemini quota cooldown lifted.")
+            self.gemini_cooldown_until = None
+            self.state_db.set_state("gemini_cooldown_until", "")
+            
+        if self.claude_cooldown_until and now >= self.claude_cooldown_until:
+            logger.info("[COOLDOWN] Claude quota cooldown lifted.")
+            self.claude_cooldown_until = None
+            self.state_db.set_state("claude_cooldown_until", "")
+
+        # If a model is free, we are NOT in global cooldown
+        if not self.gemini_cooldown_until or not self.claude_cooldown_until:
+            # Clear global cooldown if it was set
+            if self.quota_cooldown_until:
+                self.quota_cooldown_until = None
+                self.state_db.set_state("quota_cooldown_until", "")
+            return False
+
+        # If both models are in cooldown, the engine must sleep
+        # We set the global quota_cooldown_until to the earliest of the two resets
+        earliest_recovery = min(self.gemini_cooldown_until, self.claude_cooldown_until)
+        if not self.quota_cooldown_until or self.quota_cooldown_until != earliest_recovery:
+            self.quota_cooldown_until = earliest_recovery
+            self.state_db.set_state("quota_cooldown_until", earliest_recovery.isoformat())
+
+        if now < self.quota_cooldown_until:
             remaining = (self.quota_cooldown_until - now).total_seconds() / 60
             logger.info(
-                "[COOLDOWN] Quota not yet refreshed remaining_min=%.1f cooldown_until=%s action=skip_tick",
+                "[COOLDOWN] Both Gemini and Claude quotas are exhausted. remaining_min=%.1f cooldown_until=%s action=skip_tick",
                 remaining, self.quota_cooldown_until.isoformat()
             )
             return True
-        if self.quota_cooldown_until and now >= self.quota_cooldown_until:
-            logger.info("[COOLDOWN] Quota cooldown lifted resuming_scheduling=true")
-            self.quota_cooldown_until = None
+
+        # Global cooldown lifted
+        logger.info("[COOLDOWN] Global quota cooldown lifted resuming_scheduling=true")
+        self.quota_cooldown_until = None
+        self.state_db.set_state("quota_cooldown_until", "")
         return False
 
     def _tick(self):
@@ -293,16 +356,39 @@ class OrchestratorEngine:
             quota_reset_at = self._check_quota_error(log_tail)
 
             if quota_reset_at:
-                # Agent hit quota — treat as failed and enter cooldown
-                logger.warning("Agent terminated by quota exhaustion agent_id=%s run_id=%s cooldown_until=%s", self.current_agent_id, self.current_run_id, quota_reset_at.isoformat())
-                self.quota_cooldown_until = quota_reset_at
-                self.state_db.set_state("quota_cooldown_until", quota_reset_at.isoformat())
+                current_model = self.current_model or config.MODEL_GEMINI
+                logger.warning("Agent terminated by quota exhaustion model=%s agent_id=%s run_id=%s cooldown_until=%s", current_model, self.current_agent_id, self.current_run_id, quota_reset_at.isoformat())
+                
+                # Set model-specific cooldown in database
+                if current_model == config.MODEL_GEMINI:
+                    self.gemini_cooldown_until = quota_reset_at
+                    self.state_db.set_state("gemini_cooldown_until", quota_reset_at.isoformat())
+                else:
+                    self.claude_cooldown_until = quota_reset_at
+                    self.state_db.set_state("claude_cooldown_until", quota_reset_at.isoformat())
+                
                 self.state_db.fail_run(
                     self.current_run_id, now_str,
                     f"RESOURCE_EXHAUSTED (429): quota resets at {quota_reset_at.isoformat()}",
-                    summary_message="Agent aborted due to API quota exhaustion."
+                    summary_message=f"Agent aborted due to API quota exhaustion on model: {current_model}."
                 )
                 container.unload_agent_prompt()
+                
+                # Find current agent config to check for fallback retry
+                current_agent = None
+                for a in config.AGENT_PIPELINE:
+                    if a['id'] == self.current_agent_id:
+                        current_agent = a
+                        break
+                
+                # If Gemini failed and Claude is available, retry immediately
+                if current_agent and current_model == config.MODEL_GEMINI and not self.claude_cooldown_until:
+                    logger.warning("Gemini quota exhausted. Retrying agent %s immediately using Claude Sonnet fallback...", self.current_agent_id)
+                    self._clear_active_run()
+                    self._start_agent(current_agent)
+                    return
+                
+                # Otherwise, clear active run (if both failed, engine goes to global cooldown sleep)
                 self._clear_active_run()
                 return
             
@@ -570,6 +656,9 @@ class OrchestratorEngine:
         self.branch_name = f"{config.GITHUB_BRANCH_PREFIX}{self.current_agent_id}/{date_str}"
         self.agent_start_time = now
         
+        # Determine active model based on quota states
+        self.current_model = self._get_active_model(now)
+        
         # Register in database
         self.current_run_id = self.state_db.start_run(
             agent_id=self.current_agent_id,
@@ -584,7 +673,8 @@ class OrchestratorEngine:
             self.current_process = container.run_agent(
                 agent_id=self.current_agent_id,
                 prompt_file=self.prompt_file,
-                branch_name=self.branch_name
+                branch_name=self.branch_name,
+                model_name=self.current_model
             )
         except Exception as e:
             logger.error("Failed to start agent agent_id=%s run_id=%s error=%s", self.current_agent_id, self.current_run_id, str(e))
@@ -1013,3 +1103,27 @@ class OrchestratorEngine:
             conn.commit()
 
         logger.info("Archived %d summarized memories.", len(memory_ids))
+
+    def _get_active_model(self, now: datetime) -> str:
+        """Determines which model to use for the agent run based on current cooldown states."""
+        # Clean up any expired cooldowns first
+        if self.gemini_cooldown_until and now >= self.gemini_cooldown_until:
+            logger.info("Gemini quota cooldown expired.")
+            self.gemini_cooldown_until = None
+            self.state_db.set_state("gemini_cooldown_until", "")
+        if self.claude_cooldown_until and now >= self.claude_cooldown_until:
+            logger.info("Claude quota cooldown expired.")
+            self.claude_cooldown_until = None
+            self.state_db.set_state("claude_cooldown_until", "")
+
+        # If Gemini is not in cooldown, always prioritize Gemini
+        if not self.gemini_cooldown_until:
+            return config.MODEL_GEMINI
+            
+        # If Gemini is in cooldown but Claude is free, use Claude
+        if not self.claude_cooldown_until:
+            logger.info("Gemini is in cooldown. Falling back to Claude Sonnet for run.")
+            return config.MODEL_CLAUDE
+
+        # Fallback to Gemini if both are in cooldown (should be guarded by _is_in_cooldown, but be safe)
+        return config.MODEL_GEMINI

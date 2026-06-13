@@ -133,7 +133,7 @@ def restart_container():
             logger.error(f"Failed to start container {config.CONTAINER_NAME} as fallback: {start_err}")
 
 
-def run_agent(agent_id: str, prompt_file: str, branch_name: str) -> subprocess.Popen:
+def run_agent(agent_id: str, prompt_file: str, branch_name: str, model_name: str = config.MODEL_GEMINI) -> subprocess.Popen:
     """Launch the agent's work cycle in a background process."""
     # Restart container before agent starts to guarantee clean environment
     restart_container()
@@ -163,10 +163,10 @@ def run_agent(agent_id: str, prompt_file: str, branch_name: str) -> subprocess.P
     agy_exec_cmd = f"""
     cd {config.CONTAINER_WORKSPACE} && \
     export PATH="/root/.local/bin:$PATH" && \
-    /root/.local/bin/agy --dangerously-skip-permissions --print-timeout 40m --print "Please read your instructions from /root/.agents/AGENTS.md carefully and fulfill your role completely. You are working in the repository /root/Stellar. CRITICAL: Every turn of your response MUST contain at least one tool call until your work is fully completed and you have opened the pull request. Do NOT write text-only thoughts or plan descriptions without accompanying tool calls, otherwise your execution will terminate prematurely. When your work is complete, verify it using your verify instructions, get code-reviewer approval, and then open a pull request using the github cli (gh pr create). CRITICAL: Do NOT checkout or create a new git branch. You are already placed on a dedicated branch for this run; make commits and open the PR directly from the current active branch."
+    /root/.local/bin/agy --model "{model_name}" --dangerously-skip-permissions --print-timeout 40m --print "Please read your instructions from /root/.agents/AGENTS.md carefully and fulfill your role completely. You are working in the repository /root/Stellar. CRITICAL: Every turn of your response MUST contain at least one tool call until your work is fully completed and you have opened the pull request. Do NOT write text-only thoughts or plan descriptions without accompanying tool calls, otherwise your execution will terminate prematurely. When your work is complete, verify it using your verify instructions, get code-reviewer approval, and then open a pull request using the github cli (gh pr create). CRITICAL: Do NOT checkout or create a new git branch. You are already placed on a dedicated branch for this run; make commits and open the PR directly from the current active branch."
     """
     
-    logger.info(f"Starting agy run for agent {agent_id} on branch {branch_name}...")
+    logger.info(f"Starting agy run for agent {agent_id} on branch {branch_name} using model {model_name}...")
     
     proc = subprocess.Popen(
         ["docker", "exec", "-t", config.CONTAINER_NAME, "bash", "-c", agy_exec_cmd],
