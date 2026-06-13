@@ -6142,10 +6142,14 @@ def _get_orchestrator_sqlite_conn(path):
     Bolt - Performance/Stability Optimization: Retrieve a configured connection to the orchestrator or memory database.
     Enforces WAL mode and busy timeout to prevent database locking errors.
     """
+    t0 = time.time()
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
     conn.row_factory = sqlite3.Row
+    duration = time.time() - t0
+    if duration > 0.05:
+        logger.warning("Slow orchestrator database connection path=%s duration_sec=%.3f", path, duration)
     return conn
 
 @app.route('/api/admin/orchestrator/status')

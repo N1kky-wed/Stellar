@@ -46,10 +46,14 @@ def get_db_conn():
     Returns:
         sqlite3.Connection: The database connection object.
     """
+    t0 = time.time()
     conn = sqlite3.connect(DATABASE_NAME)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
+    duration = time.time() - t0
+    if duration > 0.05:
+        logger.warning("Slow sentinel healer database connection duration_sec=%.3f", duration)
     return conn
 
 def get_working_api_key(model_name="gemini-3.5-flash"):

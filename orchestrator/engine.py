@@ -539,33 +539,39 @@ class OrchestratorEngine:
         return None
 
     def _pull_and_reload_services(self, pr_num: int) -> bool:
+        t_start = time.time()
         logger.info("PR merged starting host service update pr_num=%d", pr_num)
         restart_orchestrator = False
         try:
             repo = "/home/stellaradmin/my_app"
 
             # 1. Ensure we're on main (orchestrator may have left the repo on an agent branch)
+            t0 = time.time()
             checkout_res = subprocess.run(
                 ["sudo", "-u", "stellaradmin", "git", "checkout", "main"],
                 cwd=repo, capture_output=True, text=True
             )
             if checkout_res.returncode != 0:
-                logger.warning("git checkout main failed error=%s", checkout_res.stderr.strip())
+                logger.warning("git checkout main failed error=%s duration_sec=%.3f", checkout_res.stderr.strip(), time.time() - t0)
+            else:
+                logger.info("git checkout main completed duration_sec=%.3f", time.time() - t0)
 
             # 2. Pull as stellaradmin — they own the SSH key
+            t0 = time.time()
             pull_res = subprocess.run(
                 ["sudo", "-u", "stellaradmin", "git", "pull"],
                 cwd=repo, capture_output=True, text=True, check=True
             )
-            logger.info("git pull completed output=%s", pull_res.stdout.strip())
+            logger.info("git pull completed output=%s duration_sec=%.3f", pull_res.stdout.strip(), time.time() - t0)
 
             # 3. Get list of files modified in the merge commit
+            t0 = time.time()
             diff_res = subprocess.run(
                 ["sudo", "-u", "stellaradmin", "git", "diff", "HEAD~1", "HEAD", "--name-only"],
                 cwd=repo, capture_output=True, text=True, check=True
             )
             files = [f.strip() for f in diff_res.stdout.strip().split('\n') if f.strip()]
-            logger.info("Files modified in merge commit files=%s", str(files))
+            logger.info("Files modified in merge commit files=%s duration_sec=%.3f", str(files), time.time() - t0)
 
             reload_stellar = False
             restart_ssh = False
@@ -586,23 +592,28 @@ class OrchestratorEngine:
 
             if update_packages:
                 logger.info("requirements.txt changed. Installing package updates in host venv...")
+                t0 = time.time()
                 try:
                     subprocess.run([
                         "sudo", "-u", "stellaradmin",
                         "/home/stellaradmin/my_app/venv/bin/pip", "install",
                         "-r", "/home/stellaradmin/my_app/requirements.txt"
                     ], check=True, capture_output=True, text=True)
-                    logger.info("Package updates installed successfully.")
+                    logger.info("Package updates installed successfully duration_sec=%.3f", time.time() - t0)
                 except subprocess.CalledProcessError as cpe:
-                    logger.error("Failed to install packages in host venv: %s", cpe.stderr.strip())
+                    logger.error("Failed to install packages in host venv: %s duration_sec=%.3f", cpe.stderr.strip(), time.time() - t0)
 
             if reload_stellar:
+                t0 = time.time()
                 logger.info("Auto-reloading stellar.service")
                 subprocess.run(["sudo", "systemctl", "reload", "stellar"], check=True)
+                logger.info("Auto-reloaded stellar.service duration_sec=%.3f", time.time() - t0)
 
             if restart_ssh:
+                t0 = time.time()
                 logger.info("Auto-restarting stellar-ssh.service")
                 subprocess.run(["sudo", "systemctl", "restart", "stellar-ssh"], check=True)
+                logger.info("Auto-restarted stellar-ssh.service duration_sec=%.3f", time.time() - t0)
 
             if restart_orchestrator:
                 logger.info("Auto-restarting stellar_orchestrator.service")
@@ -610,8 +621,9 @@ class OrchestratorEngine:
                 subprocess.Popen(["sudo", "systemctl", "restart", "stellar_orchestrator"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         except Exception as e:
-            logger.error("Failed to auto-pull or reload services for PR pr_num=%d error=%s", pr_num, str(e), exc_info=True)
+            logger.error("Failed to auto-pull or reload services for PR pr_num=%d error=%s duration_sec=%.3f", pr_num, str(e), time.time() - t_start, exc_info=True)
             
+        logger.info("Host service update completed pr_num=%d total_duration_sec=%.3f", pr_num, time.time() - t_start)
         return restart_orchestrator
 
 
@@ -783,6 +795,7 @@ class OrchestratorEngine:
                 os.remove(host_context_path)
 
     def _process_agent_memory_outbox(self, agent_id: str, run_id: Optional[int], summary: Optional[str]):
+        t0 = time.time()
         host_outbox_path = "/home/stellaradmin/my_app/orchestrator/memory_outbox.json"
         
         copied = container.read_memory_outbox_from_container(host_outbox_path)
@@ -916,6 +929,7 @@ class OrchestratorEngine:
             finally:
                 if os.path.exists(host_outbox_path):
                     os.remove(host_outbox_path)
+        logger.info("Processed memory outbox for agent: agent_id=%s run_id=%s duration_sec=%.3f", agent_id, run_id, time.time() - t0)
 
     def _check_memory_summarization(self, now: datetime):
         """Check if memory summarization is due (every 12 hours) and run it."""
@@ -946,6 +960,7 @@ class OrchestratorEngine:
 
     def _run_memory_summarization(self):
         """Fetch unarchived memories, summarize them using gemini-3.5-flash to update or create facts."""
+        t_start = time.time()
         with self.memory_db._get_conn() as conn:
             rows = conn.execute("""
                 SELECT * FROM agent_memories
@@ -1030,6 +1045,7 @@ class OrchestratorEngine:
                 logger.info("Attempting summarization with API key %s", masked_key)
                 client = genai.Client(api_key=key, http_options={'api_version': 'v1beta'})
                 
+                t_api = time.time()
                 resp = client.models.generate_content(
                     model=model_id,
                     contents=prompt,
@@ -1039,7 +1055,9 @@ class OrchestratorEngine:
                         temperature=0.1,
                     )
                 )
+                duration_api = time.time() - t_api
                 if resp and resp.text:
+                    logger.info("Gemini summarization API call completed model=%s duration_sec=%.3f", model_id, duration_api)
                     break
             except Exception as e:
                 logger.warning("Gemini summarization API call failed: %s", e)
@@ -1102,7 +1120,7 @@ class OrchestratorEngine:
             """, memory_ids)
             conn.commit()
 
-        logger.info("Archived %d summarized memories.", len(memory_ids))
+        logger.info("Archived %d summarized memories. Total summarization duration_sec=%.3f", len(memory_ids), time.time() - t_start)
 
     def _get_active_model(self, now: datetime) -> str:
         """Determines which model to use for the agent run based on current cooldown states."""

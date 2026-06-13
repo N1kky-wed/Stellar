@@ -321,11 +321,15 @@ def get_user_repos(user_id: int) -> list:
     repos = []
     conn = None
     try:
+        t0 = time.time()
         conn = sqlite3.connect(DATABASE_PATH)
         conn.row_factory = sqlite3.Row
         # Set WAL mode and busy timeout to avoid database locked errors under load
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA busy_timeout=5000;")
+        duration = time.time() - t0
+        if duration > 0.05:
+            logger.warning("Slow SSH Gateway database connection duration_sec=%.3f", duration)
         cursor = conn.execute(
             'SELECT id, project_name, process_id, container_id, status, '
             'subdomain, created_at, app_type FROM repo_history '
