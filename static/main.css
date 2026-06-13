@@ -1056,7 +1056,7 @@ body::before {
   align-items: center;
   justify-content: space-between;
   padding-bottom: 15px;
-  margin: 0 0 15px 0 !important; /* Locks out any margin-top: auto */
+  margin: 0 0 12px 0 !important; /* Locks out any margin-top: auto */
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
@@ -1091,7 +1091,7 @@ body::before {
 .user-info {
   font-size: 0.9rem;
   color: var(--secondary-text-color);
-  margin: 0 0 20px 0 !important;
+  margin: 0 0 12px 0 !important;
   flex-shrink: 0;
 }
 
@@ -1102,8 +1102,8 @@ body::before {
 .sidebar-actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 0 0 20px 0 !important;
+  gap: 12px;
+  margin: 0 0 12px 0 !important;
   flex-shrink: 0;
 }
 
@@ -1122,7 +1122,6 @@ body::before {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  margin: 0 0 20px 0 !important;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1149,7 +1148,6 @@ body::before {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  margin: 0 0 20px 0 !important;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1180,7 +1178,7 @@ body::before {
 
 .chat-search-container {
   position: relative;
-  margin: 0 0 15px 0 !important;
+  margin: 0 0 12px 0 !important;
   flex-shrink: 0;
 }
 
@@ -1225,7 +1223,7 @@ body::before {
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
@@ -4400,7 +4398,7 @@ input:checked + .admin-slider:before {
 
 #logoutButton {
   width: calc(100% - 30px);
-  margin: 15px auto 0 auto !important;
+  margin: 12px auto 0 auto !important;
   padding: 12px;
   background: rgba(255, 42, 77, 0.1);
   color: #ff2a4d;
