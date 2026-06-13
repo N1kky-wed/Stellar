@@ -418,3 +418,199 @@ def test_test_sentinel_overlay_route(client):
     assert b"test-id" in response.data
 
 
+@patch('sentinel_healer.docker.from_env')
+@patch('sentinel_healer.genai.Client')
+def test_healer_workflow_path_traversal(mock_genai_client_class, mock_docker_env, setup_repo_history, client):
+    # Create an error DB entry first
+    db = get_db()
+    cursor = db.execute(
+        "INSERT INTO sentinel_app_errors (process_id, error_type, error_message, stack_trace, affected_file, affected_line) VALUES (?, ?, ?, ?, ?, ?)",
+        ("test-process-123", "js_error", "ReferenceError: x is not defined", "traceback", "main.js", 10)
+    )
+    db.commit()
+    error_id = cursor.lastrowid
+
+    # Mock Docker SDK objects
+    mock_docker_client = MagicMock()
+    mock_docker_env.return_value = mock_docker_client
+    
+    mock_container = MagicMock()
+    mock_container.status = "running"
+    mock_container.attrs = {
+        "Mounts": [
+            {
+                "Source": "/tmp/mock_sandbox_mount_traversal",
+                "Destination": "/app"
+            }
+        ]
+    }
+    mock_docker_client.containers.get.return_value = mock_container
+
+    # Set up mock host mount directory on filesystem
+    import shutil
+    mock_host_dir = "/tmp/mock_sandbox_mount_traversal"
+    os.makedirs(mock_host_dir, exist_ok=True)
+    with open(os.path.join(mock_host_dir, "main.js"), "w") as f:
+        f.write("console.log(x);")
+    
+    # Mock Gemini Client API response returning a malicious path traversal patch
+    mock_client_instance = MagicMock()
+    mock_genai_client_class.return_value = mock_client_instance
+    
+    mock_chat = MagicMock()
+    mock_client_instance.chats.create.return_value = mock_chat
+    
+    mock_response = MagicMock()
+    mock_chat.send_message.return_value = mock_response
+    
+    mock_part = MagicMock()
+    mock_part.text = json.dumps({
+        "patches": [
+            {
+                "file_path": "../traversal_file.txt",
+                "full_content": "malicious content",
+                "explanation": "Attempt traversal write."
+            }
+        ],
+        "root_cause": "untrusted input test."
+    })
+    mock_candidate = MagicMock()
+    mock_candidate.content.parts = [mock_part]
+    mock_response.candidates = [mock_candidate]
+
+    # Mock Redis client
+    mock_redis = MagicMock()
+    mock_redis.set.return_value = True
+
+    # Call heal_application
+    from sentinel_healer import heal_application
+    with patch('sentinel_healer.get_db_conn') as mock_healer_db:
+        import app
+        def get_test_conn():
+            conn = sqlite3.connect(app.DATABASE_NAME)
+            conn.row_factory = sqlite3.Row
+            return conn
+        mock_healer_db.side_effect = get_test_conn
+        
+        with patch('sentinel_healer.SANDBOX_DIR', '/tmp'):
+            heal_application("test-process-123", error_id, mock_redis)
+
+    # Verify traversal file was NOT created outside mock_host_dir
+    traversal_dest = "/tmp/traversal_file.txt"
+    assert not os.path.exists(traversal_dest)
+
+    # Verify DB error status resolved to open (failed healing)
+    db = get_db()
+    cursor = db.execute("SELECT status FROM sentinel_app_errors WHERE id = ?", (error_id,))
+    row = cursor.fetchone()
+    assert row['status'] == 'open'
+
+    # Clean up mock directories
+    shutil.rmtree(mock_host_dir, ignore_errors=True)
+    if os.path.exists(traversal_dest):
+        os.remove(traversal_dest)
+
+
+@patch('sentinel_healer.docker.from_env')
+@patch('sentinel_healer.genai.Client')
+def test_healer_workflow_symlink_traversal(mock_genai_client_class, mock_docker_env, setup_repo_history, client):
+    # Create an error DB entry first
+    db = get_db()
+    cursor = db.execute(
+        "INSERT INTO sentinel_app_errors (process_id, error_type, error_message, stack_trace, affected_file, affected_line) VALUES (?, ?, ?, ?, ?, ?)",
+        ("test-process-123", "js_error", "ReferenceError: x is not defined", "traceback", "main.js", 10)
+    )
+    db.commit()
+    error_id = cursor.lastrowid
+
+    # Mock Docker SDK objects
+    mock_docker_client = MagicMock()
+    mock_docker_env.return_value = mock_docker_client
+    
+    mock_container = MagicMock()
+    mock_container.status = "running"
+    mock_container.attrs = {
+        "Mounts": [
+            {
+                "Source": "/tmp/mock_sandbox_mount_symlink",
+                "Destination": "/app"
+            }
+        ]
+    }
+    mock_docker_client.containers.get.return_value = mock_container
+
+    # Set up mock host mount directory on filesystem
+    import shutil
+    mock_host_dir = "/tmp/mock_sandbox_mount_symlink"
+    os.makedirs(mock_host_dir, exist_ok=True)
+    with open(os.path.join(mock_host_dir, "main.js"), "w") as f:
+        f.write("console.log(x);")
+    
+    # Create a symlink pointing outside
+    forbidden_file = "/tmp/forbidden_file.txt"
+    if os.path.exists(forbidden_file):
+        os.remove(forbidden_file)
+    symlink_path = os.path.join(mock_host_dir, "symlink_file.js")
+    try:
+        os.symlink(forbidden_file, symlink_path)
+    except OSError:
+        pass # Handle platforms/conditions where symlink creation fails
+        
+    # Mock Gemini Client API response returning a symlink traversal patch
+    mock_client_instance = MagicMock()
+    mock_genai_client_class.return_value = mock_client_instance
+    
+    mock_chat = MagicMock()
+    mock_client_instance.chats.create.return_value = mock_chat
+    
+    mock_response = MagicMock()
+    mock_chat.send_message.return_value = mock_response
+    
+    mock_part = MagicMock()
+    mock_part.text = json.dumps({
+        "patches": [
+            {
+                "file_path": "symlink_file.js",
+                "full_content": "malicious content",
+                "explanation": "Attempt symlink write."
+            }
+        ],
+        "root_cause": "untrusted input test."
+    })
+    mock_candidate = MagicMock()
+    mock_candidate.content.parts = [mock_part]
+    mock_response.candidates = [mock_candidate]
+
+    # Mock Redis client
+    mock_redis = MagicMock()
+    mock_redis.set.return_value = True
+
+    # Call heal_application
+    from sentinel_healer import heal_application
+    with patch('sentinel_healer.get_db_conn') as mock_healer_db:
+        import app
+        def get_test_conn():
+            conn = sqlite3.connect(app.DATABASE_NAME)
+            conn.row_factory = sqlite3.Row
+            return conn
+        mock_healer_db.side_effect = get_test_conn
+        
+        with patch('sentinel_healer.SANDBOX_DIR', '/tmp'):
+            heal_application("test-process-123", error_id, mock_redis)
+
+    # Verify traversal file was NOT created outside mock_host_dir
+    assert not os.path.exists(forbidden_file)
+
+    # Verify DB error status resolved to open (failed healing)
+    db = get_db()
+    cursor = db.execute("SELECT status FROM sentinel_app_errors WHERE id = ?", (error_id,))
+    row = cursor.fetchone()
+    assert row['status'] == 'open'
+
+    # Clean up mock directories
+    shutil.rmtree(mock_host_dir, ignore_errors=True)
+    if os.path.exists(forbidden_file):
+        os.remove(forbidden_file)
+
+
+
