@@ -94,8 +94,7 @@ def test_download_access_denied(auth_client):
 def test_download_file_success(mock_send_from_dir, auth_client):
     with patch('os.path.exists', return_value=True), \
          patch('os.path.isfile', return_value=True), \
-         patch('os.path.realpath', side_effect=lambda x: x), \
-         patch('os.path.commonpath', return_value="/root/Stellar/outputs"):
+         patch('os.path.realpath', side_effect=lambda x: x):
         mock_send_from_dir.return_value = "file_content"
         response = auth_client.get('/download/test_report.pdf')
         assert response.status_code == 200
@@ -172,8 +171,7 @@ def test_view_mimetypes(mock_send_from_dir, auth_client):
         mock_send_from_dir.reset_mock()
         with patch('os.path.exists', return_value=True), \
              patch('os.path.isfile', return_value=True), \
-             patch('os.path.realpath', side_effect=lambda x: x), \
-             patch('os.path.commonpath', return_value="/root/Stellar/outputs"):
+             patch('os.path.realpath', side_effect=lambda x: x):
             
             mock_send_from_dir.return_value = "content"
             response = auth_client.get(f'/view/{filename}')
