@@ -77,6 +77,11 @@ def main():
                     summary_message=summary_msg
                 )
                 try:
+                    engine.state_db.set_state("pending_immediate_agent", engine.current_agent_id)
+                    logger.info(f"Interrupted agent {engine.current_agent_id} queued as pending_immediate_agent for startup recovery.")
+                except Exception as se:
+                    logger.error(f"Failed to set pending_immediate_agent on interrupt: {se}")
+                try:
                     engine.memory_db.add_message(
                         channel="group",
                         sender_id="orchestrator",
