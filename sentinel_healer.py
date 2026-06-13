@@ -362,6 +362,12 @@ def heal_application(process_id, error_id, r_client):
                 ext = os.path.splitext(file)[1]
                 if ext in ['.py', '.js', '.html', '.css', '.json', '.txt']:
                     full_path = os.path.join(root, file)
+                    # Sentinel Security Fix: Verify resolved path doesn't point outside host_dir (symlink traversal mitigation)
+                    real_base = os.path.realpath(host_dir)
+                    real_full_path = os.path.realpath(full_path)
+                    if os.path.commonpath([real_base, real_full_path]) != real_base:
+                        logger.warning("Skipping symlink pointing outside sandbox: %s", full_path)
+                        continue
                     rel_path = os.path.relpath(full_path, host_dir)
                     try:
                         # Skip files larger than 100KB to prevent quota blowout
@@ -482,10 +488,13 @@ Please provide the corrected file contents to heal the application.
         for patch in gemini_response.patches:
             file_path = patch.file_path.strip().lstrip('/')
             
-            # Prevent directory traversal
-            abs_host_dir = os.path.abspath(host_dir)
-            target_file_path = os.path.abspath(os.path.join(abs_host_dir, file_path))
-            if not target_file_path.startswith(abs_host_dir):
+            # Sentinel Security Fix: Prevent directory/symlink traversal during patch writing
+            real_host_dir = os.path.realpath(host_dir)
+            target_file_path = os.path.abspath(os.path.join(real_host_dir, file_path))
+            real_target_path = os.path.realpath(target_file_path)
+            parent_dir = os.path.dirname(real_target_path)
+            if (os.path.commonpath([real_host_dir, real_target_path]) != real_host_dir and
+                os.path.commonpath([real_host_dir, parent_dir]) != real_host_dir):
                 raise ValueError(f"Security error: path traversal attempt detected: {file_path}")
 
             # Read old content if exists
