@@ -6208,7 +6208,25 @@ def get_agent_group_chat_history():
 
     # Sort messages by timestamp
     messages.sort(key=lambda x: x['timestamp'])
-    return jsonify(messages)
+
+    # Server-side de-duplication: Bolt - De-duplicate messages between agent_runs and agent_messages to avoid double summaries and completions in group chat
+    deduped_messages = []
+    seen = set()  # (clean_sender_name, content_strip)
+    for msg in messages:
+        sender_clean = msg['sender'].replace(' (Agent)', '').strip().upper()
+        content_clean = msg['content'].strip()
+        key = (sender_clean, content_clean)
+        if key in seen:
+            # If we see a duplicate, prefer the cleaner sender name (the one without ' (Agent)')
+            if ' (Agent)' not in msg['sender']:
+                for existing in deduped_messages:
+                    if existing['sender'].replace(' (Agent)', '').strip().upper() == sender_clean and existing['content'].strip() == content_clean:
+                        existing['sender'] = msg['sender']
+            continue
+        seen.add(key)
+        deduped_messages.append(msg)
+
+    return jsonify(deduped_messages)
 
 
 @app.route('/api/admin/agent_group_chat/stream')
