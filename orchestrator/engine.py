@@ -788,6 +788,18 @@ class OrchestratorEngine:
                             related_file=related_file
                         )
                         logger.info("Task created with ID %d: %s", t_id, title)
+                        
+                        # Link a DM thread to this task automatically if assigned to another agent
+                        if assigned_to:
+                            self.memory_db.add_message(
+                                channel="dm",
+                                sender_id=agent_id,
+                                recipient_id=assigned_to,
+                                content=f"New task assigned: **{title}**\nDescription: {desc or 'None'}",
+                                thread_id=f"resolve:task:{t_id}",
+                                message_type="task_ref",
+                                ref_id=str(t_id)
+                            )
                 
                 # 5. Facts added
                 for fact in outbox.get("facts", []):
