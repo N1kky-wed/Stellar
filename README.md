@@ -14,6 +14,7 @@ Stellar is a production-grade Flask application powering [stellarai.live](https:
 - [Environment Configuration (`keys.env`)](#environment-configuration-keysenv)
 - [Docker Infrastructure](#docker-infrastructure)
 - [Production Deployment (Nginx + Gunicorn + systemd)](#production-deployment-nginx--gunicorn--systemd)
+- [Autonomous Agent Orchestrator & Engineering Pipeline](#autonomous-agent-orchestrator--engineering-pipeline)
 - [Agent Models & Personas](#agent-models--personas)
 - [Agent Tool Suite](#agent-tool-suite)
 - [Human-in-the-Loop Interactive UI](#request_user_interactionhtml_ui-goal-status-timeout)
@@ -288,6 +289,137 @@ Key Nginx settings:
 - **Proxy timeouts:** 3600s (matching Gunicorn)
 - **Buffering:** Disabled (`proxy_buffering off`) for real-time streaming
 - **HTTP/1.1 upgrade:** Enabled for SSE compatibility
+
+---
+
+## Autonomous Agent Orchestrator & Engineering Pipeline
+
+Stellar includes an autonomous engineering pipeline managed by a centralized Orchestrator daemon (`orchestrator/`). This framework coordinates a team of specialized engineering agents, executing them in scheduled slots or triggering them dynamically in response to code merges. The primary purpose is to maintain code health, ensure security compliance, improve UI/UX, verify test coverage, expand logging, and update documentation continuously.
+
+### The Agent Team & Directory
+
+The pipeline coordinates six dedicated autonomous agent roles, each defined by an instruction set (located in `/root/.agents/` on the host, loaded dynamically inside the sandbox as `/root/.agents/AGENTS.md`):
+
+1. **Bolt (`bolt`)** — _Performance & Stability Engineer_
+   - **Focus:** Performance bottlenecks, database queries optimization (WAL mode configuration, connection pools), SSE streaming efficiency, Gunicorn/caching mechanisms, and memory consumption profiles.
+2. **Sentinel (`sentinel`)** — _Security Engineer_
+   - **Focus:** Dependency audits, vulnerability patching, authentication and session hardening, input sanitization, and security model enforcement.
+3. **Palette (`palette`)** — _UI/UX Engineer_
+   - **Focus:** Frontend presentation, CSS templates, color themes, responsive layouts, vanilla JS/CSS interactions, and client-side rendering performance.
+4. **Newton (`newton`)** — _Test Engineer_
+   - **Focus:** Writing unit and integration test suites (`pytest`), setting up conftest fixtures, increasing coverage of critical logic, and mocking external system dependencies.
+5. **Lucios (`lucios`)** — _Observability Engineer_
+   - **Focus:** Structured logging context, timing measurements, journalctl visibility, system-wide diagnostics, and logging formatters/handlers.
+6. **Proton (`proton`)** — _Documentation Engineer_
+   - **Focus:** Python docstrings, non-obvious inline comments, README maintenance, topic documentation, and removing stale/obsolete instructions.
+
+### The Execution Pipeline
+
+The execution sequence is structured as a pipeline with scheduled time windows (running on a 3-hour gap starting at 6 AM IST):
+
+| Order | Agent        | Role          | Schedule (IST) |
+| ----- | ------------ | ------------- | -------------- |
+| 1     | **Bolt**     | Performance   | 06:00          |
+| 2     | **Sentinel** | Security      | 09:00          |
+| 3     | **Palette**  | UI/UX         | 12:00          |
+| 4     | **Newton**   | Test          | 15:00          |
+| 5     | **Lucios**   | Observability | 18:00          |
+| 6     | **Proton**   | Documentation | 21:00          |
+
+#### Trigger Mechanisms
+
+Agents are started in two ways:
+
+1. **Scheduled Start:** The orchestrator monitors the pipeline schedules and starts an agent if its scheduled window has arrived and it hasn't completed successfully on the current day.
+2. **Merge Trigger:** The orchestrator monitors the GitHub repository for pull request completions. When an agent's pull request is merged, the orchestrator pulls the changes and triggers the next agent in the pipeline immediately to maintain continuous delivery.
+
+### Execution Lifecycle & Sandbox
+
+Every agent run goes through a secure lifecycle to isolate execution and prevent state pollution:
+
+```mermaid
+graph TD
+    A[Schedule Due / PR Merged] --> B[Restart container 'stellar-persistent']
+    B --> C[Clone repo & checkout branch 'agent/id/timestamp']
+    C --> D[Load agent instructions to 'AGENTS.md']
+    D --> E[Prepare memory_context.md from Memory DB]
+    E --> F[Launch 'agy' CLI inside container via docker exec]
+    F --> G{Watchdog checks status}
+    G -- Timeout >45m --> H[Kill process & restart container]
+    G -- 429 Quota Exhausted --> I[Enter Quota Cooldown]
+    G -- Exit Code 0 --> J[Copy memory_outbox.json to host]
+    J --> K[Process outbox & update Memory DB]
+    K --> L[PR created & submitted]
+```
+
+1. **Clean Slate Provisioning:** The orchestrator restarts the `stellar-persistent` Docker container, clones the clean codebase, checks out a new branch (`agent/<agent_id>/<timestamp>`), and installs packages.
+2. **Context Injection:** The orchestrator loads the agent instructions to `/root/.agents/AGENTS.md` and generates a customized `/root/.agents/memory_context.md` from the SQLite database.
+3. **Execution Watchdog:** The agent executes via the `agy` CLI in non-interactive mode. The orchestrator enforces a `MAX_AGENT_RUNTIME_MINUTES` watchdog (default: 45 minutes) to kill hanging processes.
+4. **Quota Cooldown Handler:** If the agent encounters Gemini rate limits (`RESOURCE_EXHAUSTED` / 429), it parses the wait time and enters a system-wide quota cooldown state, postponing scheduling until the API quota resets.
+5. **Outbox Extraction:** Upon clean exit, the orchestrator retrieves the `/root/.agents/memory_outbox.json` file from the container, updates memories, tasks, messages, and facts on the host database, and logs a completion message to the group chat.
+6. **Auto-Pull & Reload:** If the agent successfully creates a PR and that PR gets merged, the orchestrator pulls the codebase to `/home/stellaradmin/my_app`. If critical files were modified (e.g., `requirements.txt`, `app.py`, `ssh_gateway.py`), the orchestrator automatically reloads/restarts the corresponding system services (`stellar.service`, `stellar-ssh.service`, or `stellar_orchestrator.service`).
+
+---
+
+### Shared Memory & Collaboration Architecture
+
+Information sharing between autonomous agents is decoupled using SQLite storage (`memory.db`), allowing agents to collaborate asynchronously. The shared memory model consists of four key components:
+
+```
+                          ┌────────────────────────┐
+                          │     SQLite Memory      │
+                          │      (memory.db)       │
+                          └───────────┬────────────┘
+         ┌───────────────────┬────────┴───────────┬──────────────────┐
+         ▼                   ▼                    ▼                  ▼
+  ┌─────────────┐     ┌─────────────┐      ┌─────────────┐    ┌─────────────┐
+  │  Memories   │     │  Messages   │      │    Tasks    │    │    Facts    │
+  │ (Observations,│   │(Group/DMs   │      │(Open, Fixed,│    │(Category,   │
+  │  Outcomes,   │     │ threads)    │      │ Resolved)   │    │ superseded) │
+  │  Warnings)  │     │             │      │             │    │             │
+  └─────────────┘     └─────────────┘      └─────────────┘    └─────────────┘
+```
+
+#### 1. Memories
+
+Captures general telemetry from agent runs. Classified into:
+
+- `observation`: Key facts noticed during execution.
+- `decision`: Rationales behind selecting specific designs or logic.
+- `outcome`: Code changes introduced and PR reference info.
+- `warning`: Failures or blockers encountered.
+
+#### 2. Messages (Communication System)
+
+Enables asynchronous direct messaging (DMs) and group announcements.
+
+- **Group Channel:** Used to broadcast run summaries and deployment notifications to the team.
+- **DM Channel:** Used to delegate work (e.g., `sentinel` sending a DM to `newton` requesting test coverage on a security patch). Messages are categorized with a `thread_id` pointing to the corresponding task.
+
+#### 3. Task Management (`agent_tasks`)
+
+Tracks issues, features, and fixes assigned to agents.
+
+- **Task Lifecycle:**
+  - An agent or admin creates an open task.
+  - The assigned agent works on the task, creates a PR, and updates the task status to `fix_submitted` (indicating that verification is pending).
+  - The task creator (or admin) reviews the fix and marks the status as `resolved`.
+
+#### 4. Verified Facts (`agent_facts`)
+
+Maintains a knowledge base of repository rules, architectural details, convention guidelines, and bug patterns.
+
+- Facts are categorized under: `constraint`, `convention`, `architecture`, or `bug_pattern`.
+- When an agent discovers that a previous fact is obsolete, it submits an update to supersede and archive the old fact, keeping the knowledge base clean and verified.
+
+---
+
+### How Information is Shared Across Runs
+
+1. **Before Starting (The Context):**
+   The orchestrator extracts all active facts, open tasks, unread DMs, group chat history, and the previous run summary. It compiles this into a single Markdown file (`/root/.agents/memory_context.md`) and copy-injects it into the container sandbox. The agent reads this file at startup to align its plan.
+2. **After Completion (The Outbox):**
+   The agent writes its new discoveries, sent DMs, task state updates, created tasks, and new/superseded facts to a JSON payload at `/root/.agents/memory_outbox.json`. When the container process terminates, the orchestrator parses this file and commits the values back to `memory.db`, making them available for the next scheduled agent.
 
 ---
 
