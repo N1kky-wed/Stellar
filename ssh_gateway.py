@@ -81,6 +81,15 @@ class GatewayFormatter(logging.Formatter):
     Injects the thread-local SSH session ID into the log record to ensure traceability of actions.
     """
     def format(self, record):
+        """
+        Format the specified log record, injecting the thread-local SSH session ID.
+
+        Args:
+            record (logging.LogRecord): The log record to format.
+
+        Returns:
+            str: The formatted log record string.
+        """
         try:
             session_id = getattr(_thread_local, 'session_id', 'system')
             record.session_id = session_id
@@ -1626,6 +1635,14 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         last_drawn_content = None
 
         def draw(content: str, clear: bool = False):
+            """
+            Render the content string onto the SSH channel.
+            Uses double-buffering and line-by-line diffing to prevent terminal flickering.
+
+            Args:
+                content (str): The rendered TUI screen content.
+                clear (bool, optional): Force a full screen refresh. Defaults to False.
+            """
             nonlocal last_drawn_content
             if not clear and content == last_drawn_content:
                 return
@@ -2207,6 +2224,14 @@ def main():
     shutdown_event = threading.Event()
 
     def signal_handler(signum, frame):
+        """
+        Handle shutdown signals (SIGINT, SIGTERM) by setting the shutdown event
+        to stop the server gracefully.
+
+        Args:
+            signum (int): The signal number.
+            frame (frame): The current stack frame.
+        """
         logger.info("Shutdown signal received, shutting down SSH gateway...")
         shutdown_event.set()
 

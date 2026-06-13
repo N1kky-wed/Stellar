@@ -33,7 +33,14 @@ def _get_effective_session():
         return session
     
     class SafeSession(dict):
+        """
+        A dict-like session wrapper that acts as a safe fallback when operating outside
+        a traditional Flask request context (e.g. in background thread execution).
+        """
         def __init__(self):
+            """
+            Initialize SafeSession by pre-populating session keys from the global thread context.
+            """
             super().__init__()
             # Pre-populate from g which is set in background_thread_runner
             # Only access g if we have an app context
@@ -124,6 +131,16 @@ def web_search(
         tavily_keys = [k for k in dict.fromkeys(tavily_keys) if k]
 
         def execute_tavily_with_retries(operation, **kwargs):
+            """
+            Execute a Tavily API operation with automatic key rotation and retry logic.
+
+            Args:
+                operation (str): The Tavily operation to execute ('search', 'extract', 'crawl', or 'map').
+                **kwargs: Keyword arguments passed to the Tavily SDK.
+
+            Returns:
+                dict: The response returned by the Tavily API.
+            """
             if not tavily_keys:
                 raise Exception("Tavily search failed: API Key missing.")
             last_error = None
@@ -149,14 +166,41 @@ def web_search(
 
         # Strip None values out of kwargs to prevent SDK validation errors
         def clean_kwargs(kwargs_dict):
+            """
+            Strip out all None values from a dictionary.
+
+            Args:
+                kwargs_dict (dict): The dictionary to clean.
+
+            Returns:
+                dict: The cleaned dictionary.
+            """
             return {k: v for k, v in kwargs_dict.items() if v is not None}
 
         # Deterministic Image Verification Filter
         def _verify_tavily_images(data):
+            """
+            Verify that images returned by Tavily are actually online.
+
+            Args:
+                data (dict): The raw Tavily search/extract result.
+
+            Returns:
+                dict: The results dictionary containing verified images.
+            """
             if not include_images: return data
             import requests
             from concurrent.futures import ThreadPoolExecutor
             def _is_online(url):
+                """
+                Check if the given image URL returns a 200 HTTP status code.
+
+                Args:
+                    url (str): The image URL.
+
+                Returns:
+                    bool: True if online; False otherwise.
+                """
                 try:
                     r = requests.get(url, stream=True, timeout=3)
                     r.close()
@@ -842,11 +886,17 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
     keys_to_try = active_keys
 
     class Slide(BaseModel):
+        """
+        Pydantic model representing the content and layout description of a single slide.
+        """
         title: str = Field(description="Main title for the slide.")
         summary: str = Field(description="A comprehensive, detailed summary for the slide. Provide as much informative content as necessary to make the slide educational and deep, using multiple paragraphs or extensive bullet points if needed.")
         background_description: str = Field(description="Detailed description of the visual layout: specify a multi-column infographic structure, specific diagrams (like flowcharts or state diagrams), icons, and thematic imagery that complements the dense text.")
 
     class PresentationPlan(BaseModel):
+        """
+        Pydantic model representing the full presentation plan containing a list of slides.
+        """
         slides: list[Slide]
 
     slide_plan_prompt = (
@@ -892,6 +942,15 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
     slides_data = plan.get('slides', [])
     
     async def fetch_image(slide_data):
+        """
+        Asynchronously generate a slide image by invoking the Gemini image generation model.
+
+        Args:
+            slide_data (dict): The slide planning details.
+
+        Returns:
+            str or None: The base64-encoded image data, or None if generation failed.
+        """
         try:
             full_image_prompt = (
                 f"A professional, high-resolution 16:9 presentation infographic slide. Style: '{style}'.\n"
@@ -908,6 +967,9 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
             
             loop = asyncio.get_event_loop()
             def gen_sync():
+                """
+                Synchronous generator call wrapper run inside the event loop executor.
+                """
                 t0 = time.time()
                 res = client.models.generate_content(
                     model='gemini-3.1-flash-image-preview',
@@ -927,6 +989,12 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
             return None
 
     async def fetch_all_images():
+        """
+        Fetch generated images for all slides concurrently.
+
+        Returns:
+            list: List of base64-encoded image data or None for each slide.
+        """
         tasks = [fetch_image(slide) for slide in slides_data]
         return await asyncio.gather(*tasks)
 
@@ -1365,6 +1433,14 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             return f"Deployment renamed to '{project_name}'! New URL: {new_url}"
 
         def _perform_snapshot(p_id, container_name, current_snapshot):
+            """
+            Snapshot the container's file system state back to the database.
+
+            Args:
+                p_id (str): The process ID of the deployment.
+                container_name (str): The name of the Docker container.
+                current_snapshot (dict): The current tracked file mapping in the snapshot.
+            """
             try:
                 client = docker.from_env()
                 container = client.containers.get(container_name)
@@ -2000,6 +2076,16 @@ def manage_files(action: str, status: str, timeout: int, file_name: str = None, 
     context_id = str(c_id) if c_id and c_id != 'default' else str(s_id)
 
     def resolve_env_id(env_id):
+        """
+        Resolve an environment identifier (which can be a project name, subdomain, or process ID)
+        to the canonical process ID.
+
+        Args:
+            env_id (str): The environment identifier to resolve.
+
+        Returns:
+            str: The canonical process ID, or the original identifier if unresolved.
+        """
         if not env_id or env_id in ("lab", "chat"): return env_id
         try:
             db = get_db()
@@ -2013,6 +2099,15 @@ def manage_files(action: str, status: str, timeout: int, file_name: str = None, 
     source_env = resolve_env_id(source_env)
 
     def validate_env_ownership(env_id):
+        """
+        Validate that the current user owns/has permission to access the specified environment.
+
+        Args:
+            env_id (str): The process ID or environment name to validate.
+
+        Returns:
+            bool: True if ownership is valid; False otherwise.
+        """
         if env_id in ("lab", "chat"): return True
         try:
             db = get_db()
@@ -2036,6 +2131,15 @@ def manage_files(action: str, status: str, timeout: int, file_name: str = None, 
             lab_execute("echo 'init'", "Initializing Lab...", 60)
 
     def get_container_name(env_id):
+        """
+        Get the Docker container name for the given environment ID.
+
+        Args:
+            env_id (str): The environment identifier (e.g. 'lab' or a process ID).
+
+        Returns:
+            str: The Docker container name.
+        """
         if env_id == "lab": return dynamic_lab_container
         return f"stellar-repo-{env_id}"
 

@@ -87,6 +87,17 @@ except Exception as e:
 from functools import wraps
 
 def require_approval(f):
+    """
+    Decorator that requires a user to be authenticated and approved.
+    If the user's ID is not in the session, it returns a 401 Unauthorized error.
+    If the user is not marked as approved in the session or database, it returns a 403 Forbidden error.
+
+    Args:
+        f (function): The route handler function to decorate.
+
+    Returns:
+        function: The decorated function.
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
@@ -107,6 +118,17 @@ def require_approval(f):
     return decorated_function
 
 def ensure_user_network(docker_client, user_id):
+    """
+    Ensure that a private, isolated bridge network exists for the given user ID.
+    If the network does not exist, it is created with inter-container communication (ICC) disabled.
+
+    Args:
+        docker_client (docker.DockerClient): The Docker client instance.
+        user_id (int or str): The unique ID of the user.
+
+    Returns:
+        str: The name of the user network, or "stellar_isolated" if no user_id is provided.
+    """
     if not user_id:
         return "stellar_isolated"
     network_name = f"stellar_net_{user_id}"
@@ -124,6 +146,14 @@ from telegram_bot import TelegramBot
 telegram_bot = TelegramBot()
 
 def send_login_notification(username, display_name=None, is_waitlist=False):
+    """
+    Send a login or waitlist registration notification via the Telegram bot.
+
+    Args:
+        username (str): The username of the user.
+        display_name (str, optional): The display name of the user. Defaults to None.
+        is_waitlist (bool, optional): Whether this notification is for a waitlist registration. Defaults to False.
+    """
     t0 = time.time()
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
     name_str = f"{display_name} ({username})" if display_name else username
@@ -235,6 +265,14 @@ FIREBASE_PROJECT_ID = "stellarai-live"
 
 @app.route('/login/google', methods=['POST'])
 def login_google():
+    """
+    Handle Google OAuth login and registration via ID token verification.
+    Validates the user token, checks approval status, and initializes the user's session
+    and isolated Docker network.
+
+    Returns:
+        Response: A Flask JSON response indicating success or failure.
+    """
     data = request.get_json()
     token = data.get('id_token')
 
@@ -356,6 +394,17 @@ Session(app)
 # Override get_cookie_domain to dynamically support wildcard subdomains in production
 original_get_cookie_domain = app.session_interface.get_cookie_domain
 def custom_get_cookie_domain(app):
+    """
+    Retrieve the custom session cookie domain to support wildcard subdomains dynamically.
+    If 'stellarai.live' is in the request host header, it returns '.stellarai.live' to share
+    session cookies across subdomains.
+
+    Args:
+        app (Flask): The Flask application instance.
+
+    Returns:
+        str or None: The cookie domain to use for session cookies.
+    """
     if has_request_context():
         host = request.headers.get('Host', '')
         if 'stellarai.live' in host:
@@ -387,18 +436,46 @@ import time
 from threading import Lock
 
 class GlobalKeyManager:
+    """
+    A thread-safe manager for tracking Gemini API key rate limits and blocks.
+    Synchronizes blocks across multiple workers/processes via Redis, falling back
+    to thread-safe in-memory tracking if Redis is unavailable.
+    """
     def __init__(self):
+        """
+        Initialize the GlobalKeyManager with an internal lock and block tracking dictionaries.
+        """
         self.lock = Lock()
         self.blocked_until = {}
         self.block_reason = {}
 
     def _get_redis_keys(self, key_val, model_id):
+        """
+        Helper method to generate Redis keys for tracking blocked keys and their reasons.
+
+        Args:
+            key_val (str): The raw Gemini API key value.
+            model_id (str or None): The specific model identifier, or None for global blocks.
+
+        Returns:
+            tuple: (block_until_key, block_reason_key) as string paths in Redis.
+        """
         import hashlib
         key_hash = hashlib.sha256(key_val.encode('utf-8')).hexdigest()
         scope = model_id if model_id is not None else "global"
         return f"stellar:blocked_until:{key_hash}:{scope}", f"stellar:block_reason:{key_hash}:{scope}"
 
     def block_key(self, key_val, model_id, duration_seconds, reason='RPM'):
+        """
+        Block an API key for a specified duration and reason.
+        Saves the block both to Redis (for cross-process synchronization) and to local memory.
+
+        Args:
+            key_val (str): The raw Gemini API key value.
+            model_id (str or None): The model identifier. If reason is 'INVALID', model_id is set to None.
+            duration_seconds (int): The duration of the block in seconds.
+            reason (str, optional): The reason for blocking (e.g. 'RPM', 'RPD', 'INVALID'). Defaults to 'RPM'.
+        """
         if reason == 'INVALID':
             model_id = None
 
@@ -417,6 +494,17 @@ class GlobalKeyManager:
             logger.error(f"Error writing key block to Redis: {e}")
 
     def is_key_blocked(self, key_val, model_id):
+        """
+        Check if a given API key is currently blocked.
+        Checks both model-specific and global blocks in Redis and in-memory.
+
+        Args:
+            key_val (str): The raw Gemini API key.
+            model_id (str or None): The model identifier to check.
+
+        Returns:
+            tuple: (is_blocked, reason) where is_blocked is a boolean and reason is a string or None.
+        """
         # Try checking Redis first to coordinate between different processes
         try:
             k_until, k_reason = self._get_redis_keys(key_val, model_id)
@@ -461,6 +549,17 @@ class GlobalKeyManager:
             return False, None
 
     def get_key_blocks(self, key_val, models):
+        """
+        Retrieve a dictionary containing block status and remaining seconds
+        for global and model-specific scopes of a given API key.
+
+        Args:
+            key_val (str): The raw Gemini API key value.
+            models (list of str): The list of model identifiers to inspect.
+
+        Returns:
+            dict: A mapping of scope (e.g. 'global' or model name) to its block status details.
+        """
         blocks = {}
         global_blocked, global_reason = self.is_key_blocked(key_val, None)
         if global_blocked:
@@ -545,6 +644,14 @@ KEY_MANAGER = GlobalKeyManager()
 ACTIVE_CHATS_CANCEL_EVENTS = {}
 
 def get_seconds_until_pacific_midnight():
+    """
+    Calculate the number of seconds remaining until the next Pacific Time midnight (00:00:00 Pacific).
+    This is used to determine daily reset times for RPD quota limits, taking Daylight Saving Time (DST)
+    into account based on US calendar rules.
+
+    Returns:
+        int: Number of seconds until the next Pacific Time midnight, or 14400 (4 hours) as fallback.
+    """
     try:
         now_utc = datetime.datetime.now(datetime.timezone.utc)
         year = now_utc.year
@@ -575,6 +682,15 @@ def get_seconds_until_pacific_midnight():
         return 14400 # Fallback to 4 hours if datetime calculations fail
 
 def parse_quota_block_duration(error_msg):
+    """
+    Parse an error message to classify the quota/rate limit error type and determine the block duration.
+
+    Args:
+        error_msg (str): The raw error or exception string.
+
+    Returns:
+        tuple: (duration_seconds, block_reason) where duration_seconds is an int, and block_reason is a str.
+    """
     err_lower = error_msg.lower()
     if ('minute' in err_lower or 'queries per minute' in err_lower or
         'rpm' in err_lower or 'tpm' in err_lower or 'queriesperminute' in err_lower):
@@ -598,6 +714,15 @@ def parse_quota_block_duration(error_msg):
 
 
 def get_fallback_chain(start_model):
+    """
+    Get the chain of model identifiers to fall back on if the requested model fails.
+
+    Args:
+        start_model (str): The initial model identifier.
+
+    Returns:
+        list of str: A sequence of fallback model identifiers.
+    """
     chain = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemma-4-31b-it"]
     if start_model in chain:
         idx = chain.index(start_model)
@@ -631,10 +756,25 @@ TAVILY_BACKUP_API_KEYS = [tavily_backup_vars[i] for i in sorted(tavily_backup_va
 DATABASE_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stellar_local.db')
 
 def _fetch_as_dict(cursor):
+    """
+    Fetch all rows from a database cursor as a list of dictionaries.
+
+    Args:
+        cursor (sqlite3.Cursor): The SQLite database cursor.
+
+    Returns:
+        list of dict: The query results formatted as list of column-to-value dictionaries.
+    """
     columns = [desc[0] for desc in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 def get_or_create_encryption_key():
+    """
+    Retrieve the existing Fernet encryption key from disk or generate a new one if it does not exist.
+
+    Returns:
+        bytes: The Fernet symmetric encryption key.
+    """
     key_path = Path(script_dir / 'encryption.key')
     if key_path.is_file():
         with open(key_path, 'rb') as key_file:
@@ -650,6 +790,15 @@ cipher_suite = Fernet(ENCRYPTION_KEY)
 
 
 def _fetchone_as_dict(cursor):
+    """
+    Fetch a single row from a database cursor as a dictionary.
+
+    Args:
+        cursor (sqlite3.Cursor): The SQLite database cursor.
+
+    Returns:
+        dict or None: The single query row formatted as a dictionary, or None if no row is returned.
+    """
     row = cursor.fetchone()
     if row:
         columns = [desc[0] for desc in cursor.description]
@@ -657,6 +806,14 @@ def _fetchone_as_dict(cursor):
     return None
 
 def get_db():
+    """
+    Retrieve or establish a thread-safe connection to the SQLite database.
+    Stores the connection in Flask's global 'g' object. Enforces WAL mode and
+    a busy timeout of 5 seconds.
+
+    Returns:
+        sqlite3.Connection: The active SQLite database connection.
+    """
     if 'db' not in g:
         t0 = time.time()
         g.db = sqlite3.connect(DATABASE_NAME)
@@ -670,11 +827,21 @@ def get_db():
 
 @app.teardown_appcontext
 def close_db(error):
+    """
+    Close the database connection during Flask application context teardown.
+
+    Args:
+        error (Exception or None): The exception raised during context execution, if any.
+    """
     db = g.pop('db', None)
     if db is not None:
         db.close()
 
 def initialize_database():
+    """
+    Initialize the SQLite database schema if it doesn't already exist.
+    Creates necessary tables (users, chats, messages, repo_history, etc.) and indexes.
+    """
     global t_db_init_start
     t_db_init_start = time.time()
     with app.app_context():
@@ -1015,6 +1182,13 @@ def initialize_database():
 initialize_database()
 
 def get_current_session_id():
+    """
+    Get the session ID for the current user session.
+    Retrieves from Flask's global 'g' object if called outside a request context.
+
+    Returns:
+        str or None: The session ID, or None if not available.
+    """
     if not has_request_context():
         return getattr(g, 'session_id', None)
     if 'initialized' not in session:
@@ -1030,6 +1204,15 @@ def get_file_context_id():
     return str(chat_id) if chat_id else get_current_session_id()
 
 def get_current_chat_id(user_id):
+    """
+    Retrieve the active chat ID for the user, falling back to the last active chat or creating a new one if needed.
+
+    Args:
+        user_id (int): The ID of the user.
+
+    Returns:
+        int: The active chat ID.
+    """
     db = get_db()
     if has_request_context():
         chat_id = session.get('current_chat_id')
@@ -1320,6 +1503,16 @@ def get_tool_history(chat_id):
         return ""
 
 def update_message(message_id, content):
+    """
+    Update the text content of a specific message in the database.
+
+    Args:
+        message_id (int): The unique ID of the message.
+        content (str): The new content to write.
+
+    Returns:
+        bool: True if the update succeeded; False otherwise.
+    """
     try:
         db = get_db()
         cursor = db.execute('SELECT chat_id FROM messages WHERE id = ?', (message_id,))
@@ -1340,6 +1533,14 @@ def update_message(message_id, content):
 
 
 def generate_chat_name(chat_id, first_message_content):
+    """
+    Generate a short, descriptive chat name using Gemini based on the first message.
+    Automatically handles rate limits and API key rotation.
+
+    Args:
+        chat_id (int): The unique chat identifier.
+        first_message_content (str): The content of the first message.
+    """
     with app.app_context():
         db = get_db()
         try:
@@ -1402,6 +1603,16 @@ def generate_chat_name(chat_id, first_message_content):
             logger.error(f"Error in generate_chat_name (chat {chat_id}): {e}")
 
 def generate_unique_subdomain(project_name):
+    """
+    Generate a unique subdomain slug for a given project name by appending numeric suffixes
+    to avoid collisions with existing subdomains.
+
+    Args:
+        project_name (str): The user's project name.
+
+    Returns:
+        str: A unique subdomain slug.
+    """
     # Convert "My Cool App!" to "my-cool-app"
     base_slug = re.sub(r'[^a-z0-9]+', '-', project_name.lower()).strip('-')
     if not base_slug:
@@ -1419,6 +1630,17 @@ def generate_unique_subdomain(project_name):
 
 
 def count_chat_tokens(chat_id=None):
+    """
+    Estimate the total token count of the conversation history for a given chat.
+    Reads messages and tool calls, formats them into types.Content objects, and calls
+    Gemini's count_tokens API.
+
+    Args:
+        chat_id (int, optional): The unique chat identifier.
+
+    Returns:
+        int: The estimated total token count.
+    """
     db = get_db()
     try:
         # Get user_id for memory retrieval
@@ -1637,6 +1859,13 @@ def upload_files_to_gemini(context_id, filenames, api_key=None):
 @app.route('/upload_files', methods=['POST'])
 @require_approval
 def upload_files():
+    """
+    Handle multi-file uploads from the web client.
+    Saves uploaded files to the user's isolated session folder on the server's local file system.
+
+    Returns:
+        Response: A Flask JSON response indicating success or failure.
+    """
     context_id = get_file_context_id()
     if not context_id:
         return jsonify({'error': 'Session initialization failed.'}), 500
@@ -1664,6 +1893,16 @@ def upload_files():
     }), 200
 
 def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize a filename by replacing spaces with underscores and stripping out
+    special characters. Truncates to a maximum length of 100 characters.
+
+    Args:
+        filename (str): The original filename.
+
+    Returns:
+        str: The sanitized filename.
+    """
     filename = filename.replace(' ', '_')
     sanitized = re.sub(r'[^\w\-\.]+', '', filename)
     return sanitized[:100] if len(sanitized) > 100 else sanitized
@@ -1688,6 +1927,16 @@ def is_safe_hostname(hostname):
     return True, "Safe"
 
 def scrape_url(url: str) -> str:
+    """
+    Fetch and scrape text content from a web URL.
+    Implements SSRF validation to prevent access to private IP ranges.
+
+    Args:
+        url (str): The URL to scrape.
+
+    Returns:
+        str: The text content of the page, or an error message.
+    """
     if not url or not url.startswith(('http://', 'https://')):
         return f"Error scraping {url}: Invalid URL format"
 
@@ -1710,6 +1959,16 @@ def scrape_url(url: str) -> str:
 stop_sequence="8919018818"
 
 def is_output_cut_off(text: str, key: str) -> bool:
+    """
+    Check if the LLM generation output was cut off before completion.
+
+    Args:
+        text (str): The accumulated text content.
+        key (str): The API key used for generation.
+
+    Returns:
+        bool: True if the output appears to be cut off; False otherwise.
+    """
     if not key:
         return False
 
@@ -1748,6 +2007,27 @@ def is_output_cut_off(text: str, key: str) -> bool:
 
 
 def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, backoff_factor: float = 1.5, model_display_name=None, username=None, chat_id=None, disabled_tools=None, gemini_files_data=None, cancel_event=None):
+    """
+    Main generative wrapper for the Gemini API. Enforces token usage limits, executes agent tool calls,
+    handles prompt injection security validations, and streams response tokens to the SSE stream.
+    Features key rotation, exponential backoff, and robust error recovery mechanisms.
+
+    Args:
+        prompt (str or list): The prompt string or list of content parts/files to generate from.
+        model_id (str): The Gemini model identifier.
+        key (str): The initial Gemini API key value to try.
+        attempts (int, optional): The max number of retries per key. Defaults to 3.
+        backoff_factor (float, optional): The multiplier for exponential retry backoff. Defaults to 1.5.
+        model_display_name (str, optional): The display name of the model. Defaults to None.
+        username (str, optional): The username of the user. Defaults to None.
+        chat_id (int, optional): The unique chat identifier. Defaults to None.
+        disabled_tools (list, optional): The list of disabled tool names. Defaults to None.
+        gemini_files_data (list, optional): Uploaded file metadata for Gemini. Defaults to None.
+        cancel_event (threading.Event, optional): Event to signal cancellation. Defaults to None.
+
+    Yields:
+        str: Streamed response chunks/tokens or tool execution log strings.
+    """
     from flask import g
     g.model_id = model_id # Set ground-truth model for tools
     display_name = model_display_name or MODEL_NAMES.get(model_id)
@@ -2442,6 +2722,18 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
 
 def create_output_file(query_or_base_name: str, content: str, extension: str = "txt") -> str | None:
+    """
+    Create a unique output file on disk inside the 'outputs' directory.
+    Automatically sanitizes the base name and increments a suffix if the file already exists.
+
+    Args:
+        query_or_base_name (str): The initial query or name used to construct the filename.
+        content (str): The text content to write to the file.
+        extension (str, optional): The file extension. Defaults to "txt".
+
+    Returns:
+        str or None: The filename of the created file, or None if creation failed.
+    """
     try:
         output_dir = "outputs"
         os.makedirs(output_dir, exist_ok=True)
@@ -2523,6 +2815,23 @@ def _extract_json_from_response(response_text):
     return None
 
 def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_id=None, app_type='repo', subdomain=None):
+    """
+    Handle the core deployment lifecycle for user-submitted code repositories.
+    Orchestrates building the isolated Docker container environment, configuring network limits,
+    mapping directories, starting the application runner, and streaming real-time compilation/build logs
+    to the active SSE client connection.
+
+    Args:
+        app_obj (Flask): The Flask application instance context.
+        project_files (dict): The repository files mapping.
+        process_id (str): The unique process identifier of the application.
+        old_container_id (str, optional): The ID of the container to tear down before redeploying. Defaults to None.
+        app_type (str, optional): The application type (e.g. 'repo'). Defaults to 'repo'.
+        subdomain (str, optional): The dynamic subdomain slug. Defaults to None.
+
+    Yields:
+        str: Streamed JSON-encoded event objects containing build logs and container statuses.
+    """
     logger.info("Starting deployment process_id=%s app_type=%s subdomain=%s", process_id, app_type, subdomain)
     t_start = time.time()
     logs_buffer = []
@@ -2932,6 +3241,16 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         cleanup_thread.start()
 
 def stop_and_cleanup_app_by_process_id(process_id, app_type='repo'):
+    """
+    Stop and clean up a deployed container by its unique process ID.
+    Retrieves the container ID from Redis or active app tracking, stops the container,
+    snapshots its current file tree state to database, removes the container and its volumes,
+    and deletes its records from active tracking and Redis.
+
+    Args:
+        process_id (str): The unique process identifier of the application.
+        app_type (str, optional): The application type (e.g. 'repo'). Defaults to 'repo'.
+    """
     if not process_id:
         return
 
