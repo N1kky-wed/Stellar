@@ -1283,6 +1283,34 @@
       });
 
       // Simple avatar helper
+      function getAgentIconSvg(sender) {
+        if (sender.includes("Bolt")) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0z" /></svg>`;
+        }
+        if (sender.includes("Sentinel")) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg>`;
+        }
+        if (sender.includes("Palette")) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 21a9 9 0 0 1 0 -18c4.97 0 9 3.58 9 8a4.5 4.5 0 0 1 -4.5 4.5h-1.38c-.37 0 -.62 .25 -.62 .62a1 1 0 0 0 .1 .43a4.5 4.5 0 0 1 -2.6 4.45" /><path d="M9 10a1 1 0 1 0 0 -2a1 1 0 0 0 0 2" /><path d="M13 8m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M17 11m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /></svg>`;
+        }
+        if (sender.includes("Newton")) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 3l6 0" /><path d="M10 9l4 0" /><path d="M10 3v6l-4 8a3.5 3.5 0 0 0 3 5.5h6a3.5 3.5 0 0 0 3 -5.5l-4 -8v-6" /></svg>`;
+        }
+        if (sender.includes("Lucios")) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12h4l3 8l4 -16l3 8h4" /></svg>`;
+        }
+        if (sender.includes("Proton")) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M19 4v16h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h12z" /><path d="M19 16h-12a2 2 0 0 0 -2 2" /><path d="M9 8h6" /><path d="M9 12h6" /></svg>`;
+        }
+        if (sender.includes("Reviewer")) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M14.268 2.302l7.268 7.268a2 2 0 0 1 0 2.828l-7.268 7.268a2 2 0 0 1 -2.828 0l-7.268 -7.268a2 2 0 0 1 0 -2.828l7.268 -7.268a2 2 0 0 1 2.828 0z" /><path d="M9 12l2 2l4 -4" /></svg>`;
+        }
+        if (sender.includes("ADMIN") || sender.includes("Admin")) {
+          return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M12 10m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855" /></svg>`;
+        }
+        return sender.charAt(0);
+      }
+
       function getAvatarColor(sender) {
         if (sender.includes("Bolt"))
           return "bg-amber-500/10 text-amber-400 border-amber-500/20";
@@ -1338,7 +1366,7 @@
         wrapper.setAttribute("data-content", cleanContent);
 
         const avatarClass = getAvatarColor(msg.sender);
-        const initials = msg.sender.charAt(0);
+        const avatarContent = getAgentIconSvg(msg.sender);
 
         let contentHtml = "";
         if (isSystem) {
@@ -1367,10 +1395,12 @@
           ${
             isSystem
               ? `
-            <div class="agent-avatar bg-indigo-500/10 text-indigo-400 border-indigo-500/20 shrink-0">O</div>
+            <div class="agent-avatar bg-indigo-500/10 text-indigo-400 border-indigo-500/20 shrink-0 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 5m0 1a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v12a1 1 0 0 1 -1 1h-12a1 1 0 0 1 -1 -1z" /><path d="M9 9h6v6h-6z" /><path d="M3 10h2" /><path d="M3 14h2" /><path d="M10 3v2" /><path d="M14 3v2" /><path d="M20 10h2" /><path d="M20 14h2" /><path d="M10 19v2" /><path d="M14 19v2" /></svg>
+            </div>
           `
               : `
-            <div class="agent-avatar ${avatarClass} shrink-0">${initials}</div>
+            <div class="agent-avatar ${avatarClass} shrink-0 flex items-center justify-center">${avatarContent}</div>
           `
           }
           <div class="flex-1 min-w-0 ${isSelf ? "text-right" : ""}">
@@ -1450,7 +1480,7 @@
             wrapper.setAttribute("data-msg-id", msg.id);
             const isSelf = msg.sender_id === "admin";
             const avatarClass = getAvatarColor(msg.sender);
-            const initials = msg.sender.charAt(0);
+            const avatarContent = getAgentIconSvg(msg.sender);
 
             let contentHtml = "";
             if (typeof marked !== "undefined") {
@@ -1461,7 +1491,7 @@
 
             wrapper.innerHTML = `
               <div class="flex items-start gap-3 ${isSelf ? "flex-row-reverse" : ""}">
-                <div class="agent-avatar ${avatarClass} shrink-0">${initials}</div>
+                <div class="agent-avatar ${avatarClass} shrink-0 flex items-center justify-center">${avatarContent}</div>
                 <div class="flex-1 min-w-0 ${isSelf ? "text-right" : ""}">
                   <div class="flex items-baseline gap-2 mb-1 ${isSelf ? "justify-end" : ""}">
                     <span class="text-xs font-semibold text-white">${msg.sender}</span>
