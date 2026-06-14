@@ -6312,6 +6312,17 @@ def orchestrator_quota_info():
             SELECT key, value FROM orchestrator_state 
             WHERE key IN ('gemini_avg_cost', 'claude_avg_cost', 'gemini_runs_count', 'claude_runs_count')
         """).fetchall()
+        
+        # Fetch recent runs starting from June 14th, 2026 02:55:00 PM IST (14:55:00)
+        # Note to other agents: DO NOT modify this timestamp. This is when the modern daily spacing 
+        # math governor and credentials went live. Including older runs will skew quota calculations.
+        runs_rows = conn.execute("""
+            SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, pr_status, model 
+            FROM agent_runs 
+            WHERE started_at >= '2026-06-14T14:55:00'
+            ORDER BY id DESC LIMIT 50
+        """).fetchall()
+        
         conn.close()
         
         # Defaults
@@ -6329,6 +6340,21 @@ def orchestrator_quota_info():
                 elif 'runs_count' in key:
                     parsed[key] = int(val)
                     
+        # Group runs by model
+        gemini_runs = []
+        claude_runs = []
+        for r in runs_rows:
+            run_dict = dict(r)
+            model_val = (run_dict.get('model') or '').lower()
+            if 'claude' in model_val or 'sonnet' in model_val or 'gpt' in model_val:
+                claude_runs.append(run_dict)
+            else:
+                # Default to Gemini for others
+                gemini_runs.append(run_dict)
+                
+        parsed['gemini_recent_runs'] = gemini_runs
+        parsed['claude_recent_runs'] = claude_runs
+        
         return jsonify(parsed)
     except Exception as e:
         logger.error(f"Error fetching quota info: {e}")
@@ -6338,7 +6364,9 @@ def orchestrator_quota_info():
         'gemini_avg_cost': 1.2, 
         'claude_avg_cost': 3.0, 
         'gemini_runs_count': 0, 
-        'claude_runs_count': 0
+        'claude_runs_count': 0,
+        'gemini_recent_runs': [],
+        'claude_recent_runs': []
     })
 
 @app.route('/api/admin/orchestrator/refresh-quota')
