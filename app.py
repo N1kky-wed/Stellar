@@ -6453,13 +6453,24 @@ def orchestrator_status():
                     claude_status = claude_info.get('status')
                     
                     if gemini_status in ('Throttled', 'Exhausted') and claude_status in ('Throttled', 'Exhausted'):
+                        # Determine how much time has passed since the quota was fetched
+                        last_updated_str = quota_dict.get('last_updated')
+                        elapsed_hours = 0.0
+                        if last_updated_str:
+                            try:
+                                last_updated_dt = datetime.datetime.fromisoformat(last_updated_str)
+                                now = datetime.datetime.now(IST)
+                                elapsed_hours = max(0.0, (now - last_updated_dt).total_seconds() / 3600.0)
+                            except Exception:
+                                pass
+
                         g_pct = gemini_info.get('weekly_percent', 100.0)
                         g_ref = gemini_info.get('weekly_refreshes_in_hours', 0.0)
                         c_pct = claude_info.get('weekly_percent', 100.0)
                         c_ref = claude_info.get('weekly_refreshes_in_hours', 0.0)
                         
-                        g_wait = max(0.0, g_ref - 1.68 * g_pct)
-                        c_wait = max(0.0, c_ref - 1.68 * c_pct)
+                        g_wait = max(0.0, (g_ref - elapsed_hours) - 1.68 * g_pct)
+                        c_wait = max(0.0, (c_ref - elapsed_hours) - 1.68 * c_pct)
                         
                         earliest_wait = min(g_wait, c_wait)
                         if earliest_wait > 0:
