@@ -109,6 +109,12 @@ def patched_create_connection(address, *args, **kwargs):
 connection.create_connection = patched_create_connection
 
 redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+# Enable Redis keyspace notifications for the admin key-health SSE stream.
+# K = keyspace events, s = string SET commands, x = key expiry.
+try:
+    redis_client.config_set('notify-keyspace-events', 'Ksx')
+except Exception as _kn_err:
+    pass  # Non-fatal: SSE will still work via client-side timers
 
 client = None
 try:
@@ -607,27 +613,32 @@ class GlobalKeyManager:
         global_blocked, global_reason = self.is_key_blocked(key_val, None)
         if global_blocked:
             remaining = 0
+            g_blocked_until = 0.0
             try:
                 k_until, _ = self._get_redis_keys(key_val, None)
                 blocked_until_val = redis_client.get(k_until)
                 if blocked_until_val:
-                    remaining = max(0.0, float(blocked_until_val) - time.time())
+                    g_blocked_until = float(blocked_until_val)
+                    remaining = max(0.0, g_blocked_until - time.time())
             except Exception:
                 pass
             if remaining == 0:
                 with self.lock:
                     blocked_time = self.blocked_until.get((key_val, None), 0)
                     remaining = max(0.0, blocked_time - time.time())
+                    g_blocked_until = time.time() + remaining
             blocks["global"] = {
                 "blocked": True,
                 "reason": global_reason or 'RPM',
-                "remaining_seconds": int(remaining)
+                "remaining_seconds": int(remaining),
+                "blocked_until": g_blocked_until
             }
         else:
             blocks["global"] = {
                 "blocked": False,
                 "reason": None,
-                "remaining_seconds": 0
+                "remaining_seconds": 0,
+                "blocked_until": 0.0
             }
 
         for model in models:
@@ -665,6 +676,7 @@ class GlobalKeyManager:
                         "blocked": True,
                         "reason": model_reason,
                         "remaining_seconds": int(model_remaining),
+                        "blocked_until": time.time() + model_remaining,
                         "type": "model_specific"
                     }
                 else:
@@ -672,6 +684,7 @@ class GlobalKeyManager:
                         "blocked": True,
                         "reason": global_reason,
                         "remaining_seconds": int(blocks["global"]["remaining_seconds"]),
+                        "blocked_until": blocks["global"]["blocked_until"],
                         "type": "global"
                     }
             else:
@@ -679,6 +692,7 @@ class GlobalKeyManager:
                     "blocked": False,
                     "reason": None,
                     "remaining_seconds": 0,
+                    "blocked_until": 0.0,
                     "type": None
                 }
         return blocks
@@ -4676,19 +4690,110 @@ def get_admin_keys():
                 'value': key
             })
 
+    import hashlib as _hl
     response_data = []
     for item in keys_to_report:
         key_val = item['value']
         masked = key_val[:8] + "..." + key_val[-4:] if len(key_val) > 12 else key_val
+        key_hash = _hl.sha256(key_val.encode('utf-8')).hexdigest()
         blocks = KEY_MANAGER.get_key_blocks(key_val, list(MODEL_NAMES.keys()))
 
         response_data.append({
             'label': item['label'],
             'masked': masked,
+            'key_hash': key_hash,
             'blocks': blocks
         })
 
     return jsonify(response_data), 200
+
+
+@app.route('/api/admin/keys/stream')
+def admin_keys_stream():
+    """SSE endpoint that pushes real-time key block/recovery events to the admin dashboard.
+    Uses Redis keyspace notifications on stellar:blocked_until:* keys.
+    One connection per admin tab — admin-only access.
+    """
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    def generate():
+        import json as _json
+        import redis as _redis
+
+        # Dedicated Redis connection for pubsub (never share with the main pool)
+        ps_conn = _redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+        pubsub = ps_conn.pubsub()
+        try:
+            # Subscribe to keyspace events on all stellar:blocked_until:* keys.
+            # channel format: __keyspace@0__:stellar:blocked_until:<sha256>:<scope>
+            # message data:   the event type — 'set', 'expired', 'del', etc.
+            pubsub.psubscribe('__keyspace@0__:stellar:blocked_until:*')
+            yield f"data: {_json.dumps({'type': 'connected'})}\n\n"
+
+            while True:
+                try:
+                    msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=20)
+                    if msg is None:
+                        # Heartbeat keeps the connection alive through proxies
+                        yield f"data: {_json.dumps({'type': 'heartbeat'})}\n\n"
+                        continue
+
+                    if msg['type'] != 'pmessage':
+                        continue
+
+                    event = msg['data']          # 'set', 'expired', 'del', ...
+                    channel = msg['channel']     # '__keyspace@0__:stellar:blocked_until:<hash>:<scope>'
+
+                    # Strip the Redis keyspace prefix to get the raw key name
+                    raw_key = channel[len('__keyspace@0__:'):]
+                    # raw_key = 'stellar:blocked_until:<hash>:<scope>'
+                    parts = raw_key.split(':')
+                    if len(parts) < 4:
+                        continue
+                    key_hash = parts[2]
+                    scope = ':'.join(parts[3:])  # scope may contain colons (model IDs don't, but be safe)
+
+                    if event == 'set':
+                        try:
+                            blocked_until = float(redis_client.get(raw_key) or 0)
+                            reason = redis_client.get(f"stellar:block_reason:{key_hash}:{scope}") or 'RPM'
+                            payload = {
+                                'type': 'key_blocked',
+                                'key_hash': key_hash,
+                                'scope': scope,
+                                'blocked_until': blocked_until,
+                                'reason': reason
+                            }
+                            yield f"data: {_json.dumps(payload)}\n\n"
+                        except Exception:
+                            pass
+
+                    elif event in ('expired', 'del'):
+                        payload = {
+                            'type': 'key_recovered',
+                            'key_hash': key_hash,
+                            'scope': scope
+                        }
+                        yield f"data: {_json.dumps(payload)}\n\n"
+
+                except GeneratorExit:
+                    break
+                except Exception:
+                    break
+        finally:
+            try:
+                pubsub.punsubscribe()
+                pubsub.close()
+                ps_conn.close()
+            except Exception:
+                pass
+
+    resp = Response(generate(), mimetype='text/event-stream')
+    resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['X-Accel-Buffering'] = 'no'   # disable nginx buffering
+    resp.headers['Connection'] = 'keep-alive'
+    return resp
 
 @app.route('/api/admin/waitlist', methods=['GET'])
 def get_admin_waitlist():
