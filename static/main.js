@@ -5389,6 +5389,9 @@ async function selectChat(chatId) {
   await updateTokenCount();
 
   sidebar.classList.remove("open");
+  if (window.innerWidth <= 768) {
+    sidebar.classList.remove("locked");
+  }
   setStatus(`Switched to chat.`, false);
 
   if (selectedItem) {
@@ -6199,6 +6202,20 @@ if (isSidebarLocked) {
 }
 
 function toggleSidebar() {
+  if (window.innerWidth <= 768) {
+    const isOpen =
+      sidebar.classList.contains("open") ||
+      sidebar.classList.contains("locked");
+    if (isOpen) {
+      sidebar.classList.remove("open");
+      sidebar.classList.remove("locked");
+    } else {
+      sidebar.classList.add("open");
+      sidebar.classList.remove("locked");
+    }
+    return;
+  }
+
   isSidebarLocked = !isSidebarLocked;
   localStorage.setItem("stellar_sidebar_locked", isSidebarLocked);
   if (isSidebarLocked) {
@@ -6484,6 +6501,11 @@ if (headerTempChatBtn) {
 
       setStatus("Incognito Mode Active", false);
       setTimeout(() => setStatus("Idle"), 2500);
+
+      // Close sidebar on mobile
+      if (window.innerWidth <= 768) {
+        sidebar.classList.remove("open", "locked");
+      }
     } catch (err) {
       setStatus("Error starting temp chat", true);
     }
@@ -7291,3 +7313,19 @@ window.updateHasContent = function () {
     observer.observe(stagedFilesContainer, { childList: true });
   }
 })();
+
+// Close sidebar on mobile when clicking outside of it
+document.addEventListener("click", (e) => {
+  if (window.innerWidth <= 768) {
+    if (
+      sidebar &&
+      (sidebar.classList.contains("open") ||
+        sidebar.classList.contains("locked"))
+    ) {
+      if (!sidebar.contains(e.target) && !sidebarToggleBtn.contains(e.target)) {
+        sidebar.classList.remove("open");
+        sidebar.classList.remove("locked");
+      }
+    }
+  }
+});
