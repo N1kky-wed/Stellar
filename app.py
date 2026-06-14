@@ -6236,6 +6236,7 @@ def orchestrator_status():
         # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
         conn = _get_orchestrator_sqlite_conn(db_path)
         row = conn.execute("SELECT value FROM orchestrator_state WHERE key='quota_cooldown_until'").fetchone()
+        cooldown_set = False
         if row and row['value']:
             cooldown_dt = datetime.datetime.fromisoformat(row['value'])
             now = datetime.datetime.now(IST)
@@ -6245,7 +6246,44 @@ def orchestrator_status():
                     'active': True,
                     'until': cooldown_dt.strftime('%H:%M IST'),
                     'remaining_seconds': remaining_secs,
+                    'type': 'hard'
                 }
+                cooldown_set = True
+                
+        # If no hard cooldown is active, check if both models are throttled
+        if not cooldown_set:
+            row_quota = conn.execute("SELECT value FROM orchestrator_state WHERE key='quota_data'").fetchone()
+            if row_quota and row_quota['value']:
+                try:
+                    quota_dict = json.loads(row_quota['value'])
+                    gemini_info = quota_dict.get('gemini', {})
+                    claude_info = quota_dict.get('claude', {})
+                    
+                    gemini_status = gemini_info.get('status')
+                    claude_status = claude_info.get('status')
+                    
+                    if gemini_status in ('Throttled', 'Exhausted') and claude_status in ('Throttled', 'Exhausted'):
+                        g_pct = gemini_info.get('weekly_percent', 100.0)
+                        g_ref = gemini_info.get('weekly_refreshes_in_hours', 0.0)
+                        c_pct = claude_info.get('weekly_percent', 100.0)
+                        c_ref = claude_info.get('weekly_refreshes_in_hours', 0.0)
+                        
+                        g_wait = max(0.0, g_ref - 1.68 * g_pct)
+                        c_wait = max(0.0, c_ref - 1.68 * c_pct)
+                        
+                        earliest_wait = min(g_wait, c_wait)
+                        if earliest_wait > 0:
+                            now = datetime.datetime.now(IST)
+                            cooldown_dt = now + datetime.timedelta(hours=earliest_wait)
+                            result['cooldown'] = {
+                                'active': True,
+                                'until': cooldown_dt.strftime('%H:%M IST'),
+                                'remaining_seconds': int(earliest_wait * 3600),
+                                'type': 'throttled'
+                            }
+                except Exception as e:
+                    logger.error(f"Error parsing quota data for status: {e}")
+                    
         running = conn.execute("SELECT agent_id, started_at FROM agent_runs WHERE status='RUNNING' ORDER BY id DESC LIMIT 1").fetchone()
         if running:
             result['running_agent'] = dict(running)

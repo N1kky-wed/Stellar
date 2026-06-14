@@ -1596,12 +1596,21 @@
             data.cooldown.until;
           startCountdown(data.cooldown.remaining_seconds);
 
-          badge.style.background = "rgba(249,115,22,0.12)";
-          badge.style.borderColor = "rgba(249,115,22,0.3)";
-          badge.style.color = "#fb923c";
-          dot.style.background = "#fb923c";
-          text.textContent = "Quota Cooldown";
-          textMob.textContent = "Paused";
+          if (data.cooldown.type === "throttled") {
+            badge.style.background = "rgba(245,158,11,0.12)";
+            badge.style.borderColor = "rgba(245,158,11,0.3)";
+            badge.style.color = "#fbbf24";
+            dot.style.background = "#fbbf24";
+            text.textContent = "Throttled Cooldown";
+            textMob.textContent = "Throttled";
+          } else {
+            badge.style.background = "rgba(249,115,22,0.12)";
+            badge.style.borderColor = "rgba(249,115,22,0.3)";
+            badge.style.color = "#fb923c";
+            dot.style.background = "#fb923c";
+            text.textContent = "Quota Cooldown";
+            textMob.textContent = "Paused";
+          }
         } else {
           banner.style.display = "none";
           if (_cooldownInterval) {
