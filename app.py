@@ -6310,7 +6310,7 @@ def orchestrator_quota_info():
             
         rows = conn.execute("""
             SELECT key, value FROM orchestrator_state 
-            WHERE key IN ('gemini_avg_cost', 'claude_avg_cost', 'gemini_runs_count', 'claude_runs_count')
+            WHERE key IN ('gemini_avg_cost', 'claude_avg_cost', 'gemini_runs_count', 'claude_runs_count', 'gemini_cooldown_until', 'claude_cooldown_until')
         """).fetchall()
         
         # Fetch recent runs starting from June 14th, 2026 02:55:00 PM IST (14:55:00)
@@ -6343,6 +6343,8 @@ def orchestrator_quota_info():
                     parsed[key] = float(val)
                 elif 'runs_count' in key:
                     parsed[key] = int(val)
+                elif 'cooldown_until' in key:
+                    parsed[key] = val
                     
         # Group runs by model
         gemini_runs = []

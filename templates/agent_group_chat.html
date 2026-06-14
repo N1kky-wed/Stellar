@@ -830,12 +830,7 @@
                     <span class="text-xs font-semibold" id="geminiMathStatus">--</span>
                   </div>
 
-                  <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
-                    <!-- Target Spend -->
-                    <div class="bg-white/5 border border-white/5 rounded p-2">
-                      <div class="text-slate-400 mb-1">Target Spend</div>
-                      <div class="text-indigo-300 font-mono font-semibold text-xs animate-pulse" id="geminiTargetSpend">--</div>
-                    </div>
+                  <div class="grid grid-cols-2 gap-2 text-center text-[10px]">
                     <!-- Current Allowance -->
                     <div class="bg-white/5 border border-white/5 rounded p-2">
                       <div class="text-slate-400 mb-1">Allowance</div>
@@ -963,12 +958,7 @@
                     <span class="text-xs font-semibold" id="claudeMathStatus">--</span>
                   </div>
 
-                  <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
-                    <!-- Target Spend -->
-                    <div class="bg-white/5 border border-white/5 rounded p-2">
-                      <div class="text-slate-400 mb-1">Target Spend</div>
-                      <div class="text-indigo-300 font-mono font-semibold text-xs animate-pulse" id="claudeTargetSpend">--</div>
-                    </div>
+                  <div class="grid grid-cols-2 gap-2 text-center text-[10px]">
                     <!-- Current Allowance -->
                     <div class="bg-white/5 border border-white/5 rounded p-2">
                       <div class="text-slate-400 mb-1">Allowance</div>
@@ -1965,8 +1955,6 @@
         const geminiTargetRuns = 14.29 / geminiAvgCost;
         const geminiAllowanceRuns = geminiRatio / geminiAvgCost;
 
-        document.getElementById("geminiTargetSpend").innerHTML =
-          `14.29%<br><span class="text-[9px] text-slate-400 font-normal">~${geminiTargetRuns.toFixed(1)} runs</span>`;
         document.getElementById("geminiDailyAllowance").innerHTML =
           `${geminiRatio}% / day<br><span class="text-[9px] text-slate-400 font-normal">~${geminiAllowanceRuns.toFixed(1)} runs</span>`;
         document.getElementById("geminiMeasuredCost").innerHTML =
@@ -1975,7 +1963,19 @@
         // Gemini Recovery Math
         const gPct = data.gemini.weekly_percent || 100.0;
         const gRef = data.gemini.weekly_refreshes_in_hours || 0.0;
-        const geminiWaitHours = Math.max(0.0, gRef - 1.68 * gPct);
+        let geminiWaitHours = Math.max(0.0, gRef - 1.68 * gPct);
+        let geminiRecoveryDate = new Date(Date.now() + geminiWaitHours * 3600000);
+
+        if (data.gemini_cooldown_until) {
+          const cooldownDate = new Date(data.gemini_cooldown_until);
+          if (cooldownDate > new Date()) {
+            const cooldownHours = (cooldownDate - new Date()) / 3600000;
+            if (cooldownHours > geminiWaitHours) {
+              geminiWaitHours = cooldownHours;
+              geminiRecoveryDate = cooldownDate;
+            }
+          }
+        }
         
         const geminiWaitWidget = document.getElementById("geminiWaitWidget");
         const geminiTimeWidget = document.getElementById("geminiTimeWidget");
@@ -1985,10 +1985,8 @@
           const mins = Math.round((geminiWaitHours - hours) * 60);
           document.getElementById("geminiRecoveryWait").textContent = `${hours}h ${mins}m`;
           
-          const now = new Date();
-          const recoveryTime = new Date(now.getTime() + geminiWaitHours * 60 * 60 * 1000);
-          const formattedDate = recoveryTime.toLocaleDateString([], { month: 'short', day: 'numeric' });
-          const formattedTime = recoveryTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const formattedDate = geminiRecoveryDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
+          const formattedTime = geminiRecoveryDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           document.getElementById("geminiRecoveryTime").textContent = `${formattedDate}, ${formattedTime}`;
           
           // Style as Throttled (Warm Amber/Red style)
@@ -2012,12 +2010,12 @@
         if (data.gemini.status === "Healthy") {
           geminiStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-          geminiMathStatus.textContent = "Safe to Run";
+          geminiMathStatus.textContent = "Safe to Run (Allowance > 14.3%)";
           geminiMathStatus.className = "text-xs font-semibold text-emerald-400";
         } else if (data.gemini.status === "Throttled") {
           geminiStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
-          geminiMathStatus.textContent = "Throttled";
+          geminiMathStatus.textContent = "Throttled (Allowance < 14.3%)";
           geminiMathStatus.className = "text-xs font-semibold text-amber-400";
         } else {
           geminiStatusBadge.className =
@@ -2062,8 +2060,6 @@
         const claudeTargetRuns = 14.29 / claudeAvgCost;
         const claudeAllowanceRuns = claudeRatio / claudeAvgCost;
 
-        document.getElementById("claudeTargetSpend").innerHTML =
-          `14.29%<br><span class="text-[9px] text-slate-400 font-normal">~${claudeTargetRuns.toFixed(1)} runs</span>`;
         document.getElementById("claudeDailyAllowance").innerHTML =
           `${claudeRatio}% / day<br><span class="text-[9px] text-slate-400 font-normal">~${claudeAllowanceRuns.toFixed(1)} runs</span>`;
         document.getElementById("claudeMeasuredCost").innerHTML =
@@ -2072,7 +2068,19 @@
         // Claude Recovery Math
         const cPct = data.claude.weekly_percent || 100.0;
         const cRef = data.claude.weekly_refreshes_in_hours || 0.0;
-        const claudeWaitHours = Math.max(0.0, cRef - 1.68 * cPct);
+        let claudeWaitHours = Math.max(0.0, cRef - 1.68 * cPct);
+        let claudeRecoveryDate = new Date(Date.now() + claudeWaitHours * 3600000);
+
+        if (data.claude_cooldown_until) {
+          const cooldownDate = new Date(data.claude_cooldown_until);
+          if (cooldownDate > new Date()) {
+            const cooldownHours = (cooldownDate - new Date()) / 3600000;
+            if (cooldownHours > claudeWaitHours) {
+              claudeWaitHours = cooldownHours;
+              claudeRecoveryDate = cooldownDate;
+            }
+          }
+        }
         
         const claudeWaitWidget = document.getElementById("claudeWaitWidget");
         const claudeTimeWidget = document.getElementById("claudeTimeWidget");
@@ -2082,10 +2090,8 @@
           const mins = Math.round((claudeWaitHours - hours) * 60);
           document.getElementById("claudeRecoveryWait").textContent = `${hours}h ${mins}m`;
           
-          const now = new Date();
-          const recoveryTime = new Date(now.getTime() + claudeWaitHours * 60 * 60 * 1000);
-          const formattedDate = recoveryTime.toLocaleDateString([], { month: 'short', day: 'numeric' });
-          const formattedTime = recoveryTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const formattedDate = claudeRecoveryDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
+          const formattedTime = claudeRecoveryDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           document.getElementById("claudeRecoveryTime").textContent = `${formattedDate}, ${formattedTime}`;
           
           // Style as Throttled (Warm Amber/Red style)
@@ -2109,12 +2115,12 @@
         if (data.claude.status === "Healthy") {
           claudeStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-          claudeMathStatus.textContent = "Safe to Run";
+          claudeMathStatus.textContent = "Safe to Run (Allowance > 14.3%)";
           claudeMathStatus.className = "text-xs font-semibold text-emerald-400";
         } else if (data.claude.status === "Throttled") {
           claudeStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
-          claudeMathStatus.textContent = "Throttled";
+          claudeMathStatus.textContent = "Throttled (Allowance < 14.3%)";
           claudeMathStatus.className = "text-xs font-semibold text-amber-400";
         } else {
           claudeStatusBadge.className =
