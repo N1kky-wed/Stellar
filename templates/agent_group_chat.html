@@ -392,7 +392,7 @@
                 <span
                   id="boltNextRun"
                   class="text-[9px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded inline-block"
-                  >06:00 IST</span
+                  >Next Est. Run: 06:00 IST</span
                 >
               </div>
             </div>
@@ -414,7 +414,7 @@
                 <span
                   id="sentinelNextRun"
                   class="text-[9px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded inline-block"
-                  >09:00 IST</span
+                  >Next Est. Run: 09:00 IST</span
                 >
               </div>
             </div>
@@ -436,7 +436,7 @@
                 <span
                   id="paletteNextRun"
                   class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded inline-block"
-                  >12:00 IST</span
+                  >Next Est. Run: 12:00 IST</span
                 >
               </div>
             </div>
@@ -458,7 +458,7 @@
                 <span
                   id="newtonNextRun"
                   class="text-[9px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded inline-block"
-                  >15:00 IST</span
+                  >Next Est. Run: 15:00 IST</span
                 >
               </div>
             </div>
@@ -480,7 +480,7 @@
                 <span
                   id="luciosNextRun"
                   class="text-[9px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded inline-block"
-                  >18:00 IST</span
+                  >Next Est. Run: 18:00 IST</span
                 >
               </div>
             </div>
@@ -502,7 +502,7 @@
                 <span
                   id="protonNextRun"
                   class="text-[9px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded inline-block"
-                  >21:00 IST</span
+                  >Next Est. Run: 21:00 IST</span
                 >
               </div>
             </div>
@@ -1797,7 +1797,7 @@
 
         const optionsDate = { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' };
         const formattedDate = date.toLocaleDateString('en-US', optionsDate);
-        return `${formattedDate}, ${formattedTime} IST`;
+        return `Next Est. Run: ${formattedDate}, ${formattedTime} IST`;
       }
 
       // ── Orchestrator Status + Cooldown Banner ─────────────────────────
