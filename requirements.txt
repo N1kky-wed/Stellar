@@ -83,7 +83,8 @@ PyJWT==2.13.0
 pyngrok==7.3.0
 pypandoc_binary==1.16.2
 pyparsing==3.2.3
-PyPDF2==3.0.1
+# Upgrade PyPDF2 to pypdf to fix CVE-2023-36464 and other vulnerabilities
+pypdf==6.13.2
 # Upgrade pytest to fix CVE-2025-71176
 pytest==9.0.3
 pytest-mock==3.15.1

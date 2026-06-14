@@ -543,12 +543,14 @@ Please provide the corrected file contents to heal the application.
         for patch in gemini_response.patches:
             file_path = patch.file_path.strip().lstrip('/')
             if file_path.endswith('.py'):
-                res = container.exec_run(f"python3 -m py_compile {file_path}", user='root')
+                # Sentinel Security Fix: Use a list of arguments to avoid shell command injection
+                res = container.exec_run(["python3", "-m", "py_compile", file_path], user='root')
                 if res.exit_code != 0:
                     err_msg = res.output.decode('utf-8', 'replace')
                     raise ValueError(f"Syntax validation failed for Python file {file_path}:\n{err_msg}")
             elif file_path.endswith('.js'):
-                res = container.exec_run(f"node --check {file_path}", user='root')
+                # Sentinel Security Fix: Use a list of arguments to avoid shell command injection
+                res = container.exec_run(["node", "--check", file_path], user='root')
                 if res.exit_code != 0:
                     err_msg = res.output.decode('utf-8', 'replace')
                     raise ValueError(f"Syntax validation failed for JS file {file_path}:\n{err_msg}")
