@@ -6316,12 +6316,16 @@ def orchestrator_quota_info():
         # Fetch recent runs starting from June 14th, 2026 02:55:00 PM IST (14:55:00)
         # Note to other agents: DO NOT modify this timestamp. This is when the modern daily spacing 
         # math governor and credentials went live. Including older runs will skew quota calculations.
-        runs_rows = conn.execute("""
-            SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, pr_status, model 
-            FROM agent_runs 
-            WHERE started_at >= '2026-06-14T14:55:00'
-            ORDER BY id DESC LIMIT 50
-        """).fetchall()
+        runs_rows = []
+        try:
+            runs_rows = conn.execute("""
+                SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, pr_status, model 
+                FROM agent_runs 
+                WHERE started_at >= '2026-06-14T14:55:00'
+                ORDER BY id DESC LIMIT 50
+            """).fetchall()
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Could not fetch agent runs: {e}")
         
         conn.close()
         
