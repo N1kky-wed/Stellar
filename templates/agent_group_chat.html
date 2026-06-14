@@ -2250,28 +2250,28 @@
         // Gather initial quota metrics
         const now = new Date();
         const gCost = data.gemini_avg_cost !== undefined ? data.gemini_avg_cost : 1.2;
-        let gPct = (data.gemini && data.gemini.weekly_percent !== undefined) ? data.gemini.weekly_percent : 100.0;
-        let gRef = (data.gemini && data.gemini.weekly_refreshes_in_hours) || 0.0;
+        let simGPct = (data.gemini && data.gemini.weekly_percent !== undefined) ? data.gemini.weekly_percent : 100.0;
+        let simGRef = (data.gemini && data.gemini.weekly_refreshes_in_hours) || 0.0;
         
-        let gHardCooldown = 0;
+        let simGHardCooldown = 0;
         if (data.gemini_cooldown_until) {
           const cd = new Date(data.gemini_cooldown_until);
-          if (cd > now) gHardCooldown = (cd - now) / 3600000;
+          if (cd > now) simGHardCooldown = (cd - now) / 3600000;
         }
-        let gSpacingWait = Math.max(0.0, gRef - 1.68 * gPct);
-        let gWait = Math.max(gHardCooldown, gSpacingWait);
+        let simGSpacingWait = Math.max(0.0, simGRef - 1.68 * simGPct);
+        let simGWait = Math.max(simGHardCooldown, simGSpacingWait);
 
         const cCost = data.claude_avg_cost !== undefined ? data.claude_avg_cost : 3.0;
-        let cPct = (data.claude && data.claude.weekly_percent !== undefined) ? data.claude.weekly_percent : 100.0;
-        let cRef = (data.claude && data.claude.weekly_refreshes_in_hours) || 0.0;
+        let simCPct = (data.claude && data.claude.weekly_percent !== undefined) ? data.claude.weekly_percent : 100.0;
+        let simCRef = (data.claude && data.claude.weekly_refreshes_in_hours) || 0.0;
         
-        let cHardCooldown = 0;
+        let simCHardCooldown = 0;
         if (data.claude_cooldown_until) {
           const cd = new Date(data.claude_cooldown_until);
-          if (cd > now) cHardCooldown = (cd - now) / 3600000;
+          if (cd > now) simCHardCooldown = (cd - now) / 3600000;
         }
-        let cSpacingWait = Math.max(0.0, cRef - 1.68 * cPct);
-        let cWait = Math.max(cHardCooldown, cSpacingWait);
+        let simCSpacingWait = Math.max(0.0, simCRef - 1.68 * simCPct);
+        let simCWait = Math.max(simCHardCooldown, simCSpacingWait);
 
         // Determine pipeline start point
         const allRuns = [...(data.gemini_recent_runs || []), ...(data.claude_recent_runs || [])];
@@ -2327,54 +2327,54 @@
           // Advance simulation variables to targetStartTime
           const elapsedHours = (targetStartTime - simTime) / 3600000;
           if (elapsedHours > 0) {
-            gRef = Math.max(0, gRef - elapsedHours);
-            cRef = Math.max(0, cRef - elapsedHours);
-            gWait = Math.max(0, gWait - elapsedHours);
-            cWait = Math.max(0, cWait - elapsedHours);
+            simGRef = Math.max(0, simGRef - elapsedHours);
+            simCRef = Math.max(0, simCRef - elapsedHours);
+            simGWait = Math.max(0, simGWait - elapsedHours);
+            simCWait = Math.max(0, simCWait - elapsedHours);
             
-            if (gRef === 0) gPct = 100.0;
-            if (cRef === 0) cPct = 100.0;
+            if (simGRef === 0) simGPct = 100.0;
+            if (simCRef === 0) simCPct = 100.0;
             
             simTime = targetStartTime;
           }
 
           // Check if both models are throttled or exhausted
-          let geminiAvailable = (gPct > 0 && gWait <= 0);
-          let claudeAvailable = (cPct > 0 && cWait <= 0);
+          let geminiAvailable = (simGPct > 0 && simGWait <= 0);
+          let claudeAvailable = (simCPct > 0 && simCWait <= 0);
 
           if (!geminiAvailable && !claudeAvailable) {
             // Wait for the earliest available model cooldown to expire
             const waitHours = Math.min(
-              gPct > 0 ? gWait : Infinity,
-              cPct > 0 ? cWait : Infinity
+              simGPct > 0 ? simGWait : Infinity,
+              simCPct > 0 ? simCWait : Infinity
             );
             if (waitHours > 0 && waitHours !== Infinity) {
               simTime = new Date(simTime.getTime() + waitHours * 3600000);
-              gRef = Math.max(0, gRef - waitHours);
-              cRef = Math.max(0, cRef - waitHours);
-              gWait = Math.max(0, gWait - waitHours);
-              cWait = Math.max(0, cWait - waitHours);
+              simGRef = Math.max(0, simGRef - waitHours);
+              simCRef = Math.max(0, simCRef - waitHours);
+              simGWait = Math.max(0, simGWait - waitHours);
+              simCWait = Math.max(0, simCWait - waitHours);
               
-              if (gRef === 0) gPct = 100.0;
-              if (cRef === 0) cPct = 100.0;
+              if (simGRef === 0) simGPct = 100.0;
+              if (simCRef === 0) simCPct = 100.0;
             }
           }
 
           // Select active model for this run
-          geminiAvailable = (gPct > 0 && gWait <= 0);
-          claudeAvailable = (cPct > 0 && cWait <= 0);
+          geminiAvailable = (simGPct > 0 && simGWait <= 0);
+          claudeAvailable = (simCPct > 0 && simCWait <= 0);
 
           if (geminiAvailable) {
-            gPct = Math.max(0.0, gPct - gCost);
-            gSpacingWait = Math.max(0.0, gRef - 1.68 * gPct);
-            gWait = Math.max(gWait, gSpacingWait);
+            simGPct = Math.max(0.0, simGPct - gCost);
+            simGSpacingWait = Math.max(0.0, simGRef - 1.68 * simGPct);
+            simGWait = Math.max(simGWait, simGSpacingWait);
           } else if (claudeAvailable) {
-            cPct = Math.max(0.0, cPct - cCost);
-            cSpacingWait = Math.max(0.0, cRef - 1.68 * cPct);
-            cWait = Math.max(cWait, cSpacingWait);
+            simCPct = Math.max(0.0, simCPct - cCost);
+            simCSpacingWait = Math.max(0.0, simCRef - 1.68 * simCPct);
+            simCWait = Math.max(simCWait, simCSpacingWait);
           } else {
             // Default fallback if simulator hits an edge case (both ref resets are far out)
-            gPct = Math.max(0.0, gPct - gCost);
+            simGPct = Math.max(0.0, simGPct - gCost);
           }
 
           // Record estimated start time for the agent
@@ -2384,13 +2384,13 @@
 
           // Assume run takes 20 minutes (0.33 hours)
           simTime = new Date(simTime.getTime() + 20 * 60000);
-          gRef = Math.max(0, gRef - 0.33);
-          cRef = Math.max(0, cRef - 0.33);
-          gWait = Math.max(0, gWait - 0.33);
-          cWait = Math.max(0, cWait - 0.33);
+          simGRef = Math.max(0, simGRef - 0.33);
+          simCRef = Math.max(0, simCRef - 0.33);
+          simGWait = Math.max(0, simGWait - 0.33);
+          simCWait = Math.max(0, simCWait - 0.33);
           
-          if (gRef === 0) gPct = 100.0;
-          if (cRef === 0) cPct = 100.0;
+          if (simGRef === 0) simGPct = 100.0;
+          if (simCRef === 0) simCPct = 100.0;
 
           prevRunEndTime = new Date(simTime);
           currentAgentIdx = (currentAgentIdx + 1) % pipeline.length;
