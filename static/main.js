@@ -981,6 +981,95 @@ marked.setOptions({
   gfm: true, // Ensures GitHub Flavored Markdown is enabled
 });
 
+// Helper to extract a balanced raw HTML block from the start of a source string
+function getHtmlBlockPrefix(src) {
+  const blockStartRegex =
+    /^(?:[ \t]*)(<div|<style|<script|<section|<svg|<table|<iframe|<form|<canvas|<article|<aside|<header|<footer|<main|<!--)/i;
+  const match = src.match(blockStartRegex);
+  if (!match) return null;
+
+  const matchIndex = match.index;
+  if (src.substring(0, matchIndex).trim() !== "") {
+    return null;
+  }
+
+  const htmlStart = src.substring(matchIndex);
+  const tagMatch = match[1].toLowerCase();
+
+  let closingTag = "";
+  let isNestedTag = false;
+  let tagName = "";
+
+  if (tagMatch.startsWith("<!--")) {
+    closingTag = "-->";
+  } else {
+    const tagParts = tagMatch.match(/<([a-zA-Z0-9]+)/);
+    if (tagParts) {
+      tagName = tagParts[1].toLowerCase();
+      closingTag = "</" + tagName + ">";
+      isNestedTag = [
+        "div",
+        "section",
+        "article",
+        "aside",
+        "header",
+        "footer",
+        "main",
+        "form",
+        "table",
+      ].includes(tagName);
+    }
+  }
+
+  if (!closingTag) return null;
+
+  let closeIndex = -1;
+  if (isNestedTag) {
+    let depth = 0;
+    const openPattern = new RegExp("<" + tagName + "[\\s>]", "gi");
+    const closePattern = new RegExp("</" + tagName + ">", "gi");
+
+    let currentPos = 0;
+    while (currentPos < htmlStart.length) {
+      openPattern.lastIndex = currentPos;
+      const nextOpen = openPattern.exec(htmlStart);
+
+      closePattern.lastIndex = currentPos;
+      const nextClose = closePattern.exec(htmlStart);
+
+      if (!nextClose) {
+        closeIndex = htmlStart.length;
+        break;
+      }
+
+      if (nextOpen && nextOpen.index < nextClose.index) {
+        depth++;
+        currentPos = nextOpen.index + nextOpen[0].length;
+      } else {
+        depth--;
+        if (depth === 0) {
+          closeIndex = nextClose.index + nextClose[0].length;
+          break;
+        }
+        currentPos = nextClose.index + nextClose[0].length;
+      }
+    }
+  } else {
+    const idx = htmlStart.toLowerCase().indexOf(closingTag);
+    if (idx !== -1) {
+      closeIndex = idx + closingTag.length;
+    } else {
+      closeIndex = htmlStart.length;
+    }
+  }
+
+  if (closeIndex === -1) {
+    closeIndex = htmlStart.length;
+  }
+
+  return src.substring(0, matchIndex + closeIndex);
+}
+
 // Disable indented code blocks, keeping fenced code blocks intact
 marked.use({
   tokenizer: {
@@ -988,20 +1077,9 @@ marked.use({
       if (src.trim().startsWith("```") || src.trim().startsWith("~~~")) {
         return false;
       }
-      const trimmed = src.trim();
-      const looksLikeHtml =
-        (trimmed.startsWith("<") || trimmed.startsWith("<!--")) &&
-        (trimmed.includes("<div") ||
-          trimmed.includes("<svg") ||
-          trimmed.includes("<style") ||
-          trimmed.includes("<span") ||
-          trimmed.includes("<iframe") ||
-          trimmed.includes("<table") ||
-          trimmed.includes("</") ||
-          trimmed.includes("/>") ||
-          trimmed.includes("-->"));
-      if (looksLikeHtml) {
-        return { type: "html", raw: src, text: src };
+      const matchedHtml = getHtmlBlockPrefix(src);
+      if (matchedHtml) {
+        return { type: "html", raw: matchedHtml, text: matchedHtml };
       }
       return false;
     },
@@ -5679,77 +5757,97 @@ function formatKeyCountdown(seconds) {
 }
 
 function recomputeCardBadge(card) {
-  const badge = card.querySelector('.key-status-badge');
+  const badge = card.querySelector(".key-status-badge");
   if (!badge) return;
-  const statuses = [...card.querySelectorAll('.key-model-status')];
-  const hasRpd = statuses.some(el => el.classList.contains('blocked-rpd'));
-  const hasBlocked = statuses.some(el => !el.classList.contains('active'));
-  const globalCountdown = card.querySelector('.key-global-countdown');
+  const statuses = [...card.querySelectorAll(".key-model-status")];
+  const hasRpd = statuses.some((el) => el.classList.contains("blocked-rpd"));
+  const hasBlocked = statuses.some((el) => !el.classList.contains("active"));
+  const globalCountdown = card.querySelector(".key-global-countdown");
   const hasGlobal = globalCountdown !== null;
   if (hasGlobal) return; // global block overrides — handled separately
   if (hasRpd) {
-    badge.className = 'key-status-badge blocked'; badge.textContent = 'Daily Quota Out';
+    badge.className = "key-status-badge blocked";
+    badge.textContent = "Daily Quota Out";
   } else if (hasBlocked) {
-    badge.className = 'key-status-badge limited'; badge.textContent = 'Partially Blocked';
+    badge.className = "key-status-badge limited";
+    badge.textContent = "Partially Blocked";
   } else {
-    badge.className = 'key-status-badge active'; badge.textContent = 'Active';
+    badge.className = "key-status-badge active";
+    badge.textContent = "Active";
   }
 }
 
 function recoverKeyScope(card, scope) {
-  if (scope === 'global') {
-    card.querySelector('.key-global-remaining')?.remove();
+  if (scope === "global") {
+    card.querySelector(".key-global-remaining")?.remove();
     // Only clear badge if no model blocks remain
-    const anyModelBlocked = [...card.querySelectorAll('.key-model-status')]
-      .some(el => !el.classList.contains('active'));
-    const badge = card.querySelector('.key-status-badge');
+    const anyModelBlocked = [
+      ...card.querySelectorAll(".key-model-status"),
+    ].some((el) => !el.classList.contains("active"));
+    const badge = card.querySelector(".key-status-badge");
     if (badge && !anyModelBlocked) {
-      badge.className = 'key-status-badge active'; badge.textContent = 'Active';
+      badge.className = "key-status-badge active";
+      badge.textContent = "Active";
     } else if (badge && anyModelBlocked) {
-      badge.className = 'key-status-badge limited'; badge.textContent = 'Partially Blocked';
+      badge.className = "key-status-badge limited";
+      badge.textContent = "Partially Blocked";
     }
   } else {
-    const row = card.querySelector(`.key-model-row[data-scope="${CSS.escape(scope)}"]`);
+    const row = card.querySelector(
+      `.key-model-row[data-scope="${CSS.escape(scope)}"]`,
+    );
     if (row) {
-      const st = row.querySelector('.key-model-status');
-      if (st) { st.className = 'key-model-status active'; st.textContent = 'Active'; }
-      row.querySelector('.key-model-remaining')?.remove();
+      const st = row.querySelector(".key-model-status");
+      if (st) {
+        st.className = "key-model-status active";
+        st.textContent = "Active";
+      }
+      row.querySelector(".key-model-remaining")?.remove();
     }
     recomputeCardBadge(card);
   }
 }
 
 function applyKeyBlock(card, scope, blockedUntil, reason) {
-  if (scope === 'global') {
-    const badge = card.querySelector('.key-status-badge');
-    if (badge) { badge.className = 'key-status-badge blocked'; badge.textContent = `Global Block (${reason})`; }
-    let globalRem = card.querySelector('.key-global-remaining');
+  if (scope === "global") {
+    const badge = card.querySelector(".key-status-badge");
+    if (badge) {
+      badge.className = "key-status-badge blocked";
+      badge.textContent = `Global Block (${reason})`;
+    }
+    let globalRem = card.querySelector(".key-global-remaining");
     if (!globalRem) {
-      globalRem = document.createElement('div');
-      globalRem.className = 'key-global-remaining';
-      globalRem.style.cssText = 'font-size:0.8rem;color:#FF2A4D;margin-top:5px;';
-      card.querySelector('.key-info')?.appendChild(globalRem);
+      globalRem = document.createElement("div");
+      globalRem.className = "key-global-remaining";
+      globalRem.style.cssText =
+        "font-size:0.8rem;color:#FF2A4D;margin-top:5px;";
+      card.querySelector(".key-info")?.appendChild(globalRem);
     }
     globalRem.innerHTML = `Block expires in: <span class="key-global-countdown key-countdown-el"
       data-blocked-until="${blockedUntil}" data-scope="global"></span>`;
   } else {
-    const row = card.querySelector(`.key-model-row[data-scope="${CSS.escape(scope)}"]`);
+    const row = card.querySelector(
+      `.key-model-row[data-scope="${CSS.escape(scope)}"]`,
+    );
     if (!row) return;
-    const st = row.querySelector('.key-model-status');
+    const st = row.querySelector(".key-model-status");
     if (st) {
-      if (reason === 'RPM' || reason === 'OVERLOAD') {
-        st.className = 'key-model-status blocked-rpm'; st.textContent = 'Rate Limited (RPM)';
-      } else if (reason === 'RPD') {
-        st.className = 'key-model-status blocked-rpd'; st.textContent = 'Quota Exceeded (RPD)';
+      if (reason === "RPM" || reason === "OVERLOAD") {
+        st.className = "key-model-status blocked-rpm";
+        st.textContent = "Rate Limited (RPM)";
+      } else if (reason === "RPD") {
+        st.className = "key-model-status blocked-rpd";
+        st.textContent = "Quota Exceeded (RPD)";
       } else {
-        st.className = 'key-model-status blocked-other'; st.textContent = `Blocked (${reason})`;
+        st.className = "key-model-status blocked-other";
+        st.textContent = `Blocked (${reason})`;
       }
     }
-    let cdEl = row.querySelector('.key-model-remaining');
+    let cdEl = row.querySelector(".key-model-remaining");
     if (!cdEl) {
-      cdEl = document.createElement('span');
-      cdEl.className = 'key-model-remaining key-countdown-el';
-      row.querySelector('.key-model-status-wrap')?.appendChild(cdEl);
+      cdEl = document.createElement("span");
+      cdEl.className = "key-model-remaining key-countdown-el";
+      row.querySelector(".key-model-status-wrap")?.appendChild(cdEl);
     }
     cdEl.dataset.blockedUntil = blockedUntil;
     cdEl.dataset.scope = scope;
@@ -5761,39 +5859,52 @@ function startKeyCountdownTimer() {
   if (keyHealthCountdownInterval) clearInterval(keyHealthCountdownInterval);
   keyHealthCountdownInterval = setInterval(() => {
     const now = Date.now() / 1000;
-    document.querySelectorAll('.key-countdown-el[data-blocked-until]').forEach(el => {
-      const until = parseFloat(el.dataset.blockedUntil);
-      const remaining = until - now;
-      if (remaining <= 0) {
-        const card = el.closest('.key-card');
-        const scope = el.dataset.scope;
-        if (card && scope) recoverKeyScope(card, scope);
-      } else {
-        el.textContent = `(${formatKeyCountdown(remaining)} left)`;
-      }
-    });
+    document
+      .querySelectorAll(".key-countdown-el[data-blocked-until]")
+      .forEach((el) => {
+        const until = parseFloat(el.dataset.blockedUntil);
+        const remaining = until - now;
+        if (remaining <= 0) {
+          const card = el.closest(".key-card");
+          const scope = el.dataset.scope;
+          if (card && scope) recoverKeyScope(card, scope);
+        } else {
+          el.textContent = `(${formatKeyCountdown(remaining)} left)`;
+        }
+      });
   }, 1000);
 }
 
 function connectKeyHealthSSE() {
-  if (keyHealthEventSource) { keyHealthEventSource.close(); keyHealthEventSource = null; }
-  const es = new EventSource('/api/admin/keys/stream');
+  if (keyHealthEventSource) {
+    keyHealthEventSource.close();
+    keyHealthEventSource = null;
+  }
+  const es = new EventSource("/api/admin/keys/stream");
   keyHealthEventSource = es;
 
   es.onmessage = (e) => {
     let data;
-    try { data = JSON.parse(e.data); } catch { return; }
-    if (data.type === 'heartbeat' || data.type === 'connected') return;
+    try {
+      data = JSON.parse(e.data);
+    } catch {
+      return;
+    }
+    if (data.type === "heartbeat" || data.type === "connected") return;
 
-    const card = document.querySelector(`.key-card[data-key-hash="${data.key_hash}"]`);
+    const card = document.querySelector(
+      `.key-card[data-key-hash="${data.key_hash}"]`,
+    );
     if (!card) return;
 
-    if (data.type === 'key_blocked') {
+    if (data.type === "key_blocked") {
       applyKeyBlock(card, data.scope, data.blocked_until, data.reason);
-    } else if (data.type === 'key_recovered') {
+    } else if (data.type === "key_recovered") {
       // Remove countdown element so the timer loop stops trying
-      const cdEl = card.querySelector(`.key-countdown-el[data-scope="${data.scope}"]`);
-      if (cdEl) cdEl.dataset.blockedUntil = '0';
+      const cdEl = card.querySelector(
+        `.key-countdown-el[data-scope="${data.scope}"]`,
+      );
+      if (cdEl) cdEl.dataset.blockedUntil = "0";
       recoverKeyScope(card, data.scope);
     }
   };
@@ -5802,13 +5913,21 @@ function connectKeyHealthSSE() {
     es.close();
     keyHealthEventSource = null;
     // Reconnect after 5 s if the tab is still on Keys
-    setTimeout(() => { if (activeAdminTab === 'keys') connectKeyHealthSSE(); }, 5000);
+    setTimeout(() => {
+      if (activeAdminTab === "keys") connectKeyHealthSSE();
+    }, 5000);
   };
 }
 
 function stopKeyHealth() {
-  if (keyHealthEventSource) { keyHealthEventSource.close(); keyHealthEventSource = null; }
-  if (keyHealthCountdownInterval) { clearInterval(keyHealthCountdownInterval); keyHealthCountdownInterval = null; }
+  if (keyHealthEventSource) {
+    keyHealthEventSource.close();
+    keyHealthEventSource = null;
+  }
+  if (keyHealthCountdownInterval) {
+    clearInterval(keyHealthCountdownInterval);
+    keyHealthCountdownInterval = null;
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -5828,14 +5947,21 @@ async function loadKeyHealth() {
       data.forEach((keyData) => {
         const card = document.createElement("div");
         card.className = "key-card";
-        card.dataset.keyHash = keyData.key_hash || '';
+        card.dataset.keyHash = keyData.key_hash || "";
 
-        const globalBlock = keyData.blocks.global || { blocked: false, reason: null, remaining_seconds: 0, blocked_until: 0 };
+        const globalBlock = keyData.blocks.global || {
+          blocked: false,
+          reason: null,
+          remaining_seconds: 0,
+          blocked_until: 0,
+        };
 
-        let badgeClass = "active", badgeLabel = "Active";
+        let badgeClass = "active",
+          badgeLabel = "Active";
         let hasAnyBlock = globalBlock.blocked;
         let hasRpm = globalBlock.reason === "RPM";
-        let hasRpd = globalBlock.reason === "RPD" || globalBlock.reason === "INVALID";
+        let hasRpd =
+          globalBlock.reason === "RPD" || globalBlock.reason === "INVALID";
 
         const modelNamesMap = {
           "gemini-3.1-flash-lite": "Emerald (Flash-Lite)",
@@ -5843,31 +5969,44 @@ async function loadKeyHealth() {
           "gemini-3-flash-preview": "Crimson (Gemini-3)",
           "gemini-3.5-flash": "Obsidian (Gemini-3.5)",
         };
-        const orderedModelIds = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemma-4-31b-it", "gemini-3.1-flash-lite"];
+        const orderedModelIds = [
+          "gemini-3.5-flash",
+          "gemini-3-flash-preview",
+          "gemma-4-31b-it",
+          "gemini-3.1-flash-lite",
+        ];
 
         const modelRowsHtml = [];
         orderedModelIds.forEach((modelId) => {
           const status = keyData.blocks[modelId];
           if (!status) return;
           const friendlyName = modelNamesMap[modelId] || modelId;
-          let statusClass = "active", statusLabel = "Active";
-          let cdAttr = '';
+          let statusClass = "active",
+            statusLabel = "Active";
+          let cdAttr = "";
           if (status.blocked) {
             hasAnyBlock = true;
             if (status.reason === "RPM" || status.reason === "OVERLOAD") {
-              statusClass = "blocked-rpm"; statusLabel = "Rate Limited (RPM)"; hasRpm = true;
+              statusClass = "blocked-rpm";
+              statusLabel = "Rate Limited (RPM)";
+              hasRpm = true;
             } else if (status.reason === "RPD") {
-              statusClass = "blocked-rpd"; statusLabel = "Quota Exceeded (RPD)"; hasRpd = true;
+              statusClass = "blocked-rpd";
+              statusLabel = "Quota Exceeded (RPD)";
+              hasRpd = true;
             } else {
-              statusClass = "blocked-other"; statusLabel = `Blocked (${status.reason})`; hasRpm = true;
+              statusClass = "blocked-other";
+              statusLabel = `Blocked (${status.reason})`;
+              hasRpm = true;
             }
             if (status.blocked_until > now) {
               cdAttr = `data-blocked-until="${status.blocked_until}" data-scope="${modelId}"`;
             }
           }
-          const cdHtml = status.blocked && status.blocked_until > now
-            ? `<span class="key-model-remaining key-countdown-el" ${cdAttr}>(${formatKeyCountdown(status.blocked_until - now)} left)</span>`
-            : '';
+          const cdHtml =
+            status.blocked && status.blocked_until > now
+              ? `<span class="key-model-remaining key-countdown-el" ${cdAttr}>(${formatKeyCountdown(status.blocked_until - now)} left)</span>`
+              : "";
           modelRowsHtml.push(`
             <div class="key-model-row key-model-item" data-scope="${modelId}">
               <span class="key-model-name">${friendlyName}</span>
@@ -5879,14 +6018,17 @@ async function loadKeyHealth() {
         });
 
         if (globalBlock.blocked) {
-          badgeClass = "blocked"; badgeLabel = `Global Block (${globalBlock.reason})`;
+          badgeClass = "blocked";
+          badgeLabel = `Global Block (${globalBlock.reason})`;
         } else if (hasRpd) {
-          badgeClass = "blocked"; badgeLabel = "Daily Quota Out";
+          badgeClass = "blocked";
+          badgeLabel = "Daily Quota Out";
         } else if (hasAnyBlock) {
-          badgeClass = "limited"; badgeLabel = "Partially Blocked";
+          badgeClass = "limited";
+          badgeLabel = "Partially Blocked";
         }
 
-        let globalRemHtml = '';
+        let globalRemHtml = "";
         if (globalBlock.blocked && globalBlock.blocked_until > now) {
           const cdAttr = `data-blocked-until="${globalBlock.blocked_until}" data-scope="global"`;
           globalRemHtml = `<div class="key-global-remaining" style="font-size:0.8rem;color:#FF2A4D;margin-top:5px;">
