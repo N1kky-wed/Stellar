@@ -43,7 +43,21 @@ from prompts import (
 thread_local_ctx = threading.local()
 
 class RequestIDFormatter(logging.Formatter):
+    """
+    Custom logging formatter that injects a request_id into log records.
+    The request ID is retrieved from Flask request context, Flask app context,
+    or thread-local context, defaulting to 'system' if not present.
+    """
     def format(self, record):
+        """
+        Format the logging record, injecting the request ID context variable.
+
+        Args:
+            record (logging.LogRecord): The log record to format.
+
+        Returns:
+            str: The formatted log message.
+        """
         from flask import has_request_context, has_app_context, g, request
         import uuid
         try:
@@ -73,6 +87,18 @@ dns_cache = threading.local()
 _orig_create_connection = connection.create_connection
 
 def patched_create_connection(address, *args, **kwargs):
+    """
+    Intercept socket connection creation to route hostnames to thread-local pinned IPs.
+    This helps prevent DNS rebinding SSRF TOCTOU (Time-of-Check to Time-of-Use) attacks.
+
+    Args:
+        address (tuple): A (host, port) pair.
+        *args: Variable length argument list.
+        **kwargs: Arbitrary keyword arguments.
+
+    Returns:
+        socket.socket: The connected socket object.
+    """
     host, port = address
     pinned_ips = getattr(dns_cache, 'pinned_ips', None)
     if pinned_ips and host in pinned_ips:
@@ -2823,12 +2849,40 @@ def create_output_file(query_or_base_name: str, content: str, extension: str = "
 GRACE_PERIOD_SECONDS = 30
 
 def _redis_repo_key(pid):
+    """
+    Generate the Redis hash key for tracking a repository process.
+
+    Args:
+        pid (str): The process identifier.
+
+    Returns:
+        str: The Redis key.
+    """
     return f"repo:process:{pid}"
 
 def _redis_runcode_key(pid):
+    """
+    Generate the Redis hash key for tracking a code run process.
+
+    Args:
+        pid (str): The process identifier.
+
+    Returns:
+        str: The Redis key.
+    """
     return f"runcode:process:{pid}"
 
 def _get_process_key_prefix(process_id, app_type='repo'):
+    """
+    Determine the appropriate Redis key prefix based on application environment type.
+
+    Args:
+        process_id (str): The process identifier.
+        app_type (str, optional): The application environment type ('repo' or 'runcode'). Defaults to 'repo'.
+
+    Returns:
+        str: The Redis key prefix.
+    """
     if app_type == 'repo':
         return _redis_repo_key(process_id)
     return _redis_runcode_key(process_id)
@@ -7115,18 +7169,31 @@ def generate_visualization():
 
 
 class OrphanContainerMonitor:
+    """
+    Monitor thread that periodically identifies and cleans up orphan Docker containers
+    and performs runtime health checks on active applications.
+    """
     def __init__(self, interval=60):
+        """
+        Initialize the monitor with a cleanup interval.
+
+        Args:
+            interval (int, optional): The sleep interval between checks in seconds. Defaults to 60.
+        """
         self.interval = interval
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
 
     def start(self):
+        """Start the background monitor thread."""
         self.thread.start()
 
     def stop(self):
+        """Signal the background monitor thread to stop."""
         self.stop_event.set()
 
     def _monitor_loop(self):
+        """Loop continuously, checking for and cleaning up orphan containers."""
         while not self.stop_event.is_set():
             try:
                 self._cleanup_orphans()
@@ -7136,6 +7203,11 @@ class OrphanContainerMonitor:
             self.stop_event.wait(self.interval)
 
     def _cleanup_orphans(self):
+        """
+        Perform a sweep of all Docker containers matching the 'stellar_type' label,
+        stopping and removing those that are no longer tracked as active,
+        and querying health status endpoints for those that are.
+        """
         if not client:
             return
 
@@ -7226,6 +7298,10 @@ class OrphanContainerMonitor:
                 logger.error(f"OrphanContainerMonitor: Error processing container {container.short_id}: {e}")
 
 def cleanup_stale_containers():
+    """
+    Locate and clean up any stale Docker containers and update database execution
+    history statuses to 'stopped' during server startup.
+    """
     try:
         # Reset only very old statuses in the database to 'stopped' on startup
         try:
@@ -7665,19 +7741,33 @@ if os.environ.get('TESTING') != 'true':
     cleanup_stale_containers()
 
 class TaskSchedulerMonitor:
+    """
+    Monitor thread that periodically polls the database for scheduled tasks
+    that are due for execution and runs them asynchronously.
+    """
     def __init__(self, app_instance, interval=60):
+        """
+        Initialize the scheduler monitor.
+
+        Args:
+            app_instance (Flask): The Flask application instance.
+            interval (int, optional): The check interval in seconds. Defaults to 60.
+        """
         self.app_instance = app_instance
         self.interval = interval
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
 
     def start(self):
+        """Start the background scheduler thread."""
         self.thread.start()
 
     def stop(self):
+        """Signal the background scheduler thread to exit."""
         self.stop_event.set()
 
     def _monitor_loop(self):
+        """Loop continuously, checking for and running scheduled tasks."""
         while not self.stop_event.is_set():
             try:
                 self._check_tasks()
@@ -7687,6 +7777,11 @@ class TaskSchedulerMonitor:
             self.stop_event.wait(self.interval)
 
     def _check_tasks(self):
+        """
+        Check for scheduled tasks that are active and due for execution.
+        Claims the task atomically using a unique worker ID to prevent concurrency conflicts,
+        and spawns a separate thread to run the task.
+        """
         import uuid
         worker_id = str(uuid.uuid4()) # Unique ID for this thread/worker
 
@@ -7715,6 +7810,7 @@ class TaskSchedulerMonitor:
             task = cursor.fetchone()
             if task:
                 def run_task_wrapper(t):
+                    """Wrapper to run the task inside a thread with its own request ID context."""
                     thread_local_ctx.request_id = f"sched-{t['id']}"
                     logger.info("Executing scheduled task task_id=%d user_id=%d chat_id=%d model_id=%s", t['id'], t['user_id'], t['chat_id'], t['model_id'])
                     try:
@@ -7742,6 +7838,18 @@ class TaskSchedulerMonitor:
                 threading.Thread(target=run_task_wrapper, args=(task,), daemon=True).start()
 
     def _execute_ai_task(self, task_id, user_id, chat_id, task_prompt, model_id, metadata):
+        """
+        Execute a scheduled task by invoking the Gemini refinement generation pipeline
+        and appending the resulting response to the user's conversation history.
+
+        Args:
+            task_id (int): The database ID of the scheduled task.
+            user_id (int): The owner user's database ID.
+            chat_id (int): The target chat's database ID.
+            task_prompt (str): The prompt instructions for the task.
+            model_id (str): The Gemini model ID to execute the task with.
+            metadata (str): Additional configuration or tracking context.
+        """
         with self.app_instance.app_context():
             from flask import g
             from app import get_db
