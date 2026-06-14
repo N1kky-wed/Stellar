@@ -1131,7 +1131,7 @@ marked.parse = function (text, options) {
           trimmed.includes("<span") ||
           trimmed.includes("<iframe"));
       if (hasLang || looksLikeHtml) {
-        return codeContent;
+        return "\n" + codeContent.trim() + "\n\n";
       }
       return match;
     },
