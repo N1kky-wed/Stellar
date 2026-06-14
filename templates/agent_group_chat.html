@@ -200,6 +200,16 @@
         color: var(--code-text-color, #f5f5f5) !important;
         background: transparent !important;
       }
+
+      /* Hide scrollbar for Chrome, Safari and Opera */
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      /* Hide scrollbar for IE, Edge and Firefox */
+      .no-scrollbar {
+        -ms-overflow-style: none; /* IE and Edge */
+        scrollbar-width: none; /* Firefox */
+      }
     </style>
   </head>
   <body class="h-screen flex flex-col">
@@ -502,29 +512,29 @@
       >
         <!-- Tabs Header -->
         <div
-          class="flex border-b border-[rgba(255,255,255,0.08)] bg-black/25 px-4 md:px-6 py-2 shrink-0"
+          class="flex border-b border-[rgba(255,255,255,0.08)] bg-black/25 px-4 md:px-6 py-2 shrink-0 overflow-x-auto whitespace-nowrap no-scrollbar"
         >
           <button
             id="tabGroupChat"
-            class="px-4 py-2 text-sm font-semibold border-b-2 border-indigo-500 text-white focus:outline-none transition duration-200"
+            class="px-4 py-2 text-sm font-semibold border-b-2 border-indigo-500 text-white focus:outline-none transition duration-200 shrink-0"
           >
             Group Chat
           </button>
           <button
             id="tabDMs"
-            class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-[#8e929e] hover:text-white focus:outline-none transition duration-200 ml-4"
+            class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-[#8e929e] hover:text-white focus:outline-none transition duration-200 ml-4 shrink-0"
           >
             Direct Messages (DMs)
           </button>
           <button
             id="tabTasks"
-            class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-[#8e929e] hover:text-white focus:outline-none transition duration-200 ml-4"
+            class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-[#8e929e] hover:text-white focus:outline-none transition duration-200 ml-4 shrink-0"
           >
             Task Board
           </button>
           <button
             id="tabQuota"
-            class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-[#8e929e] hover:text-white focus:outline-none transition duration-200 ml-4"
+            class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-[#8e929e] hover:text-white focus:outline-none transition duration-200 ml-4 shrink-0"
           >
             Quota Dashboard
           </button>
@@ -681,16 +691,36 @@
         <div id="panelQuota" class="flex-1 p-4 md:p-6 overflow-y-auto hidden">
           <div class="flex justify-between items-center mb-6">
             <div>
-              <h2 class="text-lg font-bold text-white mb-1">Quota Management Dashboard</h2>
-              <p class="text-xs text-slate-400">Mathematical spacing governor and fallback status</p>
+              <h2 class="text-lg font-bold text-white mb-1">
+                Quota Management Dashboard
+              </h2>
+              <p class="text-xs text-slate-400">
+                Mathematical spacing governor and fallback status
+              </p>
             </div>
             <button
               id="refreshQuotaBtn"
               class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition duration-200 flex items-center gap-2"
             >
-              <svg id="refreshQuotaSpinner" class="w-4 h-4 hidden animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <svg
+                id="refreshQuotaSpinner"
+                class="w-4 h-4 hidden animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
               </svg>
               <span>Refresh Quota Data</span>
             </button>
@@ -702,28 +732,51 @@
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <!-- Gemini Card -->
-            <div class="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-md">
+            <div
+              class="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-md"
+            >
               <div class="flex justify-between items-start mb-4">
                 <div>
-                  <h3 class="text-md font-semibold text-white mb-1">Gemini Models Pool</h3>
-                  <span class="text-xs text-slate-400 font-mono" id="geminiAccount">Loading...</span>
+                  <h3 class="text-md font-semibold text-white mb-1">
+                    Gemini Models Pool
+                  </h3>
+                  <span
+                    class="text-xs text-slate-400 font-mono"
+                    id="geminiAccount"
+                    >Loading...</span
+                  >
                 </div>
-                <span id="geminiQuotaStatus" class="px-2.5 py-1 rounded text-xs font-semibold bg-slate-500/10 text-slate-400">
+                <span
+                  id="geminiQuotaStatus"
+                  class="px-2.5 py-1 rounded text-xs font-semibold bg-slate-500/10 text-slate-400"
+                >
                   UNKNOWN
                 </span>
               </div>
-              
+
               <div class="space-y-4">
                 <!-- Weekly Limit -->
                 <div>
                   <div class="flex justify-between text-xs mb-1">
                     <span class="text-slate-300">Weekly limit remaining</span>
-                    <span class="font-semibold text-white" id="geminiWeeklyPercent">--%</span>
+                    <span
+                      class="font-semibold text-white"
+                      id="geminiWeeklyPercent"
+                      >--%</span
+                    >
                   </div>
-                  <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
-                    <div id="geminiWeeklyBar" class="bg-indigo-500 h-full w-0 transition-all duration-500"></div>
+                  <div
+                    class="w-full bg-white/10 h-2 rounded-full overflow-hidden"
+                  >
+                    <div
+                      id="geminiWeeklyBar"
+                      class="bg-indigo-500 h-full w-0 transition-all duration-500"
+                    ></div>
                   </div>
-                  <div class="text-[10px] text-slate-400 mt-1" id="geminiWeeklyReset">
+                  <div
+                    class="text-[10px] text-slate-400 mt-1"
+                    id="geminiWeeklyReset"
+                  >
                     Refreshes in: --h
                   </div>
                 </div>
@@ -732,56 +785,112 @@
                 <div>
                   <div class="flex justify-between text-xs mb-1">
                     <span class="text-slate-300">5-hour sprint limit</span>
-                    <span class="font-semibold text-white" id="geminiSprintPercent">--%</span>
+                    <span
+                      class="font-semibold text-white"
+                      id="geminiSprintPercent"
+                      >--%</span
+                    >
                   </div>
-                  <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
-                    <div id="geminiSprintBar" class="bg-indigo-400 h-full w-0 transition-all duration-500"></div>
+                  <div
+                    class="w-full bg-white/10 h-2 rounded-full overflow-hidden"
+                  >
+                    <div
+                      id="geminiSprintBar"
+                      class="bg-indigo-400 h-full w-0 transition-all duration-500"
+                    ></div>
                   </div>
-                  <div class="text-[10px] text-slate-400 mt-1" id="geminiSprintReset">
+                  <div
+                    class="text-[10px] text-slate-400 mt-1"
+                    id="geminiSprintReset"
+                  >
                     Refreshes in: --h
                   </div>
                 </div>
 
                 <!-- Math calculations -->
-                <div class="bg-black/30 border border-white/5 rounded-lg p-3.5 space-y-2 mt-2">
-                  <h4 class="text-xs font-semibold text-white">Daily Spacing Math</h4>
+                <div
+                  class="bg-black/30 border border-white/5 rounded-lg p-3.5 space-y-2 mt-2"
+                >
+                  <h4 class="text-xs font-semibold text-white">
+                    Daily Spacing Math
+                  </h4>
                   <div class="grid grid-cols-2 gap-2 text-xs">
                     <div class="text-slate-400">Target Daily Spend:</div>
-                    <div class="text-indigo-300 text-right" id="geminiTargetSpend">14.29% (~12 runs)</div>
+                    <div
+                      class="text-indigo-300 text-right"
+                      id="geminiTargetSpend"
+                    >
+                      14.29% (~12 runs)
+                    </div>
                     <div class="text-slate-400">Current Daily Allowance:</div>
-                    <div class="text-white text-right font-mono" id="geminiDailyAllowance">--% / day</div>
+                    <div
+                      class="text-white text-right font-mono"
+                      id="geminiDailyAllowance"
+                    >
+                      --% / day
+                    </div>
                     <div class="text-slate-400">Measured Run Cost:</div>
-                    <div class="text-indigo-200 text-right font-mono" id="geminiMeasuredCost">--% (0 runs)</div>
+                    <div
+                      class="text-indigo-200 text-right font-mono"
+                      id="geminiMeasuredCost"
+                    >
+                      --% (0 runs)
+                    </div>
                     <div class="text-slate-400">Status Check:</div>
-                    <div class="text-right font-semibold" id="geminiMathStatus">--</div>
+                    <div class="text-right font-semibold" id="geminiMathStatus">
+                      --
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
             <!-- Claude Card -->
-            <div class="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-md">
+            <div
+              class="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-md"
+            >
               <div class="flex justify-between items-start mb-4">
                 <div>
-                  <h3 class="text-md font-semibold text-white mb-1">Claude / GPT Models Pool</h3>
-                  <span class="text-xs text-slate-400 font-mono" id="claudeAccount">Loading...</span>
+                  <h3 class="text-md font-semibold text-white mb-1">
+                    Claude / GPT Models Pool
+                  </h3>
+                  <span
+                    class="text-xs text-slate-400 font-mono"
+                    id="claudeAccount"
+                    >Loading...</span
+                  >
                 </div>
-                <span id="claudeQuotaStatus" class="px-2.5 py-1 rounded text-xs font-semibold bg-slate-500/10 text-slate-400">
+                <span
+                  id="claudeQuotaStatus"
+                  class="px-2.5 py-1 rounded text-xs font-semibold bg-slate-500/10 text-slate-400"
+                >
                   UNKNOWN
                 </span>
               </div>
-              
+
               <div class="space-y-4">
                 <!-- Weekly Limit -->
                 <div>
                   <div class="flex justify-between text-xs mb-1">
                     <span class="text-slate-300">Weekly limit remaining</span>
-                    <span class="font-semibold text-white" id="claudeWeeklyPercent">--%</span>
+                    <span
+                      class="font-semibold text-white"
+                      id="claudeWeeklyPercent"
+                      >--%</span
+                    >
                   </div>
-                  <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
-                    <div id="claudeWeeklyBar" class="bg-indigo-500 h-full w-0 transition-all duration-500"></div>
+                  <div
+                    class="w-full bg-white/10 h-2 rounded-full overflow-hidden"
+                  >
+                    <div
+                      id="claudeWeeklyBar"
+                      class="bg-indigo-500 h-full w-0 transition-all duration-500"
+                    ></div>
                   </div>
-                  <div class="text-[10px] text-slate-400 mt-1" id="claudeWeeklyReset">
+                  <div
+                    class="text-[10px] text-slate-400 mt-1"
+                    id="claudeWeeklyReset"
+                  >
                     Refreshes in: --h
                   </div>
                 </div>
@@ -790,28 +899,61 @@
                 <div>
                   <div class="flex justify-between text-xs mb-1">
                     <span class="text-slate-300">5-hour sprint limit</span>
-                    <span class="font-semibold text-white" id="claudeSprintPercent">--%</span>
+                    <span
+                      class="font-semibold text-white"
+                      id="claudeSprintPercent"
+                      >--%</span
+                    >
                   </div>
-                  <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
-                    <div id="claudeSprintBar" class="bg-indigo-400 h-full w-0 transition-all duration-500"></div>
+                  <div
+                    class="w-full bg-white/10 h-2 rounded-full overflow-hidden"
+                  >
+                    <div
+                      id="claudeSprintBar"
+                      class="bg-indigo-400 h-full w-0 transition-all duration-500"
+                    ></div>
                   </div>
-                  <div class="text-[10px] text-slate-400 mt-1" id="claudeSprintReset">
+                  <div
+                    class="text-[10px] text-slate-400 mt-1"
+                    id="claudeSprintReset"
+                  >
                     Refreshes in: --h
                   </div>
                 </div>
 
                 <!-- Math calculations -->
-                <div class="bg-black/30 border border-white/5 rounded-lg p-3.5 space-y-2 mt-2">
-                  <h4 class="text-xs font-semibold text-white">Daily Spacing Math</h4>
+                <div
+                  class="bg-black/30 border border-white/5 rounded-lg p-3.5 space-y-2 mt-2"
+                >
+                  <h4 class="text-xs font-semibold text-white">
+                    Daily Spacing Math
+                  </h4>
                   <div class="grid grid-cols-2 gap-2 text-xs">
                     <div class="text-slate-400">Target Daily Spend:</div>
-                    <div class="text-indigo-300 text-right" id="claudeTargetSpend">14.29% (~4.7 runs)</div>
+                    <div
+                      class="text-indigo-300 text-right"
+                      id="claudeTargetSpend"
+                    >
+                      14.29% (~4.7 runs)
+                    </div>
                     <div class="text-slate-400">Current Daily Allowance:</div>
-                    <div class="text-white text-right font-mono" id="claudeDailyAllowance">--% / day</div>
+                    <div
+                      class="text-white text-right font-mono"
+                      id="claudeDailyAllowance"
+                    >
+                      --% / day
+                    </div>
                     <div class="text-slate-400">Measured Run Cost:</div>
-                    <div class="text-indigo-200 text-right font-mono" id="claudeMeasuredCost">--% (0 runs)</div>
+                    <div
+                      class="text-indigo-200 text-right font-mono"
+                      id="claudeMeasuredCost"
+                    >
+                      --% (0 runs)
+                    </div>
                     <div class="text-slate-400">Status Check:</div>
-                    <div class="text-right font-semibold" id="claudeMathStatus">--</div>
+                    <div class="text-right font-semibold" id="claudeMathStatus">
+                      --
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1663,96 +1805,139 @@
           return;
         }
 
-        document.getElementById("quotaLastUpdated").textContent = data.last_updated ? new Date(data.last_updated).toLocaleString() : "Unknown";
+        document.getElementById("quotaLastUpdated").textContent =
+          data.last_updated
+            ? new Date(data.last_updated).toLocaleString()
+            : "Unknown";
 
         // Gemini
-        document.getElementById("geminiAccount").textContent = data.gemini.account || "Unknown";
-        document.getElementById("geminiWeeklyPercent").textContent = `${data.gemini.weekly_percent}%`;
-        document.getElementById("geminiWeeklyBar").style.width = `${data.gemini.weekly_percent}%`;
-        document.getElementById("geminiWeeklyReset").textContent = `Refreshes in: ${data.gemini.weekly_refreshes_in_hours.toFixed(1)}h (${(data.gemini.weekly_refreshes_in_hours / 24).toFixed(2)} days)`;
-        
+        document.getElementById("geminiAccount").textContent =
+          data.gemini.account || "Unknown";
+        document.getElementById("geminiWeeklyPercent").textContent =
+          `${data.gemini.weekly_percent}%`;
+        document.getElementById("geminiWeeklyBar").style.width =
+          `${data.gemini.weekly_percent}%`;
+        document.getElementById("geminiWeeklyReset").textContent =
+          `Refreshes in: ${data.gemini.weekly_refreshes_in_hours.toFixed(1)}h (${(data.gemini.weekly_refreshes_in_hours / 24).toFixed(2)} days)`;
+
         if (data.gemini.sprint_disabled) {
-          document.getElementById("geminiSprintPercent").textContent = "Disabled";
+          document.getElementById("geminiSprintPercent").textContent =
+            "Disabled";
           document.getElementById("geminiSprintBar").style.width = "0%";
-          document.getElementById("geminiSprintReset").textContent = "Sprint disabled due to weekly lockout";
+          document.getElementById("geminiSprintReset").textContent =
+            "Sprint disabled due to weekly lockout";
         } else {
-          document.getElementById("geminiSprintPercent").textContent = `${data.gemini.sprint_percent}%`;
-          document.getElementById("geminiSprintBar").style.width = `${data.gemini.sprint_percent}%`;
-          document.getElementById("geminiSprintReset").textContent = `Refreshes in: ${data.gemini.sprint_refreshes_in_hours.toFixed(1)}h`;
+          document.getElementById("geminiSprintPercent").textContent =
+            `${data.gemini.sprint_percent}%`;
+          document.getElementById("geminiSprintBar").style.width =
+            `${data.gemini.sprint_percent}%`;
+          document.getElementById("geminiSprintReset").textContent =
+            `Refreshes in: ${data.gemini.sprint_refreshes_in_hours.toFixed(1)}h`;
         }
 
         const geminiRatio = data.gemini.ratio || 0;
-        const geminiRefDays = (data.gemini.weekly_refreshes_in_hours / 24).toFixed(2);
-        
-        const geminiAvgCost = data.gemini_avg_cost !== undefined ? data.gemini_avg_cost : 1.2;
+        const geminiRefDays = (
+          data.gemini.weekly_refreshes_in_hours / 24
+        ).toFixed(2);
+
+        const geminiAvgCost =
+          data.gemini_avg_cost !== undefined ? data.gemini_avg_cost : 1.2;
         const geminiRunsCount = data.gemini_runs_count || 0;
         const geminiTargetRuns = 14.29 / geminiAvgCost;
         const geminiAllowanceRuns = geminiRatio / geminiAvgCost;
 
-        document.getElementById("geminiTargetSpend").textContent = `14.29% (~${geminiTargetRuns.toFixed(1)} runs)`;
-        document.getElementById("geminiDailyAllowance").textContent = `${geminiRatio}% / day (~${geminiAllowanceRuns.toFixed(1)} runs) (with ${geminiRefDays} days left)`;
-        document.getElementById("geminiMeasuredCost").textContent = `${geminiAvgCost.toFixed(2)}% (${geminiRunsCount} runs)`;
+        document.getElementById("geminiTargetSpend").textContent =
+          `14.29% (~${geminiTargetRuns.toFixed(1)} runs)`;
+        document.getElementById("geminiDailyAllowance").textContent =
+          `${geminiRatio}% / day (~${geminiAllowanceRuns.toFixed(1)} runs) (with ${geminiRefDays} days left)`;
+        document.getElementById("geminiMeasuredCost").textContent =
+          `${geminiAvgCost.toFixed(2)}% (${geminiRunsCount} runs)`;
 
         const geminiStatusBadge = document.getElementById("geminiQuotaStatus");
         const geminiMathStatus = document.getElementById("geminiMathStatus");
-        
+
         geminiStatusBadge.textContent = data.gemini.status.toUpperCase();
         if (data.gemini.status === "Healthy") {
-          geminiStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+          geminiStatusBadge.className =
+            "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
           geminiMathStatus.textContent = "Safe to Run (Above 14.3%)";
-          geminiMathStatus.className = "text-right font-semibold text-emerald-400";
+          geminiMathStatus.className =
+            "text-right font-semibold text-emerald-400";
         } else if (data.gemini.status === "Throttled") {
-          geminiStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
+          geminiStatusBadge.className =
+            "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
           geminiMathStatus.textContent = "Throttled (Below 14.3% daily budget)";
-          geminiMathStatus.className = "text-right font-semibold text-amber-400";
+          geminiMathStatus.className =
+            "text-right font-semibold text-amber-400";
         } else {
-          geminiStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20";
+          geminiStatusBadge.className =
+            "px-2.5 py-1 rounded text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20";
           geminiMathStatus.textContent = data.gemini.status;
           geminiMathStatus.className = "text-right font-semibold text-rose-400";
         }
 
         // Claude
-        document.getElementById("claudeAccount").textContent = data.claude.account || "Unknown";
-        document.getElementById("claudeWeeklyPercent").textContent = `${data.claude.weekly_percent}%`;
-        document.getElementById("claudeWeeklyBar").style.width = `${data.claude.weekly_percent}%`;
-        document.getElementById("claudeWeeklyReset").textContent = `Refreshes in: ${data.claude.weekly_refreshes_in_hours.toFixed(1)}h (${(data.claude.weekly_refreshes_in_hours / 24).toFixed(2)} days)`;
-        
+        document.getElementById("claudeAccount").textContent =
+          data.claude.account || "Unknown";
+        document.getElementById("claudeWeeklyPercent").textContent =
+          `${data.claude.weekly_percent}%`;
+        document.getElementById("claudeWeeklyBar").style.width =
+          `${data.claude.weekly_percent}%`;
+        document.getElementById("claudeWeeklyReset").textContent =
+          `Refreshes in: ${data.claude.weekly_refreshes_in_hours.toFixed(1)}h (${(data.claude.weekly_refreshes_in_hours / 24).toFixed(2)} days)`;
+
         if (data.claude.sprint_disabled) {
-          document.getElementById("claudeSprintPercent").textContent = "Disabled";
+          document.getElementById("claudeSprintPercent").textContent =
+            "Disabled";
           document.getElementById("claudeSprintBar").style.width = "0%";
-          document.getElementById("claudeSprintReset").textContent = "Sprint disabled due to weekly lockout";
+          document.getElementById("claudeSprintReset").textContent =
+            "Sprint disabled due to weekly lockout";
         } else {
-          document.getElementById("claudeSprintPercent").textContent = `${data.claude.sprint_percent}%`;
-          document.getElementById("claudeSprintBar").style.width = `${data.claude.sprint_percent}%`;
-          document.getElementById("claudeSprintReset").textContent = `Refreshes in: ${data.claude.sprint_refreshes_in_hours.toFixed(1)}h`;
+          document.getElementById("claudeSprintPercent").textContent =
+            `${data.claude.sprint_percent}%`;
+          document.getElementById("claudeSprintBar").style.width =
+            `${data.claude.sprint_percent}%`;
+          document.getElementById("claudeSprintReset").textContent =
+            `Refreshes in: ${data.claude.sprint_refreshes_in_hours.toFixed(1)}h`;
         }
 
         const claudeRatio = data.claude.ratio || 0;
-        const claudeRefDays = (data.claude.weekly_refreshes_in_hours / 24).toFixed(2);
-        
-        const claudeAvgCost = data.claude_avg_cost !== undefined ? data.claude_avg_cost : 3.0;
+        const claudeRefDays = (
+          data.claude.weekly_refreshes_in_hours / 24
+        ).toFixed(2);
+
+        const claudeAvgCost =
+          data.claude_avg_cost !== undefined ? data.claude_avg_cost : 3.0;
         const claudeRunsCount = data.claude_runs_count || 0;
         const claudeTargetRuns = 14.29 / claudeAvgCost;
         const claudeAllowanceRuns = claudeRatio / claudeAvgCost;
 
-        document.getElementById("claudeTargetSpend").textContent = `14.29% (~${claudeTargetRuns.toFixed(1)} runs)`;
-        document.getElementById("claudeDailyAllowance").textContent = `${claudeRatio}% / day (~${claudeAllowanceRuns.toFixed(1)} runs) (with ${claudeRefDays} days left)`;
-        document.getElementById("claudeMeasuredCost").textContent = `${claudeAvgCost.toFixed(2)}% (${claudeRunsCount} runs)`;
+        document.getElementById("claudeTargetSpend").textContent =
+          `14.29% (~${claudeTargetRuns.toFixed(1)} runs)`;
+        document.getElementById("claudeDailyAllowance").textContent =
+          `${claudeRatio}% / day (~${claudeAllowanceRuns.toFixed(1)} runs) (with ${claudeRefDays} days left)`;
+        document.getElementById("claudeMeasuredCost").textContent =
+          `${claudeAvgCost.toFixed(2)}% (${claudeRunsCount} runs)`;
 
         const claudeStatusBadge = document.getElementById("claudeQuotaStatus");
         const claudeMathStatus = document.getElementById("claudeMathStatus");
-        
+
         claudeStatusBadge.textContent = data.claude.status.toUpperCase();
         if (data.claude.status === "Healthy") {
-          claudeStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+          claudeStatusBadge.className =
+            "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
           claudeMathStatus.textContent = "Safe to Run (Above 14.3%)";
-          claudeMathStatus.className = "text-right font-semibold text-emerald-400";
+          claudeMathStatus.className =
+            "text-right font-semibold text-emerald-400";
         } else if (data.claude.status === "Throttled") {
-          claudeStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
+          claudeStatusBadge.className =
+            "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
           claudeMathStatus.textContent = "Throttled (Below 14.3% daily budget)";
-          claudeMathStatus.className = "text-right font-semibold text-amber-400";
+          claudeMathStatus.className =
+            "text-right font-semibold text-amber-400";
         } else {
-          claudeStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20";
+          claudeStatusBadge.className =
+            "px-2.5 py-1 rounded text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20";
           claudeMathStatus.textContent = data.claude.status;
           claudeMathStatus.className = "text-right font-semibold text-rose-400";
         }
