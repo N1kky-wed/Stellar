@@ -171,14 +171,14 @@ def fetch_quota_data_from_container(model: str = "Claude Sonnet 4.6 (Thinking)")
     
     try:
         # Wait for ? for shortcuts
-        child.expect(r'\? for shortcuts', timeout=20)
+        child.expect(r'\? for shortcuts', timeout=60)
         time.sleep(1)
         
         # Send /usage\r
         child.send('/usage\r')
         
         # Wait for Models & Quota title
-        child.expect(r'Models & Quota', timeout=10)
+        child.expect(r'Models & Quota', timeout=30)
         time.sleep(1)
         
         # Scroll to bottom using Page Down

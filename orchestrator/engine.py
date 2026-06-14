@@ -312,7 +312,7 @@ class OrchestratorEngine:
             logger.error("Failed to update running average: %s", e)
 
     def _is_in_cooldown(self, now: datetime) -> bool:
-        """Return True if the engine is currently in a global quota cooldown (i.e. both models are exhausted)."""
+        """Return True if the engine is currently in a global quota cooldown (i.e. both models are exhausted/throttled)."""
         # Clear expired model cooldowns
         if self.gemini_cooldown_until and now >= self.gemini_cooldown_until:
             logger.info("[COOLDOWN] Gemini quota cooldown lifted.")
@@ -324,8 +324,45 @@ class OrchestratorEngine:
             self.claude_cooldown_until = None
             self.state_db.set_state("claude_cooldown_until", "")
 
+        # Check cached database quota data for throttling
+        gemini_throttled = False
+        claude_throttled = False
+        gemini_recovery_time = None
+        claude_recovery_time = None
+        
+        quota_json = self.state_db.get_state("quota_data")
+        if quota_json:
+            try:
+                quota_dict = json.loads(quota_json)
+                gemini_info = quota_dict.get('gemini', {})
+                claude_info = quota_dict.get('claude', {})
+                
+                gemini_status = gemini_info.get('status')
+                claude_status = claude_info.get('status')
+                
+                if gemini_status in ('Throttled', 'Exhausted'):
+                    gemini_throttled = True
+                    g_pct = gemini_info.get('weekly_percent', 100.0)
+                    g_ref = gemini_info.get('weekly_refreshes_in_hours', 0.0)
+                    g_wait = max(0.0, g_ref - 1.68 * g_pct)
+                    if g_wait > 0:
+                        gemini_recovery_time = now + timedelta(hours=g_wait)
+                
+                if claude_status in ('Throttled', 'Exhausted'):
+                    claude_throttled = True
+                    c_pct = claude_info.get('weekly_percent', 100.0)
+                    c_ref = claude_info.get('weekly_refreshes_in_hours', 0.0)
+                    c_wait = max(0.0, c_ref - 1.68 * c_pct)
+                    if c_wait > 0:
+                        claude_recovery_time = now + timedelta(hours=c_wait)
+            except Exception as e:
+                logger.error("Error parsing quota data in cooldown check: %s", e)
+
+        g_cooldown = self.gemini_cooldown_until or (gemini_recovery_time if gemini_throttled else None)
+        c_cooldown = self.claude_cooldown_until or (claude_recovery_time if claude_throttled else None)
+
         # If a model is free, we are NOT in global cooldown
-        if not self.gemini_cooldown_until or not self.claude_cooldown_until:
+        if not g_cooldown or not c_cooldown:
             # Clear global cooldown if it was set
             if self.quota_cooldown_until:
                 self.quota_cooldown_until = None
@@ -334,7 +371,7 @@ class OrchestratorEngine:
 
         # If both models are in cooldown, the engine must sleep
         # We set the global quota_cooldown_until to the earliest of the two resets
-        earliest_recovery = min(self.gemini_cooldown_until, self.claude_cooldown_until)
+        earliest_recovery = min(g_cooldown, c_cooldown)
         if not self.quota_cooldown_until or self.quota_cooldown_until != earliest_recovery:
             self.quota_cooldown_until = earliest_recovery
             self.state_db.set_state("quota_cooldown_until", earliest_recovery.isoformat())
@@ -342,7 +379,7 @@ class OrchestratorEngine:
         if now < self.quota_cooldown_until:
             remaining = (self.quota_cooldown_until - now).total_seconds() / 60
             logger.info(
-                "[COOLDOWN] Both Gemini and Claude quotas are exhausted. remaining_min=%.1f cooldown_until=%s action=skip_tick",
+                "[COOLDOWN] Both Gemini and Claude quotas are exhausted/throttled. remaining_min=%.1f cooldown_until=%s action=skip_tick",
                 remaining, self.quota_cooldown_until.isoformat()
             )
             return True
@@ -767,17 +804,42 @@ class OrchestratorEngine:
             
         self.current_model = active_model
         
-        # Get start quota percentage from cached database state
+        # Get start quota percentage — prefer a live fetch, fall back to cache.
+        # This prevents recording 100.0 as the starting point when the cache is stale.
         quota_start_percent = None
+        model_key_start = "gemini" if active_model == config.MODEL_GEMINI else "claude"
         try:
-            quota_json = self.state_db.get_state("quota_data")
-            if quota_json:
-                import json
-                quota_dict = json.loads(quota_json)
-                model_key = "gemini" if active_model == config.MODEL_GEMINI else "claude"
-                quota_start_percent = quota_dict.get(model_key, {}).get("weekly_percent")
+            from orchestrator.quota import fetch_quota_data_from_container, parse_quota_text
+            raw_start = fetch_quota_data_from_container()
+            fresh_start = parse_quota_text(raw_start)
+            # Only trust the live value if it parsed successfully (not Error/Unknown)
+            live_status = fresh_start.get(model_key_start, {}).get("status", "Unknown")
+            if live_status not in ("Error", "Unknown"):
+                quota_start_percent = fresh_start.get(model_key_start, {}).get("weekly_percent")
+                # Persist the fresh snapshot so later cost calc uses the same baseline
+                fresh_start["last_updated"] = datetime.now(IST).isoformat()
+                self.state_db.set_state("quota_data", json.dumps(fresh_start))
+                logger.info("Live quota_start_percent for %s: %.2f%%", active_model, quota_start_percent)
+            else:
+                logger.warning("Live quota parse returned status=%s. Falling back to DB cache for start percent.", live_status)
+                raise ValueError("Live parse gave non-healthy status")
         except Exception as e:
-            logger.error("Failed to extract starting quota: %s", e)
+            logger.warning("Live quota fetch for start percent failed: %s. Trying DB cache.", e)
+            try:
+                quota_json = self.state_db.get_state("quota_data")
+                if quota_json:
+                    quota_dict = json.loads(quota_json)
+                    cached_status = quota_dict.get(model_key_start, {}).get("status", "Unknown")
+                    cached_pct = quota_dict.get(model_key_start, {}).get("weekly_percent")
+                    # Reject only if the status flag signals a parse error — a genuine
+                    # fresh-week 100% has status='Healthy' or 'Throttled', not 'Error'.
+                    if cached_status not in ("Error", "Unknown") and cached_pct is not None:
+                        quota_start_percent = cached_pct
+                        logger.info("Using cached quota_start_percent for %s: %.2f%%", active_model, quota_start_percent)
+                    else:
+                        logger.warning("Cached quota_data is errored/unknown (status=%s). quota_start_percent will be NULL.", cached_status)
+            except Exception as cache_err:
+                logger.error("Failed to extract starting quota from cache: %s", cache_err)
 
         # Register in database
         self.current_run_id = self.state_db.start_run(
@@ -1277,5 +1339,26 @@ class OrchestratorEngine:
             # 3. If both are throttled or exhausted, return None
             return None
         except Exception as e:
-            logger.error("Error checking live quota in _get_active_model: %s. Defaulting to Gemini.", e)
-            return config.MODEL_GEMINI if not gemini_cooldown else config.MODEL_CLAUDE
+            # Live container query failed (pexpect timeout, container restart, etc.).
+            # Do NOT blindly return a model — consult the cached DB quota_data instead
+            # so we don't launch an agent when both models are throttled.
+            logger.error("Error checking live quota in _get_active_model (pexpect/container failure): %s. Consulting DB cache.", e)
+            cached_json = self.state_db.get_state("quota_data")
+            if cached_json:
+                try:
+                    cached = json.loads(cached_json)
+                    g_status = cached.get("gemini", {}).get("status", "Unknown")
+                    c_status = cached.get("claude", {}).get("status", "Unknown")
+                    logger.info("[FALLBACK] Cached quota status — Gemini: %s, Claude: %s", g_status, c_status)
+                    if g_status == "Healthy" and not gemini_cooldown:
+                        return config.MODEL_GEMINI
+                    if c_status == "Healthy" and not claude_cooldown:
+                        return config.MODEL_CLAUDE
+                    # Both throttled/exhausted in cache — refuse to start
+                    logger.warning("[FALLBACK] Both models are non-Healthy in DB cache. Deferring run.")
+                    return None
+                except Exception as parse_err:
+                    logger.error("[FALLBACK] Failed to parse cached quota_data: %s", parse_err)
+            # Last resort: if we have no cache at all and no hard cooldowns, allow Gemini
+            logger.warning("[FALLBACK] No cached quota_data available. Defaulting conservatively to Gemini.")
+            return config.MODEL_GEMINI if not gemini_cooldown else (config.MODEL_CLAUDE if not claude_cooldown else None)

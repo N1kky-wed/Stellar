@@ -2308,6 +2308,17 @@
           nextAgentIndex = (idx + 1) % pipeline.length;
         }
 
+        let globalCooldownActive = (data.gemini && data.claude && data.gemini.status !== "Healthy" && data.claude.status !== "Healthy");
+        let cooldownEnd = new Date(Math.min(geminiRecoveryDate, claudeRecoveryDate));
+        
+        if (data.quota_cooldown_until) {
+          const dbCd = new Date(data.quota_cooldown_until);
+          if (dbCd > now) {
+            cooldownEnd = dbCd;
+            globalCooldownActive = true;
+          }
+        }
+
         const nextRunDates = {};
         let simTime = new Date(now);
         let prevRunEndTime = new Date(now);
@@ -2329,6 +2340,13 @@
           if (firstStep) {
             // First run starts at its next scheduled nominal slot (or now if overdue)
             targetStartTime = getNextNominalRun(agent.id, agent.schedule, data);
+            
+            if (data.pending_immediate_agent === agent.id && globalCooldownActive) {
+              targetStartTime = cooldownEnd;
+            } else if (globalCooldownActive && targetStartTime < cooldownEnd) {
+              targetStartTime = cooldownEnd;
+            }
+            
             firstStep = false;
           } else {
             // Subsequent pipeline trigger is immediate (event-based merge trigger)

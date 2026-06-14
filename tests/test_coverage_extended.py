@@ -78,18 +78,18 @@ def _make_orchestrator_memory_db(db_path):
 # ===========================================================================
 
 def test_parse_quota_block_duration_rpm_minute_keyword():
-    """RPM-style error containing 'minute' should return 60s / 'RPM' reason."""
+    """RPM-style error containing 'minute' should return 61s / 'RPM' reason."""
     from app import parse_quota_block_duration
     duration, reason = parse_quota_block_duration("Quota exceeded: requests per minute limit hit")
-    assert duration == 60
+    assert duration == 61
     assert reason == 'RPM'
 
 
 def test_parse_quota_block_duration_rpm_tpm_keyword():
-    """'tpm' in error string maps to the minute-limit branch (60 s, RPM)."""
+    """'tpm' in error string maps to the minute-limit branch (61 s, RPM)."""
     from app import parse_quota_block_duration
     duration, reason = parse_quota_block_duration("Rate exceeded: TPM limit reached")
-    assert duration == 60
+    assert duration == 61
     assert reason == 'RPM'
 
 
@@ -128,10 +128,10 @@ def test_parse_quota_block_duration_internal_500():
 
 
 def test_parse_quota_block_duration_fallback():
-    """Unrecognised error strings fall back to 60 s / 'RPM'."""
+    """Unrecognised error strings fall back to 61 s / 'RPM'."""
     from app import parse_quota_block_duration
     duration, reason = parse_quota_block_duration("some completely unknown error message")
-    assert duration == 60
+    assert duration == 61
     assert reason == 'RPM'
 
 

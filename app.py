@@ -737,8 +737,8 @@ def parse_quota_block_duration(error_msg):
     err_lower = error_msg.lower()
     if ('minute' in err_lower or 'queries per minute' in err_lower or
         'rpm' in err_lower or 'tpm' in err_lower or 'queriesperminute' in err_lower):
-        # Minute limit / TPM / RPM: Block for 60 seconds
-        return 60, 'RPM'
+        # Minute limit / TPM / RPM: Block for 61 seconds (extra 1s for network I/O jitter)
+        return 61, 'RPM'
     elif ('requestsperday' in err_lower or 'requests per day' in err_lower or
           'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower or
           'exceeded your current quota' in err_lower or 'billing details' in err_lower or 'quota/rate limits' in err_lower):
@@ -751,8 +751,8 @@ def parse_quota_block_duration(error_msg):
     elif ('500' in err_lower or 'internal error' in err_lower or 'internal_error' in err_lower):
         # Internal error / 500: Block key for 10 seconds
         return 10, 'INTERNAL'
-    # Minute limit / TPM / RPM: Block for 60 seconds
-    return 60, 'RPM'
+    # Minute limit / TPM / RPM: Block for 61 seconds (extra 1s for network I/O jitter)
+    return 61, 'RPM'
 # -------------------------------------------------------------
 
 
@@ -2132,38 +2132,120 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     raw_keys = [PRIMARY_API_KEY, key] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
 
-    # Filter out globally rate-limited or quota-exhausted keys to avoid time/resource waste
-    active_keys = []
-    blocked_info = []
-    for k in keys_to_try:
-        is_blocked, reason = KEY_MANAGER.is_key_blocked(k, model_id)
-        if not is_blocked:
-            active_keys.append(k)
-        else:
-            blocked_info.append((k, reason))
+    # ------------------------------------------------------------------
+    # Key rotation strategy
+    # ALL_KEYS: the full deduplicated ordered pool (PRIMARY first, then
+    #   passed key, then BACKUP_API_KEYS). Preserved for the life of this
+    #   call so RPM-expired keys can be reconsidered.
+    # RPD-blocked keys are removed permanently for this invocation because
+    #   they won't unblock before Pacific midnight.
+    # RPM-blocked keys (60 s) stay in the pool; we skip them now but can
+    #   return to them once their window expires.
+    # ------------------------------------------------------------------
+    ALL_KEYS = [k for k in dict.fromkeys([PRIMARY_API_KEY, key] + [bk for bk in BACKUP_API_KEYS if bk]) if k]
 
-    if not active_keys:
-        # Fallback: if ALL keys are blocked, try them all to avoid complete lockout
-        active_keys = keys_to_try
-    else:
-        if blocked_info:
-            logger.info(f"Skipped {len(blocked_info)} globally blocked/exhausted API key(s) to protect from redundant 429 hits.")
+    # Partition: permanently remove RPD/INVALID keys; keep RPM/OVERLOAD
+    # keys because they will recover within this call.
+    def _is_permanently_blocked(k):
+        """True only for RPD or INVALID blocks (won't recover mid-call)."""
+        blocked, reason = KEY_MANAGER.is_key_blocked(k, model_id)
+        return blocked and reason in ('RPD', 'INVALID')
 
-    keys_to_try = active_keys
+    keys_to_try = [k for k in ALL_KEYS if not _is_permanently_blocked(k)]
+    if not keys_to_try:
+        # All keys are RPD-exhausted — nothing we can do this call
+        logger.error("All API keys are RPD/INVALID-blocked for model %s. Aborting.", model_id)
+        keys_to_try = ALL_KEYS  # surface the error naturally
 
+    if len(keys_to_try) < len(ALL_KEYS):
+        n_skipped = len(ALL_KEYS) - len(keys_to_try)
+        logger.info("Skipped %d RPD/INVALID-blocked API key(s) for model %s.", n_skipped, model_id)
 
+    # Pick starting key: always the lowest-indexed key that is not blocked.
+    # "Earliest-available" strategy: use K1 exclusively until RPM, then K2, etc.
+    # When K1's 61s window expires it is automatically preferred again.
+    # Redis stores block state cross-process so all workers agree without a counter.
     current_key_index = 0
+    for _i in range(len(keys_to_try)):
+        _k = keys_to_try[_i]
+        _blocked, _ = KEY_MANAGER.is_key_blocked(_k, model_id)
+        if not _blocked:
+            current_key_index = _i
+            break
 
     def get_next_unblocked_key_index(start_idx):
+        """
+        Always return the lowest-indexed key that is currently unblocked.
+
+        Strategy — "earliest-available":
+          Scan from index 0 every time. This means:
+            · K1 is used until it hits RPM (61 s block).
+            · Switch to K2 (next lowest unblocked).
+            · When K1’s 61 s expires, the very next call comes back to K1.
+            · K3, K4 … are only used when every lower key is blocked.
+
+        Pass 1 — Scan keys 0..N-1. Pure time comparison, no request sent.
+        Pass 2 — All blocked: find soonest expiry, sleep + 1 s, rescan from 0.
+        RPD/INVALID — skipped, never waited on.
+        """
         if not keys_to_try:
             return None
-        for offset in range(1, len(keys_to_try) + 1):
-            idx = (start_idx + offset) % len(keys_to_try)
-            k = keys_to_try[idx]
-            is_blocked, _ = KEY_MANAGER.is_key_blocked(k, model_id)
+
+        # Pass 1: scan from index 0 — prefer lowest-indexed unblocked key.
+        for i in range(len(keys_to_try)):
+            k = keys_to_try[i]
+            is_blocked, reason = KEY_MANAGER.is_key_blocked(k, model_id)
             if not is_blocked:
-                return idx
+                return i
+            if reason in ('RPD', 'INVALID'):
+                continue  # permanent — skip silently
+
+        # Pass 2: all N keys still within their RPM window.
+        # Find soonest-expiring key, sleep once, rescan from 0.
+        soonest_wait = None
+        soonest_idx = None
+        for i in range(len(keys_to_try)):
+            k = keys_to_try[i]
+            is_blocked, reason = KEY_MANAGER.is_key_blocked(k, model_id)
+            if not is_blocked:
+                return i  # cleared between Pass 1 and here (race)
+            if reason in ('RPD', 'INVALID'):
+                continue
+            remaining = 62.0
+            try:
+                k_until, _ = KEY_MANAGER._get_redis_keys(k, model_id)
+                val = redis_client.get(k_until)
+                if val:
+                    remaining = max(0.0, float(val) - time.time())
+            except Exception:
+                in_mem = KEY_MANAGER.blocked_until.get((k, model_id), 0)
+                remaining = max(0.0, in_mem - time.time())
+            if soonest_wait is None or remaining < soonest_wait:
+                soonest_wait = remaining
+                soonest_idx = i
+
+        if soonest_idx is None:
+            logger.error("Only RPD/INVALID keys remain for model %s. Cannot recover.", model_id)
+            return None
+
+        wait_secs = soonest_wait + 1.0  # +1 s for network I/O jitter
+        logger.warning(
+            "All %d keys RPM-blocked for model %s. Sleeping %.1f s for key_index=%d to unblock.",
+            len(keys_to_try), model_id, wait_secs, soonest_idx
+        )
+        time.sleep(wait_secs)
+
+        # Post-sleep: rescan from 0 — pick lowest-indexed recovered key.
+        for i in range(len(keys_to_try)):
+            k = keys_to_try[i]
+            is_blocked, reason = KEY_MANAGER.is_key_blocked(k, model_id)
+            if not is_blocked:
+                logger.info("Key index %d unblocked after %.1f s wait.", i, wait_secs)
+                return i
+
+        logger.error("All keys still blocked after %.1f s wait for model %s.", wait_secs, model_id)
         return None
+
 
     for attempt in range(1, attempts + 1):
         if cancel_event and cancel_event.is_set():
@@ -2727,9 +2809,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                  last_exception = ValueError(error_msg)
                  yield {'status': f'Content generation blocked ({candidate_finish_reason}). Retrying...'}
                  next_key_idx = get_next_unblocked_key_index(current_key_index)
-                 if attempt < attempts or next_key_idx is not None:
-                     if next_key_idx is not None:
-                         current_key_index = next_key_idx
+                 if next_key_idx is not None:
+                     current_key_index = next_key_idx
+                     current_key = keys_to_try[current_key_index]
                      continue
                  else:
                      break
@@ -2780,7 +2862,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             if attempt < attempts:
                  yield {'status': f"Encountered error, retrying..."}
                  if not is_blockable_error:
-                    current_key_index = (current_key_index + 1) % len(keys_to_try) if keys_to_try else 0
+                    next_key_idx = get_next_unblocked_key_index(current_key_index)
+                    if next_key_idx is not None:
+                        current_key_index = next_key_idx
+                        current_key = keys_to_try[current_key_index]
             else:
                  break
 
@@ -6310,7 +6395,8 @@ def orchestrator_quota_info():
             
         rows = conn.execute("""
             SELECT key, value FROM orchestrator_state 
-            WHERE key IN ('gemini_avg_cost', 'claude_avg_cost', 'gemini_runs_count', 'claude_runs_count', 'gemini_cooldown_until', 'claude_cooldown_until')
+            WHERE key IN ('gemini_avg_cost', 'claude_avg_cost', 'gemini_runs_count', 'claude_runs_count', 
+                          'gemini_cooldown_until', 'claude_cooldown_until', 'pending_immediate_agent', 'quota_cooldown_until')
         """).fetchall()
         
         # Fetch recent runs starting from June 14th, 2026 02:55:00 PM IST (14:55:00)
@@ -6343,7 +6429,7 @@ def orchestrator_quota_info():
                     parsed[key] = float(val)
                 elif 'runs_count' in key:
                     parsed[key] = int(val)
-                elif 'cooldown_until' in key:
+                elif 'cooldown_until' in key or key in ('pending_immediate_agent', 'quota_cooldown_until'):
                     parsed[key] = val
                     
         # Group runs by model
