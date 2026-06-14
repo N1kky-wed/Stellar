@@ -290,21 +290,26 @@ class OrchestratorEngine:
         count_key = f"{model_key}_runs_count"
         
         try:
-            current_avg_str = self.state_db.get_state(avg_key)
-            current_count_str = self.state_db.get_state(count_key)
-            
-            current_avg = float(current_avg_str) if current_avg_str else (1.2 if model_key == "gemini" else 3.0)
-            current_count = int(current_count_str) if current_count_str else 0
-            
-            new_count = current_count + 1
-            new_avg = ((current_avg * current_count) + cost) / new_count
-            
-            self.state_db.set_state(avg_key, str(new_avg))
-            self.state_db.set_state(count_key, str(new_count))
-            
-            logger.info("Updated running average for %s: cost=%.2f%%, new_avg=%.4f%%, total_runs=%d", model_key, cost, new_avg, new_count)
+            with self.state_db._get_conn() as conn:
+                # Query all runs for this model from June 14, 2026 02:55 PM onwards
+                row_stats = conn.execute("""
+                    SELECT AVG(quota_cost), COUNT(id) 
+                    FROM agent_runs 
+                    WHERE model LIKE ? AND started_at >= '2026-06-14T14:55:00' AND quota_cost IS NOT NULL
+                """, (f"%{model_key}%",)).fetchone()
+                
+                if row_stats and row_stats[1] > 0:
+                    new_avg = row_stats[0]
+                    new_count = row_stats[1]
+                    self.state_db.set_state(avg_key, str(new_avg))
+                    self.state_db.set_state(count_key, str(new_count))
+                    logger.info("Recalculated running average for %s: new_avg=%.4f%%, total_runs=%d", model_key, new_avg, new_count)
+                else:
+                    # Fallback
+                    self.state_db.set_state(avg_key, str(cost))
+                    self.state_db.set_state(count_key, "1")
         except Exception as e:
-            logger.error("Error updating average quota usage in DB: %s", e)
+            logger.error("Failed to update running average: %s", e)
 
     def _is_in_cooldown(self, now: datetime) -> bool:
         """Return True if the engine is currently in a global quota cooldown (i.e. both models are exhausted)."""
