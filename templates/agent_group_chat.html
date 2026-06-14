@@ -394,6 +394,7 @@
               </div>
             </div>
             <span
+              id="boltNextRun"
               class="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded"
               >06:00 IST</span
             >
@@ -415,6 +416,7 @@
               </div>
             </div>
             <span
+              id="sentinelNextRun"
               class="text-[10px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded"
               >09:00 IST</span
             >
@@ -436,6 +438,7 @@
               </div>
             </div>
             <span
+              id="paletteNextRun"
               class="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded"
               >12:00 IST</span
             >
@@ -457,6 +460,7 @@
               </div>
             </div>
             <span
+              id="newtonNextRun"
               class="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded"
               >15:00 IST</span
             >
@@ -480,6 +484,7 @@
               </div>
             </div>
             <span
+              id="luciosNextRun"
               class="text-[10px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded"
               >18:00 IST</span
             >
@@ -503,6 +508,7 @@
               </div>
             </div>
             <span
+              id="protonNextRun"
               class="text-[10px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded"
               >21:00 IST</span
             >
@@ -1722,8 +1728,100 @@
         };
       }
 
-      // Start
+      // start
       loadHistory().then(initStream);
+
+      function getISTDateParts(date) {
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: 'numeric',
+          second: 'numeric',
+          hour12: false
+        });
+        const parts = formatter.formatToParts(date);
+        const partObj = {};
+        parts.forEach(p => { partObj[p.type] = p.value; });
+        return {
+          year: parseInt(partObj.year),
+          month: parseInt(partObj.month) - 1,
+          day: parseInt(partObj.day),
+          hour: parseInt(partObj.hour) === 24 ? 0 : parseInt(partObj.hour),
+          minute: parseInt(partObj.minute),
+          second: parseInt(partObj.second)
+        };
+      }
+
+      function hasCompletedToday(agentId, data) {
+        const allRuns = [...(data.gemini_recent_runs || []), ...(data.claude_recent_runs || [])];
+        const nowParts = getISTDateParts(new Date());
+
+        return allRuns.some(run => {
+          if (run.agent_id !== agentId || run.status !== 'COMPLETED') return false;
+          const runParts = getISTDateParts(new Date(run.started_at));
+          return runParts.year === nowParts.year &&
+                 runParts.month === nowParts.month &&
+                 runParts.day === nowParts.day;
+        });
+      }
+
+      function getNextNominalRun(agentId, scheduleStr, data) {
+        const [schedH, schedM] = scheduleStr.split(':').map(Number);
+        const now = new Date();
+        const nowParts = getISTDateParts(now);
+        
+        const year = nowParts.year;
+        const month = String(nowParts.month + 1).padStart(2, '0');
+        const day = String(nowParts.day).padStart(2, '0');
+        const hh = String(schedH).padStart(2, '0');
+        const mm = String(schedM).padStart(2, '0');
+        
+        const schedToday = new Date(`${year}-${month}-${day}T${hh}:${mm}:00+05:30`);
+
+        if (hasCompletedToday(agentId, data)) {
+          const nextRun = new Date(schedToday);
+          nextRun.setDate(nextRun.getDate() + 1);
+          return nextRun;
+        } else {
+          if (now < schedToday) {
+            return schedToday;
+          } else {
+            return now;
+          }
+        }
+      }
+
+      function formatNextRunTime(date) {
+        const nowParts = getISTDateParts(new Date());
+        const dateParts = getISTDateParts(date);
+        
+        const hh = String(dateParts.hour).padStart(2, '0');
+        const mm = String(dateParts.minute).padStart(2, '0');
+        const formattedTime = `${hh}:${mm}`;
+
+        const todayDateStr = `${nowParts.year}-${nowParts.month}-${nowParts.day}`;
+        const targetDateStr = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+
+        if (todayDateStr === targetDateStr) {
+          return `Today, ${formattedTime} IST`;
+        }
+
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomParts = getISTDateParts(tomorrow);
+        const tomDateStr = `${tomParts.year}-${tomParts.month}-${tomParts.day}`;
+
+        if (tomDateStr === targetDateStr) {
+          return `Tomorrow, ${formattedTime} IST`;
+        }
+
+        const optionsDate = { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' };
+        const formattedDate = date.toLocaleDateString('en-US', optionsDate);
+        return `${formattedDate}, ${formattedTime} IST`;
+      }
 
       // ── Orchestrator Status + Cooldown Banner ─────────────────────────
       let _cooldownRemaining = 0;
@@ -2132,6 +2230,38 @@
         // Render Recent Runs lists
         formatRecentRuns(data.gemini_recent_runs || [], "geminiRecentRunsList", "geminiRunsCountBadge");
         formatRecentRuns(data.claude_recent_runs || [], "claudeRecentRunsList", "claudeRunsCountBadge");
+
+        // Determine when each model is available
+        let geminiAvailableDate = new Date();
+        if (data.gemini.status !== "Healthy" || (data.gemini_cooldown_until && new Date(data.gemini_cooldown_until) > new Date())) {
+          geminiAvailableDate = geminiRecoveryDate;
+        }
+
+        let claudeAvailableDate = new Date();
+        if (data.claude.status !== "Healthy" || (data.claude_cooldown_until && new Date(data.claude_cooldown_until) > new Date())) {
+          claudeAvailableDate = claudeRecoveryDate;
+        }
+
+        // Orchestrator can run any agent on whichever model becomes healthy first
+        const orchestratorAvailableDate = new Date(Math.min(geminiAvailableDate, claudeAvailableDate));
+
+        const pipeline = [
+          { id: "bolt", schedule: "06:00" },
+          { id: "sentinel", schedule: "09:00" },
+          { id: "palette", schedule: "12:00" },
+          { id: "newton", schedule: "15:00" },
+          { id: "lucios", schedule: "18:00" },
+          { id: "proton", schedule: "21:00" }
+        ];
+
+        pipeline.forEach(agent => {
+          const nextNominal = getNextNominalRun(agent.id, agent.schedule, data);
+          const nextEst = new Date(Math.max(nextNominal, orchestratorAvailableDate));
+          const badge = document.getElementById(`${agent.id}NextRun`);
+          if (badge) {
+            badge.textContent = formatNextRunTime(nextEst);
+          }
+        });
       }
 
       async function loadQuotaData() {
