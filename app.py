@@ -1218,6 +1218,9 @@ def initialize_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tool_calls_chat_id ON tool_calls(chat_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_repo_history_user_id ON repo_history(user_id)")
+        # Bolt - Performance: composite index lets the sidebar MAX(timestamp) correlated subquery
+        # use an index range scan instead of a full table scan on messages for each chat row.
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages(chat_id, timestamp)")
 
         db.commit()
     logger.info("Database initialization completed duration_sec=%.3f", time.time() - t_db_init_start)
@@ -6192,12 +6195,9 @@ def agent_group_chat_page():
     if session.get('role') != 'admin':
         return make_response('Forbidden', 403)
 
-    # Serve templates/agent_group_chat.html
-    with open('templates/agent_group_chat.html', 'r') as f:
-        content = f.read()
-    response = make_response(content)
-    response.headers['Content-Type'] = 'text/html'
-    return response
+    # Bolt - Performance: use render_template so Flask/Jinja2 compiles and caches the template
+    # in-process instead of reading raw bytes from disk on every request via open().
+    return render_template('agent_group_chat.html')
 
 def _get_orchestrator_sqlite_conn(path):
     """
@@ -6555,20 +6555,37 @@ def get_agent_dms():
             WHERE channel = 'dm' AND (sender_id = ? OR recipient_id = ?)
             ORDER BY id ASC
         """, (agent_id, agent_id)).fetchall()
-        
-        # Determine if threads are resolved
+
+        # Bolt - Performance: batch-fetch task statuses for all resolve:task:<id> thread_ids in
+        # a single IN query instead of one SELECT per message (N+1 → 1 round-trip).
+        task_ids = set()
+        for r in rows:
+            tid = r['thread_id']
+            if tid and tid.startswith('resolve:task:'):
+                try:
+                    task_ids.add(int(tid.split(':')[-1]))
+                except ValueError:
+                    pass
+
+        resolved_task_ids = set()
+        if task_ids:
+            placeholders = ','.join('?' * len(task_ids))
+            task_rows = conn.execute(
+                f"SELECT id FROM agent_tasks WHERE id IN ({placeholders}) AND status = 'resolved'",
+                list(task_ids)
+            ).fetchall()
+            resolved_task_ids = {r2['id'] for r2 in task_rows}
+
+        # Determine if threads are resolved using the pre-fetched lookup set
         for r in rows:
             tid = r['thread_id']
             is_resolved = False
             if tid and tid.startswith('resolve:task:'):
                 try:
-                    task_id = int(tid.split(':')[-1])
-                    task = conn.execute("SELECT status FROM agent_tasks WHERE id = ?", (task_id,)).fetchone()
-                    if task and task['status'] == 'resolved':
-                        is_resolved = True
-                except Exception:
+                    is_resolved = int(tid.split(':')[-1]) in resolved_task_ids
+                except ValueError:
                     pass
-            
+
             sender_name = r['sender_id'].capitalize() if r['sender_id'] not in ('admin', 'orchestrator') else r['sender_id'].upper()
             ts = r['created_at'].replace('T', ' ').split('.')[0]
             messages.append({
@@ -6586,7 +6603,7 @@ def get_agent_dms():
         conn.close()
     except Exception as e:
         logger.error(f"Error fetching agent DMs: {e}")
-        
+
     return jsonify(messages)
 
 
