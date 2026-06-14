@@ -54,6 +54,10 @@ class StateDB:
                 conn.execute("ALTER TABLE agent_runs ADD COLUMN model TEXT")
             except sqlite3.OperationalError:
                 pass
+            try:
+                conn.execute("ALTER TABLE agent_runs ADD COLUMN quota_cost REAL")
+            except sqlite3.OperationalError:
+                pass
             # Table for general orchestrator state
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS orchestrator_state (

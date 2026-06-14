@@ -276,6 +276,15 @@ class OrchestratorEngine:
             logger.info("Negative cost calculated (w_start=%.2f, w_end=%.2f). A reset or account swap likely occurred. Skipping avg update.", w_start, w_end)
             return
             
+        # Update the quota_cost column for this run
+        try:
+            with self.state_db._get_conn() as conn:
+                conn.execute("UPDATE agent_runs SET quota_cost = ? WHERE id = ?", (cost, run_id))
+                conn.commit()
+            logger.info("Saved quota cost of %.2f%% for run_id=%d", cost, run_id)
+        except Exception as e:
+            logger.error("Failed to update quota_cost in agent_runs table: %s", e)
+            
         # 4. Update the running average in the database
         avg_key = f"{model_key}_avg_cost"
         count_key = f"{model_key}_runs_count"

@@ -6319,7 +6319,7 @@ def orchestrator_quota_info():
         runs_rows = []
         try:
             runs_rows = conn.execute("""
-                SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, pr_status, model 
+                SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, pr_status, model, quota_cost 
                 FROM agent_runs 
                 WHERE started_at >= '2026-06-14T14:55:00'
                 ORDER BY id DESC LIMIT 50
