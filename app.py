@@ -6614,11 +6614,15 @@ def get_agent_dms():
     try:
         # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
         conn = _get_orchestrator_sqlite_conn(db_path)
-        # Fetch DMs sent by or to the agent
+        # Fetch DMs sent by or to the agent.
+        # To avoid cluttering the sender's own feed with messages sent to other agents,
+        # we only show:
+        # 1. Messages received by the agent (recipient_id = agent_id)
+        # 2. Messages sent by the agent to the admin (sender_id = agent_id AND recipient_id = 'admin')
         rows = conn.execute("""
             SELECT id, thread_id, sender_id, recipient_id, content, message_type, ref_id, created_at
             FROM agent_messages
-            WHERE channel = 'dm' AND (sender_id = ? OR recipient_id = ?)
+            WHERE channel = 'dm' AND (recipient_id = ? OR (sender_id = ? AND recipient_id = 'admin'))
             ORDER BY id ASC
         """, (agent_id, agent_id)).fetchall()
 
