@@ -6361,10 +6361,14 @@ def orchestrator_quota_info():
         parsed['gemini_recent_runs'] = gemini_runs
         parsed['claude_recent_runs'] = claude_runs
         
-        return jsonify(parsed)
+        response = jsonify(parsed)
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
     except Exception as e:
         logger.error(f"Error fetching quota info: {e}")
-    return jsonify({
+    response = jsonify({
         'gemini': None, 
         'claude': None, 
         'gemini_avg_cost': 1.2, 
@@ -6374,6 +6378,10 @@ def orchestrator_quota_info():
         'gemini_recent_runs': [],
         'claude_recent_runs': []
     })
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/api/admin/orchestrator/refresh-quota')
 @require_approval
