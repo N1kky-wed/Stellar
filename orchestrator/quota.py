@@ -1,4 +1,8 @@
 # quota.py
+"""
+Utilities for checking, parsing, and management of agent API quotas.
+Communicates with the docker container's CLI to read the /usage stats.
+"""
 import pexpect
 import sys
 import time
@@ -9,7 +13,15 @@ from typing import Dict, Any
 logger = logging.getLogger("stellar-orchestrator")
 
 def parse_quota_text(text: str) -> Dict[str, Any]:
-    """Parse the raw terminal output of /usage command into a structured dictionary."""
+    """
+    Parse the raw terminal output of the /usage command into a structured dictionary.
+
+    Args:
+        text (str): Raw terminal output containing the quota status.
+
+    Returns:
+        Dict[str, Any]: Parsed quota details containing Gemini and Claude limits.
+    """
     result = {
         "gemini": {
             "account": "Unknown",
@@ -157,7 +169,15 @@ def parse_quota_text(text: str) -> Dict[str, Any]:
 
 
 def fetch_quota_data_from_container(model: str = "Claude Sonnet 4.6 (Thinking)") -> str:
-    """Spawn agy /usage inside the container via pexpect and return the raw output text."""
+    """
+    Spawn agy /usage inside the container via pexpect and return the raw output text.
+
+    Args:
+        model (str): The model identifier used to run agy.
+
+    Returns:
+        str: Raw output string captured from the command.
+    """
     cmd = f'docker exec -it stellar-persistent /root/.local/bin/agy --model "{model}" --dangerously-skip-permissions'
     logger.info(f"Running pexpect command inside container: {cmd}")
     

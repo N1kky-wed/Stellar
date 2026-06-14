@@ -1,4 +1,8 @@
 # container.py
+"""
+Docker container helper functions for Stellar agent sandboxing.
+Manages file transfers, git state checks, pexpect processes, and command execution inside the container.
+"""
 import subprocess
 import os
 import json
@@ -10,6 +14,11 @@ import orchestrator.config as config
 logger = logging.getLogger("stellar-orchestrator")
 
 def is_container_running() -> bool:
+    """
+    Checks if the targeted persistent agent container is currently running.
+    Returns:
+        bool: True if the container is running, False otherwise.
+    """
     t0 = time.time()
     try:
         res = subprocess.run(
@@ -26,7 +35,14 @@ def is_container_running() -> bool:
         return False
 
 def exec_in_container(cmd: str, timeout: Optional[int] = None) -> Tuple[int, str, str]:
-    """Execute a command inside the container using docker exec."""
+    """
+    Execute a command inside the container using docker exec.
+    Args:
+        cmd (str): Command string to run.
+        timeout (Optional[int]): Execution timeout in seconds.
+    Returns:
+        Tuple[int, str, str]: Exit code, stdout string, and stderr string.
+    """
     t0 = time.time()
     try:
         args = ["docker", "exec", config.CONTAINER_NAME, "bash", "-c", cmd]
@@ -46,6 +62,12 @@ def exec_in_container(cmd: str, timeout: Optional[int] = None) -> Tuple[int, str
         return -1, "", str(e)
 
 def copy_to_container(host_path: str, container_path: str):
+    """
+    Copies a file or directory from the host to the docker container workspace.
+    Args:
+        host_path (str): Host filesystem path.
+        container_path (str): Destination path inside the container.
+    """
     t0 = time.time()
     try:
         subprocess.run(["docker", "exec", config.CONTAINER_NAME, "mkdir", "-p", os.path.dirname(container_path)], check=True)
@@ -56,6 +78,11 @@ def copy_to_container(host_path: str, container_path: str):
         raise
 
 def remove_from_container(container_path: str):
+    """
+    Removes a file or directory from the container.
+    Args:
+        container_path (str): File/dir path inside container to delete.
+    """
     t0 = time.time()
     try:
         subprocess.run(["docker", "exec", config.CONTAINER_NAME, "rm", "-rf", container_path])
@@ -64,7 +91,12 @@ def remove_from_container(container_path: str):
         logger.error("Failed to remove file/directory from container: container_path=%s error=%s duration_sec=%.3f", container_path, str(e), time.time() - t0)
 
 def load_agent_prompt(agent_id: str, prompt_file: str):
-    """Loads agent instructions and reviewer specs into container."""
+    """
+    Loads agent instructions and reviewer specs into the container.
+    Args:
+        agent_id (str): The ID of the agent loading.
+        prompt_file (str): The markdown prompt filename on host.
+    """
     t0 = time.time()
     # 1. Load the agent prompt
     host_prompt_path = os.path.join(config.HOST_AGENTS_DIR, prompt_file)
@@ -104,7 +136,10 @@ def load_agent_prompt(agent_id: str, prompt_file: str):
         raise
 
 def unload_agent_prompt():
-    """Cleans up the loaded agent prompt and plugins to prevent leakage."""
+    """
+    Cleans up the loaded agent prompt and plugins to prevent leakage.
+    Terminates remaining sandbox processes and uninstalls code-reviewer.
+    """
     t0 = time.time()
     logger.info("Unloading agent prompt and plugins from container...")
     remove_from_container(os.path.join(config.CONTAINER_AGENTS_DIR, "AGENTS.md"))
@@ -123,13 +158,23 @@ def unload_agent_prompt():
     logger.info("Unloaded successfully: duration_sec=%.3f", time.time() - t0)
 
 def copy_memory_context_to_container(host_path: str):
-    """Copies the memory context markdown file to the container's agent directory."""
+    """
+    Copies the memory context markdown file to the container's agent directory.
+    Args:
+        host_path (str): Host filesystem path containing memory context.
+    """
     container_path = os.path.join(config.CONTAINER_AGENTS_DIR, "memory_context.md")
     logger.info("Loading memory context into container: container_path=%s", container_path)
     copy_to_container(host_path, container_path)
 
 def read_memory_outbox_from_container(host_path: str) -> bool:
-    """Attempts to copy memory_outbox.json from the container to the host. Returns True if file exists."""
+    """
+    Attempts to copy memory_outbox.json from the container to the host.
+    Args:
+        host_path (str): Target host path for copy destination.
+    Returns:
+        bool: True if the file exists and was copied successfully, False otherwise.
+    """
     t0 = time.time()
     container_path = os.path.join(config.CONTAINER_AGENTS_DIR, "memory_outbox.json")
     
@@ -149,7 +194,10 @@ def read_memory_outbox_from_container(host_path: str) -> bool:
         return False
 
 def restart_container():
-    """Restart the agent container to clean up any leftover processes and zombies."""
+    """
+    Restart the agent container to clean up any leftover processes and zombies.
+    Falls back to starting the container if it was in a stopped state.
+    """
     logger.info("Restarting container %s to ensure a clean slate...", config.CONTAINER_NAME)
     t0 = time.time()
     try:
@@ -166,7 +214,17 @@ def restart_container():
             logger.error("Failed to start container as fallback: container_name=%s error=%s duration_sec=%.3f", config.CONTAINER_NAME, str(start_err), time.time() - t1)
 
 def run_agent(agent_id: str, prompt_file: str, branch_name: str, model_name: str = config.MODEL_GEMINI) -> subprocess.Popen:
-    """Launch the agent's work cycle in a background process."""
+    """
+    Launch the agent's work cycle in a background process.
+    Prepares target git branches and dependencies in the container, then invokes agy CLI.
+    Args:
+        agent_id (str): The ID of the executing agent.
+        prompt_file (str): Prompt instruction file on host.
+        branch_name (str): Git branch to check out inside container.
+        model_name (str): Model name to evaluate code changes.
+    Returns:
+        subprocess.Popen: Handled background process object.
+    """
     t0 = time.time()
     # Restart container before agent starts to guarantee clean environment
     restart_container()
@@ -205,7 +263,13 @@ def run_agent(agent_id: str, prompt_file: str, branch_name: str, model_name: str
     return proc
 
 def check_new_prs(branch_name: str) -> List[Dict[str, Any]]:
-    """Query GitHub CLI inside container to find if any PR matches the branch."""
+    """
+    Query GitHub CLI inside container to find if any PR matches the branch.
+    Args:
+        branch_name (str): Git branch to match.
+    Returns:
+        List[Dict[str, Any]]: List of matching PR details dictionaries.
+    """
     t0 = time.time()
     cmd = f"gh pr list --repo {config.GITHUB_REPO} --head {branch_name} --state all --json number,url,state,title"
     rc, stdout, stderr = exec_in_container(cmd)
@@ -223,7 +287,13 @@ def check_new_prs(branch_name: str) -> List[Dict[str, Any]]:
         return []
 
 def check_pr_status(pr_number: int) -> str:
-    """Check the status of a specific PR."""
+    """
+    Check the status of a specific PR using GitHub CLI.
+    Args:
+        pr_number (int): Pull request sequence number.
+    Returns:
+        str: PR state status ('OPEN', 'MERGED', 'CLOSED').
+    """
     t0 = time.time()
     cmd = f"gh pr view {pr_number} --repo {config.GITHUB_REPO} --json state"
     rc, stdout, stderr = exec_in_container(cmd)
@@ -242,7 +312,11 @@ def check_pr_status(pr_number: int) -> str:
         return "OPEN"
 
 def get_agent_final_summary() -> Optional[str]:
-    """Find the most recent conversation transcript in the container and extract the final message."""
+    """
+    Find the most recent conversation transcript in the container and extract the final message.
+    Returns:
+        Optional[str]: Final summary PLANNER_RESPONSE content text if resolved, otherwise None.
+    """
     t0 = time.time()
     find_file_cmd = "ls -1t /root/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl 2>/dev/null | head -n 1"
     rc, stdout, stderr = exec_in_container(find_file_cmd)

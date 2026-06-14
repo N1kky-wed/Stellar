@@ -1,4 +1,8 @@
 # __main__.py
+"""
+Main entry point for the Stellar Autonomous Agent Orchestrator.
+Initializes logs, sets up signal handling, and starts the orchestrator execution loop.
+"""
 import sys
 import os
 import logging
@@ -12,6 +16,12 @@ import orchestrator.container as container
 from orchestrator.engine import OrchestratorEngine
 
 def setup_logging():
+    """
+    Configures rotating file logging and console logging.
+    
+    Returns:
+        logging.Logger: The configured orchestrator logger.
+    """
     # Ensure log directory exists
     os.makedirs(os.path.dirname(config.LOG_PATH), exist_ok=True)
     
@@ -34,6 +44,11 @@ def setup_logging():
     return logger
 
 def main():
+    """
+    Main function to run the Stellar Orchestrator.
+    Handles startup configuration logging, registers signal handlers (SIGINT, SIGTERM)
+    for graceful shutdown, and triggers the orchestrator execution loop.
+    """
     logger = setup_logging()
     
     logger.info("="*60)
@@ -50,6 +65,11 @@ def main():
     engine = OrchestratorEngine()
 
     def handle_shutdown(signum, frame):
+        """
+        Gracefully handles system signals (SIGINT, SIGTERM).
+        Kills any active agent processes on the host and inside the Docker container,
+        records the interrupted state in the database, and posts an interrupt message.
+        """
         logger.info(f"Shutdown signal ({signum}) received. Initiating graceful shutdown...")
         if engine.current_process or engine.current_run_id:
             logger.info(f"Active run detected (Agent: {engine.current_agent_id}). Terminating...")

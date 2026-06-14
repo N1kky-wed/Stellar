@@ -1,4 +1,8 @@
 # config.py
+"""
+Configuration settings for the Stellar Autonomous Agent Orchestrator.
+Defines execution orders, paths, schedules, environment layouts, models, and thresholds.
+"""
 import os
 
 # Agent execution order with schedules (3-hour gaps starting 6 AM IST)

@@ -1,4 +1,9 @@
 # engine.py
+"""
+Execution pipeline engine for Stellar agent orchestrator.
+Manages scheduling pipeline agents, processing their outcomes, doing memory summarizations,
+and handling API usage quota checking and service updates.
+"""
 import re
 import sys
 import time
@@ -19,7 +24,16 @@ logger = logging.getLogger("stellar-orchestrator")
 IST = pytz.timezone(config.TIMEZONE)
 
 class OrchestratorEngine:
+    """
+    The main execution engine for the Stellar Agent Orchestrator.
+    Handles recovery, runs execution loops, schedules agents, processes memories,
+    performs memory summarization, and manages quota-based model routing.
+    """
     def __init__(self):
+        """
+        Initializes the orchestrator engine, recovers active runs if recovered from crash,
+        and restores stored model cooldown status.
+        """
         self.state_db = StateDB(config.DB_PATH)
         self.memory_db = MemoryDB(config.MEMORY_DB_PATH)
         self.current_process: Optional[subprocess.Popen] = None
@@ -41,6 +55,9 @@ class OrchestratorEngine:
         self._restore_cooldown_from_db()
 
     def _recover_state(self):
+        """
+        Recovers the active run state on orchestrator startup if a run was interrupted mid-execution.
+        """
         current = self.state_db.get_current_run()
         if current:
             logger.info("Recovering active run state run_id=%s agent_id=%s branch_name=%s", current['id'], current['agent_id'], current['branch_name'])
@@ -86,6 +103,9 @@ class OrchestratorEngine:
                 self._clear_active_run()
 
     def _clear_active_run(self):
+        """
+        Clears the in-memory trackers for the current active run.
+        """
         self.current_process = None
         self.current_agent_id = None
         self.current_run_id = None
@@ -95,6 +115,9 @@ class OrchestratorEngine:
         self.current_model = None
 
     def run(self):
+        """
+        Starts the main orchestrator polling loop.
+        """
         logger.info("Stellar Agent Orchestrator Engine Started.")
         while True:
             try:
@@ -112,6 +135,9 @@ class OrchestratorEngine:
     # ------------------------------------------------------------------
 
     def _restore_cooldown_from_db(self):
+        """
+        Restores stored model or global quota cooldown limits from the database.
+        """
         """On startup, restore any persisted model/quota cooldowns so restarts don't bypass them."""
         # 1. Restore Gemini cooldown
         stored_gemini = self.state_db.get_state("gemini_cooldown_until")
@@ -163,6 +189,13 @@ class OrchestratorEngine:
                 logger.error("Failed to restore cooldown from DB error=%s", str(e))
 
     def _get_agy_log_tail(self, start_time: datetime) -> str:
+        """
+        Reads the last 100 lines of the agent execution log file inside the container.
+        Args:
+            start_time (datetime): Start time of the agent run to verify log freshness.
+        Returns:
+            str: Log tail contents.
+        """
         """Read the last 100 lines of the current run's log file from inside the container.
         Ensures that we do not perform dirty reads from previous runs' logs.
         """
@@ -200,6 +233,13 @@ class OrchestratorEngine:
 
     def _check_quota_error(self, log_tail: str) -> Optional[datetime]:
         """
+        Scans the log tail for quota exhaustion (429) errors.
+        Args:
+            log_tail (str): Log tail content to check.
+        Returns:
+            Optional[datetime]: Recovery timestamp if quota error is detected, otherwise None.
+        """
+        """
         Scan the agy log tail for RESOURCE_EXHAUSTED / 429 errors.
         If found, parse 'Resets in XhYmZs' and return when quota will be restored.
         Returns None if no quota error found.
@@ -230,6 +270,12 @@ class OrchestratorEngine:
             return fallback
 
     def _update_average_quota_usage(self, run_id: Optional[int], model: Optional[str]):
+        """
+        Calculates and updates average weekly quota percentage costs for a model.
+        Args:
+            run_id (Optional[int]): Run database identifier.
+            model (Optional[str]): Model name.
+        """
         if not run_id or not model:
             logger.warning("Skipping average quota update: run_id or model is missing. run_id=%s, model=%s", run_id, model)
             return
@@ -312,6 +358,13 @@ class OrchestratorEngine:
             logger.error("Failed to update running average: %s", e)
 
     def _is_in_cooldown(self, now: datetime) -> bool:
+        """
+        Returns True if the engine is currently in a global/model-specific quota cooldown state.
+        Args:
+            now (datetime): Current time.
+        Returns:
+            bool: True if in cooldown, False otherwise.
+        """
         """Return True if the engine is currently in a global quota cooldown (i.e. both models are exhausted/throttled)."""
         # Clear expired model cooldowns
         if self.gemini_cooldown_until and now >= self.gemini_cooldown_until:
@@ -391,6 +444,9 @@ class OrchestratorEngine:
         return False
 
     def _tick(self):
+        """
+        Executes a single polling tick of the orchestrator scheduler.
+        """
         now = datetime.now(IST)
         
         # Check and execute memory summarization if due
@@ -436,6 +492,9 @@ class OrchestratorEngine:
             return
 
     def _drain_stdout(self):
+        """
+        Reads and logs stdout lines non-blockingly from the current background process.
+        """
         if not (hasattr(self.current_process, "stdout") and self.current_process.stdout):
             return
         import os
@@ -456,6 +515,11 @@ class OrchestratorEngine:
             logger.error(f"Error reading process stdout: {e}")
 
     def _get_summary(self) -> Optional[str]:
+        """
+        Extracts the final summary of the agent run from the container.
+        Returns:
+            Optional[str]: Summary text if retrieved, otherwise None.
+        """
         try:
             return container.get_agent_final_summary()
         except Exception as e:
@@ -463,6 +527,11 @@ class OrchestratorEngine:
             return None
 
     def _check_running_agent(self, now: datetime):
+        """
+        Monitors the active agent process, checks execution outcomes, handles PRs/errors.
+        Args:
+            now (datetime): Current check timestamp.
+        """
         # Read some stdout/stderr to prevent buffer block if using pipes
         self._drain_stdout()
         
@@ -607,6 +676,11 @@ class OrchestratorEngine:
             self._handle_timeout(now)
 
     def _handle_timeout(self, now: datetime):
+        """
+        Aborts an agent execution when it exceeds runtime limits.
+        Args:
+            now (datetime): Interruption timestamp.
+        """
         try:
             self.current_process.kill()
         except Exception as e:
@@ -632,6 +706,11 @@ class OrchestratorEngine:
         self._clear_active_run()
 
     def _check_for_merge_trigger(self) -> Optional[Dict[str, Any]]:
+        """
+        Checks if open agent PRs have been merged to trigger restarts/deployments.
+        Returns:
+            Optional[Dict[str, Any]]: Next pipeline agent config to launch.
+        """
         """Checks if the PR of the most recently run agent was merged."""
         pending_runs = self.state_db.get_pending_prs()
         for run in pending_runs:
@@ -665,6 +744,13 @@ class OrchestratorEngine:
         return None
 
     def _pull_and_reload_services(self, pr_num: int) -> bool:
+        """
+        Pulls merge changes from main on host, updates packages, reloads systemctl services.
+        Args:
+            pr_num (int): Merged pull request number.
+        Returns:
+            bool: True if the orchestrator service itself needs a restart.
+        """
         t_start = time.time()
         logger.info("PR merged starting host service update pr_num=%d", pr_num)
         restart_orchestrator = False
@@ -754,6 +840,13 @@ class OrchestratorEngine:
 
 
     def _get_next_pipeline_agent(self, current_agent_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Finds the next pipeline agent config following the finished agent ID.
+        Args:
+            current_agent_id (str): Completed agent ID.
+        Returns:
+            Optional[Dict[str, Any]]: Next agent configuration dict.
+        """
         for i, agent in enumerate(config.AGENT_PIPELINE):
             if agent['id'] == current_agent_id:
                 next_idx = (i + 1) % len(config.AGENT_PIPELINE)
@@ -761,6 +854,13 @@ class OrchestratorEngine:
         return None
 
     def _get_due_agent(self, now: datetime) -> Optional[Dict[str, Any]]:
+        """
+        Checks current schedule time and agent history to see if an agent is due for its daily run.
+        Args:
+            now (datetime): Current time.
+        Returns:
+            Optional[Dict[str, Any]]: Configuration dictionary of the due agent if found.
+        """
         """Checks schedules to see if any agent is due to run and hasn't successfully completed today."""
         for agent in config.AGENT_PIPELINE:
             sched_str = agent['schedule']
@@ -786,6 +886,11 @@ class OrchestratorEngine:
         return None
 
     def _start_agent(self, agent: Dict[str, Any]):
+        """
+        Launches an agent run by initializing git checkout, database entries, and executing agy.
+        Args:
+            agent (Dict[str, Any]): Agent config dict.
+        """
         self.current_agent_id = agent['id']
         self.prompt_file = agent['prompt_file']
         
@@ -868,6 +973,11 @@ class OrchestratorEngine:
             self._clear_active_run()
 
     def _prepare_and_load_memory_context(self, agent_id: str):
+        """
+        Aggregates tasks, DMs, group chats, facts, and histories to construct the agent's startup context file.
+        Args:
+            agent_id (str): Target agent ID.
+        """
         context_lines = []
         context_lines.append("=" * 80)
         context_lines.append("SHARED MEMORY CONTEXT")
@@ -967,6 +1077,13 @@ class OrchestratorEngine:
                 os.remove(host_context_path)
 
     def _process_agent_memory_outbox(self, agent_id: str, run_id: Optional[int], summary: Optional[str]):
+        """
+        Ingests the memory_outbox.json from the completed agent run, recording new facts/tasks/DMs.
+        Args:
+            agent_id (str): Executing agent ID.
+            run_id (Optional[int]): Run database ID.
+            summary (Optional[str]): Output final summary message.
+        """
         t0 = time.time()
         host_outbox_path = "/home/stellaradmin/my_app/orchestrator/memory_outbox.json"
         
@@ -1104,6 +1221,11 @@ class OrchestratorEngine:
         logger.info("Processed memory outbox for agent: agent_id=%s run_id=%s duration_sec=%.3f", agent_id, run_id, time.time() - t0)
 
     def _check_memory_summarization(self, now: datetime):
+        """
+        Triggers memory summarization if more than 12 hours have elapsed since the last run.
+        Args:
+            now (datetime): Current check timestamp.
+        """
         """Check if memory summarization is due (every 12 hours) and run it."""
         stored = self.state_db.get_state("last_memory_summarization_time")
         is_due = False
@@ -1131,6 +1253,9 @@ class OrchestratorEngine:
                 logger.error("Failed to execute memory summarization: %s", e, exc_info=True)
 
     def _run_memory_summarization(self):
+        """
+        Uses Gemini to synthesize unarchived memories into active facts and archives parsed memories.
+        """
         """Fetch unarchived memories, summarize them using gemini-3.5-flash to update or create facts."""
         t_start = time.time()
         with self.memory_db._get_conn() as conn:
@@ -1295,6 +1420,13 @@ class OrchestratorEngine:
         logger.info("Archived %d summarized memories. Total summarization duration_sec=%.3f", len(memory_ids), time.time() - t_start)
 
     def _get_active_model(self, now: datetime) -> Optional[str]:
+        """
+        Selects a healthy model (Gemini or Claude fallback) for the agent run based on live container usage limits.
+        Args:
+            now (datetime): Current evaluation time.
+        Returns:
+            Optional[str]: Selected model identifier, or None if both are exhausted/throttled.
+        """
         """Determines which model to use for the agent run based on current container quota limits."""
         # Clean up any expired cooldowns first
         if self.gemini_cooldown_until and now >= self.gemini_cooldown_until:
