@@ -281,7 +281,8 @@ class RateLimiter:
             if count == 1:
                 self.r.expire(key, RATE_LIMIT_WINDOW)
             return count
-        except Exception:
+        except Exception as e:
+            logger.error("Rate limiter Redis failure in record_auth_failure ip=%s error=%s", ip, e, exc_info=True)
             return 0
 
     def is_ip_blocked(self, ip: str) -> bool:
@@ -297,7 +298,8 @@ class RateLimiter:
         try:
             count = self.r.get(f"ssh_verify_fail:{ip}")
             return int(count or 0) >= 10
-        except Exception:
+        except Exception as e:
+            logger.error("Rate limiter Redis failure in is_ip_blocked ip=%s error=%s", ip, e, exc_info=True)
             return False
 
 
@@ -330,6 +332,8 @@ def get_user_repos(user_id: int) -> list:
         duration = time.time() - t0
         if duration > 0.05:
             logger.warning("Slow SSH Gateway database connection duration_sec=%.3f", duration)
+        
+        t_query = time.time()
         cursor = conn.execute(
             'SELECT id, project_name, process_id, container_id, status, '
             'subdomain, created_at, app_type FROM repo_history '
@@ -347,8 +351,11 @@ def get_user_repos(user_id: int) -> list:
                 'created': row['created_at'][:10] if row['created_at'] else '-',
                 'app_type': row['app_type'] or 'forge',
             })
+        query_duration = time.time() - t_query
+        if query_duration > 0.1:
+            logger.warning("Slow SSH Gateway query duration_sec=%.3f user_id=%d", query_duration, user_id)
     except Exception as e:
-        logger.error("DB error fetching repos user_id=%s error=%s", user_id, e)
+        logger.error("DB error fetching repos user_id=%s error=%s", user_id, e, exc_info=True)
     finally:
         if conn:
             try:
@@ -1347,6 +1354,7 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
         audit.info(f"SHELL_ATTACH | user_id={user_id} | container={container_name}")
 
         if container.status != 'running':
+            logger.warning("Cannot attach shell to non-running container container_name=%s user_id=%d", container_name, user_id)
             send_raw(channel, "\r\n\x1b[31m  Container is not running. Start it first.\x1b[0m\r\n")
             time.sleep(1.5)
             return
@@ -1441,6 +1449,7 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
         audit.info(f"SHELL_DETACH | user_id={user_id} | container={container_name}")
 
     except docker.errors.NotFound:
+        logger.warning("Container not found for shell attach process_id=%s app_type=%s", process_id, app_type)
         send_raw(channel, "\r\n\x1b[31m  Container not found. It may have been removed.\x1b[0m\r\n")
         time.sleep(1.5)
     except Exception as e:
@@ -1486,6 +1495,7 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
         invalidate_container_cache()
         return f"✓ {container_name} restarted successfully"
     except docker.errors.NotFound:
+        logger.warning("Container not found for restart process_id=%s app_type=%s", process_id, app_type)
         return "✗ Container not found"
     except Exception as e:
         logger.error("Container restart failed process_id=%s error=%s", process_id, e, exc_info=True)
@@ -1523,6 +1533,7 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
         invalidate_container_cache()
         return f"✓ {container_name} stopped"
     except docker.errors.NotFound:
+        logger.warning("Container not found for stop process_id=%s app_type=%s", process_id, app_type)
         return "✗ Container not found"
     except Exception as e:
         logger.error("Container stop failed process_id=%s error=%s", process_id, e, exc_info=True)
@@ -1560,6 +1571,7 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
         invalidate_container_cache()
         return f"✓ {container_name} started"
     except docker.errors.NotFound:
+        logger.warning("Container not found for start process_id=%s app_type=%s", process_id, app_type)
         return "✗ Container not found"
     except Exception as e:
         logger.error("Container start failed process_id=%s error=%s", process_id, e, exc_info=True)
@@ -1748,11 +1760,13 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                 auth_attempts += 1
                 rate_limiter.record_auth_failure(real_ip)
                 audit.info(f"AUTH_FAIL | ip={real_ip} | attempt={auth_attempts} | code_prefix={code[:2] if code else '??'}****")
+                logger.warning("SSH authentication failure ip=%s attempt=%d", real_ip, auth_attempts)
 
         if not user_info:
             # Clear screen when transitioning to goodbye screen
             draw(TUI.goodbye_screen("User", server.term_width, server.term_height, theme=active_theme), clear=True)
             audit.info(f"AUTH_LOCKOUT | ip={real_ip} | attempts={MAX_AUTH_ATTEMPTS}")
+            logger.warning("SSH authentication lockout ip=%s attempts=%d", real_ip, MAX_AUTH_ATTEMPTS)
             time.sleep(2)
             send_raw(channel, '\x1b[?1049l\x1b[?25h')
             return
@@ -1760,6 +1774,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
         user_id = user_info['user_id']
         username = user_info.get('display_name') or user_info.get('username', 'User')
         audit.info(f"SESSION_START | ip={real_ip} | user_id={user_id} | username={username}")
+        logger.info("SSH session authenticated ip=%s user_id=%s username=%s", real_ip, user_id, username)
 
         # Load user-scoped theme preferences or use default (Theme 0)
         saved = load_theme(user_id)
@@ -2066,10 +2081,11 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                                         logs_raw = new_logs
                                         draw(TUI.logs_screen(repo['name'], logs_raw, server.term_width, server.term_height, theme=active_theme), clear=clear_screen)
                                     last_log_refresh_time = now
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.error("Failed to fetch container logs container_name=%s error=%s", repo['name'], e, exc_info=True)
                     except Exception as e:
                         status_msg = f"Could not fetch logs: {e}"
+                        logger.error("Error in logs viewer loop container_name=%s error=%s", repo['name'], e, exc_info=True)
                     # Force full clear draw when returning to dashboard
                     first_dashboard_draw = True
                     redraw()
@@ -2123,11 +2139,13 @@ def handle_connection(client_socket, client_addr):
     if ip != '127.0.0.1':
         if rate_limiter.is_ip_blocked(ip):
             audit.info(f"CONNECTION_BLOCKED | ip={ip} | reason=auth_failures")
+            logger.warning("Connection blocked ip=%s reason=auth_failures", ip)
             client_socket.close()
             return
 
         if not rate_limiter.check_connection_rate(ip):
             audit.info(f"CONNECTION_BLOCKED | ip={ip} | reason=rate_limit")
+            logger.warning("Connection blocked ip=%s reason=rate_limit", ip)
             client_socket.close()
             return
 
@@ -2140,6 +2158,7 @@ def handle_connection(client_socket, client_addr):
 
     session_active = True
     audit.info(f"CONNECTION_NEW | ip={ip} | active_sessions={active_sessions}")
+    logger.info("New SSH connection established ip=%s active_sessions=%d", ip, active_sessions)
 
     transport = None
     try:
@@ -2182,7 +2201,7 @@ def handle_connection(client_socket, client_addr):
         if session_active:
             with sessions_lock:
                 active_sessions -= 1
-            logger.info(f"Session closed for {ip}")
+            logger.info("Session closed for ip=%s", ip)
 
 
 # ============================================================
@@ -2195,21 +2214,21 @@ def ensure_host_key():
     """
     if os.path.exists(HOST_KEY_PATH):
         key = paramiko.Ed25519Key(filename=HOST_KEY_PATH)
-        logger.info(f"Using existing host key: {HOST_KEY_PATH} (fingerprint: {key.get_fingerprint().hex()})")
+        logger.info("Using existing host key path=%s fingerprint=%s", HOST_KEY_PATH, key.get_fingerprint().hex())
         return
 
-    logger.info(f"Generating new Ed25519 host key at {HOST_KEY_PATH}")
+    logger.info("Generating new Ed25519 host key path=%s", HOST_KEY_PATH)
     import subprocess
     result = subprocess.run(
         ['ssh-keygen', '-t', 'ed25519', '-f', HOST_KEY_PATH, '-N', '', '-q'],
         capture_output=True, text=True
     )
     if result.returncode != 0:
-        logger.critical(f"Failed to generate host key: {result.stderr}")
+        logger.critical("Failed to generate host key error=%s", result.stderr)
         sys.exit(1)
     os.chmod(HOST_KEY_PATH, 0o600)
     key = paramiko.Ed25519Key(filename=HOST_KEY_PATH)
-    logger.info(f"Host key generated. Fingerprint: {key.get_fingerprint().hex()}")
+    logger.info("Host key generated fingerprint=%s", key.get_fingerprint().hex())
 
 
 # ============================================================
@@ -2222,7 +2241,7 @@ def main():
     cache, binds to the configured host and port, and loops to accept incoming TCP connections
     delegated to session threads.
     """
-    logger.info(f"=== Stellar SSH Gateway starting on {SSH_HOST}:{SSH_PORT} ===")
+    logger.info("=== Stellar SSH Gateway starting on %s:%d ===", SSH_HOST, SSH_PORT)
 
     # Generate host key if needed
     ensure_host_key()
@@ -2238,13 +2257,13 @@ def main():
     try:
         server_socket.bind((SSH_HOST, SSH_PORT))
     except OSError as e:
-        logger.critical(f"FATAL: Cannot bind to {SSH_HOST}:{SSH_PORT}: {e}")
+        logger.critical("FATAL: Cannot bind to %s:%d error=%s", SSH_HOST, SSH_PORT, e)
         sys.exit(1)
 
     server_socket.listen(10)
     server_socket.settimeout(1.0)  # For graceful shutdown
 
-    logger.info(f"Listening for SSH connections on port {SSH_PORT}")
+    logger.info("Listening for SSH connections on port port=%d", SSH_PORT)
 
     # Graceful shutdown
     shutdown_event = threading.Event()
@@ -2268,7 +2287,7 @@ def main():
         while not shutdown_event.is_set():
             try:
                 client_socket, client_addr = server_socket.accept()
-                logger.info(f"New connection from {client_addr[0]}:{client_addr[1]}")
+                logger.info("New connection from ip=%s port=%d", client_addr[0], client_addr[1])
 
                 # Handle each connection in a thread
                 t = threading.Thread(
@@ -2287,7 +2306,7 @@ def main():
                 break
 
     except Exception as e:
-        logger.critical(f"Server error: {e}", exc_info=True)
+        logger.critical("Server error error=%s", e, exc_info=True)
     finally:
         server_socket.close()
         logger.info("SSH Gateway stopped.")
