@@ -377,141 +377,135 @@
         <div class="p-4 overflow-y-auto flex-1 space-y-3" id="agentRoster">
           <!-- Bolt -->
           <div
-            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
+            class="flex items-center gap-3 p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
             data-agent-id="bolt"
           >
-            <div class="flex items-center gap-3">
-              <div
-                class="agent-avatar bg-amber-500/10 text-amber-400 border-amber-500/20"
-              >
-                B
-              </div>
-              <div>
-                <div class="text-sm font-semibold text-white">Bolt</div>
-                <div class="text-[10px] text-[#8e929e]">
-                  Performance Engineer
-                </div>
+            <div
+              class="agent-avatar bg-amber-500/10 text-amber-400 border-amber-500/20 shrink-0"
+            >
+              B
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-white">Bolt</div>
+              <div class="text-[10px] text-[#8e929e]">Performance Engineer</div>
+              <div class="mt-1">
+                <span
+                  id="boltNextRun"
+                  class="text-[9px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded inline-block"
+                  >06:00 IST</span
+                >
               </div>
             </div>
-            <span
-              id="boltNextRun"
-              class="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded"
-              >06:00 IST</span
-            >
           </div>
           <!-- Sentinel -->
           <div
-            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
+            class="flex items-center gap-3 p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
             data-agent-id="sentinel"
           >
-            <div class="flex items-center gap-3">
-              <div
-                class="agent-avatar bg-red-500/10 text-red-400 border-red-500/20"
-              >
-                S
-              </div>
-              <div>
-                <div class="text-sm font-semibold text-white">Sentinel</div>
-                <div class="text-[10px] text-[#8e929e]">Security Engineer</div>
+            <div
+              class="agent-avatar bg-red-500/10 text-red-400 border-red-500/20 shrink-0"
+            >
+              S
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-white">Sentinel</div>
+              <div class="text-[10px] text-[#8e929e]">Security Engineer</div>
+              <div class="mt-1">
+                <span
+                  id="sentinelNextRun"
+                  class="text-[9px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded inline-block"
+                  >09:00 IST</span
+                >
               </div>
             </div>
-            <span
-              id="sentinelNextRun"
-              class="text-[10px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded"
-              >09:00 IST</span
-            >
           </div>
           <!-- Palette -->
           <div
-            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
+            class="flex items-center gap-3 p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
             data-agent-id="palette"
           >
-            <div class="flex items-center gap-3">
-              <div
-                class="agent-avatar bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-              >
-                P
-              </div>
-              <div>
-                <div class="text-sm font-semibold text-white">Palette</div>
-                <div class="text-[10px] text-[#8e929e]">UI Engineer</div>
+            <div
+              class="agent-avatar bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shrink-0"
+            >
+              P
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-white">Palette</div>
+              <div class="text-[10px] text-[#8e929e]">UI Engineer</div>
+              <div class="mt-1">
+                <span
+                  id="paletteNextRun"
+                  class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded inline-block"
+                  >12:00 IST</span
+                >
               </div>
             </div>
-            <span
-              id="paletteNextRun"
-              class="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded"
-              >12:00 IST</span
-            >
           </div>
           <!-- Newton -->
           <div
-            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
+            class="flex items-center gap-3 p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
             data-agent-id="newton"
           >
-            <div class="flex items-center gap-3">
-              <div
-                class="agent-avatar bg-blue-500/10 text-blue-400 border-blue-500/20"
-              >
-                N
-              </div>
-              <div>
-                <div class="text-sm font-semibold text-white">Newton</div>
-                <div class="text-[10px] text-[#8e929e]">Test Engineer</div>
+            <div
+              class="agent-avatar bg-blue-500/10 text-blue-400 border-blue-500/20 shrink-0"
+            >
+              N
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-white">Newton</div>
+              <div class="text-[10px] text-[#8e929e]">Test Engineer</div>
+              <div class="mt-1">
+                <span
+                  id="newtonNextRun"
+                  class="text-[9px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded inline-block"
+                  >15:00 IST</span
+                >
               </div>
             </div>
-            <span
-              id="newtonNextRun"
-              class="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded"
-              >15:00 IST</span
-            >
           </div>
           <!-- Lucios -->
           <div
-            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
+            class="flex items-center gap-3 p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
             data-agent-id="lucios"
           >
-            <div class="flex items-center gap-3">
-              <div
-                class="agent-avatar bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
-              >
-                L
-              </div>
-              <div>
-                <div class="text-sm font-semibold text-white">Lucios</div>
-                <div class="text-[10px] text-[#8e929e]">
-                  Observability Engineer
-                </div>
+            <div
+              class="agent-avatar bg-indigo-500/10 text-indigo-400 border-indigo-500/20 shrink-0"
+            >
+              L
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-white">Lucios</div>
+              <div class="text-[10px] text-[#8e929e]">Observability Engineer</div>
+              <div class="mt-1">
+                <span
+                  id="luciosNextRun"
+                  class="text-[9px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded inline-block"
+                  >18:00 IST</span
+                >
               </div>
             </div>
-            <span
-              id="luciosNextRun"
-              class="text-[10px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded"
-              >18:00 IST</span
-            >
           </div>
           <!-- Proton -->
           <div
-            class="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
+            class="flex items-center gap-3 p-2 rounded-lg bg-white/5 border border-[var(--border-color)] cursor-pointer hover:bg-white/10 transition duration-200 roster-item"
             data-agent-id="proton"
           >
-            <div class="flex items-center gap-3">
-              <div
-                class="agent-avatar bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-              >
-                P
-              </div>
-              <div>
-                <div class="text-sm font-semibold text-white">Proton</div>
-                <div class="text-[10px] text-[#8e929e]">
-                  Documentation Engineer
-                </div>
+            <div
+              class="agent-avatar bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shrink-0"
+            >
+              P
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-white">Proton</div>
+              <div class="text-[10px] text-[#8e929e]">Documentation Engineer</div>
+              <div class="mt-1">
+                <span
+                  id="protonNextRun"
+                  class="text-[9px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded inline-block"
+                  >21:00 IST</span
+                >
               </div>
             </div>
-            <span
-              id="protonNextRun"
-              class="text-[10px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded"
-              >21:00 IST</span
-            >
           </div>
         </div>
       </aside>
@@ -1795,28 +1789,11 @@
       }
 
       function formatNextRunTime(date) {
-        const nowParts = getISTDateParts(new Date());
         const dateParts = getISTDateParts(date);
         
         const hh = String(dateParts.hour).padStart(2, '0');
         const mm = String(dateParts.minute).padStart(2, '0');
         const formattedTime = `${hh}:${mm}`;
-
-        const todayDateStr = `${nowParts.year}-${nowParts.month}-${nowParts.day}`;
-        const targetDateStr = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-
-        if (todayDateStr === targetDateStr) {
-          return `Today, ${formattedTime} IST`;
-        }
-
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomParts = getISTDateParts(tomorrow);
-        const tomDateStr = `${tomParts.year}-${tomParts.month}-${tomParts.day}`;
-
-        if (tomDateStr === targetDateStr) {
-          return `Tomorrow, ${formattedTime} IST`;
-        }
 
         const optionsDate = { month: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' };
         const formattedDate = date.toLocaleDateString('en-US', optionsDate);
