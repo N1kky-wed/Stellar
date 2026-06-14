@@ -522,6 +522,12 @@
           >
             Task Board
           </button>
+          <button
+            id="tabQuota"
+            class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-[#8e929e] hover:text-white focus:outline-none transition duration-200 ml-4"
+          >
+            Quota Dashboard
+          </button>
         </div>
 
         <!-- Panel 1: Group Chat -->
@@ -670,6 +676,148 @@
             </div>
           </div>
         </div>
+
+        <!-- Panel 4: Quota Dashboard -->
+        <div id="panelQuota" class="flex-1 p-4 md:p-6 overflow-y-auto hidden">
+          <div class="flex justify-between items-center mb-6">
+            <div>
+              <h2 class="text-lg font-bold text-white mb-1">Quota Management Dashboard</h2>
+              <p class="text-xs text-slate-400">Mathematical spacing governor and fallback status</p>
+            </div>
+            <button
+              id="refreshQuotaBtn"
+              class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition duration-200 flex items-center gap-2"
+            >
+              <svg id="refreshQuotaSpinner" class="w-4 h-4 hidden animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>Refresh Quota Data</span>
+            </button>
+          </div>
+
+          <div class="mb-4 text-xs text-slate-500">
+            Last Updated: <span id="quotaLastUpdated">Never</span>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Gemini Card -->
+            <div class="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-md">
+              <div class="flex justify-between items-start mb-4">
+                <div>
+                  <h3 class="text-md font-semibold text-white mb-1">Gemini Models Pool</h3>
+                  <span class="text-xs text-slate-400 font-mono" id="geminiAccount">Loading...</span>
+                </div>
+                <span id="geminiQuotaStatus" class="px-2.5 py-1 rounded text-xs font-semibold bg-slate-500/10 text-slate-400">
+                  UNKNOWN
+                </span>
+              </div>
+              
+              <div class="space-y-4">
+                <!-- Weekly Limit -->
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300">Weekly limit remaining</span>
+                    <span class="font-semibold text-white" id="geminiWeeklyPercent">--%</span>
+                  </div>
+                  <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                    <div id="geminiWeeklyBar" class="bg-indigo-500 h-full w-0 transition-all duration-500"></div>
+                  </div>
+                  <div class="text-[10px] text-slate-400 mt-1" id="geminiWeeklyReset">
+                    Refreshes in: --h
+                  </div>
+                </div>
+
+                <!-- 5 Hour Limit -->
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300">5-hour sprint limit</span>
+                    <span class="font-semibold text-white" id="geminiSprintPercent">--%</span>
+                  </div>
+                  <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                    <div id="geminiSprintBar" class="bg-indigo-400 h-full w-0 transition-all duration-500"></div>
+                  </div>
+                  <div class="text-[10px] text-slate-400 mt-1" id="geminiSprintReset">
+                    Refreshes in: --h
+                  </div>
+                </div>
+
+                <!-- Math calculations -->
+                <div class="bg-black/30 border border-white/5 rounded-lg p-3.5 space-y-2 mt-2">
+                  <h4 class="text-xs font-semibold text-white">Daily Spacing Math</h4>
+                  <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="text-slate-400">Target Daily Spend:</div>
+                    <div class="text-indigo-300 text-right" id="geminiTargetSpend">14.29% (~12 runs)</div>
+                    <div class="text-slate-400">Current Daily Allowance:</div>
+                    <div class="text-white text-right font-mono" id="geminiDailyAllowance">--% / day</div>
+                    <div class="text-slate-400">Measured Run Cost:</div>
+                    <div class="text-indigo-200 text-right font-mono" id="geminiMeasuredCost">--% (0 runs)</div>
+                    <div class="text-slate-400">Status Check:</div>
+                    <div class="text-right font-semibold" id="geminiMathStatus">--</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Claude Card -->
+            <div class="bg-white/5 border border-white/10 rounded-xl p-5 backdrop-blur-md">
+              <div class="flex justify-between items-start mb-4">
+                <div>
+                  <h3 class="text-md font-semibold text-white mb-1">Claude / GPT Models Pool</h3>
+                  <span class="text-xs text-slate-400 font-mono" id="claudeAccount">Loading...</span>
+                </div>
+                <span id="claudeQuotaStatus" class="px-2.5 py-1 rounded text-xs font-semibold bg-slate-500/10 text-slate-400">
+                  UNKNOWN
+                </span>
+              </div>
+              
+              <div class="space-y-4">
+                <!-- Weekly Limit -->
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300">Weekly limit remaining</span>
+                    <span class="font-semibold text-white" id="claudeWeeklyPercent">--%</span>
+                  </div>
+                  <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                    <div id="claudeWeeklyBar" class="bg-indigo-500 h-full w-0 transition-all duration-500"></div>
+                  </div>
+                  <div class="text-[10px] text-slate-400 mt-1" id="claudeWeeklyReset">
+                    Refreshes in: --h
+                  </div>
+                </div>
+
+                <!-- 5 Hour Limit -->
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300">5-hour sprint limit</span>
+                    <span class="font-semibold text-white" id="claudeSprintPercent">--%</span>
+                  </div>
+                  <div class="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                    <div id="claudeSprintBar" class="bg-indigo-400 h-full w-0 transition-all duration-500"></div>
+                  </div>
+                  <div class="text-[10px] text-slate-400 mt-1" id="claudeSprintReset">
+                    Refreshes in: --h
+                  </div>
+                </div>
+
+                <!-- Math calculations -->
+                <div class="bg-black/30 border border-white/5 rounded-lg p-3.5 space-y-2 mt-2">
+                  <h4 class="text-xs font-semibold text-white">Daily Spacing Math</h4>
+                  <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="text-slate-400">Target Daily Spend:</div>
+                    <div class="text-indigo-300 text-right" id="claudeTargetSpend">14.29% (~4.7 runs)</div>
+                    <div class="text-slate-400">Current Daily Allowance:</div>
+                    <div class="text-white text-right font-mono" id="claudeDailyAllowance">--% / day</div>
+                    <div class="text-slate-400">Measured Run Cost:</div>
+                    <div class="text-indigo-200 text-right font-mono" id="claudeMeasuredCost">--% (0 runs)</div>
+                    <div class="text-slate-400">Status Check:</div>
+                    <div class="text-right font-semibold" id="claudeMathStatus">--</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
 
@@ -807,9 +955,11 @@
       const tabGroupChat = document.getElementById("tabGroupChat");
       const tabDMs = document.getElementById("tabDMs");
       const tabTasks = document.getElementById("tabTasks");
+      const tabQuota = document.getElementById("tabQuota");
       const panelGroupChat = document.getElementById("panelGroupChat");
       const panelDMs = document.getElementById("panelDMs");
       const panelTasks = document.getElementById("panelTasks");
+      const panelQuota = document.getElementById("panelQuota");
 
       // Input containers & fields
       const groupMessageInput = document.getElementById("groupMessageInput");
@@ -878,15 +1028,17 @@
         currentTab = tab;
 
         // Reset active tab button styles
-        [tabGroupChat, tabDMs, tabTasks].forEach((btn) => {
-          btn.classList.remove("border-indigo-500", "text-white");
-          btn.classList.add("border-transparent", "text-[#8e929e]");
+        [tabGroupChat, tabDMs, tabTasks, tabQuota].forEach((btn) => {
+          if (btn) {
+            btn.classList.remove("border-indigo-500", "text-white");
+            btn.classList.add("border-transparent", "text-[#8e929e]");
+          }
         });
 
         // Hide all panels
-        [panelGroupChat, panelDMs, panelTasks].forEach((p) =>
-          p.classList.add("hidden"),
-        );
+        [panelGroupChat, panelDMs, panelTasks, panelQuota].forEach((p) => {
+          if (p) p.classList.add("hidden");
+        });
 
         const sidebarTitle = document.getElementById("sidebarTitle");
 
@@ -910,12 +1062,19 @@
           panelTasks.classList.remove("hidden");
           sidebarTitle.textContent = "Workspace Stats";
           loadTasks();
+        } else if (tab === "quota") {
+          tabQuota.classList.add("border-indigo-500", "text-white");
+          tabQuota.classList.remove("border-transparent", "text-[#8e929e]");
+          panelQuota.classList.remove("hidden");
+          sidebarTitle.textContent = "Quota Monitor";
+          loadQuotaData();
         }
       }
 
       tabGroupChat.onclick = () => selectTab("group");
       tabDMs.onclick = () => selectTab("dms");
       tabTasks.onclick = () => selectTab("tasks");
+      if (tabQuota) tabQuota.onclick = () => selectTab("quota");
 
       // Roster click handlers
       document.querySelectorAll(".roster-item").forEach((item) => {
@@ -1416,6 +1575,21 @@
         const text = document.getElementById("orchestratorStatusText");
         const textMob = document.getElementById("orchestratorStatusTextMobile");
 
+        if (!data.active) {
+          banner.style.display = "none";
+          if (_cooldownInterval) {
+            clearInterval(_cooldownInterval);
+            _cooldownInterval = null;
+          }
+          badge.style.background = "rgba(255,255,255,0.05)";
+          badge.style.borderColor = "rgba(255,255,255,0.1)";
+          badge.style.color = "#94a3b8";
+          dot.style.background = "#64748b";
+          text.textContent = "Orchestrator Inactive";
+          textMob.textContent = "Inactive";
+          return;
+        }
+
         if (data.cooldown && data.cooldown.active) {
           banner.style.display = "flex";
           document.getElementById("cooldownUntil").textContent =
@@ -1474,6 +1648,146 @@
           loadTasks();
         }
       }, 10000);
+
+      async function renderQuotaUI(data) {
+        if (!data || !data.gemini || !data.claude) {
+          return;
+        }
+
+        document.getElementById("quotaLastUpdated").textContent = data.last_updated ? new Date(data.last_updated).toLocaleString() : "Unknown";
+
+        // Gemini
+        document.getElementById("geminiAccount").textContent = data.gemini.account || "Unknown";
+        document.getElementById("geminiWeeklyPercent").textContent = `${data.gemini.weekly_percent}%`;
+        document.getElementById("geminiWeeklyBar").style.width = `${data.gemini.weekly_percent}%`;
+        document.getElementById("geminiWeeklyReset").textContent = `Refreshes in: ${data.gemini.weekly_refreshes_in_hours.toFixed(1)}h (${(data.gemini.weekly_refreshes_in_hours / 24).toFixed(2)} days)`;
+        
+        if (data.gemini.sprint_disabled) {
+          document.getElementById("geminiSprintPercent").textContent = "Disabled";
+          document.getElementById("geminiSprintBar").style.width = "0%";
+          document.getElementById("geminiSprintReset").textContent = "Sprint disabled due to weekly lockout";
+        } else {
+          document.getElementById("geminiSprintPercent").textContent = `${data.gemini.sprint_percent}%`;
+          document.getElementById("geminiSprintBar").style.width = `${data.gemini.sprint_percent}%`;
+          document.getElementById("geminiSprintReset").textContent = `Refreshes in: ${data.gemini.sprint_refreshes_in_hours.toFixed(1)}h`;
+        }
+
+        const geminiRatio = data.gemini.ratio || 0;
+        const geminiRefDays = (data.gemini.weekly_refreshes_in_hours / 24).toFixed(2);
+        
+        const geminiAvgCost = data.gemini_avg_cost !== undefined ? data.gemini_avg_cost : 1.2;
+        const geminiRunsCount = data.gemini_runs_count || 0;
+        const geminiTargetRuns = 14.29 / geminiAvgCost;
+        const geminiAllowanceRuns = geminiRatio / geminiAvgCost;
+
+        document.getElementById("geminiTargetSpend").textContent = `14.29% (~${geminiTargetRuns.toFixed(1)} runs)`;
+        document.getElementById("geminiDailyAllowance").textContent = `${geminiRatio}% / day (~${geminiAllowanceRuns.toFixed(1)} runs) (with ${geminiRefDays} days left)`;
+        document.getElementById("geminiMeasuredCost").textContent = `${geminiAvgCost.toFixed(2)}% (${geminiRunsCount} runs)`;
+
+        const geminiStatusBadge = document.getElementById("geminiQuotaStatus");
+        const geminiMathStatus = document.getElementById("geminiMathStatus");
+        
+        geminiStatusBadge.textContent = data.gemini.status.toUpperCase();
+        if (data.gemini.status === "Healthy") {
+          geminiStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+          geminiMathStatus.textContent = "Safe to Run (Above 14.3%)";
+          geminiMathStatus.className = "text-right font-semibold text-emerald-400";
+        } else if (data.gemini.status === "Throttled") {
+          geminiStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
+          geminiMathStatus.textContent = "Throttled (Below 14.3% daily budget)";
+          geminiMathStatus.className = "text-right font-semibold text-amber-400";
+        } else {
+          geminiStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20";
+          geminiMathStatus.textContent = data.gemini.status;
+          geminiMathStatus.className = "text-right font-semibold text-rose-400";
+        }
+
+        // Claude
+        document.getElementById("claudeAccount").textContent = data.claude.account || "Unknown";
+        document.getElementById("claudeWeeklyPercent").textContent = `${data.claude.weekly_percent}%`;
+        document.getElementById("claudeWeeklyBar").style.width = `${data.claude.weekly_percent}%`;
+        document.getElementById("claudeWeeklyReset").textContent = `Refreshes in: ${data.claude.weekly_refreshes_in_hours.toFixed(1)}h (${(data.claude.weekly_refreshes_in_hours / 24).toFixed(2)} days)`;
+        
+        if (data.claude.sprint_disabled) {
+          document.getElementById("claudeSprintPercent").textContent = "Disabled";
+          document.getElementById("claudeSprintBar").style.width = "0%";
+          document.getElementById("claudeSprintReset").textContent = "Sprint disabled due to weekly lockout";
+        } else {
+          document.getElementById("claudeSprintPercent").textContent = `${data.claude.sprint_percent}%`;
+          document.getElementById("claudeSprintBar").style.width = `${data.claude.sprint_percent}%`;
+          document.getElementById("claudeSprintReset").textContent = `Refreshes in: ${data.claude.sprint_refreshes_in_hours.toFixed(1)}h`;
+        }
+
+        const claudeRatio = data.claude.ratio || 0;
+        const claudeRefDays = (data.claude.weekly_refreshes_in_hours / 24).toFixed(2);
+        
+        const claudeAvgCost = data.claude_avg_cost !== undefined ? data.claude_avg_cost : 3.0;
+        const claudeRunsCount = data.claude_runs_count || 0;
+        const claudeTargetRuns = 14.29 / claudeAvgCost;
+        const claudeAllowanceRuns = claudeRatio / claudeAvgCost;
+
+        document.getElementById("claudeTargetSpend").textContent = `14.29% (~${claudeTargetRuns.toFixed(1)} runs)`;
+        document.getElementById("claudeDailyAllowance").textContent = `${claudeRatio}% / day (~${claudeAllowanceRuns.toFixed(1)} runs) (with ${claudeRefDays} days left)`;
+        document.getElementById("claudeMeasuredCost").textContent = `${claudeAvgCost.toFixed(2)}% (${claudeRunsCount} runs)`;
+
+        const claudeStatusBadge = document.getElementById("claudeQuotaStatus");
+        const claudeMathStatus = document.getElementById("claudeMathStatus");
+        
+        claudeStatusBadge.textContent = data.claude.status.toUpperCase();
+        if (data.claude.status === "Healthy") {
+          claudeStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+          claudeMathStatus.textContent = "Safe to Run (Above 14.3%)";
+          claudeMathStatus.className = "text-right font-semibold text-emerald-400";
+        } else if (data.claude.status === "Throttled") {
+          claudeStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
+          claudeMathStatus.textContent = "Throttled (Below 14.3% daily budget)";
+          claudeMathStatus.className = "text-right font-semibold text-amber-400";
+        } else {
+          claudeStatusBadge.className = "px-2.5 py-1 rounded text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20";
+          claudeMathStatus.textContent = data.claude.status;
+          claudeMathStatus.className = "text-right font-semibold text-rose-400";
+        }
+      }
+
+      async function loadQuotaData() {
+        try {
+          const resp = await fetch("/api/admin/orchestrator/quota-info");
+          if (resp.ok) {
+            const data = await resp.json();
+            renderQuotaUI(data);
+          }
+        } catch (e) {
+          console.error("Error loading quota data:", e);
+        }
+      }
+
+      async function refreshQuotaData() {
+        const btn = document.getElementById("refreshQuotaBtn");
+        const spinner = document.getElementById("refreshQuotaSpinner");
+        if (!btn || btn.disabled) return;
+
+        btn.disabled = true;
+        spinner.classList.remove("hidden");
+        const origText = btn.querySelector("span").textContent;
+        btn.querySelector("span").textContent = "Querying Container...";
+
+        try {
+          const resp = await fetch("/api/admin/orchestrator/refresh-quota");
+          if (resp.ok) {
+            const data = await resp.json();
+            renderQuotaUI(data);
+          }
+        } catch (e) {
+          console.error("Error refreshing quota data:", e);
+        } finally {
+          btn.disabled = false;
+          spinner.classList.add("hidden");
+          btn.querySelector("span").textContent = origText;
+        }
+      }
+
+      const refreshQuotaBtn = document.getElementById("refreshQuotaBtn");
+      if (refreshQuotaBtn) refreshQuotaBtn.onclick = refreshQuotaData;
     </script>
   </body>
 </html>

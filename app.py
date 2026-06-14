@@ -6220,7 +6220,16 @@ def orchestrator_status():
     if session.get('role') != 'admin':
         return jsonify({'error': 'Forbidden'}), 403
     db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
-    result = {'cooldown': {'active': False}, 'running_agent': None}
+    
+    import subprocess
+    active = False
+    try:
+        status_proc = subprocess.run(["systemctl", "is-active", "stellar_orchestrator"], capture_output=True, text=True)
+        active = (status_proc.stdout.strip() == 'active')
+    except Exception:
+        pass
+        
+    result = {'cooldown': {'active': False}, 'running_agent': None, 'active': active}
     try:
         from datetime import timezone, timedelta
         IST = timezone(timedelta(hours=5, minutes=30))
@@ -6244,6 +6253,100 @@ def orchestrator_status():
     except Exception as e:
         logger.error(f"Error fetching orchestrator status: {e}")
     return jsonify(result)
+
+@app.route('/api/admin/orchestrator/quota-info')
+@require_approval
+def orchestrator_quota_info():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+    db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
+    try:
+        conn = _get_orchestrator_sqlite_conn(db_path)
+        row = conn.execute("SELECT value FROM orchestrator_state WHERE key='quota_data'").fetchone()
+        
+        parsed = {}
+        if row and row['value']:
+            parsed = json.loads(row['value'])
+        else:
+            parsed = {'gemini': None, 'claude': None}
+            
+        rows = conn.execute("""
+            SELECT key, value FROM orchestrator_state 
+            WHERE key IN ('gemini_avg_cost', 'claude_avg_cost', 'gemini_runs_count', 'claude_runs_count')
+        """).fetchall()
+        conn.close()
+        
+        # Defaults
+        parsed['gemini_avg_cost'] = 1.2
+        parsed['claude_avg_cost'] = 3.0
+        parsed['gemini_runs_count'] = 0
+        parsed['claude_runs_count'] = 0
+        
+        for r in rows:
+            key = r['key']
+            val = r['value']
+            if val is not None:
+                if 'avg_cost' in key:
+                    parsed[key] = float(val)
+                elif 'runs_count' in key:
+                    parsed[key] = int(val)
+                    
+        return jsonify(parsed)
+    except Exception as e:
+        logger.error(f"Error fetching quota info: {e}")
+    return jsonify({
+        'gemini': None, 
+        'claude': None, 
+        'gemini_avg_cost': 1.2, 
+        'claude_avg_cost': 3.0, 
+        'gemini_runs_count': 0, 
+        'claude_runs_count': 0
+    })
+
+@app.route('/api/admin/orchestrator/refresh-quota')
+@require_approval
+def orchestrator_refresh_quota():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+    db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
+    try:
+        from orchestrator.quota import fetch_quota_data_from_container, parse_quota_text
+        raw_text = fetch_quota_data_from_container()
+        parsed = parse_quota_text(raw_text)
+        parsed["last_updated"] = datetime.datetime.now().isoformat()
+        
+        conn = _get_orchestrator_sqlite_conn(db_path)
+        conn.execute("""
+            INSERT INTO orchestrator_state (key, value) VALUES ('quota_data', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """, (json.dumps(parsed),))
+        
+        rows = conn.execute("""
+            SELECT key, value FROM orchestrator_state 
+            WHERE key IN ('gemini_avg_cost', 'claude_avg_cost', 'gemini_runs_count', 'claude_runs_count')
+        """).fetchall()
+        conn.commit()
+        conn.close()
+        
+        # Defaults
+        parsed['gemini_avg_cost'] = 1.2
+        parsed['claude_avg_cost'] = 3.0
+        parsed['gemini_runs_count'] = 0
+        parsed['claude_runs_count'] = 0
+        
+        for r in rows:
+            key = r['key']
+            val = r['value']
+            if val is not None:
+                if 'avg_cost' in key:
+                    parsed[key] = float(val)
+                elif 'runs_count' in key:
+                    parsed[key] = int(val)
+                    
+        return jsonify(parsed)
+    except Exception as e:
+        logger.error(f"Error refreshing quota: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/admin/agent_group_chat/history')
 @require_approval
@@ -6384,149 +6487,32 @@ def agent_group_chat_stream():
         logger.info("SSE client connected to agent_group_chat_stream user_id=%s", user_id)
         try:
             db_path = '/home/stellaradmin/my_app/orchestrator/orchestrator.db'
-            mem_db_path = '/home/stellaradmin/my_app/orchestrator/memory.db'
             if not os.path.exists(db_path):
                 yield "data: {}\n\n"
                 return
 
-            yielded_states = {} # rid -> status
+            pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+            pubsub.subscribe("agent_events")
+
             try:
-                # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
-                conn = _get_orchestrator_sqlite_conn(db_path)
-                runs = conn.execute("SELECT id, status FROM agent_runs").fetchall()
-                for r in runs:
-                    yielded_states[r['id']] = r['status']
-                conn.close()
-            except Exception as e:
-                logger.error(f"Error seeding SSE stream yielded states: {e}")
-
-            yielded_messages = set()
-            if os.path.exists(mem_db_path):
-                try:
-                    # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
-                    conn = _get_orchestrator_sqlite_conn(mem_db_path)
-                    rows = conn.execute("SELECT id FROM agent_messages WHERE channel='group'").fetchall()
-                    for r in rows:
-                        yielded_messages.add(r[0])
-                    conn.close()
-                except Exception as e:
-                    logger.error(f"Error seeding SSE stream yielded messages: {e}")
-
-            while True:
-                yield ": heartbeat\n\n"
-
-                try:
-                    # 1. Yield updates from orchestrator.db agent runs
-                    # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
-                    conn = _get_orchestrator_sqlite_conn(db_path)
-                    runs = conn.execute("""
-                        SELECT id, agent_id, started_at, finished_at, status, pr_number, pr_url, branch_name, error_message, summary_message
-                        FROM agent_runs
-                        ORDER BY id ASC
-                    """).fetchall()
-                    conn.close()
-
-                    for r in runs:
-                        rid = r['id']
-                        status = r['status']
-                        agent_name = r['agent_id'].capitalize()
-                        start_ts = r['started_at'].replace('T', ' ').split('.')[0]
-                        finish_ts = (r['finished_at'] or r['started_at']).replace('T', ' ').split('.')[0]
-
-                        if rid not in yielded_states:
-                            yielded_states[rid] = status
-                            msg = {
-                                'timestamp': start_ts,
-                                'sender': 'Orchestrator',
-                                'content': f"🚀 Starting agent **{agent_name}** on branch `{r['branch_name']}`...",
-                                'type': 'system'
-                            }
-                            yield f"data: {json.dumps(msg)}\n\n"
-
-                        elif yielded_states[rid] == 'RUNNING' and status != 'RUNNING':
-                            yielded_states[rid] = status
-
-                            if status == 'COMPLETED':
-                                if r['summary_message']:
-                                    msg = {
-                                        'timestamp': finish_ts,
-                                        'sender': f"{agent_name} (Agent)",
-                                        'content': r['summary_message'],
-                                        'type': 'agent'
-                                    }
-                                    yield f"data: {json.dumps(msg)}\n\n"
-
-                                pr_text = f" (PR #{r['pr_number']})" if r['pr_number'] else ""
-                                pr_link = f"\nPull Request: {r['pr_url']}" if r['pr_url'] else ""
-                                msg = {
-                                    'timestamp': finish_ts,
-                                    'sender': 'Orchestrator',
-                                    'content': f"✅ Agent **{agent_name}** completed successfully!{pr_text}{pr_link}",
-                                    'type': 'system'
-                                }
-                                yield f"data: {json.dumps(msg)}\n\n"
-                            elif status == 'FAILED':
-                                msg = {
-                                    'timestamp': finish_ts,
-                                    'sender': 'Orchestrator',
-                                    'content': f"❌ Agent **{agent_name}** run failed.\nError: {r['error_message'] or 'Unknown error'}",
-                                    'type': 'system'
-                                }
-                                yield f"data: {json.dumps(msg)}\n\n"
-                            elif status == 'TIMEOUT':
-                                msg = {
-                                    'timestamp': finish_ts,
-                                    'sender': 'Orchestrator',
-                                    'content': f"⚠️ Agent **{agent_name}** run timed out after exceeding limits.",
-                                    'type': 'system'
-                                }
-                                yield f"data: {json.dumps(msg)}\n\n"
-                            elif status == 'INTERRUPTED':
-                                msg = {
-                                    'timestamp': finish_ts,
-                                    'sender': 'Orchestrator',
-                                    'content': f"↩️ Agent **{agent_name}** was interrupted by an orchestrator restart — retrying automatically.",
-                                    'type': 'system'
-                                }
-                                yield f"data: {json.dumps(msg)}\n\n"
-                except Exception as e:
-                    logger.error(f"Error in database log SSE stream runs section: {e}")
-
-                try:
-                    # 2. Yield updates from memory.db group messages
-                    if os.path.exists(mem_db_path):
-                        # Bolt - Performance/Stability Optimization: Use _get_orchestrator_sqlite_conn to inherit WAL and busy_timeout
-                        conn = _get_orchestrator_sqlite_conn(mem_db_path)
-                        rows = conn.execute("""
-                            SELECT id, sender_id, content, message_type, created_at
-                            FROM agent_messages
-                            WHERE channel = 'group'
-                            ORDER BY id ASC
-                        """).fetchall()
-                        conn.close()
-
-                        for r in rows:
-                            mid = r['id']
-                            if mid not in yielded_messages:
-                                yielded_messages.add(mid)
-                                ts = r['created_at'].replace('T', ' ').split('.')[0]
-                                sender_name = r['sender_id'].capitalize() if r['sender_id'] not in ('admin', 'orchestrator') else r['sender_id'].upper()
-                                msg_type = 'system' if r['message_type'] == 'system' else 'agent'
-                                if r['sender_id'] == 'admin':
-                                    msg_type = 'admin'
-                                msg = {
-                                    'timestamp': ts,
-                                    'sender': sender_name,
-                                    'content': r['content'],
-                                    'type': msg_type
-                                }
-                                yield f"data: {json.dumps(msg)}\n\n"
-                except Exception as e:
-                    logger.error(f"Error in database log SSE stream messages section: {e}")
-
-                time.sleep(2)
-        finally:
+                while True:
+                    message = pubsub.get_message(timeout=15)
+                    if message:
+                        if message['type'] == 'message':
+                            data = message['data']
+                            if isinstance(data, bytes):
+                                data = data.decode('utf-8')
+                            yield f"data: {data}\n\n"
+                    else:
+                        # Heartbeat to keep connection alive
+                        yield ": heartbeat\n\n"
+            finally:
+                pubsub.unsubscribe()
+                pubsub.close()
+        except GeneratorExit:
             logger.info("SSE client disconnected from agent_group_chat_stream user_id=%s", user_id)
+        except Exception as e:
+            logger.error("Error in agent_group_chat_stream for user %s: %s", user_id, e)
 
     return Response(stream_with_context(log_stream()), mimetype="text/event-stream")
 
@@ -6652,6 +6638,21 @@ def send_agent_message():
         """, (channel, thread_id, recipient_id, content, now_str))
         conn.commit()
         conn.close()
+
+        # Publish admin group messages to Redis channel
+        if channel == 'group':
+            ts = now_str.replace('T', ' ').split('.')[0]
+            msg_payload = {
+                'timestamp': ts,
+                'sender': 'ADMIN',
+                'content': content,
+                'type': 'admin'
+            }
+            try:
+                redis_client.publish("agent_events", json.dumps(msg_payload))
+            except Exception as re:
+                logger.error("Failed to publish admin group message to Redis: %s", re)
+
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Error sending agent message: {e}")

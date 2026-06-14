@@ -46,6 +46,14 @@ class StateDB:
                 conn.execute("ALTER TABLE agent_runs ADD COLUMN summary_message TEXT")
             except sqlite3.OperationalError:
                 pass
+            try:
+                conn.execute("ALTER TABLE agent_runs ADD COLUMN quota_start_percent REAL")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE agent_runs ADD COLUMN model TEXT")
+            except sqlite3.OperationalError:
+                pass
             # Table for general orchestrator state
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS orchestrator_state (
@@ -55,15 +63,34 @@ class StateDB:
             """)
             conn.commit()
 
-    def start_run(self, agent_id: str, branch_name: str, started_at: str) -> int:
+    def start_run(self, agent_id: str, branch_name: str, started_at: str, quota_start_percent: Optional[float] = None, model: Optional[str] = None) -> int:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO agent_runs (agent_id, branch_name, started_at, status)
-                VALUES (?, ?, ?, 'RUNNING')
-            """, (agent_id, branch_name, started_at))
+                INSERT INTO agent_runs (agent_id, branch_name, started_at, status, quota_start_percent, model)
+                VALUES (?, ?, ?, 'RUNNING', ?, ?)
+            """, (agent_id, branch_name, started_at, quota_start_percent, model))
             conn.commit()
-            return cursor.lastrowid
+            lastrowid = cursor.lastrowid
+
+        # Publish starting agent event to Redis
+        try:
+            import redis
+            import json
+            r = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+            agent_name = agent_id.capitalize()
+            start_ts = started_at.replace('T', ' ').split('.')[0]
+            msg_payload = {
+                'timestamp': start_ts,
+                'sender': 'Orchestrator',
+                'content': f"🚀 Starting agent **{agent_name}** on branch `{branch_name}`...",
+                'type': 'system'
+            }
+            r.publish("agent_events", json.dumps(msg_payload))
+        except Exception:
+            pass
+
+        return lastrowid
 
     def complete_run(self, run_id: int, finished_at: str, pr_number: Optional[int] = None, pr_url: Optional[str] = None, pr_status: str = 'NONE', summary_message: Optional[str] = None):
         with self._get_conn() as conn:

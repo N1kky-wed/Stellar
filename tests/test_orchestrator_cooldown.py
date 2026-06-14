@@ -45,20 +45,26 @@ def test_model_specific_cooldown_restore(temp_db, mock_dependencies):
 
 def test_get_active_model(temp_db, mock_dependencies):
     """Asserts model selection based on current model cooldown state."""
-    with patch('orchestrator.config.DB_PATH', temp_db):
-        engine = OrchestratorEngine()
-        now = datetime.now(IST)
-        
-        # 1. No cooldowns: select Gemini
-        assert engine._get_active_model(now) == config.MODEL_GEMINI
-        
-        # 2. Gemini blocked, Claude free: select Claude
-        engine.gemini_cooldown_until = now + timedelta(minutes=30)
-        assert engine._get_active_model(now) == config.MODEL_CLAUDE
-        
-        # 3. Both blocked: fallback to Gemini as safe default
-        engine.claude_cooldown_until = now + timedelta(minutes=45)
-        assert engine._get_active_model(now) == config.MODEL_GEMINI
+    mock_quota_data = {
+        "gemini": {"status": "Healthy", "ratio": 100.0, "weekly_percent": 100.0, "weekly_refreshes_in_hours": 0.0, "sprint_percent": 100.0, "sprint_refreshes_in_hours": 0.0, "sprint_disabled": False},
+        "claude": {"status": "Healthy", "ratio": 100.0, "weekly_percent": 100.0, "weekly_refreshes_in_hours": 0.0, "sprint_percent": 100.0, "sprint_refreshes_in_hours": 0.0, "sprint_disabled": False}
+    }
+    with patch('orchestrator.quota.fetch_quota_data_from_container', return_value=""):
+        with patch('orchestrator.quota.parse_quota_text', return_value=mock_quota_data):
+            with patch('orchestrator.config.DB_PATH', temp_db):
+                engine = OrchestratorEngine()
+                now = datetime.now(IST)
+                
+                # 1. No cooldowns: select Gemini
+                assert engine._get_active_model(now) == config.MODEL_GEMINI
+                
+                # 2. Gemini blocked, Claude free: select Claude
+                engine.gemini_cooldown_until = now + timedelta(minutes=30)
+                assert engine._get_active_model(now) == config.MODEL_CLAUDE
+                
+                # 3. Both blocked: returns None to signal no model is available
+                engine.claude_cooldown_until = now + timedelta(minutes=45)
+                assert engine._get_active_model(now) is None
 
 def test_is_in_cooldown_logic(temp_db, mock_dependencies):
     """Asserts global cooldown logic: only block completely if both Gemini and Claude are exhausted."""

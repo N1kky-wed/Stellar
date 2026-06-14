@@ -210,163 +210,102 @@ def test_agent_group_chat_stream_no_db(auth_client):
 
 def test_agent_group_chat_stream_with_new_runs(auth_client):
     """
-    Asserts that the stream successfully yields database updates on new agent runs.
+    Asserts that the stream successfully connects and starts streaming.
     """
-    db_fd, temp_db_path = tempfile.mkstemp()
-    try:
-        conn = _real_sqlite3_connect(temp_db_path)
-        conn.execute("""
-            CREATE TABLE agent_runs (
-                id INTEGER PRIMARY KEY,
-                agent_id TEXT,
-                started_at TEXT,
-                finished_at TEXT,
-                status TEXT,
-                pr_number INTEGER,
-                pr_url TEXT,
-                branch_name TEXT,
-                error_message TEXT,
-                summary_message TEXT
-            )
-        """)
-        conn.execute("""
-            INSERT INTO agent_runs VALUES (
-                1, 'researcher', '2026-06-10T16:00:00.000Z', '2026-06-10T16:05:00.000Z', 
-                'COMPLETED', 42, 'https://github.com/Stellar/pull/42', 'test-branch-1', 
-                NULL, 'Summary explanation.'
-            )
-        """)
-        conn.commit()
-        conn.close()
+    def mock_exists(path):
+        if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
+            return True
+        return _real_os_path_exists(path)
 
-        def mock_exists(path):
-            if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
-                return True
-            return _real_os_path_exists(path)
+    class MockPubSubEmpty:
+        def subscribe(self, channel):
+            pass
+        def get_message(self, timeout=None):
+            raise StopLoopException("Stop loop")
+        def unsubscribe(self):
+            pass
+        def close(self):
+            pass
 
-        def mock_connect(path):
-            if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
-                return _real_sqlite3_connect(temp_db_path)
-            return _real_sqlite3_connect(path)
-
-        def mock_sleep(seconds):
-            frame = sys._getframe(0)
-            while frame:
-                if frame.f_code.co_name == 'log_stream':
-                    raise StopLoopException("Stop loop")
-                frame = frame.f_back
-
-        with patch('os.path.exists', side_effect=mock_exists):
-            with patch('sqlite3.connect', side_effect=mock_connect):
-                with patch('time.sleep', side_effect=mock_sleep):
-                    with auth_client.application.test_request_context():
-                        from flask import session
-                        session['user_id'] = 1
-                        session['role'] = 'admin'
-                        session['is_approved'] = True
-                        
-                        response = agent_group_chat_stream()
-                        assert response.status_code == 200
-                        assert response.is_streamed
-                        
-                        content = []
-                        try:
-                            for chunk in response.response:
-                                content.append(chunk)
-                        except StopLoopException:
-                            pass
-    finally:
-        os.close(db_fd)
-        os.unlink(temp_db_path)
+    with patch('os.path.exists', side_effect=mock_exists):
+        with patch('app.redis_client.pubsub', return_value=MockPubSubEmpty()):
+            with auth_client.application.test_request_context():
+                from flask import session
+                session['user_id'] = 1
+                session['role'] = 'admin'
+                session['is_approved'] = True
+                
+                response = agent_group_chat_stream()
+                assert response.status_code == 200
+                assert response.is_streamed
+                
+                content = []
+                try:
+                    for chunk in response.response:
+                        content.append(chunk)
+                except StopLoopException:
+                    pass
 
 def test_agent_group_chat_stream_transition(auth_client):
     """
     Asserts that the stream logs transition from RUNNING to COMPLETED/FAILED/TIMEOUT.
     """
-    db_fd, temp_db_path = tempfile.mkstemp()
-    try:
-        conn = _real_sqlite3_connect(temp_db_path)
-        conn.execute("""
-            CREATE TABLE agent_runs (
-                id INTEGER PRIMARY KEY,
-                agent_id TEXT,
-                started_at TEXT,
-                finished_at TEXT,
-                status TEXT,
-                pr_number INTEGER,
-                pr_url TEXT,
-                branch_name TEXT,
-                error_message TEXT,
-                summary_message TEXT
-            )
-        """)
-        conn.execute("""
-            INSERT INTO agent_runs VALUES (
-                1, 'researcher', '2026-06-10T16:00:00.000Z', NULL, 
-                'RUNNING', NULL, NULL, 'test-branch-1', 
-                NULL, NULL
-            )
-        """)
-        conn.commit()
-        conn.close()
+    def mock_exists(path):
+        if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
+            return True
+        return _real_os_path_exists(path)
 
-        def mock_exists(path):
-            if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
-                return True
-            return _real_os_path_exists(path)
+    class MockPubSub:
+        def __init__(self):
+            self.messages = [
+                {'type': 'message', 'data': json.dumps({
+                    'timestamp': '2026-06-10 16:05:00',
+                    'sender': 'Orchestrator',
+                    'content': '✅ Agent researcher completed successfully! (PR #43)\nPull Request: https://github.com/Stellar/pull/43',
+                    'type': 'system'
+                })},
+                {'type': 'message', 'data': json.dumps({
+                    'timestamp': '2026-06-10 16:05:00',
+                    'sender': 'Researcher (Agent)',
+                    'content': 'All tests passed!',
+                    'type': 'agent'
+                })}
+            ]
+        def subscribe(self, channel):
+            pass
+        def get_message(self, timeout=None):
+            if self.messages:
+                return self.messages.pop(0)
+            raise StopLoopException("Stop loop")
+        def unsubscribe(self):
+            pass
+        def close(self):
+            pass
 
-        query_count = 0
-        def mock_connect(path):
-            nonlocal query_count
-            if path == '/home/stellaradmin/my_app/orchestrator/orchestrator.db':
-                conn = _real_sqlite3_connect(temp_db_path)
-                if query_count > 0:
-                    conn.execute("""
-                        UPDATE agent_runs 
-                        SET status = 'COMPLETED', finished_at = '2026-06-10T16:05:00.000Z', 
-                            pr_number = 43, pr_url = 'https://github.com/Stellar/pull/43',
-                            summary_message = 'All tests passed!'
-                        WHERE id = 1
-                    """)
-                    conn.commit()
-                query_count += 1
-                return conn
-            return _real_sqlite3_connect(path)
-
-        def mock_sleep(seconds):
-            frame = sys._getframe(0)
-            while frame:
-                if frame.f_code.co_name == 'log_stream' and query_count >= 2:
-                    raise StopLoopException("Stop loop")
-                frame = frame.f_back
-
-        with patch('os.path.exists', side_effect=mock_exists):
-            with patch('sqlite3.connect', side_effect=mock_connect):
-                with patch('time.sleep', side_effect=mock_sleep):
-                    with auth_client.application.test_request_context():
-                        from flask import session
-                        session['user_id'] = 1
-                        session['role'] = 'admin'
-                        session['is_approved'] = True
-                        
-                        response = agent_group_chat_stream()
-                        assert response.status_code == 200
-                        assert response.is_streamed
-                        
-                        content_chunks = []
-                        try:
-                            for chunk in response.response:
-                                content_chunks.append(chunk)
-                        except StopLoopException:
-                            pass
-                        
-                        content = "".join(content_chunks)
-                        assert "All tests passed!" in content
-                        assert "completed successfully!" in content
-                        assert "PR #43" in content
-    finally:
-        os.close(db_fd)
-        os.unlink(temp_db_path)
+    with patch('os.path.exists', side_effect=mock_exists):
+        with patch('app.redis_client.pubsub', return_value=MockPubSub()):
+            with auth_client.application.test_request_context():
+                from flask import session
+                session['user_id'] = 1
+                session['role'] = 'admin'
+                session['is_approved'] = True
+                
+                response = agent_group_chat_stream()
+                assert response.status_code == 200
+                assert response.is_streamed
+                
+                content_chunks = []
+                try:
+                    for chunk in response.response:
+                        content_chunks.append(chunk)
+                except StopLoopException:
+                    pass
+                
+                decoded_chunks = [c.decode('utf-8') if isinstance(c, bytes) else c for c in content_chunks]
+                content = "".join(decoded_chunks)
+                assert "All tests passed!" in content
+                assert "completed successfully!" in content
+                assert "PR #43" in content
 
 
 def test_orchestrator_status_anonymous(client):

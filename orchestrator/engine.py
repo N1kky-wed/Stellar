@@ -47,6 +47,10 @@ class OrchestratorEngine:
             self.current_agent_id = current['agent_id']
             self.current_run_id = current['id']
             self.branch_name = current['branch_name']
+            try:
+                self.current_model = current['model']
+            except Exception:
+                self.current_model = None
             
             # Find the prompt file from pipeline config
             for a in config.AGENT_PIPELINE:
@@ -225,6 +229,74 @@ class OrchestratorEngine:
             logger.warning("Could not parse reset time from log defaulting_cooldown=true cooldown_until=%s", fallback.isoformat())
             return fallback
 
+    def _update_average_quota_usage(self, run_id: Optional[int], model: Optional[str]):
+        if not run_id or not model:
+            logger.warning("Skipping average quota update: run_id or model is missing. run_id=%s, model=%s", run_id, model)
+            return
+
+        # 1. Retrieve the starting quota percent for this run
+        w_start = None
+        try:
+            with self.state_db._get_conn() as conn:
+                row = conn.execute("SELECT quota_start_percent FROM agent_runs WHERE id = ?", (run_id,)).fetchone()
+                if row:
+                    w_start = row["quota_start_percent"]
+        except Exception as e:
+            logger.error("Failed to retrieve starting quota from DB: %s", e)
+            return
+
+        if w_start is None:
+            logger.warning("Could not calculate average quota cost. w_start is None for run_id=%d", run_id)
+            return
+
+        # 2. Fetch current (ending) quota percent
+        try:
+            from orchestrator.quota import fetch_quota_data_from_container, parse_quota_text
+            raw_text = fetch_quota_data_from_container()
+            quota_data = parse_quota_text(raw_text)
+            
+            # Save the new quota data as the latest
+            quota_data["last_updated"] = datetime.now(IST).isoformat()
+            self.state_db.set_state("quota_data", json.dumps(quota_data))
+            
+            model_key = "gemini" if model == config.MODEL_GEMINI else "claude"
+            w_end = quota_data.get(model_key, {}).get("weekly_percent")
+        except Exception as e:
+            logger.error("Failed to fetch ending quota data: %s", e)
+            return
+
+        if w_end is None:
+            logger.warning("Could not calculate average quota cost. w_end is None for model=%s", model)
+            return
+
+        # 3. Calculate cost
+        cost = w_start - w_end
+        if cost < 0:
+            # Maybe a reset occurred or account switched, ignore this run's cost
+            logger.info("Negative cost calculated (w_start=%.2f, w_end=%.2f). A reset or account swap likely occurred. Skipping avg update.", w_start, w_end)
+            return
+            
+        # 4. Update the running average in the database
+        avg_key = f"{model_key}_avg_cost"
+        count_key = f"{model_key}_runs_count"
+        
+        try:
+            current_avg_str = self.state_db.get_state(avg_key)
+            current_count_str = self.state_db.get_state(count_key)
+            
+            current_avg = float(current_avg_str) if current_avg_str else (1.2 if model_key == "gemini" else 3.0)
+            current_count = int(current_count_str) if current_count_str else 0
+            
+            new_count = current_count + 1
+            new_avg = ((current_avg * current_count) + cost) / new_count
+            
+            self.state_db.set_state(avg_key, str(new_avg))
+            self.state_db.set_state(count_key, str(new_count))
+            
+            logger.info("Updated running average for %s: cost=%.2f%%, new_avg=%.4f%%, total_runs=%d", model_key, cost, new_avg, new_count)
+        except Exception as e:
+            logger.error("Error updating average quota usage in DB: %s", e)
+
     def _is_in_cooldown(self, now: datetime) -> bool:
         """Return True if the engine is currently in a global quota cooldown (i.e. both models are exhausted)."""
         # Clear expired model cooldowns
@@ -349,6 +421,7 @@ class OrchestratorEngine:
             self._drain_stdout()
             
             logger.info("Agent process finished agent_id=%s run_id=%s exit_code=%d", self.current_agent_id, self.current_run_id, retcode)
+            self._update_average_quota_usage(self.current_run_id, self.current_model)
             now_str = now.isoformat()
 
             # --- Quota check: read cli.log BEFORE deciding success/failure ---
@@ -490,6 +563,8 @@ class OrchestratorEngine:
         
         # Kill any runaway agy inside container
         container.exec_in_container("pkill -f agy")
+        
+        self._update_average_quota_usage(self.current_run_id, self.current_model)
         
         now_str = now.isoformat()
         self.state_db.timeout_run(self.current_run_id, now_str, summary_message="Agent execution timed out after exceeding limits.")
@@ -669,13 +744,34 @@ class OrchestratorEngine:
         self.agent_start_time = now
         
         # Determine active model based on quota states
-        self.current_model = self._get_active_model(now)
+        active_model = self._get_active_model(now)
+        if not active_model:
+            logger.warning("No healthy models available for run (both Gemini and Claude are throttled/exhausted). Deferring agent %s.", self.current_agent_id)
+            self.state_db.set_state("pending_immediate_agent", self.current_agent_id)
+            self._clear_active_run()
+            return
+            
+        self.current_model = active_model
         
+        # Get start quota percentage from cached database state
+        quota_start_percent = None
+        try:
+            quota_json = self.state_db.get_state("quota_data")
+            if quota_json:
+                import json
+                quota_dict = json.loads(quota_json)
+                model_key = "gemini" if active_model == config.MODEL_GEMINI else "claude"
+                quota_start_percent = quota_dict.get(model_key, {}).get("weekly_percent")
+        except Exception as e:
+            logger.error("Failed to extract starting quota: %s", e)
+
         # Register in database
         self.current_run_id = self.state_db.start_run(
             agent_id=self.current_agent_id,
             branch_name=self.branch_name,
-            started_at=now.isoformat()
+            started_at=now.isoformat(),
+            quota_start_percent=quota_start_percent,
+            model=self.current_model
         )
         
         try:
@@ -1122,8 +1218,8 @@ class OrchestratorEngine:
 
         logger.info("Archived %d summarized memories. Total summarization duration_sec=%.3f", len(memory_ids), time.time() - t_start)
 
-    def _get_active_model(self, now: datetime) -> str:
-        """Determines which model to use for the agent run based on current cooldown states."""
+    def _get_active_model(self, now: datetime) -> Optional[str]:
+        """Determines which model to use for the agent run based on current container quota limits."""
         # Clean up any expired cooldowns first
         if self.gemini_cooldown_until and now >= self.gemini_cooldown_until:
             logger.info("Gemini quota cooldown expired.")
@@ -1134,14 +1230,38 @@ class OrchestratorEngine:
             self.claude_cooldown_until = None
             self.state_db.set_state("claude_cooldown_until", "")
 
-        # If Gemini is not in cooldown, always prioritize Gemini
-        if not self.gemini_cooldown_until:
-            return config.MODEL_GEMINI
-            
-        # If Gemini is in cooldown but Claude is free, use Claude
-        if not self.claude_cooldown_until:
-            logger.info("Gemini is in cooldown. Falling back to Claude Sonnet for run.")
-            return config.MODEL_CLAUDE
+        gemini_cooldown = self.gemini_cooldown_until is not None and now < self.gemini_cooldown_until
+        claude_cooldown = self.claude_cooldown_until is not None and now < self.claude_cooldown_until
 
-        # Fallback to Gemini if both are in cooldown (should be guarded by _is_in_cooldown, but be safe)
-        return config.MODEL_GEMINI
+        try:
+            from orchestrator.quota import fetch_quota_data_from_container, parse_quota_text
+            # Fetch and parse quota from the container live
+            raw_text = fetch_quota_data_from_container()
+            quota_data = parse_quota_text(raw_text)
+            
+            # Save to state database
+            import json
+            quota_data["last_updated"] = now.isoformat()
+            self.state_db.set_state("quota_data", json.dumps(quota_data))
+            
+            gemini_status = quota_data["gemini"]["status"]
+            claude_status = quota_data["claude"]["status"]
+            
+            logger.info("Live quota status - Gemini: %s (Ratio: %s), Claude: %s (Ratio: %s)", 
+                        gemini_status, quota_data["gemini"]["ratio"],
+                        claude_status, quota_data["claude"]["ratio"])
+            
+            # 1. Prefer Gemini if it's healthy and not in reactive cooldown
+            if gemini_status == "Healthy" and not gemini_cooldown:
+                return config.MODEL_GEMINI
+                
+            # 2. Fallback to Claude if Claude is healthy, not in reactive cooldown, and Gemini is throttled/exhausted
+            if claude_status == "Healthy" and not claude_cooldown:
+                logger.info("Gemini is throttled/exhausted/cooldown (%s). Falling back to Claude Sonnet.", gemini_status)
+                return config.MODEL_CLAUDE
+                
+            # 3. If both are throttled or exhausted, return None
+            return None
+        except Exception as e:
+            logger.error("Error checking live quota in _get_active_model: %s. Defaulting to Gemini.", e)
+            return config.MODEL_GEMINI if not gemini_cooldown else config.MODEL_CLAUDE

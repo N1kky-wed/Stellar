@@ -122,7 +122,30 @@ class MemoryDB:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (channel, thread_id, sender_id, recipient_id, content, message_type, ref_id, now_str))
             conn.commit()
-            return cursor.lastrowid
+            lastrowid = cursor.lastrowid
+
+        # Publish group messages to Redis channel for live streaming updates
+        if channel == 'group':
+            ts = now_str.replace('T', ' ').split('.')[0]
+            sender_name = sender_id.capitalize() if sender_id not in ('admin', 'orchestrator') else sender_id.upper()
+            msg_type = 'system' if message_type == 'system' else 'agent'
+            if sender_id == 'admin':
+                msg_type = 'admin'
+            msg_payload = {
+                'timestamp': ts,
+                'sender': sender_name,
+                'content': content,
+                'type': msg_type
+            }
+            try:
+                import redis
+                import json
+                r = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+                r.publish("agent_events", json.dumps(msg_payload))
+            except Exception:
+                pass
+
+        return lastrowid
 
     def create_task(self, title: str, description: Optional[str], created_by: str, assigned_to: Optional[str] = None, priority: str = 'normal', tags: Optional[List[str]] = None, related_pr: Optional[int] = None, related_file: Optional[str] = None) -> int:
         now_str = datetime.datetime.now().isoformat()
