@@ -1,4 +1,9 @@
 # memory.py
+"""
+Memory database manager for the Stellar Orchestrator.
+Maintains agent memories, messaging, task CRUD, and facts using a SQLite database (memory.db).
+Publishes live events to Redis for SSE streaming.
+"""
 import sqlite3
 import os
 import json
@@ -6,11 +11,24 @@ import datetime
 from typing import Optional, List, Dict, Any
 
 class MemoryDB:
+    """
+    Manages database operations for the shared agent memory space, group chats, direct messages, tasks, and facts.
+    """
     def __init__(self, db_path: str):
+        """
+        Initializes MemoryDB and sets up schema tables.
+        Args:
+            db_path (str): File system path to the memory database.
+        """
         self.db_path = db_path
         self._init_db()
 
     def _get_conn(self):
+        """
+        Retrieves a database connection with WAL mode and busy timeout configured.
+        Returns:
+            sqlite3.Connection: Database connection.
+        """
         import time
         import logging
         t0 = time.time()
@@ -25,6 +43,10 @@ class MemoryDB:
         return conn
 
     def _init_db(self):
+        """
+        Builds the tables: agent_memories, agent_messages, agent_tasks, agent_facts.
+        Also creates appropriate indexes for query performance optimization.
+        """
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         with self._get_conn() as conn:
             # 1. agent_memories
@@ -102,6 +124,18 @@ class MemoryDB:
             conn.commit()
 
     def add_memory(self, agent_id: str, run_id: Optional[int], memory_type: str, content: str, scope: str = 'global', tags: Optional[List[str]] = None) -> int:
+        """
+        Adds a new memory entry for an agent.
+        Args:
+            agent_id (str): The writing agent.
+            run_id (Optional[int]): The run ID associated with the memory.
+            memory_type (str): Category like 'observation' or 'decision'.
+            content (str): The memory string text.
+            scope (str): Visibility scope ('global' or agent_id).
+            tags (Optional[List[str]]): Tags to categorize the memory.
+        Returns:
+            int: The unique row ID of the memory.
+        """
         tags_str = json.dumps(tags) if tags else None
         now_str = datetime.datetime.now().isoformat()
         with self._get_conn() as conn:
@@ -114,6 +148,19 @@ class MemoryDB:
             return cursor.lastrowid
 
     def add_message(self, channel: str, sender_id: str, content: str, recipient_id: Optional[str] = None, thread_id: Optional[str] = None, message_type: str = 'text', ref_id: Optional[str] = None) -> int:
+        """
+        Sends/saves a message (group or DM) and publishes group events to Redis.
+        Args:
+            channel (str): 'group' or 'dm'.
+            sender_id (str): Sender identifier.
+            content (str): Text content of the message.
+            recipient_id (Optional[str]): Recipient agent ID for DMs.
+            thread_id (Optional[str]): Logical thread ID grouping related messages.
+            message_type (str): Type of message ('text', 'system', etc.).
+            ref_id (Optional[str]): Reference ID like PR number or task ID.
+        Returns:
+            int: The unique row ID of the message.
+        """
         now_str = datetime.datetime.now().isoformat()
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -148,6 +195,20 @@ class MemoryDB:
         return lastrowid
 
     def create_task(self, title: str, description: Optional[str], created_by: str, assigned_to: Optional[str] = None, priority: str = 'normal', tags: Optional[List[str]] = None, related_pr: Optional[int] = None, related_file: Optional[str] = None) -> int:
+        """
+        Registers a new task for the engineering team.
+        Args:
+            title (str): Title of the task.
+            description (Optional[str]): Detailed task summary.
+            created_by (str): Creator agent ID or admin.
+            assigned_to (Optional[str]): Assignee agent ID.
+            priority (str): 'low', 'normal', 'high', or 'critical'.
+            tags (Optional[List[str]]): Categorization tags.
+            related_pr (Optional[int]): Associated PR number.
+            related_file (Optional[str]): Associated file path.
+        Returns:
+            int: The unique task ID.
+        """
         now_str = datetime.datetime.now().isoformat()
         tags_str = json.dumps(tags) if tags else None
         with self._get_conn() as conn:
@@ -213,6 +274,15 @@ class MemoryDB:
             return False
 
     def add_fact(self, fact: str, added_by: str, category: Optional[str] = None) -> int:
+        """
+        Registers a new fact in the facts database.
+        Args:
+            fact (str): Fact text message.
+            added_by (str): ID of the agent registering the fact.
+            category (Optional[str]): Category ('constraint', 'convention', 'architecture', 'bug_pattern').
+        Returns:
+            int: The new fact row ID.
+        """
         now_str = datetime.datetime.now().isoformat()
         with self._get_conn() as conn:
             cursor = conn.cursor()
@@ -224,7 +294,16 @@ class MemoryDB:
             return cursor.lastrowid
 
     def update_fact(self, fact_id: int, new_fact: str, updated_by: str, category: Optional[str] = None) -> int:
-        """Supersedes an existing fact with a new one."""
+        """
+        Supersedes an existing fact with a new one by archiving the old and linking it to the new.
+        Args:
+            fact_id (int): The ID of the fact being superseded.
+            new_fact (str): New fact text.
+            updated_by (str): ID of the agent updating the fact.
+            category (Optional[str]): Category updates if changed.
+        Returns:
+            int: The ID of the new fact.
+        """
         now_str = datetime.datetime.now().isoformat()
         with self._get_conn() as conn:
             old_fact = conn.execute("SELECT * FROM agent_facts WHERE id = ?", (fact_id,)).fetchone()
@@ -249,6 +328,13 @@ class MemoryDB:
             return new_id
 
     def get_active_tasks(self, assigned_to: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all unresolved tasks, optionally filtered by assignee.
+        Args:
+            assigned_to (Optional[str]): Assignee filter.
+        Returns:
+            List[Dict[str, Any]]: Unresolved task dicts, sorted by priority and ID.
+        """
         with self._get_conn() as conn:
             if assigned_to:
                 rows = conn.execute("""
@@ -265,6 +351,13 @@ class MemoryDB:
             return [dict(r) for r in rows]
 
     def get_resolved_tasks(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Retrieves recently resolved tasks.
+        Args:
+            limit (int): Max number of tasks to fetch.
+        Returns:
+            List[Dict[str, Any]]: Resolved task dictionaries.
+        """
         with self._get_conn() as conn:
             rows = conn.execute("""
                 SELECT * FROM agent_tasks
@@ -277,6 +370,10 @@ class MemoryDB:
         """
         Get all active DM messages for a specific agent.
         Only DM messages belonging to non-resolved tasks/threads.
+        Args:
+            agent_id (str): Recipient agent ID.
+        Returns:
+            List[Dict[str, Any]]: Unread DM message dictionaries.
         """
         with self._get_conn() as conn:
             # We exclude messages whose thread_id is resolved.
@@ -303,6 +400,13 @@ class MemoryDB:
             return filtered
 
     def get_recent_group_messages(self, hours: int = 24) -> List[Dict[str, Any]]:
+        """
+        Retrieves group chat messages recorded within the specified hourly window.
+        Args:
+            hours (int): Number of hours of history to query.
+        Returns:
+            List[Dict[str, Any]]: Group message list.
+        """
         limit_time = (datetime.datetime.now() - datetime.timedelta(hours=hours)).isoformat()
         with self._get_conn() as conn:
             rows = conn.execute("""
@@ -313,6 +417,11 @@ class MemoryDB:
             return [dict(r) for r in rows]
 
     def get_active_facts(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all currently active (non-superseded and non-archived) facts.
+        Returns:
+            List[Dict[str, Any]]: Active facts.
+        """
         with self._get_conn() as conn:
             rows = conn.execute("""
                 SELECT * FROM agent_facts
@@ -322,6 +431,13 @@ class MemoryDB:
             return [dict(r) for r in rows]
 
     def get_recent_memories(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Retrieves the most recent unarchived agent memories.
+        Args:
+            limit (int): Max memories to fetch.
+        Returns:
+            List[Dict[str, Any]]: Unarchived memories.
+        """
         with self._get_conn() as conn:
             rows = conn.execute("""
                 SELECT * FROM agent_memories
