@@ -1965,12 +1965,12 @@
         const geminiTargetRuns = 14.29 / geminiAvgCost;
         const geminiAllowanceRuns = geminiRatio / geminiAvgCost;
 
-        document.getElementById("geminiTargetSpend").textContent =
-          `14.29% (~${geminiTargetRuns.toFixed(1)})`;
-        document.getElementById("geminiDailyAllowance").textContent =
-          `${geminiRatio}% / day`;
-        document.getElementById("geminiMeasuredCost").textContent =
-          `${geminiAvgCost.toFixed(2)}%`;
+        document.getElementById("geminiTargetSpend").innerHTML =
+          `14.29%<br><span class="text-[9px] text-slate-400 font-normal">~${geminiTargetRuns.toFixed(1)} runs</span>`;
+        document.getElementById("geminiDailyAllowance").innerHTML =
+          `${geminiRatio}% / day<br><span class="text-[9px] text-slate-400 font-normal">~${geminiAllowanceRuns.toFixed(1)} runs</span>`;
+        document.getElementById("geminiMeasuredCost").innerHTML =
+          `${geminiAvgCost.toFixed(2)}%<br><span class="text-[9px] text-slate-400 font-normal">${geminiRunsCount} runs</span>`;
 
         // Gemini Recovery Math
         const gPct = data.gemini.weekly_percent || 100.0;
@@ -2062,12 +2062,12 @@
         const claudeTargetRuns = 14.29 / claudeAvgCost;
         const claudeAllowanceRuns = claudeRatio / claudeAvgCost;
 
-        document.getElementById("claudeTargetSpend").textContent =
-          `14.29% (~${claudeTargetRuns.toFixed(1)})`;
-        document.getElementById("claudeDailyAllowance").textContent =
-          `${claudeRatio}% / day`;
-        document.getElementById("claudeMeasuredCost").textContent =
-          `${claudeAvgCost.toFixed(2)}%`;
+        document.getElementById("claudeTargetSpend").innerHTML =
+          `14.29%<br><span class="text-[9px] text-slate-400 font-normal">~${claudeTargetRuns.toFixed(1)} runs</span>`;
+        document.getElementById("claudeDailyAllowance").innerHTML =
+          `${claudeRatio}% / day<br><span class="text-[9px] text-slate-400 font-normal">~${claudeAllowanceRuns.toFixed(1)} runs</span>`;
+        document.getElementById("claudeMeasuredCost").innerHTML =
+          `${claudeAvgCost.toFixed(2)}%<br><span class="text-[9px] text-slate-400 font-normal">${claudeRunsCount} runs</span>`;
 
         // Claude Recovery Math
         const cPct = data.claude.weekly_percent || 100.0;
