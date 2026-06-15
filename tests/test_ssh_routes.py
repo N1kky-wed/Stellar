@@ -145,16 +145,16 @@ def test_ssh_generate_code_not_approved_returns_forbidden(client):
     assert response.status_code == 403
 
 
-# Assert that an approved user can successfully generate a 6-character code.
+# Assert that an approved user can successfully generate an 8-character code.
 def test_ssh_generate_code_approved_generates_valid_code(auth_client):
     response = auth_client.post('/api/ssh/generate-code')
     assert response.status_code == 200
     data = json.loads(response.data)
     assert 'code' in data
     
-    # Expected format: XXX-XXX
+    # Expected format: XXXX-XXXX
     code = data['code']
-    assert len(code) == 7
+    assert len(code) == 9
     assert '-' in code
     
     # Verify it is saved in Redis
@@ -249,7 +249,7 @@ def test_ssh_verify_code_non_existent_code_fails_and_increments_fails(client):
     
     response = client.post('/api/ssh/verify-code', json={
         'secret': gateway_secret,
-        'code': 'NONEXI'
+        'code': 'NONEXIST'
     }, environ_base={'REMOTE_ADDR': '127.0.0.1'})
     
     assert response.status_code == 200
@@ -271,12 +271,12 @@ def test_ssh_verify_code_valid_code_succeeds(client):
         'display_name': 'SSH User',
         'created_at': time.time()
     })
-    redis_client.set('ssh_auth_code:ABCDEF', code_data)
+    redis_client.set('ssh_auth_code:ABCDEFGH', code_data)
     redis_client.set('ssh_auth_code:user:42', 1)
     
     response = client.post('/api/ssh/verify-code', json={
         'secret': gateway_secret,
-        'code': 'ABC-DEF'  # verify with hyphen
+        'code': 'ABCD-EFGH'  # verify with hyphen
     })
     
     assert response.status_code == 200
@@ -287,7 +287,7 @@ def test_ssh_verify_code_valid_code_succeeds(client):
     assert data['display_name'] == 'SSH User'
     
     # Code should be consumed (deleted from Redis)
-    assert not redis_client.exists('ssh_auth_code:ABCDEF')
+    assert not redis_client.exists('ssh_auth_code:ABCDEFGH')
     # User code counter should be decremented and deleted
     assert not redis_client.exists('ssh_auth_code:user:42')
 
@@ -297,11 +297,11 @@ def test_ssh_verify_code_malformed_redis_data_fails_gracefully(client):
     gateway_secret = os.environ.get('SSH_GATEWAY_SECRET', 'stellar-ssh-internal-2024')
     
     # Seed malformed data
-    redis_client.set('ssh_auth_code:ABCDEF', 'not-a-json-string')
+    redis_client.set('ssh_auth_code:ABCDEFGH', 'not-a-json-string')
     
     response = client.post('/api/ssh/verify-code', json={
         'secret': gateway_secret,
-        'code': 'ABCDEF'
+        'code': 'ABCDEFGH'
     })
     
     assert response.status_code == 200

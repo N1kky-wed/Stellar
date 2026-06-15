@@ -183,10 +183,10 @@ def test_handle_session_auth_lockout(mock_send, mock_read_key, mock_verify, mock
     """Asserts that handle_session locks the user out after max auth failures."""
     mock_limiter.is_ip_blocked.return_value = False
     # Simulate entering invalid code 3 times
-    # 6 keys for first attempt: '1', '2', '3', '4', '5', '6'
-    # 6 keys for second attempt: '1', '2', '3', '4', '5', '6'
-    # 6 keys for third attempt: '1', '2', '3', '4', '5', '6'
-    mock_read_key.side_effect = ['1', '2', '3', '4', '5', '6'] * 3
+    # 8 keys for first attempt: '1', '2', '3', '4', '5', '6', '7', '8'
+    # 8 keys for second attempt: '1', '2', '3', '4', '5', '6', '7', '8'
+    # 8 keys for third attempt: '1', '2', '3', '4', '5', '6', '7', '8'
+    mock_read_key.side_effect = ['1', '2', '3', '4', '5', '6', '7', '8'] * 3
     mock_verify.return_value = None
     
     mock_channel = MagicMock()
@@ -228,7 +228,7 @@ def test_handle_session_success_and_navigation(mock_send, mock_get_statuses, moc
     mock_get_statuses.return_value = {"stellar-web-proc-1": "running"}
     
     # Keyboard simulation:
-    # 1. 6 chars for code: '1','2','3','4','5','6' (takes user to auth success)
+    # 1. 8 chars for code: '1','2','3','4','5','6','7','8' (takes user to auth success)
     # 2. Enter dashboard loop. 
     # 3. Press 't' to open theme picker.
     # 4. In theme picker: Press 'ENTER' to select theme.
@@ -237,7 +237,7 @@ def test_handle_session_success_and_navigation(mock_send, mock_get_statuses, moc
     # 7. Press 'o' to sort.
     # 8. Press 'q' to quit.
     mock_read_key.side_effect = [
-        '1', '2', '3', '4', '5', '6',  # auth code
+        '1', '2', '3', '4', '5', '6', '7', '8',  # auth code
         't',                           # open theme picker
         'ENTER',                       # save theme
         'DOWN',                        # select next repo

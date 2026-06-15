@@ -131,17 +131,17 @@ def test_verify_auth_code_success():
     """
     mock_redis = MagicMock()
     mock_redis.get.side_effect = lambda key: (
-        '{"user_id": 42, "username": "test@gmail.com"}' if "ssh_auth_code:ABCDEF" in key
+        '{"user_id": 42, "username": "test@gmail.com"}' if "ssh_auth_code:ABCDEFGH" in key
         else "1" if "ssh_auth_code:user:42" in key
         else None
     )
 
     with patch("ssh_gateway.redis_client", mock_redis), \
          patch("ssh_gateway.audit") as mock_audit:
-        result = ssh_gateway.verify_auth_code("ABC-DEF")
+        result = ssh_gateway.verify_auth_code("ABCD-EFGH")
         
         assert result == {"user_id": 42, "username": "test@gmail.com"}
-        mock_redis.delete.assert_any_call("ssh_auth_code:ABCDEF")
+        mock_redis.delete.assert_any_call("ssh_auth_code:ABCDEFGH")
         mock_redis.decr.assert_called_once_with("ssh_auth_code:user:42")
 
 
@@ -153,7 +153,7 @@ def test_verify_auth_code_not_found():
     mock_redis.get.return_value = None
 
     with patch("ssh_gateway.redis_client", mock_redis):
-        result = ssh_gateway.verify_auth_code("NONEXI")
+        result = ssh_gateway.verify_auth_code("NONEXIST")
         assert result is None
 
 
@@ -161,7 +161,7 @@ def test_verify_auth_code_invalid_length():
     """
     Asserts that verify_auth_code returns None early if the code is invalid.
     """
-    result = ssh_gateway.verify_auth_code("ABC")
+    result = ssh_gateway.verify_auth_code("ABCDEF")
     assert result is None
 
 
