@@ -4116,19 +4116,12 @@ def refine_stream():
                                  db_temp.close()
 
                              if p_user_id:
-                                 # Limit notification body preview
-                                 preview_body = refined_query_result or "Task execution completed successfully."
-                                 # Strip markdown for clean preview
-                                 import re as _re
-                                 preview_body = _re.sub(r'[*#`_\-\[\]]', '', preview_body)
-                                 if len(preview_body) > 120:
-                                     preview_body = preview_body[:117].strip() + "..."
-                                 send_push_notification(
-                                     user_id=p_user_id,
-                                     title="Stellar: Task Completed",
-                                     body=preview_body,
-                                     url=f"/?chat_id={chat_id}"
-                                 )
+                                  send_push_notification(
+                                      user_id=p_user_id,
+                                      title="Stellar: Task Completed",
+                                      body=refined_query_result or "Task execution completed successfully.",
+                                      url=f"/?chat_id={chat_id}"
+                                  )
                          except Exception as push_err:
                              logger.error(f"Failed to dispatch completion push notification: {push_err}")
 
@@ -6000,8 +5993,53 @@ def favicon():
 # -------------------------------------------------------------
 # PWA WEB PUSH NOTIFICATION API
 # -------------------------------------------------------------
+def clean_notification_body(text: str, fallback: str = "Task execution completed successfully.") -> str:
+    """Helper to strip markdown, HTML (Gen UI), styling, scripts, and normalize text for notifications."""
+    if not text:
+        return fallback
+    
+    # 1. Parse with BeautifulSoup to strip HTML tags and their inner styles/scripts
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(text, "html.parser")
+        for tag in soup(["style", "script"]):
+            tag.decompose()
+        text = soup.get_text()
+    except Exception:
+        import re
+        text = re.sub(r'<style\b[^>]*>([\s\S]*?)</style>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'<script\b[^>]*>([\s\S]*?)</script>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', '', text)
+
+    # 2. Strip common markdown patterns
+    import re
+    # Strip links: [text](url) -> text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    # Strip markdown headers (e.g. ### Header)
+    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+    # Strip remaining inline markdown formatting characters
+    text = re.sub(r'[*#`_\-\[\]]', '', text)
+
+    # 3. Clean up whitespace and newlines
+    text = re.sub(r'\s+', ' ', text)
+    
+    cleaned = text.strip()
+    if not cleaned:
+        return fallback
+    if len(cleaned) > 120:
+        cleaned = cleaned[:117].strip() + "..."
+    return cleaned
+
 def send_push_notification(user_id, title, body, url=None):
     """Sends a Web Push notification to all active devices registered by the user in Redis."""
+    if "test" in title.lower():
+        fallback = "Congratulations! Your background push notifications are fully configured and functional."
+    elif "action" in title.lower() or "required" in title.lower():
+        fallback = "Stellar needs your interaction to proceed."
+    else:
+        fallback = "Task execution completed successfully."
+
+    body = clean_notification_body(body, fallback=fallback)
     import redis
     r_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
     redis_key = f"user_push_subscriptions:{user_id}"
