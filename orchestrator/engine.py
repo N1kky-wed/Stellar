@@ -1292,7 +1292,8 @@ Below is the failed build run log/trace. Please analyze it, locate the offending
 
         markdown_content = "\n".join(context_lines)
         
-        host_context_path = "/home/stellaradmin/my_app/orchestrator/memory_context.md"
+        orchestrator_dir = os.path.dirname(config.DB_PATH)
+        host_context_path = os.path.join(orchestrator_dir, "memory_context.md")
         try:
             with open(host_context_path, "w") as f:
                 f.write(markdown_content)
@@ -1310,7 +1311,8 @@ Below is the failed build run log/trace. Please analyze it, locate the offending
             summary (Optional[str]): Output final summary message.
         """
         t0 = time.time()
-        host_outbox_path = "/home/stellaradmin/my_app/orchestrator/memory_outbox.json"
+        orchestrator_dir = os.path.dirname(config.DB_PATH)
+        host_outbox_path = os.path.join(orchestrator_dir, "memory_outbox.json")
         
         copied = container.read_memory_outbox_from_container(host_outbox_path)
         
