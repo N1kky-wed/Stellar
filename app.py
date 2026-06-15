@@ -3920,6 +3920,7 @@ def refine_stream():
 
         def generator_task(cancel_event=None):
             from flask import g
+            from google.genai import types
             g.user_id = user_id
             g.chat_id = chat_id
             g.username = username

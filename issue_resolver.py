@@ -139,6 +139,8 @@ def main():
 
         from app import app
         with app.app_context():
+            TelegramBot = sys.modules[__name__].TelegramBot
+            send_self_email = sys.modules[__name__].send_self_email
             bot = TelegramBot()
             conn = get_db()
 

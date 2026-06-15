@@ -124,6 +124,8 @@ def web_search(
     """
     try:
         from app import TAVILY_API_KEY, TAVILY_BACKUP_API_KEYS
+        import sys
+        TavilyClient = sys.modules[__name__].TavilyClient
         tavily_keys = [TAVILY_API_KEY] + [bk for bk in TAVILY_BACKUP_API_KEYS if bk]
         tavily_keys = [k for k in dict.fromkeys(tavily_keys) if k]
 
