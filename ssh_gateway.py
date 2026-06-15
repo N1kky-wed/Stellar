@@ -13,7 +13,7 @@ Flow:
 
 Security:
   - No host system shell access (custom SSH server, not OpenSSH)
-  - Device-code auth via Redis (one-time, 5-min TTL)
+  - Device-code auth via Redis (one-time, 1-min TTL)
   - Rate limiting per IP (connections + failed auths)
   - Session idle timeout (30 min)
   - All SSH forwarding disabled (port/agent/X11/TCP)
@@ -78,7 +78,7 @@ LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
 
 # Security tuning
 MAX_AUTH_ATTEMPTS = 3           # Max wrong codes per session
-AUTH_CODE_TTL = 300             # 5 minutes
+AUTH_CODE_TTL = 60              # 1 minute
 SESSION_IDLE_TIMEOUT = 1800    # 30 minutes
 RATE_LIMIT_CONNECTIONS = 10    # Max connections per IP per window
 RATE_LIMIT_WINDOW = 900        # 15 minutes
@@ -458,13 +458,13 @@ def verify_auth_code(code: str) -> dict | None:
     decrements the active code count, and records the event to the audit log.
 
     Args:
-        code (str): The 6-character authentication code entered by the user.
+        code (str): The 8-character authentication code entered by the user.
 
     Returns:
         dict | None: The user session info dictionary containing user_id and username if valid; None otherwise.
     """
     clean_code = code.strip().replace('-', '').replace(' ', '').upper()
-    if len(clean_code) != 6:
+    if len(clean_code) != 8:
         return None
 
     try:
@@ -932,7 +932,7 @@ class TUI:
     @staticmethod
     def auth_screen(width: int, height: int, typed_code: str = "", error_msg: str = "", theme: dict = None) -> str:
         """
-        Render the authentication screen where the user enters their 6-digit one-time access code.
+        Render the authentication screen where the user enters their 8-digit one-time access code.
 
         Args:
             width (int): Current terminal column width.
@@ -953,13 +953,13 @@ class TUI:
         
         # Format code
         display_chars = []
-        for i in range(6):
+        for i in range(8):
             if i < len(typed_code):
                 display_chars.append(f"[bold {theme['accent']}]{typed_code[i]}[/bold {theme['accent']}]")
             else:
                 display_chars.append(f"[{theme['dim']}]_[/{theme['dim']}]")
                 
-        formatted = f"{display_chars[0]} {display_chars[1]} {display_chars[2]} [{theme['dim']}]-[/{theme['dim']}] {display_chars[3]} {display_chars[4]} {display_chars[5]}"
+        formatted = f"{display_chars[0]} {display_chars[1]} {display_chars[2]} {display_chars[3]} [{theme['dim']}]-[/{theme['dim']}] {display_chars[4]} {display_chars[5]} {display_chars[6]} {display_chars[7]}"
         content.append(Text.from_markup(f"Enter Code: {formatted}"))
         
         if error_msg:
@@ -1752,7 +1752,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
 
             code = ""
             first_draw = True
-            while len(code) < 6:
+            while len(code) < 8:
                 # Clear screen on first draw of auth screen to remove anything previous
                 draw(TUI.auth_screen(server.term_width, server.term_height, typed_code=code, error_msg=error_msg, theme=active_theme), clear=first_draw)
                 first_draw = False
@@ -1774,9 +1774,9 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                     for char in key.upper():
                         if char in (" ", "-"):
                             continue
-                        if char.isalnum() and len(code) < 6:
+                        if char.isalnum() and len(code) < 8:
                             code += char
-                        if len(code) == 6:
+                        if len(code) == 8:
                             break
 
             # Verify

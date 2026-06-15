@@ -5062,8 +5062,8 @@ def logout_user():
 # ===================== SSH Authentication Code Routes =====================
 
 _SSH_CODE_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-_SSH_CODE_LENGTH = 6
-_SSH_CODE_TTL = 300  # 5 minutes
+_SSH_CODE_LENGTH = 8
+_SSH_CODE_TTL = 60  # 1 minute
 _SSH_MAX_CODES_PER_USER = 5
 _SSH_VERIFY_FAIL_LIMIT = 10
 _SSH_VERIFY_FAIL_WINDOW = 900  # 15 minutes
@@ -5406,7 +5406,7 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
 
             <div class="code-display" id="codeBox">
                 <div class="code-label">Your Access Code</div>
-                <div class="code-value" id="codeValue">------</div>
+                <div class="code-value" id="codeValue">--------</div>
                 <button class="copy-btn" id="copyBtn" onclick="copyCode()" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
                     <svg class="copy-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -5414,7 +5414,7 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
                     </svg>
                     <span>Copy Code</span>
                 </button>
-                <div class="timer">Expires in <span id="countdown">5:00</span></div>
+                <div class="timer">Expires in <span id="countdown">1:00</span></div>
                 <div class="instructions">Paste this code in your SSH terminal to authenticate.</div>
             </div>
 
@@ -5498,7 +5498,7 @@ async function generateCode() {
     document.getElementById('codeBox').style.display = 'block';
     btn.textContent = 'Generate New Code';
     btn.disabled = false;
-    startTimer(300);
+    startTimer(60);
   } catch (e) {
     errMsg.textContent = 'Network error. Please try again.';
     errMsg.style.display = 'block';
@@ -5603,8 +5603,8 @@ def ssh_generate_code():
     pipe.expire(user_code_key, _SSH_CODE_TTL)
     pipe.execute()
 
-    # Format as XXX-XXX for display
-    display_code = f'{code[:3]}-{code[3:]}'
+    # Format as XXXX-XXXX for display
+    display_code = f'{code[:4]}-{code[4:]}'
     logger.info("SSH auth code generated user_id=%s username=%s", user_id, username)
     return jsonify({'code': display_code}), 200
 
