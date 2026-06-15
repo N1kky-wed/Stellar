@@ -19,9 +19,11 @@ def temp_db():
 
 @pytest.fixture
 def mock_dependencies():
-    with patch('orchestrator.engine.MemoryDB') as mock_mem:
-        with patch('orchestrator.engine.container') as mock_container:
-            yield mock_mem, mock_container
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with patch('orchestrator.config.HOST_AGENTS_DIR', temp_dir):
+            with patch('orchestrator.engine.MemoryDB') as mock_mem:
+                with patch('orchestrator.engine.container') as mock_container:
+                    yield mock_mem, mock_container
 
 def test_check_and_trigger_mercury_no_run_or_no_failures(temp_db, mock_dependencies):
     """Asserts that _check_and_trigger_mercury returns False when an agent is running or no failures exist."""
