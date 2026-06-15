@@ -1,7 +1,13 @@
 import os
-import requests
 import logging
 import time
+
+# Lazy load requests when accessed externally (e.g. mock patching in tests)
+def __getattr__(name):
+    if name == 'requests':
+        import requests
+        return requests
+    raise AttributeError(f"module {__name__} has no attribute {name}")
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +19,7 @@ class TelegramBot:
         self.last_update_id = 0
 
     def get_updates(self, offset=None):
+        import requests
         if not self.token:
             return None
         try:
@@ -60,6 +67,7 @@ class TelegramBot:
         return None
 
     def send_message(self, text):
+        import requests
         if not self.token:
              logger.warning("Telegram token not set. Skipping message.")
              return

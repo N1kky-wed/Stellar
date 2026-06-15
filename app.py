@@ -1,7 +1,7 @@
-import smtplib
-from email.message import EmailMessage
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
+# Refactored imports to improve speed and manageability:
+# Heavy imports (smtplib, email.message, google.oauth2, google.auth.transport,
+# google.genai, cryptography.fernet, twilio.rest, redis, docker, pypandoc, tavily, webscrapper)
+# have been removed from the global scope and are now loaded lazily inside functions where needed.
 import threading
 from werkzeug.utils import secure_filename
 import queue
@@ -18,27 +18,89 @@ import uuid
 import socket
 import ipaddress
 from pathlib import Path
-from google import genai
-import pypandoc
 from dotenv import load_dotenv
-import webscrapper
-from tavily import TavilyClient
 import datetime
-from google.genai import types
-import requests
-import docker
+
 import tempfile
 import atexit
 import shutil
 from itertools import cycle
-from cryptography.fernet import Fernet
-from twilio.rest import Client
-from twilio.base.exceptions import TwilioRestException
-import redis
 import secrets
 from prompts import (
     get_refinement_prompt
 )
+
+# Lazy loading proxies to avoid importing heavy libraries on startup
+class LazyRedis:
+    """
+    Lazy proxy for redis.StrictRedis to delay importing 'redis' until first access.
+    """
+    def __init__(self, *args, **kwargs):
+        self._args = args
+        self._kwargs = kwargs
+        self._client = None
+
+    def _init_client(self):
+        if self._client is None:
+            # Inline import of redis to speed up startup time
+            import redis
+            self._client = redis.StrictRedis(*self._args, **self._kwargs)
+        return self._client
+
+    def __getattr__(self, name):
+        client = self._init_client()
+        return getattr(client, name)
+
+class LazyFernet:
+    """
+    Lazy proxy for cryptography.fernet.Fernet to delay importing 'cryptography' until first access.
+    """
+    def __init__(self, key):
+        self._key = key
+        self._fernet = None
+
+    def _get_fernet(self):
+        if self._fernet is None:
+            # Inline import of Fernet to speed up startup time
+            from cryptography.fernet import Fernet
+            self._fernet = Fernet(self._key)
+        return self._fernet
+
+    def encrypt(self, *args, **kwargs):
+        return self._get_fernet().encrypt(*args, **kwargs)
+
+    def decrypt(self, *args, **kwargs):
+        return self._get_fernet().decrypt(*args, **kwargs)
+
+def __getattr__(name):
+    """
+    Lazy module attribute resolution to support mock patching in unit tests.
+    """
+    if name == 'genai':
+        from google import genai
+        return genai
+    if name == 'types':
+        from google.genai import types
+        return types
+    if name == 'requests':
+        import requests
+        return requests
+    if name == 'id_token':
+        from google.oauth2 import id_token
+        return id_token
+    if name == 'google_requests':
+        from google.auth.transport import requests as google_requests
+        return google_requests
+    if name == 'webscrapper':
+        import webscrapper
+        return webscrapper
+    if name == 'smtplib':
+        import smtplib
+        return smtplib
+    if name == 'EmailMessage':
+        from email.message import EmailMessage
+        return EmailMessage
+    raise AttributeError(f"module {__name__} has no attribute {name}")
 
 thread_local_ctx = threading.local()
 
@@ -108,28 +170,42 @@ def patched_create_connection(address, *args, **kwargs):
 
 connection.create_connection = patched_create_connection
 
-redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
-# Enable Redis keyspace notifications for the admin key-health SSE stream.
-# K = keyspace events, s = string SET commands, x = key expiry.
-try:
-    redis_client.config_set('notify-keyspace-events', 'Ksx')
-except Exception as _kn_err:
-    pass  # Non-fatal: SSE will still work via client-side timers
-
-client = None
-try:
-    client = docker.from_env()
-    client.ping()
-    logger.info("Successfully connected to Docker daemon on startup.")
+if os.environ.get('TESTING') == 'true':
+    import redis
+    redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+    import docker
     try:
-        client.networks.get("stellar_isolated")
-        logger.info("Found existing 'stellar_isolated' network.")
-    except docker.errors.NotFound:
-        logger.info("Creating 'stellar_isolated' network with ICC disabled.")
-        client.networks.create("stellar_isolated", driver="bridge", options={"com.docker.network.bridge.enable_icc": "false"})
-except Exception as e:
-    logger.exception("Docker initialization failed on startup")
-    logger.error(f"Could not connect to Docker daemon on startup. Please ensure Docker is running. Code execution will fail. Error: {e}")
+        client = docker.from_env()
+    except Exception:
+        client = None
+else:
+    redis_client = LazyRedis(host='localhost', port=6379, db=0, decode_responses=True)
+    client = None
+
+    def _setup_redis_notifications():
+        try:
+            redis_client.config_set('notify-keyspace-events', 'Ksx')
+        except Exception as _kn_err:
+            pass
+
+    def _async_startup_setup():
+        _setup_redis_notifications()
+        global client
+        try:
+            import docker
+            client = docker.from_env()
+            client.ping()
+            logger.info("Successfully connected to Docker daemon on startup.")
+            try:
+                client.networks.get("stellar_isolated")
+                logger.info("Found existing 'stellar_isolated' network.")
+            except docker.errors.NotFound:
+                logger.info("Creating 'stellar_isolated' network with ICC disabled.")
+                client.networks.create("stellar_isolated", driver="bridge", options={"com.docker.network.bridge.enable_icc": "false"})
+        except Exception as e:
+            logger.error(f"Could not connect to Docker daemon on startup. Code execution will fail. Error: {e}")
+
+    threading.Thread(target=_async_startup_setup, daemon=True).start()
 
 from functools import wraps
 
@@ -166,8 +242,8 @@ def require_approval(f):
 
 def ensure_user_network(docker_client, user_id):
     """
-    Ensure that a private, isolated bridge network exists for the given user ID.
-    If the network does not exist, it is created with inter-container communication (ICC) disabled.
+    Ensure that an isolated Docker bridge network exists for the given user.
+    This limits inter-sandbox container communications.
 
     Args:
         docker_client (docker.DockerClient): The Docker client instance.
@@ -176,6 +252,7 @@ def ensure_user_network(docker_client, user_id):
     Returns:
         str: The name of the user network, or "stellar_isolated" if no user_id is provided.
     """
+    import docker
     if not user_id:
         return "stellar_isolated"
     network_name = f"stellar_net_{user_id}"
@@ -333,6 +410,9 @@ def login_google():
         # For Firebase, the audience is the Firebase Project ID
         # and the issuer must be https://securetoken.google.com/<project_id>
         try:
+            # Inline import of google.oauth2 and google.auth.transport to avoid startup overhead
+            from google.oauth2 import id_token
+            from google.auth.transport import requests as google_requests
             t_verify = time.time()
             id_info = id_token.verify_firebase_token(
                 token,
@@ -436,7 +516,7 @@ app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SESSION_TYPE'] = 'redis'
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'stellar:session:'
-app.config['SESSION_REDIS'] = redis.StrictRedis(host='localhost', port=6379, db=1)
+app.config['SESSION_REDIS'] = LazyRedis(host='localhost', port=6379, db=1)
 
 Session(app)
 
@@ -843,7 +923,7 @@ def get_or_create_encryption_key():
     return key
 
 ENCRYPTION_KEY = get_or_create_encryption_key()
-cipher_suite = Fernet(ENCRYPTION_KEY)
+cipher_suite = LazyFernet(ENCRYPTION_KEY)
 
 
 def _fetchone_as_dict(cursor):
@@ -1604,6 +1684,8 @@ def generate_chat_name(chat_id, first_message_content):
     with app.app_context():
         db = get_db()
         try:
+            # Inline import to avoid startup overhead
+            from google import genai
             prompt = f"Given the following first message of a conversation, generate a very short, descriptive name (max 5 words) for this chat. Respond only with the name.\n\nMessage: {first_message_content}"
             model_name = "gemini-3.1-flash-lite"
 
@@ -1701,6 +1783,9 @@ def count_chat_tokens(chat_id=None):
     Returns:
         int: The estimated total token count.
     """
+    # Inline import to avoid startup overhead
+    from google import genai
+    from google.genai import types
     db = get_db()
     try:
         # Get user_id for memory retrieval
@@ -2025,6 +2110,8 @@ def scrape_url(url: str) -> str:
             pass
 
         try:
+            # Inline import of webscrapper to avoid startup overhead
+            import webscrapper
             apron=webscrapper.scrape_url(url)
             logger.info("Scraped URL successfully url=%s content_length=%d", url, len(apron) if apron else 0)
             return apron
@@ -2063,6 +2150,8 @@ def is_output_cut_off(text: str, key: str) -> bool:
     )
 
     try:
+        # Inline import of genai to avoid startup overhead
+        from google import genai
         client = genai.Client(api_key=key, http_options={'api_version': 'v1beta'})
         chat = client.chats.create(model='gemini-3.1-flash-lite', config={'tools': []})
         t0 = time.time()
@@ -2109,6 +2198,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
         str: Streamed response chunks/tokens or tool execution log strings.
     """
     from flask import g
+    # Inline import of genai and types to avoid startup overhead
+    from google import genai
+    from google.genai import types
     g.model_id = model_id # Set ground-truth model for tools
     display_name = model_display_name or MODEL_NAMES.get(model_id)
     if isinstance(prompt, str):
@@ -3043,6 +3135,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
         row = cursor.fetchone()
         if row: user_id = row['user_id']
 
+    import docker
     client = docker.from_env()
     user_network = ensure_user_network(client, user_id)
 
@@ -4391,6 +4484,7 @@ def clear_history():
 @app.route('/image-proxy')
 @require_approval
 def image_proxy():
+    import requests
     from urllib.parse import urlparse
 
     image_url = request.args.get('url')
@@ -4558,6 +4652,9 @@ def serve_turndown():
     return send_from_directory('static', 'turndown.js')
 
 def send_approval_email(recipient_email, display_name):
+    # Inline import of smtplib and EmailMessage to avoid startup overhead
+    import smtplib
+    from email.message import EmailMessage
     sender = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASS")
 
@@ -4611,6 +4708,9 @@ def send_approval_email(recipient_email, display_name):
         logger.error(f"FAILURE sending approval email to {recipient_email} duration_sec={duration:.3f}: {str(e)}")
 
 def send_revocation_email(recipient_email, display_name):
+    # Inline import of smtplib and EmailMessage to avoid startup overhead
+    import smtplib
+    from email.message import EmailMessage
     sender = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASS")
 
@@ -5798,6 +5898,7 @@ def api_count_tokens():
         return jsonify({'token_count': 0}), 200
 
     try:
+        from google import genai
         from google.genai import types
         raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
         keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
@@ -5842,6 +5943,7 @@ def api_count_tokens():
 @app.route('/api/utils/check_url', methods=['GET'])
 @require_approval
 def api_check_url():
+    import requests
     url = request.args.get('url')
     if not url:
         return jsonify({'error': 'Missing url parameter'}), 400
@@ -7550,6 +7652,8 @@ class OrphanContainerMonitor:
         stopping and removing those that are no longer tracked as active,
         and querying health status endpoints for those that are.
         """
+        import docker
+        import requests
         if not client:
             return
 
@@ -7644,6 +7748,7 @@ def cleanup_stale_containers():
     Locate and clean up any stale Docker containers and update database execution
     history statuses to 'stopped' during server startup.
     """
+    import docker
     try:
         # Reset only very old statuses in the database to 'stopped' on startup
         try:
@@ -7758,6 +7863,7 @@ def update_last_active():
 
 @app.before_request
 def intercept_subdomains():
+    import requests
     # Don't intercept sentinel API calls — they must reach the main app
     if request.path.startswith('/api/sentinel/'):
         return None

@@ -1,14 +1,11 @@
 import time
 import uuid
-import requests
 import json
 import base64
 import os
 import re
-from tavily import TavilyClient
-import asyncio
-from google import genai
-from google.genai import types
+
+# Heavy imports (tavily, genai, types, asyncio) have been removed from the global scope and are loaded lazily.
 
 import logging
 logger = logging.getLogger(__name__)
@@ -543,6 +540,8 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
     import os
     import mimetypes
     import uuid
+    from google import genai
+    from google.genai import types
     
     raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
@@ -881,6 +880,8 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
     from io import BytesIO
     from app import PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER, parse_quota_block_duration
     from pydantic import BaseModel, Field
+    from google import genai
+    from google.genai import types
     
     raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
@@ -1060,6 +1061,7 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
 
 def regenerate_presentation_slide(presentation_id: str, slide_index: int, status: str, timeout: int, topic: str = "", style: str = "", additional_context: str = "", feedback: str = "") -> str:
     """Regenerate a specific slide of an existing presentation based on feedback.
+    
     Args:
         presentation_id: the ID of the presentation
         slide_index: 0-based index of the slide to regenerate
@@ -1069,6 +1071,9 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
         additional_context: original context
         feedback: specific feedback for this slide's improvement
     """
+    # Inline import of genai and types to avoid startup overhead
+    from google import genai
+    from google.genai import types
     import os
     import json
     import asyncio
@@ -1918,6 +1923,7 @@ def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "
         model_id: (Internal) The model to use for analysis.
     """
     from app import PRIMARY_API_KEY, YOUTUBE_API_KEY
+    import requests
     
     if action == "search":
         if not YOUTUBE_API_KEY:
@@ -1982,6 +1988,9 @@ def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "
     if not video_url:
         return "Error: 'video_url' is required for the 'analyze' action."
 
+    # Inline import of genai and types to avoid startup overhead
+    from google import genai
+    from google.genai import types
     from app import PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER, parse_quota_block_duration
     raw_keys = [PRIMARY_API_KEY] + [bk for bk in BACKUP_API_KEYS if bk]
     keys_to_try = [k for k in dict.fromkeys(raw_keys) if k]
@@ -2279,3 +2288,21 @@ available_tools = [
     obtain_talent,
     compress_memory
 ]
+
+def __getattr__(name):
+    """
+    Lazy module attribute resolution to support mock patching in unit tests.
+    """
+    if name == 'TavilyClient':
+        from tavily import TavilyClient
+        return TavilyClient
+    if name == 'genai':
+        from google import genai
+        return genai
+    if name == 'types':
+        from google.genai import types
+        return types
+    if name == 'requests':
+        import requests
+        return requests
+    raise AttributeError(f"module {__name__} has no attribute {name}")
