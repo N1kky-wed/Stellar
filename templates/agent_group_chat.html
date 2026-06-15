@@ -2023,6 +2023,10 @@
           return;
         }
 
+        const elapsedHours = data.last_updated
+          ? Math.max(0, (Date.now() - new Date(data.last_updated)) / 3600000)
+          : 0;
+
         document.getElementById("quotaLastUpdated").textContent =
           data.last_updated
             ? new Date(data.last_updated).toLocaleString()
@@ -2072,7 +2076,7 @@
         // Gemini Recovery Math
         const gPct = data.gemini.weekly_percent || 100.0;
         const gRef = data.gemini.weekly_refreshes_in_hours || 0.0;
-        let geminiWaitHours = Math.max(0.0, gRef - 1.68 * gPct);
+        let geminiWaitHours = Math.max(0.0, (gRef - elapsedHours) - 1.68 * gPct);
         let geminiRecoveryDate = new Date(Date.now() + geminiWaitHours * 3600000);
 
         if (data.gemini_cooldown_until) {
@@ -2177,7 +2181,7 @@
         // Claude Recovery Math
         const cPct = data.claude.weekly_percent || 100.0;
         const cRef = data.claude.weekly_refreshes_in_hours || 0.0;
-        let claudeWaitHours = Math.max(0.0, cRef - 1.68 * cPct);
+        let claudeWaitHours = Math.max(0.0, (cRef - elapsedHours) - 1.68 * cPct);
         let claudeRecoveryDate = new Date(Date.now() + claudeWaitHours * 3600000);
 
         if (data.claude_cooldown_until) {
@@ -2262,7 +2266,7 @@
         const now = new Date();
         const gCost = data.gemini_avg_cost !== undefined ? data.gemini_avg_cost : 1.2;
         let simGPct = (data.gemini && data.gemini.weekly_percent !== undefined) ? data.gemini.weekly_percent : 100.0;
-        let simGRef = (data.gemini && data.gemini.weekly_refreshes_in_hours) || 0.0;
+        let simGRef = Math.max(0.0, ((data.gemini && data.gemini.weekly_refreshes_in_hours) || 0.0) - elapsedHours);
         
         let simGHardCooldown = 0;
         if (data.gemini_cooldown_until) {
@@ -2274,7 +2278,7 @@
 
         const cCost = data.claude_avg_cost !== undefined ? data.claude_avg_cost : 3.0;
         let simCPct = (data.claude && data.claude.weekly_percent !== undefined) ? data.claude.weekly_percent : 100.0;
-        let simCRef = (data.claude && data.claude.weekly_refreshes_in_hours) || 0.0;
+        let simCRef = Math.max(0.0, ((data.claude && data.claude.weekly_refreshes_in_hours) || 0.0) - elapsedHours);
         
         let simCHardCooldown = 0;
         if (data.claude_cooldown_until) {
