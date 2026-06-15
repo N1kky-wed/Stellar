@@ -38,8 +38,26 @@ import shutil
 from io import StringIO
 from datetime import datetime
 
-import redis
-import docker
+# Lazy loading proxy to avoid importing redis on startup
+class LazyRedis:
+    """
+    Lazy proxy for redis.Redis to delay importing 'redis' until first access.
+    """
+    def __init__(self, *args, **kwargs):
+        self._args = args
+        self._kwargs = kwargs
+        self._client = None
+
+    def _init_client(self):
+        if self._client is None:
+            import redis
+            self._client = redis.Redis(*self._args, **self._kwargs)
+        return self._client
+
+    def __getattr__(self, name):
+        client = self._init_client()
+        return getattr(client, name)
+
 from rich.console import Console, Group
 from rich.table import Table
 from rich.panel import Panel
@@ -120,7 +138,11 @@ active_sessions = 0
 sessions_lock = threading.Lock()
 
 # Shared Redis client connection pool to prevent socket descriptor leaks and connection overhead
-redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+if os.environ.get('TESTING') == 'true':
+    import redis
+    redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+else:
+    redis_client = LazyRedis(host='localhost', port=6379, db=0, decode_responses=True)
 
 def get_console(width: int) -> Console:
     """Get a thread-local Console instance to avoid expensive creation overhead."""
@@ -378,6 +400,7 @@ def get_container(client, process_id: str, app_type: str):
     Returns:
         docker.models.containers.Container: The container instance matching the process ID.
     """
+    import docker
     try:
         return client.containers.get(f"stellar-{app_type}-{process_id}")
     except docker.errors.NotFound:
@@ -398,6 +421,7 @@ def get_docker_client():
     if _docker_client is None:
         with _docker_client_lock:
             if _docker_client is None:
+                import docker
                 _docker_client = docker.from_env()
     return _docker_client
 
@@ -1347,6 +1371,7 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
         user_id (int): The ID of the authenticated user.
     """
     try:
+        import docker
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
@@ -1477,6 +1502,7 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
         str: Success or failure status message.
     """
     try:
+        import docker
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
@@ -1515,6 +1541,7 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
         str: Success or failure status message.
     """
     try:
+        import docker
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
@@ -1553,6 +1580,7 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
         str: Success or failure status message.
     """
     try:
+        import docker
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
         container = get_container(client, process_id, app_type)

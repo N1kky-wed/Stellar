@@ -29,8 +29,18 @@ keys_env_path = os.path.join(script_dir, 'keys.env')
 if os.path.exists(keys_env_path):
     load_dotenv(dotenv_path=keys_env_path, override=True)
 
-from agent_tools import send_self_email
-from telegram_bot import TelegramBot
+if os.environ.get('TESTING') == 'true':
+    from agent_tools import send_self_email
+    from telegram_bot import TelegramBot
+else:
+    def __getattr__(name):
+        if name == 'send_self_email':
+            from agent_tools import send_self_email
+            return send_self_email
+        if name == 'TelegramBot':
+            from telegram_bot import TelegramBot
+            return TelegramBot
+        raise AttributeError(f"module {__name__} has no attribute {name}")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 logger = logging.getLogger(__name__)

@@ -3,7 +3,6 @@
 Utilities for checking, parsing, and management of agent API quotas.
 Communicates with the docker container's CLI to read the /usage stats.
 """
-import pexpect
 import sys
 import time
 import re
@@ -178,6 +177,9 @@ def fetch_quota_data_from_container(model: str = "Claude Sonnet 4.6 (Thinking)")
     Returns:
         str: Raw output string captured from the command.
     """
+    # Inline import of pexpect to speed up startup time
+    import pexpect
+
     cmd = f'docker exec -it stellar-persistent /root/.local/bin/agy --model "{model}" --dangerously-skip-permissions'
     logger.info(f"Running pexpect command inside container: {cmd}")
     
