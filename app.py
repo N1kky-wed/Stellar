@@ -917,6 +917,7 @@ def get_or_create_encryption_key():
         with open(key_path, 'rb') as key_file:
             key = key_file.read()
     else:
+        from cryptography.fernet import Fernet
         key = Fernet.generate_key()
         with open(key_path, 'wb') as key_file:
             key_file.write(key)
