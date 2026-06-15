@@ -482,6 +482,11 @@ class OrchestratorEngine:
             self._check_running_agent(now)
             return
 
+        # 1.5 Check for CI/CD failures on pending PRs and trigger Mercury (bypasses cooldown)
+        mercury_triggered = self._check_and_trigger_mercury(now)
+        if mercury_triggered:
+            return
+
         # 2. Always check for merged PRs and trigger service reloads — even during cooldown.
         #    Agent fixes should be deployed immediately regardless of quota state.
         next_agent = self._check_for_merge_trigger()
@@ -859,8 +864,11 @@ class OrchestratorEngine:
         """
         for i, agent in enumerate(config.AGENT_PIPELINE):
             if agent['id'] == current_agent_id:
-                next_idx = (i + 1) % len(config.AGENT_PIPELINE)
-                return config.AGENT_PIPELINE[next_idx]
+                for offset in range(1, len(config.AGENT_PIPELINE) + 1):
+                    next_idx = (i + offset) % len(config.AGENT_PIPELINE)
+                    candidate = config.AGENT_PIPELINE[next_idx]
+                    if candidate['schedule'] != "event-based":
+                        return candidate
         return None
 
     def _get_due_agent(self, now: datetime) -> Optional[Dict[str, Any]]:
@@ -874,6 +882,8 @@ class OrchestratorEngine:
         """Checks schedules to see if any agent is due to run and hasn't successfully completed today."""
         for agent in config.AGENT_PIPELINE:
             sched_str = agent['schedule']
+            if sched_str == "event-based":
+                continue
             sched_time = datetime.strptime(sched_str, "%H:%M").time()
             sched_dt = datetime.combine(now.date(), sched_time).replace(tzinfo=IST)
 
@@ -981,6 +991,211 @@ class OrchestratorEngine:
             self.state_db.fail_run(self.current_run_id, now_str, str(e), summary_message=f"Failed to start agent: {e}")
             container.unload_agent_prompt()
             self._clear_active_run()
+
+    def _check_and_trigger_mercury(self, now: datetime) -> bool:
+        """
+        Checks pending PRs for CI/CD failures or merge conflicts, and launches Mercury to heal.
+        Bypasses quota cooldown checks.
+        Returns:
+            bool: True if Mercury was started, False otherwise.
+        """
+        pending_runs = self.state_db.get_pending_prs()
+        for run in pending_runs:
+            pr_num = run['pr_number']
+            if not pr_num:
+                continue
+
+            # Check CI status of this PR
+            try:
+                ci_info = container.check_pr_ci_status(pr_num)
+            except Exception as e:
+                logger.error("Failed to check CI/CD status for PR #%d: %s", pr_num, e)
+                continue
+
+            status_type = ci_info['status']
+            head_sha = ci_info.get('head_sha')
+
+            if status_type == 'conflict':
+                if not head_sha:
+                    continue
+                # For conflicts, the state key uses head_sha to prevent double triggers
+                state_key = f"mercury_healed_conflict_{head_sha}"
+                if self.state_db.get_state(state_key) == "triggered":
+                    continue
+
+                # Trigger Mercury!
+                logger.info("MERGE CONFLICT DETECTED: PR #%d has merge conflicts (head commit: %s). Launching Mercury to rebase!", pr_num, head_sha)
+                
+                # Mark this run as triggered
+                self.state_db.set_state(state_key, "triggered")
+
+                # Post a system message in the chat
+                self.memory_db.add_message(
+                    channel="group",
+                    sender_id="orchestrator",
+                    content=f"🚨 **Merge conflict detected** for PR #{pr_num} (branch: `{run['branch_name']}`).\n"
+                            f"Starting **Mercury (Reliability Engineer)** to perform git rebase and resolve conflicts. 🔀",
+                    message_type="system"
+                )
+
+                # Launch Mercury to resolve conflict
+                self._start_mercury(run['branch_name'], pr_num, conflict=True, model_name=run['model'])
+                return True
+
+            elif status_type == 'failure':
+                run_id = ci_info['run_id']
+                if not run_id:
+                    logger.warning("PR #%d failed CI/CD, but no run ID could be extracted. Output: %s", pr_num, ci_info['raw_output'])
+                    continue
+
+                # Check if we already triggered Mercury for this run_id
+                state_key = f"mercury_healed_run_{run_id}"
+                if self.state_db.get_state(state_key) == "triggered":
+                    continue
+
+                # Trigger Mercury!
+                logger.info("CI/CD FAILURE DETECTED: PR #%d failed CI/CD on run %s. Launching Mercury to heal!", pr_num, run_id)
+                
+                # Retrieve the failed run log/trace
+                error_trace = None
+                try:
+                    error_trace = container.get_run_failed_log(run_id)
+                except Exception as e:
+                    logger.error("Failed to fetch run logs for run_id=%s: %s", run_id, e)
+                
+                if not error_trace:
+                    error_trace = "Failed to retrieve logs. Please run tests or compile locally to diagnose."
+
+                # Mark this run as triggered to avoid double triggers
+                self.state_db.set_state(state_key, "triggered")
+
+                # Post a system message in the chat
+                self.memory_db.add_message(
+                    channel="group",
+                    sender_id="orchestrator",
+                    content=f"🚨 **CI/CD build failed** for PR #{pr_num} (branch: `{run['branch_name']}`).\n"
+                            f"Starting **Mercury (Reliability Engineer)** to diagnose and heal the failure. 🩺",
+                    message_type="system"
+                )
+
+                # Launch Mercury on the same branch
+                self._start_mercury(run['branch_name'], pr_num, error_trace=error_trace, model_name=run['model'])
+                return True
+
+        return False
+
+    def _start_mercury(self, branch_name: str, pr_number: int, error_trace: Optional[str] = None, conflict: bool = False, model_name: Optional[str] = None):
+        """
+        Launches Mercury agent run to heal a failed CI/CD pipeline or resolve conflicts on a branch.
+        """
+        self.current_agent_id = "mercury"
+        self.branch_name = branch_name
+        self.current_model = model_name or config.MODEL_GEMINI
+        self.prompt_file = "mercury_temp.md"
+        self.agent_start_time = datetime.now(IST)
+
+        logger.info("Mercury: Preparing execution on branch=%s model=%s type=%s", branch_name, self.current_model, "conflict" if conflict else "failure")
+
+        # 1. Read base prompt from mercury.md
+        base_prompt_path = os.path.join(config.HOST_AGENTS_DIR, "mercury.md")
+        base_prompt = ""
+        if os.path.exists(base_prompt_path):
+            with open(base_prompt_path, "r", encoding="utf-8") as f:
+                base_prompt = f.read()
+        else:
+            base_prompt = "You are Mercury, the Reliability Engineer. Repair the build error or merge conflict."
+
+        # 2. Append the dynamic CI/CD context or conflict context
+        if conflict:
+            dynamic_context = f"""
+
+═══════════════════════════════════════════════════════════════════════════════
+
+MERGE CONFLICT CONTEXT (AUTO-INJECTED)
+
+The pull request has FAILED to auto-merge due to conflicts with the target branch ('main').
+• Target Branch: {branch_name}
+• Pull Request: #{pr_number}
+
+OBJECTIVE:
+You must perform a git rebase against the latest origin/main and resolve any conflicts that arise:
+1. Fetch main from origin: `git fetch origin main`
+2. Attempt to rebase: `git rebase origin/main`
+3. If rebasing pauses with conflicts, check the conflicting files using `git status`.
+4. Open the conflicting files and resolve the merge conflict markers (marked with `<<<<<<< HEAD`, `=======`, and `>>>>>>>`). Ensure the code remains functionally correct.
+5. After resolving the conflicts in a file, add/stage the changes: `git add <resolved_file>`
+6. Continue the rebase: `git rebase --continue` (repeat if there are further conflict steps).
+7. Once rebase is complete, verify the code compiled and tests pass locally using verification commands.
+8. Force push the resolved branch to origin to update the PR: `git push --force-with-lease origin {branch_name}`.
+"""
+        else:
+            dynamic_context = f"""
+
+═══════════════════════════════════════════════════════════════════════════════
+
+CI/CD FAILURE CONTEXT (AUTO-INJECTED)
+
+The CI/CD build for this pull request has FAILED.
+• Target Branch: {branch_name}
+• Pull Request: #{pr_number}
+
+Below is the failed build run log/trace. Please analyze it, locate the offending files/lines, and make the necessary edits/fixes to ensure tests pass and the code compiles:
+
+```text
+{error_trace}
+```
+"""
+
+        dynamic_prompt = f"{base_prompt}{dynamic_context}"
+
+        # 3. Write dynamic prompt to temp file on host
+        temp_prompt_path = os.path.join(config.HOST_AGENTS_DIR, "mercury_temp.md")
+        with open(temp_prompt_path, "w", encoding="utf-8") as f:
+            f.write(dynamic_prompt)
+
+        # Register in database
+        quota_start_percent = None
+        try:
+            quota_json = self.state_db.get_state("quota_data")
+            if quota_json:
+                quota_dict = json.loads(quota_json)
+                model_key = "gemini" if self.current_model == config.MODEL_GEMINI else "claude"
+                quota_start_percent = quota_dict.get(model_key, {}).get("weekly_percent")
+        except Exception as e:
+            logger.error("Failed to extract starting quota for Mercury: %s", e)
+
+        self.current_run_id = self.state_db.start_run(
+            agent_id="mercury",
+            branch_name=branch_name,
+            started_at=self.agent_start_time.isoformat(),
+            quota_start_percent=quota_start_percent,
+            model=self.current_model
+        )
+
+        try:
+            # Prepare memory context
+            self._prepare_and_load_memory_context("mercury")
+
+            # Start agent process using container api
+            self.current_process = container.run_agent(
+                agent_id="mercury",
+                prompt_file="mercury_temp.md",
+                branch_name=branch_name,
+                model_name=self.current_model
+            )
+        except Exception as e:
+            logger.error("Failed to start Mercury agent run_id=%s error=%s", self.current_run_id, str(e))
+            now_str = datetime.now(IST).isoformat()
+            self.state_db.fail_run(self.current_run_id, now_str, str(e), summary_message=f"Failed to start healer agent: {e}")
+            container.unload_agent_prompt()
+            self._clear_active_run()
+        finally:
+            # Clean up temp file from host immediately after Popen returns
+            if os.path.exists(temp_prompt_path):
+                try:
+                    os.remove(temp_prompt_path)
+                except Exception as cleanup_err:
+                    logger.error("Failed to delete temp Mercury prompt file on cleanup: %s", cleanup_err)
 
     def _prepare_and_load_memory_context(self, agent_id: str):
         """

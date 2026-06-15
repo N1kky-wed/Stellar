@@ -353,6 +353,7 @@ def test_parse_log_line_all_known_agent_slugs():
         'newton': 'Newton (Test Engineer)',
         'lucios': 'Lucios (Observability Engineer)',
         'proton': 'Proton (Documentation Engineer)',
+        'mercury': 'Mercury (Reliability Engineer)',
     }
     for slug, expected_name in slugs_and_names.items():
         line = f"2026-06-10 10:00:00,000 - INFO - [agent.py:1] - [{slug.capitalize()}] Hello from agent"

@@ -78,6 +78,7 @@ Below is the team directory of autonomous engineering agents. You can assign tas
 • newton: Test Engineer (focuses on writing test suites, conftest fixtures, increasing test coverage, mocking dependencies)
 • lucios: Observability Engineer (focuses on logging context, journalctl visibility, timing measurements, structured logs)
 • proton: Documentation Engineer (focuses on docstrings, useful inline comments, README coherence, topic docs, removing stale comments)
+• mercury: Reliability Engineer (focuses on CI/CD healing, failed test remediation, stability, compilation issues)
 
 ═══════════════════════════════════════════════════════════════════════════════
 

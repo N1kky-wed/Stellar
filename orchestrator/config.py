@@ -13,6 +13,7 @@ AGENT_PIPELINE = [
     {"id": "newton",   "name": "Newton",   "role": "Test Engineer",           "schedule": "15:00", "prompt_file": "newton.md"},
     {"id": "lucios",   "name": "Lucios",   "role": "Observability Engineer",  "schedule": "18:00", "prompt_file": "lucios.md"},
     {"id": "proton",   "name": "Proton",   "role": "Documentation Engineer",  "schedule": "21:00", "prompt_file": "proton.md"},
+    {"id": "mercury",  "name": "Mercury",  "role": "Reliability Engineer",    "schedule": "event-based", "prompt_file": "mercury.md"},
 ]
 
 CONTAINER_NAME = 'stellar-persistent'

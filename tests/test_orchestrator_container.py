@@ -165,3 +165,43 @@ def test_get_agent_final_summary():
     with patch("orchestrator.container.exec_in_container", side_effect=[(0, "/path/to/transcript.jsonl", ""), (0, jsonl_content, "")]):
         summary = container.get_agent_final_summary()
         assert summary == "final completion summary"
+
+def test_check_pr_ci_status():
+    """Asserts check_pr_ci_status correctly parses failing, pending, and successful check runs."""
+    # 1. Failure case
+    fail_stdout = "0 successful, 1 failing, 0 pending\nhttps://github.com/owner/repo/actions/runs/12345"
+    with patch("orchestrator.container.exec_in_container", return_value=(0, fail_stdout, "")):
+        res = container.check_pr_ci_status(87)
+        assert res['status'] == 'failure'
+        assert res['run_id'] == 12345
+
+    # 2. Pending case
+    pending_stdout = "1 successful, 0 failing, 1 pending\nhttps://github.com/owner/repo/actions/runs/12345"
+    with patch("orchestrator.container.exec_in_container", return_value=(0, pending_stdout, "")):
+        res = container.check_pr_ci_status(87)
+        assert res['status'] == 'pending'
+        assert res['run_id'] == 12345
+
+    # 3. Success case
+    success_stdout = "2 successful, 0 failing, 0 pending\nhttps://github.com/owner/repo/actions/runs/12345"
+    with patch("orchestrator.container.exec_in_container", return_value=(0, success_stdout, "")):
+        res = container.check_pr_ci_status(87)
+        assert res['status'] == 'success'
+        assert res['run_id'] == 12345
+
+    # 4. No checks case (fails but returns success due to no checks message in stderr)
+    with patch("orchestrator.container.exec_in_container", return_value=(1, "", "no checks")):
+        res = container.check_pr_ci_status(87)
+        assert res['status'] == 'success'
+        assert res['run_id'] is None
+
+def test_get_run_failed_log():
+    """Asserts get_run_failed_log fetches run log on success and returns None on error."""
+    with patch("orchestrator.container.exec_in_container", return_value=(0, "failed step log output", "")):
+        log = container.get_run_failed_log(12345)
+        assert log == "failed step log output"
+
+    with patch("orchestrator.container.exec_in_container", return_value=(1, "", "command error")):
+        log = container.get_run_failed_log(12345)
+        assert log is None
+

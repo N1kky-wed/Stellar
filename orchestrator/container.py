@@ -350,3 +350,78 @@ def get_agent_final_summary() -> Optional[str]:
             
     logger.warning("No valid PLANNER_RESPONSE summary found in transcript: path=%s duration_sec=%.3f", transcript_path, time.time() - t0)
     return None
+
+def check_pr_ci_status(pr_number: int) -> Dict[str, Any]:
+    """
+    Checks the CI/CD checks and mergeability status for a specific PR.
+    Returns:
+        dict: {'status': 'success'|'failure'|'pending'|'conflict', 'run_id': Optional[int], 'head_sha': Optional[str], 'raw_output': str}
+    """
+    t0 = time.time()
+    
+    # 1. Check mergeable and head commit SHA first
+    cmd_pr = f"gh pr view {pr_number} --repo {config.GITHUB_REPO} --json mergeable,headRefOid"
+    rc_pr, stdout_pr, stderr_pr = exec_in_container(cmd_pr)
+    mergeable = "MERGEABLE"
+    head_sha = None
+    if rc_pr == 0:
+        try:
+            data_pr = json.loads(stdout_pr)
+            mergeable = data_pr.get("mergeable", "MERGEABLE")
+            head_sha = data_pr.get("headRefOid")
+        except Exception as e:
+            logger.error("Failed to parse PR view JSON: pr_number=%d error=%s", pr_number, e)
+            
+    if mergeable == "CONFLICTING":
+        logger.info("Checked PR CI status: pr_number=%d status=conflict head_sha=%s duration_sec=%.3f", pr_number, head_sha, time.time() - t0)
+        return {
+            'status': 'conflict',
+            'run_id': None,
+            'head_sha': head_sha,
+            'raw_output': 'Merge conflict detected. The branch has diverged from main and must be rebased.'
+        }
+        
+    # 2. Check CI/CD checks status
+    cmd = f"gh pr checks {pr_number} --repo {config.GITHUB_REPO}"
+    rc, stdout, stderr = exec_in_container(cmd)
+    duration = time.time() - t0
+    
+    if rc != 0 and "no checks" in stderr.lower():
+        logger.info("Checked PR CI status: pr_number=%d status=success (no checks) head_sha=%s duration_sec=%.3f", pr_number, head_sha, duration)
+        return {'status': 'success', 'run_id': None, 'head_sha': head_sha, 'raw_output': stdout + "\n" + stderr}
+        
+    import re
+    failing_match = re.search(r"(\d+)\s+failing", stdout)
+    pending_match = re.search(r"(\d+)\s+pending", stdout)
+    
+    failing_count = int(failing_match.group(1)) if failing_match else 0
+    pending_count = int(pending_match.group(1)) if pending_match else 0
+    
+    # Extract run IDs from actions URLs
+    run_ids = re.findall(r"actions/runs/(\d+)", stdout)
+    run_id = int(run_ids[0]) if run_ids else None
+    
+    status = 'pending'
+    if failing_count > 0:
+        status = 'failure'
+    elif pending_count == 0 and failing_count == 0:
+        status = 'success'
+        
+    logger.info("Checked PR CI status: pr_number=%d status=%s run_id=%s head_sha=%s duration_sec=%.3f", pr_number, status, run_id, head_sha, duration)
+    return {'status': status, 'run_id': run_id, 'head_sha': head_sha, 'raw_output': stdout}
+
+def get_run_failed_log(run_id: int) -> Optional[str]:
+    """
+    Retrieves the failed step logs for a run.
+    """
+    t0 = time.time()
+    cmd = f"gh run view {run_id} --repo {config.GITHUB_REPO} --log-failed"
+    rc, stdout, stderr = exec_in_container(cmd)
+    duration = time.time() - t0
+    if rc == 0:
+        logger.info("Retrieved failed run log: run_id=%d duration_sec=%.3f", run_id, duration)
+        return stdout
+    else:
+        logger.error("Failed to retrieve failed run log: run_id=%d error=%s duration_sec=%.3f", run_id, stderr, duration)
+        return None
+

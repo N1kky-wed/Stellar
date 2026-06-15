@@ -6502,6 +6502,7 @@ def parse_log_line(line):
             'newton': 'Newton (Test Engineer)',
             'lucios': 'Lucios (Observability Engineer)',
             'proton': 'Proton (Documentation Engineer)',
+            'mercury': 'Mercury (Reliability Engineer)',
             'code-reviewer': 'Code Reviewer'
         }
         sender = agent_names.get(agent_slug, agent_slug.capitalize())
