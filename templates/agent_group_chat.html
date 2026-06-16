@@ -155,6 +155,7 @@
       #dmFeed,
       #panelTasks,
       #panelQuota,
+      #panelFacts,
       #agentSidebar,
       #agentRoster,
       .custom-scrollbar {
@@ -166,6 +167,7 @@
       #dmFeed::-webkit-scrollbar,
       #panelTasks::-webkit-scrollbar,
       #panelQuota::-webkit-scrollbar,
+      #panelFacts::-webkit-scrollbar,
       #agentSidebar::-webkit-scrollbar,
       #agentRoster::-webkit-scrollbar,
       .custom-scrollbar::-webkit-scrollbar {
@@ -176,6 +178,7 @@
       #dmFeed::-webkit-scrollbar-track,
       #panelTasks::-webkit-scrollbar-track,
       #panelQuota::-webkit-scrollbar-track,
+      #panelFacts::-webkit-scrollbar-track,
       #agentSidebar::-webkit-scrollbar-track,
       #agentRoster::-webkit-scrollbar-track,
       .custom-scrollbar::-webkit-scrollbar-track {
@@ -186,6 +189,7 @@
       #dmFeed::-webkit-scrollbar-thumb,
       #panelTasks::-webkit-scrollbar-thumb,
       #panelQuota::-webkit-scrollbar-thumb,
+      #panelFacts::-webkit-scrollbar-thumb,
       #agentSidebar::-webkit-scrollbar-thumb,
       #agentRoster::-webkit-scrollbar-thumb,
       .custom-scrollbar::-webkit-scrollbar-thumb {
@@ -197,6 +201,7 @@
       #dmFeed::-webkit-scrollbar-thumb:hover,
       #panelTasks::-webkit-scrollbar-thumb:hover,
       #panelQuota::-webkit-scrollbar-thumb:hover,
+      #panelFacts::-webkit-scrollbar-thumb:hover,
       #agentSidebar::-webkit-scrollbar-thumb:hover,
       #agentRoster::-webkit-scrollbar-thumb:hover,
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
@@ -236,6 +241,13 @@
       .no-scrollbar {
         -ms-overflow-style: none; /* IE and Edge */
         scrollbar-width: none; /* Firefox */
+      }
+
+      .markdown-content p {
+        margin: 0 0 6px 0;
+      }
+      .markdown-content p:last-child {
+        margin-bottom: 0;
       }
     </style>
   </head>
@@ -680,6 +692,12 @@
             Group Chat
           </button>
           <button
+            id="tabFacts"
+            class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-[#8e929e] hover:text-white focus:outline-none transition duration-200 ml-4 shrink-0"
+          >
+            Facts
+          </button>
+          <button
             id="tabDMs"
             class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-[#8e929e] hover:text-white focus:outline-none transition duration-200 ml-4 shrink-0"
           >
@@ -726,6 +744,88 @@
             >
               Send
             </button>
+          </div>
+        </div>
+
+        <!-- Panel 1.5: Facts -->
+        <div id="panelFacts" class="flex-1 p-4 md:p-6 overflow-y-auto hidden">
+          <div
+            class="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6"
+          >
+            <div>
+              <h2 class="text-lg font-bold text-white mb-1">
+                Workspace Facts & Knowledge Graph
+              </h2>
+              <p class="text-xs text-slate-400">
+                Core design rules, conventions, constraints, and bug patterns
+                tracked by agents.
+              </p>
+            </div>
+            <div class="flex gap-2">
+              <input
+                type="text"
+                id="searchFactsInput"
+                placeholder="Search facts..."
+                class="bg-white/5 border border-[rgba(255,255,255,0.1)] rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition duration-200 w-48 md:w-64"
+              />
+              <button
+                id="refreshFactsBtn"
+                class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3.5 py-1.5 rounded-lg transition duration-200 flex items-center gap-1.5"
+              >
+                <svg
+                  id="refreshFactsSpinner"
+                  class="w-3.5 h-3.5 hidden animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    class="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="4"
+                  ></circle>
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div
+            class="overflow-x-auto rounded-xl border border-[rgba(255,255,255,0.08)] bg-black/20 backdrop-blur-md"
+          >
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr
+                  class="border-b border-[rgba(255,255,255,0.08)] bg-white/5 text-[11px] font-bold text-slate-300 uppercase tracking-wider"
+                >
+                  <th class="px-4 py-3 w-12 text-center">ID</th>
+                  <th class="px-4 py-3 w-28">Category</th>
+                  <th class="px-4 py-3">Fact / Instruction</th>
+                  <th class="px-4 py-3 w-24">Author</th>
+                  <th class="px-4 py-3 w-32">Added At</th>
+                  <th class="px-4 py-3 w-20 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody
+                id="factsTableBody"
+                class="divide-y divide-[rgba(255,255,255,0.04)] text-xs text-slate-300"
+              >
+                <!-- Dynamically populated rows -->
+                <tr>
+                  <td colspan="6" class="px-4 py-8 text-center text-slate-500">
+                    Loading facts...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -1377,10 +1477,12 @@
 
       // Tabs & Panels
       const tabGroupChat = document.getElementById("tabGroupChat");
+      const tabFacts = document.getElementById("tabFacts");
       const tabDMs = document.getElementById("tabDMs");
       const tabTasks = document.getElementById("tabTasks");
       const tabQuota = document.getElementById("tabQuota");
       const panelGroupChat = document.getElementById("panelGroupChat");
+      const panelFacts = document.getElementById("panelFacts");
       const panelDMs = document.getElementById("panelDMs");
       const panelTasks = document.getElementById("panelTasks");
       const panelQuota = document.getElementById("panelQuota");
@@ -1423,6 +1525,7 @@
       let selectedAgentId = null; // for DMs
       let pollInterval = null;
       let lastTasksSignature = "";
+      let lastFactsSignature = "";
 
       // Sidebar Slide Drawer logic
       function openSidebar() {
@@ -1452,7 +1555,7 @@
         currentTab = tab;
 
         // Reset active tab button styles
-        [tabGroupChat, tabDMs, tabTasks, tabQuota].forEach((btn) => {
+        [tabGroupChat, tabFacts, tabDMs, tabTasks, tabQuota].forEach((btn) => {
           if (btn) {
             btn.classList.remove("border-indigo-500", "text-white");
             btn.classList.add("border-transparent", "text-[#8e929e]");
@@ -1460,9 +1563,11 @@
         });
 
         // Hide all panels
-        [panelGroupChat, panelDMs, panelTasks, panelQuota].forEach((p) => {
-          if (p) p.classList.add("hidden");
-        });
+        [panelGroupChat, panelFacts, panelDMs, panelTasks, panelQuota].forEach(
+          (p) => {
+            if (p) p.classList.add("hidden");
+          },
+        );
 
         const sidebarTitle = document.getElementById("sidebarTitle");
 
@@ -1472,6 +1577,12 @@
           panelGroupChat.classList.remove("hidden");
           sidebarTitle.textContent = "Engineers in Workspace";
           chatFeed.scrollTop = chatFeed.scrollHeight;
+        } else if (tab === "facts") {
+          tabFacts.classList.add("border-indigo-500", "text-white");
+          tabFacts.classList.remove("border-transparent", "text-[#8e929e]");
+          panelFacts.classList.remove("hidden");
+          sidebarTitle.textContent = "Workspace Facts";
+          loadFacts();
         } else if (tab === "dms") {
           tabDMs.classList.add("border-indigo-500", "text-white");
           tabDMs.classList.remove("border-transparent", "text-[#8e929e]");
@@ -1496,6 +1607,7 @@
       }
 
       tabGroupChat.onclick = () => selectTab("group");
+      if (tabFacts) tabFacts.onclick = () => selectTab("facts");
       tabDMs.onclick = () => selectTab("dms");
       tabTasks.onclick = () => selectTab("tasks");
       if (tabQuota) tabQuota.onclick = () => selectTab("quota");
@@ -1912,6 +2024,141 @@
         }
       }
 
+      async function loadFacts() {
+        const refreshFactsSpinner = document.getElementById(
+          "refreshFactsSpinner",
+        );
+        if (refreshFactsSpinner) refreshFactsSpinner.classList.remove("hidden");
+        try {
+          const res = await fetch("/api/admin/agent_facts/list");
+          const data = await res.json();
+
+          // Search filtering (if user has entered search text)
+          const searchVal = (
+            document.getElementById("searchFactsInput")?.value || ""
+          )
+            .toLowerCase()
+            .trim();
+
+          let filteredData = data;
+          if (searchVal) {
+            filteredData = data.filter(
+              (f) =>
+                (f.fact && f.fact.toLowerCase().includes(searchVal)) ||
+                (f.category && f.category.toLowerCase().includes(searchVal)) ||
+                (f.added_by && f.added_by.toLowerCase().includes(searchVal)),
+            );
+          }
+
+          // Signature comparison (including filtering search text so search update updates immediately)
+          const signature =
+            filteredData
+              .map(
+                (f) =>
+                  `${f.id}:${f.category}:${f.added_by}:${f.archived}:${f.superseded_by}:${f.last_verified_at}:${f.fact.length}`,
+              )
+              .join("|") + `::search:${searchVal}`;
+
+          if (signature === lastFactsSignature) {
+            if (refreshFactsSpinner)
+              refreshFactsSpinner.classList.add("hidden");
+            return;
+          }
+          lastFactsSignature = signature;
+
+          const factsTableBody = document.getElementById("factsTableBody");
+          if (!factsTableBody) return;
+
+          factsTableBody.innerHTML = "";
+
+          if (filteredData.length === 0) {
+            factsTableBody.innerHTML = `
+              <tr>
+                <td colspan="6" class="px-4 py-8 text-center text-slate-500">
+                  ${searchVal ? "No facts matching search criteria." : "No facts recorded yet."}
+                </td>
+              </tr>
+            `;
+            if (refreshFactsSpinner)
+              refreshFactsSpinner.classList.add("hidden");
+            return;
+          }
+
+          filteredData.forEach((fact) => {
+            const tr = document.createElement("tr");
+            tr.className =
+              "hover:bg-white/5 transition duration-150 border-b border-[rgba(255,255,255,0.04)]";
+
+            // Category color styling
+            let catColor = "bg-slate-500/10 text-slate-400 border-slate-500/20";
+            if (fact.category === "constraint") {
+              catColor =
+                "bg-rose-500/10 text-rose-400 border border-rose-500/20";
+            } else if (fact.category === "convention") {
+              catColor = "bg-sky-500/10 text-sky-400 border border-sky-500/20";
+            } else if (fact.category === "architecture") {
+              catColor =
+                "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20";
+            } else if (fact.category === "bug_pattern") {
+              catColor =
+                "bg-amber-500/10 text-amber-400 border border-amber-500/20";
+            }
+
+            // Status label
+            let statusHtml = "";
+            if (fact.superseded_by) {
+              statusHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 line-through">Superseded #${fact.superseded_by}</span>`;
+            } else if (fact.archived) {
+              statusHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-500/10 text-slate-400 line-through">Archived</span>`;
+            } else {
+              statusHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>`;
+            }
+
+            // Format date
+            let dateStr = "N/A";
+            if (fact.created_at) {
+              try {
+                // Remove millisecond/microsecond trailing characters if date parser has issues, or just use Date
+                const dt = new Date(fact.created_at.split(".")[0]);
+                dateStr =
+                  dt.toLocaleDateString() +
+                  " " +
+                  dt.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+              } catch (e) {
+                dateStr = fact.created_at;
+              }
+            }
+
+            // Renders markdown inside the fact
+            let factHtml = "";
+            if (typeof marked !== "undefined" && fact.fact) {
+              factHtml = marked.parse(fact.fact);
+            } else {
+              factHtml = (fact.fact || "").replace(/\n/g, "<br>");
+            }
+
+            tr.innerHTML = `
+              <td class="px-4 py-3 text-center font-mono text-slate-500 font-bold">${fact.id}</td>
+              <td class="px-4 py-3">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${catColor}">${fact.category || "GENERAL"}</span>
+              </td>
+              <td class="px-4 py-3 text-white max-w-xl font-normal leading-relaxed break-words markdown-content">${factHtml}</td>
+              <td class="px-4 py-3 font-semibold text-slate-400 capitalize">${fact.added_by || "system"}</td>
+              <td class="px-4 py-3 text-[11px] text-slate-500 font-mono">${dateStr}</td>
+              <td class="px-4 py-3 text-center">${statusHtml}</td>
+            `;
+            factsTableBody.appendChild(tr);
+          });
+        } catch (err) {
+          console.error("Failed to load facts:", err);
+        } finally {
+          if (refreshFactsSpinner) refreshFactsSpinner.classList.add("hidden");
+        }
+      }
+
       // Modal management
       openCreateTaskModalBtn.onclick = () => {
         createTaskModal.classList.remove("hidden");
@@ -1986,6 +2233,36 @@
         source.onmessage = function (event) {
           try {
             const msg = JSON.parse(event.data);
+
+            // Intercept refresh events sent from backend and reload relevant dashboard/feeds instantly
+            if (msg.type === "refresh") {
+              if (msg.target === "tasks") {
+                lastTasksSignature = "";
+                loadTasks();
+              } else if (msg.target === "facts") {
+                lastFactsSignature = "";
+                loadFacts();
+              } else if (msg.target === "dms" && selectedAgentId) {
+                const cleanSelected = selectedAgentId.toLowerCase().trim();
+                const cleanSender = (msg.agent_id || "").toLowerCase().trim();
+                const cleanRecip = (msg.recipient_id || "")
+                  .toLowerCase()
+                  .trim();
+                if (
+                  cleanSender === cleanSelected ||
+                  cleanRecip === cleanSelected
+                ) {
+                  loadDMs(selectedAgentId);
+                }
+              }
+              return; // Do not append to chat feed
+            }
+
+            // If the message is a system update from the Orchestrator, reload orchestrator status immediately
+            if (msg.sender === "Orchestrator" || msg.type === "system") {
+              pollOrchestratorStatus();
+            }
+
             addMessage(msg);
           } catch (err) {
             console.error("Failed to parse streamed message", err);
@@ -2201,14 +2478,16 @@
       loadQuotaData();
       setInterval(loadQuotaData, 30000);
 
-      // Auto-reload DMs and Tasks every 10 seconds if active
+      // Fallback auto-reload for DMs, Tasks, and Facts every 60 seconds if active (primary updates are pushed instantly via SSE)
       setInterval(() => {
         if (currentTab === "dms" && selectedAgentId) {
           loadDMs(selectedAgentId);
         } else if (currentTab === "tasks") {
           loadTasks();
+        } else if (currentTab === "facts") {
+          loadFacts();
         }
-      }, 10000);
+      }, 60000);
 
       let showAccountEmails = false;
       let lastCachedQuotaData = null;
@@ -2859,6 +3138,21 @@
           if (lastCachedQuotaData) {
             renderQuotaUI(lastCachedQuotaData);
           }
+        };
+      }
+
+      const refreshFactsBtn = document.getElementById("refreshFactsBtn");
+      if (refreshFactsBtn) {
+        refreshFactsBtn.onclick = () => {
+          lastFactsSignature = "";
+          loadFacts();
+        };
+      }
+
+      const searchFactsInput = document.getElementById("searchFactsInput");
+      if (searchFactsInput) {
+        searchFactsInput.oninput = () => {
+          loadFacts();
         };
       }
     </script>

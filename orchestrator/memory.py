@@ -23,6 +23,17 @@ class MemoryDB:
         self.db_path = db_path
         self._init_db()
 
+    def _publish_refresh(self, target: str, **kwargs):
+        try:
+            import redis
+            import json
+            r = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+            payload = {"type": "refresh", "target": target}
+            payload.update(kwargs)
+            r.publish("agent_events", json.dumps(payload))
+        except Exception:
+            pass
+
     def _get_conn(self):
         """
         Retrieves a database connection with WAL mode and busy timeout configured.
@@ -191,6 +202,8 @@ class MemoryDB:
                 r.publish("agent_events", json.dumps(msg_payload))
             except Exception:
                 pass
+        else:
+            self._publish_refresh('dms', agent_id=sender_id, recipient_id=recipient_id)
 
         return lastrowid
 
@@ -218,7 +231,9 @@ class MemoryDB:
                 VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
             """, (title, description, created_by, assigned_to, priority, tags_str, related_pr, related_file, now_str, now_str))
             conn.commit()
-            return cursor.lastrowid
+            task_id = cursor.lastrowid
+            self._publish_refresh('tasks')
+            return task_id
 
     def update_task_status(self, task_id: int, agent_id: str, requested_status: str) -> bool:
         """
@@ -270,6 +285,7 @@ class MemoryDB:
                         WHERE id = ?
                     """, (new_status, now_str, task_id))
                 conn.commit()
+                self._publish_refresh('tasks')
                 return True
             return False
 
@@ -291,7 +307,9 @@ class MemoryDB:
                 VALUES (?, ?, ?, ?, ?)
             """, (fact, category, added_by, now_str, now_str))
             conn.commit()
-            return cursor.lastrowid
+            fact_id = cursor.lastrowid
+            self._publish_refresh('facts')
+            return fact_id
 
     def update_fact(self, fact_id: int, new_fact: str, updated_by: str, category: Optional[str] = None) -> int:
         """
@@ -325,6 +343,7 @@ class MemoryDB:
                 WHERE id = ?
             """, (new_id, fact_id))
             conn.commit()
+            self._publish_refresh('facts')
             return new_id
 
     def get_active_tasks(self, assigned_to: Optional[str] = None) -> List[Dict[str, Any]]:

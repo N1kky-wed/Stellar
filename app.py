@@ -7108,11 +7108,45 @@ def send_agent_message():
                 redis_client.publish("agent_events", json.dumps(msg_payload))
             except Exception as re:
                 logger.error("Failed to publish admin group message to Redis: %s", re)
+        else:
+            try:
+                msg_payload = {
+                    'type': 'refresh',
+                    'target': 'dms',
+                    'agent_id': 'admin',
+                    'recipient_id': recipient_id
+                }
+                redis_client.publish("agent_events", json.dumps(msg_payload))
+            except Exception as re:
+                logger.error("Failed to publish admin DM refresh message to Redis: %s", re)
 
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Error sending agent message: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/agent_facts/list')
+@require_approval
+def list_agent_facts():
+    if session.get('role') != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+        
+    db_path = '/home/stellaradmin/my_app/orchestrator/memory.db'
+    if not os.path.exists(db_path):
+        return jsonify([])
+        
+    facts = []
+    try:
+        conn = _get_orchestrator_sqlite_conn(db_path)
+        rows = conn.execute("SELECT * FROM agent_facts ORDER BY id DESC").fetchall()
+        for r in rows:
+            facts.append(dict(r))
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error listing facts: {e}")
+        
+    return jsonify(facts)
 
 
 @app.route('/api/admin/agent_tasks/list')
@@ -7180,6 +7214,20 @@ def create_agent_task():
             
         conn.commit()
         conn.close()
+
+        # Publish task and DM refresh events to Redis so SSE clients update instantly
+        try:
+            redis_client.publish("agent_events", json.dumps({"type": "refresh", "target": "tasks"}))
+            if assigned_to:
+                redis_client.publish("agent_events", json.dumps({
+                    "type": "refresh",
+                    "target": "dms",
+                    "agent_id": "admin",
+                    "recipient_id": assigned_to
+                }))
+        except Exception as re:
+            logger.error("Failed to publish tasks refresh message to Redis: %s", re)
+
         return jsonify({'success': True, 'task_id': task_id})
     except Exception as e:
         logger.error(f"Error creating agent task: {e}")
@@ -7212,6 +7260,13 @@ def resolve_agent_task():
         """, (now_str, now_str, task_id))
         conn.commit()
         conn.close()
+
+        # Publish task refresh event to Redis so SSE clients update instantly
+        try:
+            redis_client.publish("agent_events", json.dumps({"type": "refresh", "target": "tasks"}))
+        except Exception as re:
+            logger.error("Failed to publish tasks refresh message to Redis: %s", re)
+
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Error resolving agent task: {e}")
