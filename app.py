@@ -191,6 +191,7 @@ else:
 
     def _async_startup_setup():
         _setup_redis_notifications()
+        start_redis_cancellation_listener()
         global client
         try:
             import docker
@@ -780,6 +781,44 @@ class GlobalKeyManager:
 
 KEY_MANAGER = GlobalKeyManager()
 ACTIVE_CHATS_CANCEL_EVENTS = {}
+
+def start_redis_cancellation_listener():
+    """Starts a daemon thread to listen for cross-worker cancellations via Redis Pub/Sub."""
+    def listen():
+        pubsub = redis_client.pubsub()
+        try:
+            pubsub.subscribe("stellar_cancellations")
+            logger.info("Redis cancellation listener subscribed to channel: stellar_cancellations")
+            for message in pubsub.listen():
+                if message['type'] == 'message':
+                    try:
+                        data = json.loads(message['data'] if isinstance(message['data'], str) else message['data'].decode('utf-8'))
+                        chat_id = data.get('chat_id')
+                        exclude_query_id = data.get('exclude_query_id')
+                        
+                        if chat_id:
+                            # Account for potential type mismatches (string vs int)
+                            for c_id in (chat_id, str(chat_id), int(chat_id) if isinstance(chat_id, str) and chat_id.isdigit() else None):
+                                if c_id is None: continue
+                                val = ACTIVE_CHATS_CANCEL_EVENTS.get(c_id)
+                                if val:
+                                    cancel_event, active_query_id = val if isinstance(val, tuple) else (val, None)
+                                    if exclude_query_id and active_query_id == exclude_query_id:
+                                        # Do not cancel if it matches the excluded new query
+                                        continue
+                                    logger.info(f"Received cross-process cancel signal for chat_id: {c_id}, query_id: {active_query_id}")
+                                    cancel_event.set()
+                    except Exception as parse_err:
+                        logger.error(f"Error parsing cancellation pubsub message: {parse_err}")
+        except Exception as conn_err:
+            logger.error(f"Redis cancellation listener connection error: {conn_err}")
+        finally:
+            try:
+                pubsub.close()
+            except:
+                pass
+
+    threading.Thread(target=listen, daemon=True).start()
 
 def get_seconds_until_pacific_midnight():
     """
@@ -3938,11 +3977,21 @@ def refine_stream():
 
         cancel_event = threading.Event()
         if chat_id:
-            old_event = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
-            if old_event:
+            # Terminate any old thread for this chat across other worker processes
+            try:
+                redis_client.publish("stellar_cancellations", json.dumps({
+                    "chat_id": chat_id,
+                    "exclude_query_id": query_id
+                }))
+            except Exception as pub_err:
+                logger.error(f"Failed to publish new stream start cancellation to Redis: {pub_err}")
+
+            old_val = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
+            if old_val:
+                old_event = old_val[0] if isinstance(old_val, tuple) else old_val
                 logger.info("Dynamic interrupt/cancellation requested for chat_id: %s. Terminating old thread.", chat_id)
                 old_event.set()
-            ACTIVE_CHATS_CANCEL_EVENTS[chat_id] = cancel_event
+            ACTIVE_CHATS_CANCEL_EVENTS[chat_id] = (cancel_event, query_id)
 
         def generator_task(cancel_event=None):
             from flask import g
@@ -4298,8 +4347,17 @@ def stop_generation():
     redis_client.setex(f"stop_flag:{query_id}", 3600, "1")
     if chat_id:
         redis_client.delete(f"chat_active_query:{chat_id}")
-        cancel_event = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
-        if cancel_event:
+        
+        # Publish cancellation to all Gunicorn workers via Redis Pub/Sub
+        try:
+            redis_client.publish("stellar_cancellations", json.dumps({"chat_id": chat_id}))
+            logger.info(f"Published cancellation event to Redis for chat_id: {chat_id}")
+        except Exception as pub_err:
+            logger.error(f"Failed to publish cancellation event to Redis: {pub_err}")
+
+        val = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
+        if val:
+            cancel_event = val[0] if isinstance(val, tuple) else val
             logger.info(f"Stop button clicked: Signalling thread termination for chat_id: {chat_id}")
             cancel_event.set()
 
@@ -4375,8 +4433,11 @@ def background_thread_runner(app_obj, query_id, chat_id, cancel_event, task_func
                 redis_client.rpush(f"stream_history:{query_id}", err_str)
                 redis_client.publish(f"stream:{query_id}", err_str)
             finally:
-                if chat_id in ACTIVE_CHATS_CANCEL_EVENTS and ACTIVE_CHATS_CANCEL_EVENTS[chat_id] == cancel_event:
-                    ACTIVE_CHATS_CANCEL_EVENTS.pop(chat_id, None)
+                val = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
+                if val:
+                    event_to_check = val[0] if isinstance(val, tuple) else val
+                    if event_to_check == cancel_event:
+                        ACTIVE_CHATS_CANCEL_EVENTS.pop(chat_id, None)
                 redis_client.rpush(f"stream_history:{query_id}", "__STREAM_END__")
                 redis_client.publish(f"stream:{query_id}", "__STREAM_END__")
                 redis_client.delete(f"chat_active_query:{chat_id}")
