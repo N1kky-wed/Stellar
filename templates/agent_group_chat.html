@@ -150,8 +150,22 @@
         background: rgba(16, 185, 129, 0.12) !important;
       }
 
-      /* Custom scrollbars matching main index.html scrollbar style */
+      /* Palette: Custom scrollbars matching main index.html scrollbar style - updated to apply to all tabs/panels and support standard/webkit properties */
+      #chatFeed,
+      #dmFeed,
+      #panelTasks,
+      #panelQuota,
+      #agentSidebar,
+      #agentRoster,
+      .custom-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+      }
+
       #chatFeed::-webkit-scrollbar,
+      #dmFeed::-webkit-scrollbar,
+      #panelTasks::-webkit-scrollbar,
+      #panelQuota::-webkit-scrollbar,
       #agentSidebar::-webkit-scrollbar,
       #agentRoster::-webkit-scrollbar,
       .custom-scrollbar::-webkit-scrollbar {
@@ -159,6 +173,9 @@
         height: 6px;
       }
       #chatFeed::-webkit-scrollbar-track,
+      #dmFeed::-webkit-scrollbar-track,
+      #panelTasks::-webkit-scrollbar-track,
+      #panelQuota::-webkit-scrollbar-track,
       #agentSidebar::-webkit-scrollbar-track,
       #agentRoster::-webkit-scrollbar-track,
       .custom-scrollbar::-webkit-scrollbar-track {
@@ -166,6 +183,9 @@
         border: none !important;
       }
       #chatFeed::-webkit-scrollbar-thumb,
+      #dmFeed::-webkit-scrollbar-thumb,
+      #panelTasks::-webkit-scrollbar-thumb,
+      #panelQuota::-webkit-scrollbar-thumb,
       #agentSidebar::-webkit-scrollbar-thumb,
       #agentRoster::-webkit-scrollbar-thumb,
       .custom-scrollbar::-webkit-scrollbar-thumb {
@@ -174,6 +194,9 @@
         border: none !important;
       }
       #chatFeed::-webkit-scrollbar-thumb:hover,
+      #dmFeed::-webkit-scrollbar-thumb:hover,
+      #panelTasks::-webkit-scrollbar-thumb:hover,
+      #panelQuota::-webkit-scrollbar-thumb:hover,
       #agentSidebar::-webkit-scrollbar-thumb:hover,
       #agentRoster::-webkit-scrollbar-thumb:hover,
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
