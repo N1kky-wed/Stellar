@@ -670,6 +670,12 @@ class OrchestratorEngine:
                         message_type="system"
                     )
             else:
+                if log_tail:
+                    logger.warning("Agent run failed: agent_id=%s run_id=%s exit_code=%d\nLast log lines:\n%s", 
+                                   self.current_agent_id, self.current_run_id, retcode, log_tail)
+                else:
+                    logger.warning("Agent run failed (no log tail available): agent_id=%s run_id=%s exit_code=%d", 
+                                   self.current_agent_id, self.current_run_id, retcode)
                 self.state_db.fail_run(self.current_run_id, now_str, f"Process exited with non-zero code {retcode}.", summary_message=f"Agent process exited with non-zero code {retcode}.")
                 
                 # Add failure system message
@@ -696,6 +702,14 @@ class OrchestratorEngine:
         Args:
             now (datetime): Interruption timestamp.
         """
+        log_tail = self._get_agy_log_tail(self.agent_start_time)
+        if log_tail:
+            logger.warning("Agent run timed out: agent_id=%s run_id=%s\nLast log lines:\n%s", 
+                           self.current_agent_id, self.current_run_id, log_tail)
+        else:
+            logger.warning("Agent run timed out (no log tail available): agent_id=%s run_id=%s", 
+                           self.current_agent_id, self.current_run_id)
+
         try:
             self.current_process.kill()
         except Exception as e:

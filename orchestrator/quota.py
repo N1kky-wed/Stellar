@@ -183,15 +183,21 @@ def fetch_quota_data_from_container(model: str = "Claude Sonnet 4.6 (Thinking)")
     cmd = f'docker exec -it stellar-persistent /root/.local/bin/agy --model "{model}" --dangerously-skip-permissions'
     logger.info(f"Running pexpect command inside container: {cmd}")
     
-    child = pexpect.spawn(cmd, encoding='utf-8', timeout=30)
+    child = None
     output_captured = []
     
-    def read_callback(self, data):
-        output_captured.append(data)
-        
-    child.logfile_read = type('Logger', (object,), {'write': read_callback, 'flush': lambda self: None})()
-    
     try:
+        child = pexpect.spawn(cmd, encoding='utf-8', timeout=30)
+    except Exception as spawn_err:
+        logger.error(f"Pexpect spawn failed: {spawn_err}", exc_info=True)
+        raise
+
+    try:
+        def read_callback(self, data):
+            output_captured.append(data)
+            
+        child.logfile_read = type('Logger', (object,), {'write': read_callback, 'flush': lambda self: None})()
+
         # Wait for ? for shortcuts
         child.expect(r'\? for shortcuts', timeout=60)
         time.sleep(1)
@@ -219,9 +225,13 @@ def fetch_quota_data_from_container(model: str = "Claude Sonnet 4.6 (Thinking)")
             pass
             
     except Exception as e:
-        logger.error(f"Pexpect quota query failed: {e}")
+        logger.error(f"Pexpect quota query failed: {e}", exc_info=True)
         output_captured.append(f"\nERROR: {e}")
     finally:
-        child.close()
+        if child is not None:
+            try:
+                child.close()
+            except Exception as ce:
+                logger.error(f"Failed to close pexpect child: {ce}", exc_info=True)
         
     return "".join(output_captured)

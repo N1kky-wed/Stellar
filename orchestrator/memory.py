@@ -385,14 +385,31 @@ class MemoryDB:
             """, (agent_id,)).fetchall()
             
             # Filter out resolved threads
+            task_ids = []
+            for r in rows:
+                tid = r['thread_id']
+                if tid and tid.startswith('resolve:task:'):
+                    try:
+                        task_ids.append(int(tid.split(':')[-1]))
+                    except Exception:
+                        pass
+
+            resolved_task_ids = set()
+            if task_ids:
+                placeholders = ",".join("?" for _ in task_ids)
+                task_rows = conn.execute(
+                    f"SELECT id FROM agent_tasks WHERE status = 'resolved' AND id IN ({placeholders})",
+                    task_ids
+                ).fetchall()
+                resolved_task_ids = {row['id'] for row in task_rows}
+
             filtered = []
             for r in rows:
                 tid = r['thread_id']
                 if tid and tid.startswith('resolve:task:'):
                     try:
                         task_id = int(tid.split(':')[-1])
-                        task = conn.execute("SELECT status FROM agent_tasks WHERE id = ?", (task_id,)).fetchone()
-                        if task and task['status'] == 'resolved':
+                        if task_id in resolved_task_ids:
                             continue  # skip this resolved thread
                     except Exception:
                         pass
