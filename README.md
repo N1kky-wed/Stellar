@@ -245,9 +245,9 @@ Stellar completely replaces traditional SSH public-key authentication with a mod
 
 1. The user initiates a connection via `ssh stellar@stellarai.live`.
 2. The OpenSSH server matches the `stellar` user, disables all tunneling/port-forwarding, and forces the connection into the Python Paramiko SSH server (`ssh_gateway.py`).
-3. The user is presented with an ASCII art prompt requesting a 6-character code.
+3. The user is presented with an ASCII art prompt requesting an 8-character code (formatted as `XXXX-XXXX`, e.g., `ABCD-EFGH`).
 4. The user visits `https://stellarai.live/auth/ssh` in their browser. Because this route is protected by `@require_approval`, the user **must be securely logged into their Stellar web account**.
-5. The web app generates a cryptographically random 6-character code, ties it securely to the user's ID, stores it in Redis with a 5-minute TTL, and enforces a strict rate limit.
+5. The web app generates a cryptographically random 8-character code, formats it as `XXXX-XXXX`, ties it securely to the user's ID, stores it in Redis with a 1-minute TTL, and enforces a strict rate limit.
 6. The user pastes this code into their SSH terminal. The gateway verifies the code against Redis via an internal API. Upon success, the session is instantly authenticated as the correct user without ever exposing server credentials or requiring public SSH keys.
 
 **Dashboard Features:**
@@ -298,7 +298,7 @@ Stellar includes an autonomous engineering pipeline managed by a centralized Orc
 
 ### The Agent Team & Directory
 
-The pipeline coordinates six dedicated autonomous agent roles, each defined by an instruction set (located in `/root/.agents/` on the host, loaded dynamically inside the sandbox as `/root/.agents/AGENTS.md`):
+The pipeline coordinates seven dedicated autonomous agent roles, each defined by an instruction set (located in `/root/.agents/` on the host, loaded dynamically inside the sandbox as `/root/.agents/AGENTS.md`):
 
 1. **Bolt (`bolt`)** — _Performance & Stability Engineer_
    - **Focus:** Performance bottlenecks, database queries optimization (WAL mode configuration, connection pools), SSE streaming efficiency, Gunicorn/caching mechanisms, and memory consumption profiles.
@@ -312,6 +312,8 @@ The pipeline coordinates six dedicated autonomous agent roles, each defined by a
    - **Focus:** Structured logging context, timing measurements, journalctl visibility, system-wide diagnostics, and logging formatters/handlers.
 6. **Proton (`proton`)** — _Documentation Engineer_
    - **Focus:** Python docstrings, non-obvious inline comments, README maintenance, topic documentation, and removing stale/obsolete instructions.
+7. **Mercury (`mercury`)** — _Reliability Engineer_
+   - **Focus:** Resolving CI/CD pipeline failures, merge conflicts, git rebasing, compilation and syntax errors, and broken test assertions on active agent pull requests.
 
 ### The Execution Pipeline
 
@@ -325,6 +327,7 @@ The execution sequence is structured as a pipeline with scheduled time windows (
 | 4     | **Newton**   | Test          | 15:00          |
 | 5     | **Lucios**   | Observability | 18:00          |
 | 6     | **Proton**   | Documentation | 21:00          |
+| 7     | **Mercury**  | Reliability   | event-based    |
 
 #### Trigger Mechanisms
 
@@ -919,7 +922,7 @@ The application uses a single SQLite file (`stellar_local.db`) in WAL journal mo
 | `messages`             | All chat messages: `message_type` (user/stellar), `message_content`, `hidden` (boolean), `visualization_html`, `attached_files` (JSON). Hidden messages are excluded from the UI but included in LLM context. |
 | `tool_calls`           | Full tool input/output for paginated retrieval by `read_tool_output`. Includes `hidden` flag for memory compression.                                                                                          |
 | `repo_history`         | Deployment history: `process_id`, `project_name`, `subdomain`, `files_snapshot` (JSON), `status`                                                                                                              |
-| `scheduled_tasks`      | Autonomous task queue: `task_prompt`, `execute_at`, `recurring_minutes`, `metadata`, `is_active`                                                                                                              |
+| `scheduled_tasks`      | Autonomous task queue: `task_prompt`, `execute_at`, `recurring_minutes`, `metadata`, `is_active`, `status`, `lock_id`                                                                                         |
 | `user_logs_prefs`      | Persistent agent memory: `user_id`, `log_entry`, `created_at`                                                                                                                                                 |
 | `agent_feedback`       | Bug reports filed by `report_process_issue`: `topic`, `issue_description`, `technical_context`                                                                                                                |
 | `push_subscriptions`   | Web Push subscription endpoints per user/device for background notifications                                                                                                                                  |
@@ -928,6 +931,17 @@ The application uses a single SQLite file (`stellar_local.db`) in WAL journal mo
 | `sentinel_app_patches` | Self-healing patches synthesized by the Sentinel Healer for errors: `error_id`, `patch_diff`, `status`, `created_at`                                                                                          |
 
 WAL mode and `busy_timeout=5000` are set on all connections to handle concurrent access from multiple Gunicorn threads.
+
+The orchestrator maintains two additional SQLite database files to coordinate autonomous agents:
+
+1. **State Database (`orchestrator.db`)**: Tracks details of agent runs and general state settings.
+   - `agent_runs`: tracks agent execution status, PR links, and resource usage metrics (`id`, `agent_id`, `started_at`, `finished_at`, `status`, `pr_number`, `pr_url`, `pr_status`, `branch_name`, `error_message`, `summary_message`, `quota_start_percent`, `model`, `quota_cost`).
+   - `orchestrator_state`: stores general orchestrator configurations and recovery flags (`key`, `value`).
+2. **Memory Database (`memory.db`)**: Decouples agent collaboration and communication.
+   - `agent_memories`: logs observations, decisions, outcomes, and warnings to persist agent context (`id`, `agent_id`, `run_id`, `memory_type`, `content`, `scope`, `tags`, `created_at`, `archived`).
+   - `agent_messages`: stores group chat and DM message histories to coordinate tasks (`id`, `channel`, `thread_id`, `sender_id`, `recipient_id`, `content`, `message_type`, `ref_id`, `created_at`).
+   - `agent_tasks`: manages collaborative engineering tasks assigned across agents (`id`, `title`, `description`, `created_by`, `assigned_to`, `status`, `priority`, `tags`, `related_pr`, `related_file`, `created_at`, `updated_at`, `resolved_at`, `resolved_by`).
+   - `agent_facts`: records active, verified, or superseded development facts and constraints (`id`, `fact`, `category`, `added_by`, `last_updated_by`, `superseded_by`, `created_at`, `last_verified_at`, `archived`).
 
 ### Hidden Message Semantics
 
@@ -979,6 +993,7 @@ Stellar/
 ├── agents/                     # System instruction prompt files for specialized autonomous agents
 │   ├── bolt.md                 # Bolt (Performance & Stability Engineer) prompt
 │   ├── lucios.md               # Lucios (Observability Engineer) prompt
+│   ├── mercury.md              # Mercury (Reliability Engineer) prompt
 │   ├── newton.md               # Newton (Test Suite Engineer) prompt
 │   ├── palette.md              # Palette (UI/UX Engineer) prompt
 │   ├── proton.md               # Proton (Documentation Engineer) prompt
