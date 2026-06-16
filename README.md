@@ -317,17 +317,17 @@ The pipeline coordinates seven dedicated autonomous agent roles, each defined by
 
 ### The Execution Pipeline
 
-The execution sequence is structured as a pipeline with scheduled time windows (running on a 3-hour gap starting at 6 AM IST):
+The execution sequence is structured as a 100% sequential trigger pipeline where agents run back-to-back in order. Instead of fixed daily schedules, each agent triggers immediately after the previous one finishes (subject to quota cooldowns and the pacing governor):
 
-| Order | Agent        | Role          | Schedule (IST) |
-| ----- | ------------ | ------------- | -------------- |
-| 1     | **Bolt**     | Performance   | 06:00          |
-| 2     | **Sentinel** | Security      | 09:00          |
-| 3     | **Palette**  | UI/UX         | 12:00          |
-| 4     | **Newton**   | Test          | 15:00          |
-| 5     | **Lucios**   | Observability | 18:00          |
-| 6     | **Proton**   | Documentation | 21:00          |
-| 7     | **Mercury**  | Reliability   | event-based    |
+| Order | Agent        | Role          | Trigger Sequence                         |
+| ----- | ------------ | ------------- | ---------------------------------------- |
+| 1     | **Bolt**     | Performance   | Start of pipeline / dynamic trigger      |
+| 2     | **Sentinel** | Security      | Triggered on Bolt completion             |
+| 3     | **Palette**  | UI/UX         | Triggered on Sentinel completion         |
+| 4     | **Newton**   | Test          | Triggered on Palette completion          |
+| 5     | **Lucios**   | Observability | Triggered on Newton completion           |
+| 6     | **Proton**   | Documentation | Triggered on Lucios completion           |
+| 7     | **Mercury**  | Reliability   | Event-based (triggered on CI/CD failure) |
 
 #### Trigger Mechanisms
 

@@ -5,7 +5,7 @@ Defines execution orders, paths, schedules, environment layouts, models, and thr
 """
 import os
 
-# Agent execution order with schedules (3-hour gaps starting 6 AM IST)
+# Agent execution order (100% sequential pipeline with pacing/cooldown control)
 AGENT_PIPELINE = [
     {"id": "bolt",     "name": "Bolt",     "role": "Performance Engineer",    "schedule": "06:00", "prompt_file": "bolt.md"},
     {"id": "sentinel", "name": "Sentinel", "role": "Security Engineer",       "schedule": "09:00", "prompt_file": "sentinel.md"},
