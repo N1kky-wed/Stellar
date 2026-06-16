@@ -39,3 +39,7 @@ GITHUB_BRANCH_PREFIX = 'agent/'
 # Models
 MODEL_GEMINI = "Gemini 3.5 Flash (High)"
 MODEL_CLAUDE = "Claude Sonnet 4.6 (Thinking)"
+
+# Quota Spacing Targets
+DAILY_PACING_TARGET_PERCENT = 100.0 / 7.0  # ~14.2857% daily target for weekly limit
+

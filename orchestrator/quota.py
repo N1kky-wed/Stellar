@@ -8,6 +8,7 @@ import time
 import re
 import logging
 from typing import Dict, Any
+from orchestrator import config
 
 logger = logging.getLogger("stellar-orchestrator")
 
@@ -159,7 +160,7 @@ def parse_quota_text(text: str) -> Dict[str, Any]:
             model_info["status"] = "Sprint Disabled"
         elif model_info["sprint_percent"] < 10.0 and model_info["sprint_refreshes_in_hours"] > 0:
             model_info["status"] = "Sprint Exhausted"
-        elif ratio < 14.3:
+        elif ratio < config.DAILY_PACING_TARGET_PERCENT:
             model_info["status"] = "Throttled"
         else:
             model_info["status"] = "Healthy"
