@@ -899,7 +899,7 @@ class OrchestratorEngine:
             if sched_str == "event-based":
                 continue
             sched_time = datetime.strptime(sched_str, "%H:%M").time()
-            sched_dt = datetime.combine(now.date(), sched_time).replace(tzinfo=IST)
+            sched_dt = IST.localize(datetime.combine(now.date(), sched_time))
 
             if now >= sched_dt:
                 last_run = self.state_db.get_last_run_for_agent(agent['id'])
