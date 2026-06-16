@@ -1443,8 +1443,11 @@ function wrapTables(htmlContent) {
 
 function processCodeBlocks(containerElement) {
   if (typeof hljs === "undefined" || !containerElement) return;
+  // Protect user messages from unwrap/iframe/rendering mechanisms
+  if (containerElement.closest(".user-msg")) return;
 
   containerElement.querySelectorAll("pre").forEach((pre) => {
+    if (pre.closest(".user-msg")) return;
     if (pre.parentElement.classList.contains("code-content-original")) {
       return;
     }
@@ -1607,6 +1610,8 @@ function processCodeBlocks(containerElement) {
 
 function processGenerativeUI(containerElement) {
   if (!containerElement) return;
+  // Protect user messages from unwrap/iframe/rendering mechanisms
+  if (containerElement.closest(".user-msg")) return;
 
   // 0. Execute any inline or deferred scripts to ensure generative UI interactivity works.
   const rawScripts = containerElement.querySelectorAll(
@@ -1616,6 +1621,7 @@ function processGenerativeUI(containerElement) {
   const inlineScripts = [];
 
   rawScripts.forEach((oldScript) => {
+    if (oldScript.closest(".user-msg")) return;
     let scriptContent = "";
     let attributesStr = "";
     let isExternal = false;
@@ -2178,6 +2184,8 @@ function renderMath(element) {
   if (!element || typeof renderMathInElement !== "function") {
     return;
   }
+  // Protect user messages from unwrap/iframe/rendering mechanisms
+  if (element.closest(".user-msg")) return;
   try {
     renderMathInElement(element, {
       delimiters: katexDelimiters,
@@ -4020,9 +4028,12 @@ function openInBrowserPane(url, tabName) {
 
 function unwrapVisuals(container) {
   if (!container) return;
+  // Protect user messages from unwrap/iframe/rendering mechanisms
+  if (container.closest(".user-msg")) return;
 
   // 1. YouTube Video Rendering
   container.querySelectorAll("a").forEach((link) => {
+    if (link.closest(".user-msg")) return;
     const url = link.href;
     if (!url) return;
 
@@ -4109,6 +4120,7 @@ function unwrapVisuals(container) {
 
   // 2. Fix SVGs trapped in <pre><code> blocks (markdown) or just as text
   container.querySelectorAll("pre code, .message-content").forEach((el) => {
+    if (el.closest(".user-msg")) return;
     const className = el.className || "";
     let content = el.innerHTML;
 
@@ -4169,6 +4181,7 @@ function unwrapVisuals(container) {
 
   // 2. Ensure all rendered SVGs are transparent and responsive
   container.querySelectorAll("svg").forEach((svg) => {
+    if (svg.closest(".user-msg")) return;
     svg.style.backgroundColor = "transparent";
     svg.style.maxWidth = "100%";
     svg.style.height = "auto";
@@ -4238,6 +4251,10 @@ function finalizeStellarMessage(
       if (targetContainer) {
         const targetMsgDiv = targetContainer.closest(".message");
         if (targetMsgDiv) {
+          // Protect user messages from autofix replacement
+          if (targetMsgDiv.classList.contains("user-msg")) {
+            return;
+          }
           placeholderDiv.style.display = "none";
           if (messageDbId) deleteMessageFromServer(messageDbId, placeholderDiv);
 
