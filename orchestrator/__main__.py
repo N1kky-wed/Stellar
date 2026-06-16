@@ -59,7 +59,7 @@ def main():
     logger.info("="*60)
     logger.info("Agent Execution Pipeline:")
     for i, a in enumerate(config.AGENT_PIPELINE, 1):
-        logger.info(f"  {i}. {a['name']} ({a['role']}) - Scheduled: {a['schedule']} IST - Prompt: {a['prompt_file']}")
+        logger.info(f"  {i}. {a['name']} ({a['role']}) - Prompt: {a['prompt_file']}")
     logger.info("="*60)
 
     engine = OrchestratorEngine()

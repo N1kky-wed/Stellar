@@ -880,42 +880,8 @@ class OrchestratorEngine:
                 for offset in range(1, len(config.AGENT_PIPELINE) + 1):
                     next_idx = (i + offset) % len(config.AGENT_PIPELINE)
                     candidate = config.AGENT_PIPELINE[next_idx]
-                    if candidate['schedule'] != "event-based":
+                    if candidate['id'] != "mercury":
                         return candidate
-        return None
-
-    def _get_due_agent(self, now: datetime) -> Optional[Dict[str, Any]]:
-        """
-        Checks current schedule time and agent history to see if an agent is due for its daily run.
-        Args:
-            now (datetime): Current time.
-        Returns:
-            Optional[Dict[str, Any]]: Configuration dictionary of the due agent if found.
-        """
-        """Checks schedules to see if any agent is due to run and hasn't successfully completed today."""
-        for agent in config.AGENT_PIPELINE:
-            sched_str = agent['schedule']
-            if sched_str == "event-based":
-                continue
-            sched_time = datetime.strptime(sched_str, "%H:%M").time()
-            sched_dt = IST.localize(datetime.combine(now.date(), sched_time))
-
-            if now >= sched_dt:
-                last_run = self.state_db.get_last_run_for_agent(agent['id'])
-                if last_run:
-                    last_started = datetime.fromisoformat(last_run['started_at']).astimezone(IST)
-                    if last_started.date() == now.date():
-                        # Only skip if it COMPLETED successfully today.
-                        # FAILED / TIMEOUT / INTERRUPTED / RUNNING all allow a retry.
-                        if last_run['status'] == 'COMPLETED':
-                            continue
-                        elif last_run['status'] == 'RUNNING':
-                            # Already being handled by _check_running_agent
-                            continue
-                        else:
-                            logger.info("Agent last run today failed scheduling retry agent_id=%s last_status=%s", agent['id'], last_run['status'])
-                            
-                return agent
         return None
 
     def _start_agent(self, agent: Dict[str, Any]):

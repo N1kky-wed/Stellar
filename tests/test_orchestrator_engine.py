@@ -71,43 +71,6 @@ def test_get_next_pipeline_agent_returns_correct_successor(temp_dbs):
     assert next_agent is not None
     assert next_agent["id"] == "bolt"
 
-# Brief comment: Asserts that _get_due_agent identifies due agents correctly based on the current schedule and previous run outcomes today.
-def test_get_due_agent_checks_schedules_and_state(temp_dbs):
-    engine = OrchestratorEngine()
-    
-    # Mock current time: 10:00 AM IST
-    now = datetime.combine(datetime.today(), datetime.strptime("10:00", "%H:%M").time()).replace(tzinfo=IST)
-    
-    # Bolt (06:00) and Sentinel (09:00) are due. Palette (12:00) is not.
-    # 1. No runs today: return first due (bolt)
-    due = engine._get_due_agent(now)
-    assert due is not None
-    assert due["id"] == "bolt"
-    
-    # 2. Bolt completed successfully today: return next due (sentinel)
-    engine.state_db.start_run("bolt", "branch", now.isoformat())
-    last_run = engine.state_db.get_last_run_for_agent("bolt")
-    engine.state_db.complete_run(last_run["id"], now.isoformat(), pr_status="PENDING")
-    
-    due = engine._get_due_agent(now)
-    assert due is not None
-    assert due["id"] == "sentinel"
-
-    # 3. Sentinel failed today: still due for retry
-    engine.state_db.start_run("sentinel", "branch", now.isoformat())
-    last_run = engine.state_db.get_last_run_for_agent("sentinel")
-    engine.state_db.fail_run(last_run["id"], now.isoformat(), "Error log")
-    
-    due = engine._get_due_agent(now)
-    assert due is not None
-    assert due["id"] == "sentinel"
-
-    # 4. Sentinel currently running today: skipped
-    engine.state_db.start_run("sentinel", "branch", now.isoformat())
-    
-    due = engine._get_due_agent(now)
-    # Both bolt and sentinel are handled (bolt completed, sentinel running), so None is returned
-    assert due is None
 
 # Brief comment: Asserts that _recover_state handles clean startup recovery, detecting active containers and failing inactive ones.
 def test_recover_state_handles_active_and_dead_runs(temp_dbs):

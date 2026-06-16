@@ -2305,53 +2305,6 @@
         };
       }
 
-      function hasCompletedToday(agentId, data) {
-        const allRuns = [
-          ...(data.gemini_recent_runs || []),
-          ...(data.claude_recent_runs || []),
-        ];
-        const nowParts = getISTDateParts(new Date());
-
-        return allRuns.some((run) => {
-          if (run.agent_id !== agentId || run.status !== "COMPLETED")
-            return false;
-          const runParts = getISTDateParts(new Date(run.started_at));
-          return (
-            runParts.year === nowParts.year &&
-            runParts.month === nowParts.month &&
-            runParts.day === nowParts.day
-          );
-        });
-      }
-
-      function getNextNominalRun(agentId, scheduleStr, data) {
-        const [schedH, schedM] = scheduleStr.split(":").map(Number);
-        const now = new Date();
-        const nowParts = getISTDateParts(now);
-
-        const year = nowParts.year;
-        const month = String(nowParts.month + 1).padStart(2, "0");
-        const day = String(nowParts.day).padStart(2, "0");
-        const hh = String(schedH).padStart(2, "0");
-        const mm = String(schedM).padStart(2, "0");
-
-        const schedToday = new Date(
-          `${year}-${month}-${day}T${hh}:${mm}:00+05:30`,
-        );
-
-        if (hasCompletedToday(agentId, data)) {
-          const nextRun = new Date(schedToday);
-          nextRun.setDate(nextRun.getDate() + 1);
-          return nextRun;
-        } else {
-          if (now < schedToday) {
-            return schedToday;
-          } else {
-            return now;
-          }
-        }
-      }
-
       function formatNextRunTime(date) {
         const dateParts = getISTDateParts(date);
 
@@ -2852,12 +2805,12 @@
 
         // ── Pipeline Simulation to Project Next Run Times ──
         const pipeline = [
-          { id: "bolt", schedule: "06:00" },
-          { id: "sentinel", schedule: "09:00" },
-          { id: "palette", schedule: "12:00" },
-          { id: "newton", schedule: "15:00" },
-          { id: "lucios", schedule: "18:00" },
-          { id: "proton", schedule: "21:00" },
+          { id: "bolt" },
+          { id: "sentinel" },
+          { id: "palette" },
+          { id: "newton" },
+          { id: "lucios" },
+          { id: "proton" },
         ];
 
         // Gather initial quota metrics
@@ -2969,8 +2922,8 @@
 
           let targetStartTime;
           if (firstStep) {
-            // First run starts at its next scheduled nominal slot (or now if overdue)
-            targetStartTime = getNextNominalRun(agent.id, agent.schedule, data);
+            // First run starts immediately at pipelineBusyUntil
+            targetStartTime = pipelineBusyUntil;
 
             if (
               data.pending_immediate_agent === agent.id &&
