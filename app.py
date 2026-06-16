@@ -171,6 +171,46 @@ def patched_create_connection(address, *args, **kwargs):
 
 connection.create_connection = patched_create_connection
 
+ACTIVE_CHATS_CANCEL_EVENTS = {}
+
+def start_redis_cancellation_listener():
+    """Starts a daemon thread to listen for cross-worker cancellations via Redis Pub/Sub."""
+    def listen():
+        pubsub = redis_client.pubsub()
+        try:
+            pubsub.subscribe("stellar_cancellations")
+            logger.info("Redis cancellation listener subscribed to channel: stellar_cancellations")
+            for message in pubsub.listen():
+                if message['type'] == 'message':
+                    try:
+                        data = json.loads(message['data'] if isinstance(message['data'], str) else message['data'].decode('utf-8'))
+                        chat_id = data.get('chat_id')
+                        exclude_query_id = data.get('exclude_query_id')
+                        
+                        if chat_id:
+                            # Account for potential type mismatches (string vs int)
+                            for c_id in (chat_id, str(chat_id), int(chat_id) if isinstance(chat_id, str) and chat_id.isdigit() else None):
+                                if c_id is None: continue
+                                val = ACTIVE_CHATS_CANCEL_EVENTS.get(c_id)
+                                if val:
+                                    cancel_event, active_query_id = val if isinstance(val, tuple) else (val, None)
+                                    if exclude_query_id and active_query_id == exclude_query_id:
+                                        # Do not cancel if it matches the excluded new query
+                                        continue
+                                    logger.info(f"Received cross-process cancel signal for chat_id: {c_id}, query_id: {active_query_id}")
+                                    cancel_event.set()
+                    except Exception as parse_err:
+                        logger.error(f"Error parsing cancellation pubsub message: {parse_err}")
+        except Exception as conn_err:
+            logger.error(f"Redis cancellation listener connection error: {conn_err}")
+        finally:
+            try:
+                pubsub.close()
+            except:
+                pass
+
+    threading.Thread(target=listen, daemon=True).start()
+
 if os.environ.get('TESTING') == 'true':
     import redis
     redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
@@ -780,45 +820,7 @@ class GlobalKeyManager:
         return blocks
 
 KEY_MANAGER = GlobalKeyManager()
-ACTIVE_CHATS_CANCEL_EVENTS = {}
 
-def start_redis_cancellation_listener():
-    """Starts a daemon thread to listen for cross-worker cancellations via Redis Pub/Sub."""
-    def listen():
-        pubsub = redis_client.pubsub()
-        try:
-            pubsub.subscribe("stellar_cancellations")
-            logger.info("Redis cancellation listener subscribed to channel: stellar_cancellations")
-            for message in pubsub.listen():
-                if message['type'] == 'message':
-                    try:
-                        data = json.loads(message['data'] if isinstance(message['data'], str) else message['data'].decode('utf-8'))
-                        chat_id = data.get('chat_id')
-                        exclude_query_id = data.get('exclude_query_id')
-                        
-                        if chat_id:
-                            # Account for potential type mismatches (string vs int)
-                            for c_id in (chat_id, str(chat_id), int(chat_id) if isinstance(chat_id, str) and chat_id.isdigit() else None):
-                                if c_id is None: continue
-                                val = ACTIVE_CHATS_CANCEL_EVENTS.get(c_id)
-                                if val:
-                                    cancel_event, active_query_id = val if isinstance(val, tuple) else (val, None)
-                                    if exclude_query_id and active_query_id == exclude_query_id:
-                                        # Do not cancel if it matches the excluded new query
-                                        continue
-                                    logger.info(f"Received cross-process cancel signal for chat_id: {c_id}, query_id: {active_query_id}")
-                                    cancel_event.set()
-                    except Exception as parse_err:
-                        logger.error(f"Error parsing cancellation pubsub message: {parse_err}")
-        except Exception as conn_err:
-            logger.error(f"Redis cancellation listener connection error: {conn_err}")
-        finally:
-            try:
-                pubsub.close()
-            except:
-                pass
-
-    threading.Thread(target=listen, daemon=True).start()
 
 def get_seconds_until_pacific_midnight():
     """
