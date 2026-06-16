@@ -490,20 +490,18 @@ class OrchestratorEngine:
         # 2. Always check for merged PRs and trigger service reloads — even during cooldown.
         #    Agent fixes should be deployed immediately regardless of quota state.
         next_agent = self._check_for_merge_trigger()
-        if next_agent and not self._is_in_cooldown(now):
-            logger.info(f"PR MERGE EVENT DETECTED: Starting next agent {next_agent['name']} immediately!")
-            self._start_agent(next_agent)
-            return
+        if next_agent:
+            if not self._is_in_cooldown(now):
+                logger.info(f"PR MERGE EVENT DETECTED: Starting next agent {next_agent['name']} immediately!")
+                self._start_agent(next_agent)
+                return
+            else:
+                logger.info(f"PR MERGE EVENT DETECTED during cooldown: Deferring next agent {next_agent['name']} to DB state.")
+                self.state_db.set_state("pending_immediate_agent", next_agent['id'])
+                return
 
         # 3. Quota cooldown guard — don't schedule new agents until quota refreshes
         if self._is_in_cooldown(now):
-            return
-
-        # 4. Check if any agent's scheduled time is due
-        due_agent = self._get_due_agent(now)
-        if due_agent:
-            logger.info(f"SCHEDULE DUE EVENT: Starting scheduled agent {due_agent['name']}...")
-            self._start_agent(due_agent)
             return
 
     def _drain_stdout(self):
