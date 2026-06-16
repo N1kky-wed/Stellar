@@ -1196,6 +1196,7 @@ def initialize_database():
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='scheduled_tasks'")
         if cursor.fetchone() is None:
+            # Bolt - Stability/Architecture: include 'status' and 'lock_id' columns in scheduled_tasks schema
             cursor.execute('''CREATE TABLE scheduled_tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -1207,6 +1208,8 @@ def initialize_database():
                 metadata TEXT,
                 is_active BOOLEAN DEFAULT 1,
                 last_run DATETIME,
+                status TEXT DEFAULT 'pending',
+                lock_id TEXT,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
             )''')
@@ -1220,6 +1223,19 @@ def initialize_database():
                     logger.info("Added 'metadata' column to 'scheduled_tasks' table.")
                 except Exception as e:
                     logger.exception("Error adding 'metadata' column to scheduled_tasks: %s", e)
+            # Bolt - Stability: Add 'status' and 'lock_id' columns to existing tables
+            if 'status' not in st_columns:
+                try:
+                    cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN status TEXT DEFAULT 'pending'")
+                    logger.info("Added 'status' column to 'scheduled_tasks' table.")
+                except Exception as e:
+                    logger.exception("Error adding 'status' column to scheduled_tasks: %s", e)
+            if 'lock_id' not in st_columns:
+                try:
+                    cursor.execute("ALTER TABLE scheduled_tasks ADD COLUMN lock_id TEXT")
+                    logger.info("Added 'lock_id' column to 'scheduled_tasks' table.")
+                except Exception as e:
+                    logger.exception("Error adding 'lock_id' column to scheduled_tasks: %s", e)
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_feedback'")
         if cursor.fetchone() is None:
@@ -1316,6 +1332,15 @@ def initialize_database():
         # Bolt - Performance: composite index lets the sidebar MAX(timestamp) correlated subquery
         # use an index range scan instead of a full table scan on messages for each chat row.
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages(chat_id, timestamp)")
+        # Bolt - Performance: composite index for repository lists sorted by last updated
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_repo_history_user_last_updated ON repo_history(user_id, last_updated DESC)")
+        # Bolt - Performance: index process_id on repo_history to avoid full table scans on status checks and updates
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_repo_history_process_id ON repo_history(process_id)")
+        # Bolt - Performance: index user_id on user_logs_prefs to optimize memory/preferences lookup
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_logs_prefs_user_id ON user_logs_prefs(user_id)")
+        # Bolt - Performance: index user_id and claim criteria on scheduled_tasks to prevent full table scans
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_user_id ON scheduled_tasks(user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_claim ON scheduled_tasks(is_active, status, execute_at)")
 
         db.commit()
     logger.info("Database initialization completed duration_sec=%.3f", time.time() - t_db_init_start)
@@ -5558,8 +5583,8 @@ def ssh_auth_page():
         else:
             session['is_approved'] = False
             # Render waitlist page
-            with open('templates/waitlist.html', 'r') as f:
-                content = f.read()
+            # Bolt - Performance: use render_template so Flask/Jinja2 compiles and caches waitlist template in memory
+            content = render_template('waitlist.html')
             response = make_response(content)
             response.headers['Content-Type'] = 'text/html'
             return response
@@ -6444,8 +6469,9 @@ def index():
             pass
 
     def serve_no_cache(filename):
-        with open(filename, 'r') as f:
-            content = f.read()
+        # Bolt - Performance: use render_template so Flask/Jinja2 compiles and caches templates in memory instead of reading from disk
+        template_name = filename.replace('templates/', '') if filename.startswith('templates/') else filename
+        content = render_template(template_name)
         response = make_response(content)
         response.headers['Content-Type'] = 'text/html'
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'

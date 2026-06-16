@@ -143,6 +143,9 @@ def get_refinement_prompt(user_query: str, conversation_history_list: list, user
         user_id_str = str(user_id) if user_id else "global"
         
         conn = sqlite3.connect(db_path)
+        # Bolt - Performance/Stability: Enable WAL mode and set a busy timeout of 5 seconds
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
         cursor = conn.cursor()
         cursor.execute('SELECT log_entry FROM user_logs_prefs WHERE user_id = ? ORDER BY created_at ASC', (user_id_str,))
         logs = [row[0] for row in cursor.fetchall()]
