@@ -2294,17 +2294,25 @@ available_tools = [
 def __getattr__(name):
     """
     Lazy module attribute resolution to support mock patching in unit tests.
+
+    Caches the imported module into globals() after the first access so that
+    Python's attribute lookup finds it directly on subsequent calls without
+    re-entering __getattr__.
     """
     if name == 'TavilyClient':
         from tavily import TavilyClient
+        globals()['TavilyClient'] = TavilyClient  # Cache: bypass __getattr__ on next access
         return TavilyClient
     if name == 'genai':
         from google import genai
+        globals()['genai'] = genai  # Cache: bypass __getattr__ on next access
         return genai
     if name == 'types':
         from google.genai import types
+        globals()['types'] = types  # Cache: bypass __getattr__ on next access
         return types
     if name == 'requests':
         import requests
+        globals()['requests'] = requests  # Cache: bypass __getattr__ on next access
         return requests
     raise AttributeError(f"module {__name__} has no attribute {name}")

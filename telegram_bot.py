@@ -4,8 +4,16 @@ import time
 
 # Lazy load requests when accessed externally (e.g. mock patching in tests)
 def __getattr__(name):
+    """
+    Lazy module attribute resolution to support mock patching in unit tests.
+
+    Caches the imported module into globals() after the first access so that
+    Python's attribute lookup finds it directly on subsequent calls without
+    re-entering __getattr__.
+    """
     if name == 'requests':
         import requests
+        globals()['requests'] = requests  # Cache: bypass __getattr__ on next access
         return requests
     raise AttributeError(f"module {__name__} has no attribute {name}")
 
