@@ -63,6 +63,59 @@ Key design principles:
 
 ---
 
+## Observability — Angel Runtime Tracer
+
+Stellar uses **Angel** for zero-code-change runtime observability. Angel dynamically instruments every Python function at import time using AST rewriting and stores per-call latency traces in a local SQLite database, queryable via a Rust CLI.
+
+### How it works
+
+```
+gunicorn.conf.py  ←─ loaded by Gunicorn on startup (before any app module)
+    │
+    └─ registers AngelFinder into sys.meta_path
+              │
+              └─ intercepts every project module import
+                        │
+                        └─ AngelSourceLoader rewrites the module AST
+                                  │
+                                  └─ wraps every function with try/finally timing
+                                            │
+                                            └─ AngelTracer sends JSON over TCP
+                                                      │
+                                                      ▼
+                                            Angel Rust server :9090
+                                            SQLite trace store
+                                            (/home/stellaradmin/Angel/angel.db)
+```
+
+### Key files
+
+| File                        | Purpose                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| `gunicorn.conf.py`          | Gunicorn bootstrap — registers `AngelFinder` before workers fork. **Do not remove.** |
+| `angel_trace.py`            | Python tracer runtime — AST transformer, import hook, TCP client. **Do not remove.** |
+| `/home/stellaradmin/Angel/` | Rust CLI + TCP server + SQLite store (separate repo)                                 |
+
+### CLI usage (on the host)
+
+```bash
+# See recently called functions with latency
+angel recent 50
+
+# Search for a function/node by name
+angel nodes <name>
+
+# Trace incoming/outgoing call dependencies
+angel trace <function_name>
+
+# Query relations between nodes
+angel relations <function_name>
+```
+
+> **Note for agents:** `angel_trace.py` and `gunicorn.conf.py` are **not dead code**. They are the instrumentation layer for the Angel observability system. Do not remove, rename, or refactor them without understanding the full Angel architecture above.
+
+---
+
 ## Prerequisites
 
 | Requirement   | Version / Notes                                             |

@@ -1,3 +1,6 @@
+import os
+import sys
+
 # Refactored imports to improve speed and manageability:
 # Heavy imports (smtplib, email.message, google.oauth2, google.auth.transport,
 # google.genai, cryptography.fernet, twilio.rest, redis, docker, pypandoc, tavily, webscrapper)
