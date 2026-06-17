@@ -104,11 +104,37 @@ class AngelTracer:
         if not self.sock:
             return
         
-        payload = json.dumps({"node_id": node_id, "latency_ns": latency_ns}) + "\n"
+        caller = None
+        try:
+            # frame 0: send_trace
+            # frame 1: the finally block (or wrapper)
+            # frame 2: the calling function
+            caller = sys._getframe(2).f_code.co_name
+        except Exception:
+            pass
+
+        payload_dict = {"node_id": node_id, "latency_ns": latency_ns}
+        if caller and caller != "<module>":
+            payload_dict["caller"] = caller
+
+        payload = json.dumps(payload_dict) + "\n"
         try:
             self.sock.sendall(payload.encode("utf-8"))
         except Exception:
             self.sock = None  # Force reconnection on next try
+
+    def send_event(self, payload: dict):
+        if not self.sock:
+            self.connect()
+        if not self.sock:
+            return
+        
+        payload_str = json.dumps(payload) + "\n"
+        try:
+            self.sock.sendall(payload_str.encode("utf-8"))
+        except Exception:
+            self.sock = None
+
 
 # Global default instance
 tracer = AngelTracer()
@@ -142,6 +168,41 @@ class AngelASTTransformer(ast.NodeTransformer):
     def visit_AsyncFunctionDef(self, node):
         return self.instrument_function(node)
 
+    def get_route_info(self, decorator):
+        if not isinstance(decorator, ast.Call):
+            return None
+        
+        # Check if decorator.func is something.route or route
+        is_route = False
+        if isinstance(decorator.func, ast.Attribute):
+            if decorator.func.attr == "route":
+                is_route = True
+        elif isinstance(decorator.func, ast.Name):
+            if decorator.func.id == "route":
+                is_route = True
+                
+        if not is_route:
+            return None
+            
+        # Get path expression (first positional arg)
+        path_expr = None
+        if len(decorator.args) > 0:
+            path_expr = decorator.args[0]
+        else:
+            path_expr = ast.Constant(value="/")
+            
+        # Get methods expression (methods=...)
+        methods_expr = None
+        for kw in decorator.keywords:
+            if kw.arg == "methods":
+                methods_expr = kw.value
+                break
+                
+        if methods_expr is None:
+            methods_expr = ast.List(elts=[ast.Constant(value="GET")], ctx=ast.Load())
+            
+        return path_expr, methods_expr
+
     def instrument_function(self, node):
         self.generic_visit(node)
         
@@ -151,6 +212,45 @@ class AngelASTTransformer(ast.NodeTransformer):
             
         node_id = f"{self.relative_path}::{node.name}"
         
+        # Collect route registrations to emit at import time
+        route_send_statements = []
+        for decorator in node.decorator_list:
+            route_info = self.get_route_info(decorator)
+            if route_info:
+                path_expr, methods_expr = route_info
+                
+                dict_keys = [
+                    ast.Constant(value="type"),
+                    ast.Constant(value="path"),
+                    ast.Constant(value="methods"),
+                    ast.Constant(value="handler")
+                ]
+                dict_values = [
+                    ast.Constant(value="route"),
+                    path_expr,
+                    methods_expr,
+                    ast.Constant(value=node_id)
+                ]
+                
+                route_dict = ast.Dict(keys=dict_keys, values=dict_values)
+                
+                route_send_stmt = ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Attribute(
+                                value=ast.Name(id="angel_trace", ctx=ast.Load()),
+                                attr="tracer",
+                                ctx=ast.Load()
+                            ),
+                            attr="send_event",
+                            ctx=ast.Load()
+                        ),
+                        args=[route_dict],
+                        keywords=[]
+                    )
+                )
+                route_send_statements.append(route_send_stmt)
+
         # 1. _angel_t0 = time.perf_counter_ns()
         timer_start = ast.Assign(
             targets=[ast.Name(id="_angel_t0", ctx=ast.Store())],
@@ -209,7 +309,11 @@ class AngelASTTransformer(ast.NodeTransformer):
         )
         
         node.body = [timer_start, try_node]
-        return node
+        
+        if route_send_statements:
+            return [node] + route_send_statements
+        else:
+            return node
 
 
 class AngelSourceLoader(importlib.machinery.SourceFileLoader):
