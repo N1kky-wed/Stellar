@@ -76,7 +76,7 @@ def get_working_api_key(model_name="gemini-3.5-flash"):
         # Fallback to PRIMARY_API_KEY if all are blocked
         return PRIMARY_API_KEY
     except Exception as e:
-        # Fallback in case of import errors
+        # DOUBLE-HANDLED FALLBACK: If the Flask app imports or KeyManager lookup fails (e.g., when run standalone or under specific testing frameworks), we fall back directly to reading the PRIMARY_API_KEY from environment variables.
         return os.getenv("PRIMARY_API_KEY")
 
 def get_diff(old_content, new_content, filename):
@@ -167,6 +167,7 @@ def stop_application_server(container, cmd):
     except Exception as e:
         logger.warning("Process PID kill script failed container_id=%s cmd=%s error=%s", getattr(container, 'id', 'unknown'), cmd, e)
         
+    # DOUBLE-HANDLED SERVER STOPPAGE: To ensure application servers are completely terminated without leaving orphaned zombie processes, we execute both direct signal 9 pkill by process class name (python, node) and pattern-matched pkill on the full startup command lines, ignoring any 'not found' errors.
     container.exec_run("pkill -9 python || true", user='root')
     container.exec_run("pkill -f 'python app.py' || true", user='root')
     container.exec_run("pkill -9 node || true", user='root')
@@ -222,7 +223,7 @@ def heal_application(process_id, error_id, r_client):
     logger.info("Initiating self-healing workflow process_id=%s error_id=%s", process_id, error_id)
     
     lock_key = f"lock:sentinel:heal:{process_id}"
-    # Acquire Redis lock with 5-minute TTL
+    # DOUBLE-HANDLED CONCURRENCY CHECK: Uses a Redis-based set-nx lock as the primary guard against concurrent healing operations. If lock acquisition fails (indicating another worker or process is already active), the task is pushed back to the 'sentinel:queue' with a 2-second delay fallback.
     if not r_client.set(lock_key, "locked", ex=300, nx=True):
         logger.info("Self-healing already in progress for app process_id=%s. Re-queueing task.", process_id)
         time.sleep(2)
@@ -624,6 +625,7 @@ Please provide the corrected file contents to heal the application.
         publish_log("healed", "Application healed successfully! Restoring subdomain access.", stage="Application Healed")
 
     except Exception as heal_err:
+        # DOUBLE-HANDLED ERROR RESTORATION: In case of any execution or validation error during healing, the system immediately invokes a rollback sequence: it chowns the directory to safe defaults, removes any new/modified files, copies clean files from the backup, restarts the original application server, and updates the database to mark the patch as failed.
         logger.error("Healer failure error=%s", heal_err, exc_info=True)
         publish_log("info", f"Error during healing: {heal_err}. Rolling back to baseline state...")
         
