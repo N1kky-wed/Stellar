@@ -115,7 +115,7 @@ class GatewayFormatter(logging.Formatter):
             record.session_id = 'error'
         return super().format(record)
 
-_console_handler = logging.StreamHandler()
+_console_handler = logging.StreamHandler(sys.stderr)
 _console_handler.setFormatter(GatewayFormatter('%(asctime)s [%(levelname)s] %(name)s [session=%(session_id)s]: %(message)s'))
 logging.basicConfig(level=logging.INFO, handlers=[_console_handler], force=True)
 
@@ -179,7 +179,7 @@ def _docker_status_refresher():
             with _cache_lock:
                 _container_statuses_cache = new_cache
         except Exception as e:
-            logger.error("Failed to list containers in background error=%s", e)
+            logger.error("Failed to list containers in background error=%s", e, exc_info=True)
         # Wait for 2 seconds or until woken up (e.g. by cache invalidation)
         _refresh_event.wait(timeout=2.0)
         _refresh_event.clear()
@@ -200,7 +200,7 @@ def start_refresher_thread_if_needed():
                     global _container_statuses_cache
                     _container_statuses_cache = {c.name: c.status for c in containers}
                 except Exception as e:
-                    logger.error("Initial container status fetch failed error=%s", e)
+                    logger.error("Initial container status fetch failed error=%s", e, exc_info=True)
                 
                 t = threading.Thread(target=_docker_status_refresher, daemon=True, name="docker-status-refresher")
                 t.start()
@@ -284,7 +284,7 @@ class RateLimiter:
                 self.r.expire(key, RATE_LIMIT_WINDOW)
             return count <= RATE_LIMIT_CONNECTIONS
         except Exception as e:
-            logger.error("Rate limiter Redis error error=%s", e)
+            logger.error("Rate limiter Redis error in check_connection_rate ip=%s error=%s", ip, e, exc_info=True)
             return True  # Fail open to avoid lockout on Redis issues
 
     def record_auth_failure(self, ip: str) -> int:
@@ -483,11 +483,11 @@ def verify_auth_code(code: str) -> dict | None:
                 remaining = r.get(user_code_key)
                 if remaining and int(remaining) <= 0:
                     r.delete(user_code_key)
-            audit.info(f"AUTH_SUCCESS | code={clean_code[:2]}**** | user_id={user_data.get('user_id')} | username={user_data.get('username')}")
+            audit.info("AUTH_SUCCESS | code=%s**** | user_id=%s | username=%s", clean_code[:2], user_data.get('user_id'), user_data.get('username'))
             return user_data
         return None
     except Exception as e:
-        logger.error("Auth code verification error error=%s", e)
+        logger.error("Auth code verification error error=%s", e, exc_info=True)
         return None
 
 
@@ -1370,13 +1370,14 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
         app_type (str): The application environment type.
         user_id (int): The ID of the authenticated user.
     """
+    container_name = "unknown"
     try:
         import docker
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
         container_name = container.name
-        audit.info(f"SHELL_ATTACH | user_id={user_id} | container={container_name}")
+        audit.info("SHELL_ATTACH | user_id=%s | container=%s", user_id, container_name)
 
         if container.status != 'running':
             logger.warning("Cannot attach shell to non-running container container_name=%s user_id=%d", container_name, user_id)
@@ -1438,7 +1439,7 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
             # Check idle timeout
             if time.time() - last_activity > SESSION_IDLE_TIMEOUT:
                 send_raw(channel, "\r\n\x1b[33m  Session timed out due to inactivity.\x1b[0m\r\n")
-                audit.info(f"SHELL_TIMEOUT | user_id={user_id} | container={container_name}")
+                audit.info("SHELL_TIMEOUT | user_id=%s | container=%s", user_id, container_name)
                 break
 
             try:
@@ -1471,7 +1472,7 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
                 except Exception:
                     break
 
-        audit.info(f"SHELL_DETACH | user_id={user_id} | container={container_name}")
+        audit.info("SHELL_DETACH | user_id=%s | container=%s", user_id, container_name)
 
     except docker.errors.NotFound:
         logger.warning("Container not found for shell attach process_id=%s app_type=%s", process_id, app_type)
@@ -1629,7 +1630,7 @@ def load_theme(user_id=None):
             with open(theme_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception as e:
-        logger.error("Failed to load theme user_id=%s error=%s", user_id, e)
+        logger.error("Failed to load theme user_id=%s error=%s", user_id, e, exc_info=True)
     return {"theme_idx": 0, "border_idx": 0}
 
 def save_theme(user_id, theme_idx, border_idx):
@@ -1660,7 +1661,7 @@ def save_theme(user_id, theme_idx, border_idx):
             json.dump({"theme_idx": theme_idx, "border_idx": border_idx}, f)
         os.replace(temp_path, theme_path)
     except Exception as e:
-        logger.error("Failed to save theme user_id=%s error=%s", user_id, e)
+        logger.error("Failed to save theme user_id=%s error=%s", user_id, e, exc_info=True)
         try:
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -1787,13 +1788,13 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             else:
                 auth_attempts += 1
                 rate_limiter.record_auth_failure(real_ip)
-                audit.info(f"AUTH_FAIL | ip={real_ip} | attempt={auth_attempts} | code_prefix={code[:2] if code else '??'}****")
+                audit.info("AUTH_FAIL | ip=%s | attempt=%d | code_prefix=%s****", real_ip, auth_attempts, code[:2] if code else '??')
                 logger.warning("SSH authentication failure ip=%s attempt=%d", real_ip, auth_attempts)
 
         if not user_info:
             # Clear screen when transitioning to goodbye screen
             draw(TUI.goodbye_screen("User", server.term_width, server.term_height, theme=active_theme), clear=True)
-            audit.info(f"AUTH_LOCKOUT | ip={real_ip} | attempts={MAX_AUTH_ATTEMPTS}")
+            audit.info("AUTH_LOCKOUT | ip=%s | attempts=%d", real_ip, MAX_AUTH_ATTEMPTS)
             logger.warning("SSH authentication lockout ip=%s attempts=%d", real_ip, MAX_AUTH_ATTEMPTS)
             time.sleep(2)
             send_raw(channel, '\x1b[?1049l\x1b[?25h')
@@ -1801,7 +1802,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
 
         user_id = user_info['user_id']
         username = user_info.get('display_name') or user_info.get('username', 'User')
-        audit.info(f"SESSION_START | ip={real_ip} | user_id={user_id} | username={username}")
+        audit.info("SESSION_START | ip=%s | user_id=%s | username=%s", real_ip, user_id, username)
         logger.info("SSH session authenticated ip=%s user_id=%s username=%s", real_ip, user_id, username)
 
         # Load user-scoped theme preferences or use default (Theme 0)
@@ -1911,7 +1912,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
             if time.time() - last_activity > SESSION_IDLE_TIMEOUT:
                 # Clear screen when entering goodbye screen
                 draw(TUI.goodbye_screen(username, server.term_width, server.term_height, theme=active_theme), clear=True)
-                audit.info(f"SESSION_TIMEOUT | user_id={user_id} | idle_minutes={SESSION_IDLE_TIMEOUT // 60}")
+                audit.info("SESSION_TIMEOUT | user_id=%s | idle_minutes=%d", user_id, SESSION_IDLE_TIMEOUT // 60)
                 time.sleep(2)
                 break
 
@@ -1939,7 +1940,7 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
                     
                     repos = get_filtered_sorted_repos(all_repos, status_map)
                 except Exception as e:
-                    logger.error("Error querying deployments error=%s", e)
+                    logger.error("Error querying deployments error=%s", e, exc_info=True)
                 needs_refresh = False
                 last_refresh_time = time.time()
                 if selected_index >= len(repos):
@@ -2132,11 +2133,11 @@ def handle_session(channel, server: StellarSSHServer, client_addr: str):
 
         # ---- PHASE 3: Goodbye ----
         draw(TUI.goodbye_screen(username, server.term_width, server.term_height, theme=active_theme), clear=True)
-        audit.info(f"SESSION_END | user_id={user_id} | username={username}")
+        audit.info("SESSION_END | user_id=%s | username=%s", user_id, username)
         time.sleep(1)
 
     except socket.timeout:
-        audit.info(f"SESSION_SOCKET_TIMEOUT | ip={client_addr}")
+        audit.info("SESSION_SOCKET_TIMEOUT | ip=%s", client_addr)
     except Exception as e:
         logger.error("Session error client_addr=%s error=%s", client_addr, e, exc_info=True)
     finally:
@@ -2166,13 +2167,13 @@ def handle_connection(client_socket, client_addr):
     # Rate limit check
     if ip != '127.0.0.1':
         if rate_limiter.is_ip_blocked(ip):
-            audit.info(f"CONNECTION_BLOCKED | ip={ip} | reason=auth_failures")
+            audit.info("CONNECTION_BLOCKED | ip=%s | reason=auth_failures", ip)
             logger.warning("Connection blocked ip=%s reason=auth_failures", ip)
             client_socket.close()
             return
 
         if not rate_limiter.check_connection_rate(ip):
-            audit.info(f"CONNECTION_BLOCKED | ip={ip} | reason=rate_limit")
+            audit.info("CONNECTION_BLOCKED | ip=%s | reason=rate_limit", ip)
             logger.warning("Connection blocked ip=%s reason=rate_limit", ip)
             client_socket.close()
             return
@@ -2185,7 +2186,7 @@ def handle_connection(client_socket, client_addr):
         active_sessions += 1
 
     session_active = True
-    audit.info(f"CONNECTION_NEW | ip={ip} | active_sessions={active_sessions}")
+    audit.info("CONNECTION_NEW | ip=%s | active_sessions=%d", ip, active_sessions)
     logger.info("New SSH connection established ip=%s active_sessions=%d", ip, active_sessions)
 
     transport = None
@@ -2205,7 +2206,7 @@ def handle_connection(client_socket, client_addr):
         try:
             transport.start_server(server=server)
         except paramiko.SSHException as e:
-            logger.error("SSH negotiation failed ip=%s error=%s", ip, e)
+            logger.error("SSH negotiation failed ip=%s error=%s", ip, e, exc_info=True)
             return
 
         # Wait for a channel
