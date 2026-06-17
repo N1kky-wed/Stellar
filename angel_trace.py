@@ -109,12 +109,22 @@ class AngelTracer:
             # frame 0: send_trace
             # frame 1: the finally block (or wrapper)
             # frame 2: the calling function
-            caller = sys._getframe(2).f_code.co_name
+            f = sys._getframe(2)
+            co_name = f.f_code.co_name
+            co_filename = os.path.abspath(f.f_code.co_filename)
+            
+            if hasattr(self, 'project_root') and co_filename.startswith(self.project_root):
+                rel_path = os.path.relpath(co_filename, self.project_root)
+                if co_name and co_name != "<module>":
+                    caller = f"{rel_path}::{co_name}"
+            else:
+                if co_name and co_name != "<module>":
+                    caller = co_name
         except Exception:
             pass
 
         payload_dict = {"node_id": node_id, "latency_ns": latency_ns}
-        if caller and caller != "<module>":
+        if caller:
             payload_dict["caller"] = caller
 
         payload = json.dumps(payload_dict) + "\n"
@@ -352,6 +362,7 @@ class AngelSourceLoader(importlib.machinery.SourceFileLoader):
 class AngelFinder(importlib.abc.MetaPathFinder):
     def __init__(self, project_root):
         self.project_root = os.path.abspath(project_root)
+        tracer.project_root = self.project_root
 
     def find_spec(self, fullname, path, target=None):
         spec = importlib.machinery.PathFinder.find_spec(fullname, path, target)
