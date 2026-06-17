@@ -285,6 +285,7 @@ class RateLimiter:
             return count <= RATE_LIMIT_CONNECTIONS
         except Exception as e:
             logger.error("Rate limiter Redis error in check_connection_rate ip=%s error=%s", ip, e, exc_info=True)
+            # DOUBLE-HANDLED FAIL-OPEN SAFETY: If the Redis rate limiter connection fails or throws an exception, the system fails open by returning True. This ensures that transient Redis issues do not result in a total lockout of SSH gateway users.
             return True  # Fail open to avoid lockout on Redis issues
 
     def record_auth_failure(self, ip: str) -> int:
@@ -404,6 +405,7 @@ def get_container(client, process_id: str, app_type: str):
     try:
         return client.containers.get(f"stellar-{app_type}-{process_id}")
     except docker.errors.NotFound:
+        # DOUBLE-HANDLED CONTAINER RESOLUTION: Attempts to look up the container using the app_type-specific name schema first. If not found (e.g., due to configuration legacy), it falls back to checking the default generic 'stellar-repo-' naming convention.
         return client.containers.get(f"stellar-repo-{process_id}")
 
 
@@ -438,6 +440,7 @@ def get_container_status(process_id: str, app_type: str = 'repo') -> str:
         str: The status of the container (e.g. 'running', 'exited'), or 'not_found'.
     """
     statuses = get_all_container_statuses()
+    # DOUBLE-HANDLED STATUS MAPPING: Looks up cached statuses using both the type-specific name and the fallback repo-specific name to ensure accurate reporting even if the container classification is ambiguous.
     name1 = f"stellar-{app_type}-{process_id}"
     name2 = f"stellar-repo-{process_id}"
     if name1 in statuses:
