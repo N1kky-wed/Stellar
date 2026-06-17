@@ -76,30 +76,45 @@ class LazyFernet:
 def __getattr__(name):
     """
     Lazy module attribute resolution to support mock patching in unit tests.
+
+    After the first access, the imported module is cached directly in this
+    module's __dict__ (via globals()) so that Python's normal attribute lookup
+    finds it without invoking __getattr__ again on subsequent calls.  Without
+    this caching, every access to e.g. ``app.genai`` would re-enter this
+    function and call ``from google import genai`` (cheap via sys.modules, but
+    still an avoidable overhead on every request).
     """
     if name == 'genai':
         from google import genai
+        globals()['genai'] = genai  # Cache: bypass __getattr__ on next access
         return genai
     if name == 'types':
         from google.genai import types
+        globals()['types'] = types  # Cache: bypass __getattr__ on next access
         return types
     if name == 'requests':
         import requests
+        globals()['requests'] = requests  # Cache: bypass __getattr__ on next access
         return requests
     if name == 'id_token':
         from google.oauth2 import id_token
+        globals()['id_token'] = id_token  # Cache: bypass __getattr__ on next access
         return id_token
     if name == 'google_requests':
         from google.auth.transport import requests as google_requests
+        globals()['google_requests'] = google_requests  # Cache: bypass __getattr__ on next access
         return google_requests
     if name == 'webscrapper':
         import webscrapper
+        globals()['webscrapper'] = webscrapper  # Cache: bypass __getattr__ on next access
         return webscrapper
     if name == 'smtplib':
         import smtplib
+        globals()['smtplib'] = smtplib  # Cache: bypass __getattr__ on next access
         return smtplib
     if name == 'EmailMessage':
         from email.message import EmailMessage
+        globals()['EmailMessage'] = EmailMessage  # Cache: bypass __getattr__ on next access
         return EmailMessage
     raise AttributeError(f"module {__name__} has no attribute {name}")
 

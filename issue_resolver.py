@@ -34,11 +34,20 @@ if os.environ.get('TESTING') == 'true':
     from telegram_bot import TelegramBot
 else:
     def __getattr__(name):
+        """
+        Lazy module attribute resolution to support mock patching in unit tests.
+
+        Caches the imported module into globals() after the first access so that
+        Python's attribute lookup finds it directly on subsequent calls without
+        re-entering __getattr__.
+        """
         if name == 'send_self_email':
             from agent_tools import send_self_email
+            globals()['send_self_email'] = send_self_email  # Cache: bypass __getattr__ on next access
             return send_self_email
         if name == 'TelegramBot':
             from telegram_bot import TelegramBot
+            globals()['TelegramBot'] = TelegramBot  # Cache: bypass __getattr__ on next access
             return TelegramBot
         raise AttributeError(f"module {__name__} has no attribute {name}")
 
