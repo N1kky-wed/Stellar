@@ -53,6 +53,13 @@ window.stellar.triggerAutofix = function (containerElement, targetEl, error) {
   }
   if (!container) return;
 
+  // Protect user messages from autofix mechanisms
+  if (
+    container.classList.contains("user-msg") ||
+    container.closest(".user-msg")
+  )
+    return;
+
   // Prevent multiple concurrent fixes for the same container
   if (container.dataset.autofixTriggered === "true") return;
   container.dataset.autofixTriggered = "true";
@@ -1444,10 +1451,14 @@ function wrapTables(htmlContent) {
 function processCodeBlocks(containerElement) {
   if (typeof hljs === "undefined" || !containerElement) return;
   // Protect user messages from unwrap/iframe/rendering mechanisms
-  if (containerElement.closest(".user-msg")) return;
+  if (
+    containerElement.classList.contains("user-msg") ||
+    containerElement.closest(".user-msg")
+  )
+    return;
 
   containerElement.querySelectorAll("pre").forEach((pre) => {
-    if (pre.closest(".user-msg")) return;
+    if (pre.classList.contains("user-msg") || pre.closest(".user-msg")) return;
     if (pre.parentElement.classList.contains("code-content-original")) {
       return;
     }
@@ -1611,7 +1622,11 @@ function processCodeBlocks(containerElement) {
 function processGenerativeUI(containerElement) {
   if (!containerElement) return;
   // Protect user messages from unwrap/iframe/rendering mechanisms
-  if (containerElement.closest(".user-msg")) return;
+  if (
+    containerElement.classList.contains("user-msg") ||
+    containerElement.closest(".user-msg")
+  )
+    return;
 
   // 0. Execute any inline or deferred scripts to ensure generative UI interactivity works.
   const rawScripts = containerElement.querySelectorAll(
@@ -1621,7 +1636,11 @@ function processGenerativeUI(containerElement) {
   const inlineScripts = [];
 
   rawScripts.forEach((oldScript) => {
-    if (oldScript.closest(".user-msg")) return;
+    if (
+      oldScript.classList.contains("user-msg") ||
+      oldScript.closest(".user-msg")
+    )
+      return;
     let scriptContent = "";
     let attributesStr = "";
     let isExternal = false;
@@ -2185,7 +2204,8 @@ function renderMath(element) {
     return;
   }
   // Protect user messages from unwrap/iframe/rendering mechanisms
-  if (element.closest(".user-msg")) return;
+  if (element.classList.contains("user-msg") || element.closest(".user-msg"))
+    return;
   try {
     renderMathInElement(element, {
       delimiters: katexDelimiters,
@@ -4029,11 +4049,16 @@ function openInBrowserPane(url, tabName) {
 function unwrapVisuals(container) {
   if (!container) return;
   // Protect user messages from unwrap/iframe/rendering mechanisms
-  if (container.closest(".user-msg")) return;
+  if (
+    container.classList.contains("user-msg") ||
+    container.closest(".user-msg")
+  )
+    return;
 
   // 1. YouTube Video Rendering
   container.querySelectorAll("a").forEach((link) => {
-    if (link.closest(".user-msg")) return;
+    if (link.classList.contains("user-msg") || link.closest(".user-msg"))
+      return;
     const url = link.href;
     if (!url) return;
 
@@ -4120,7 +4145,7 @@ function unwrapVisuals(container) {
 
   // 2. Fix SVGs trapped in <pre><code> blocks (markdown) or just as text
   container.querySelectorAll("pre code, .message-content").forEach((el) => {
-    if (el.closest(".user-msg")) return;
+    if (el.classList.contains("user-msg") || el.closest(".user-msg")) return;
     const className = el.className || "";
     let content = el.innerHTML;
 
@@ -4181,7 +4206,7 @@ function unwrapVisuals(container) {
 
   // 2. Ensure all rendered SVGs are transparent and responsive
   container.querySelectorAll("svg").forEach((svg) => {
-    if (svg.closest(".user-msg")) return;
+    if (svg.classList.contains("user-msg") || svg.closest(".user-msg")) return;
     svg.style.backgroundColor = "transparent";
     svg.style.maxWidth = "100%";
     svg.style.height = "auto";
@@ -4252,7 +4277,10 @@ function finalizeStellarMessage(
         const targetMsgDiv = targetContainer.closest(".message");
         if (targetMsgDiv) {
           // Protect user messages from autofix replacement
-          if (targetMsgDiv.classList.contains("user-msg")) {
+          if (
+            targetMsgDiv.classList.contains("user-msg") ||
+            targetMsgDiv.closest(".user-msg")
+          ) {
             return;
           }
           placeholderDiv.style.display = "none";
@@ -6373,6 +6401,74 @@ async function handleChangePassword(event) {
 function highlightTextInMessage(messageElement, textToHighlight) {
   const contentDiv = messageElement.querySelector(".message-content");
   if (!contentDiv || !textToHighlight) return;
+
+  // Protect user messages: perform safe direct DOM highlight manipulation
+  // to avoid reading/writing innerHTML and causing XSS or HTML/style unwrap leaks.
+  const isUserMsg =
+    messageElement.classList.contains("user-msg") ||
+    messageElement.closest(".user-msg");
+  if (isUserMsg) {
+    const walk = document.createTreeWalker(
+      contentDiv,
+      NodeFilter.SHOW_TEXT,
+      null,
+      false,
+    );
+    let node;
+    const nodesToReplace = [];
+
+    while ((node = walk.nextNode())) {
+      const parentTag = node.parentNode.tagName.toLowerCase();
+      if (
+        parentTag === "code" ||
+        parentTag === "pre" ||
+        parentTag === "script" ||
+        node.parentNode.classList.contains("highlighted-text")
+      ) {
+        continue;
+      }
+
+      const regex = new RegExp(textToHighlight, "gi");
+      if (node.nodeValue.match(regex)) {
+        nodesToReplace.push(node);
+      }
+    }
+
+    nodesToReplace.forEach((node) => {
+      const text = node.nodeValue;
+      const regex = new RegExp(textToHighlight, "gi");
+      const parent = node.parentNode;
+
+      let lastIndex = 0;
+      let match;
+      const fragment = document.createDocumentFragment();
+
+      while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          fragment.appendChild(
+            document.createTextNode(text.substring(lastIndex, match.index)),
+          );
+        }
+        const span = document.createElement("span");
+        span.className = "highlighted-text";
+        span.textContent = match[0];
+        fragment.appendChild(span);
+        lastIndex = regex.lastIndex;
+        if (regex.lastIndex === match.index) {
+          regex.lastIndex++;
+        }
+      }
+
+      if (lastIndex < text.length) {
+        fragment.appendChild(
+          document.createTextNode(text.substring(lastIndex)),
+        );
+      }
+
+      parent.replaceChild(fragment, node);
+    });
+    return;
+  }
 
   const tempDiv = document.createElement("div");
   tempDiv.innerHTML = contentDiv.innerHTML;
