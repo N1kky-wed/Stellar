@@ -2585,9 +2585,26 @@
           `${data.gemini.weekly_percent}%`;
         document.getElementById("geminiWeeklyBar").style.width =
           `${data.gemini.weekly_percent}%`;
-        document.getElementById("geminiWeeklyReset").textContent =
-          `Refreshes in: ${data.gemini.weekly_refreshes_in_hours.toFixed(1)}h (${(data.gemini.weekly_refreshes_in_hours / 24).toFixed(2)} days)`;
+        // Gemini Adjustments for Elapsed Time
+        const adjustedGRef = Math.max(
+          0.0,
+          data.gemini.weekly_refreshes_in_hours - elapsedHours,
+        );
+        const adjustedGRefDays = adjustedGRef / 24;
+        const adjustedGRatio =
+          adjustedGRefDays > 0
+            ? data.gemini.weekly_percent / adjustedGRefDays
+            : 100.0;
 
+        const geminiAvgCost =
+          data.gemini_avg_cost !== undefined ? data.gemini_avg_cost : 1.2;
+        const geminiRunsCount = data.gemini_runs_count || 0;
+        const geminiAllowanceRuns = adjustedGRatio / geminiAvgCost;
+
+        document.getElementById("geminiWeeklyReset").textContent =
+          `Refreshes in: ${adjustedGRef.toFixed(1)}h (${(adjustedGRef / 24).toFixed(2)} days)`;
+
+        let adjustedGSprintRef = 0.0;
         if (data.gemini.sprint_disabled) {
           document.getElementById("geminiSprintPercent").textContent =
             "Disabled";
@@ -2595,34 +2612,29 @@
           document.getElementById("geminiSprintReset").textContent =
             "Sprint disabled due to weekly lockout";
         } else {
+          adjustedGSprintRef = Math.max(
+            0.0,
+            data.gemini.sprint_refreshes_in_hours - elapsedHours,
+          );
           document.getElementById("geminiSprintPercent").textContent =
             `${data.gemini.sprint_percent}%`;
           document.getElementById("geminiSprintBar").style.width =
             `${data.gemini.sprint_percent}%`;
           document.getElementById("geminiSprintReset").textContent =
-            `Refreshes in: ${data.gemini.sprint_refreshes_in_hours.toFixed(1)}h`;
+            `Refreshes in: ${adjustedGSprintRef.toFixed(1)}h`;
         }
 
-        const geminiRatio = data.gemini.ratio || 0;
-        const geminiRefDays = (
-          data.gemini.weekly_refreshes_in_hours / 24
-        ).toFixed(2);
-
-        const geminiAvgCost =
-          data.gemini_avg_cost !== undefined ? data.gemini_avg_cost : 1.2;
-        const geminiRunsCount = data.gemini_runs_count || 0;
-        const geminiTargetRuns = 14.29 / geminiAvgCost;
-        const geminiAllowanceRuns = geminiRatio / geminiAvgCost;
-
         document.getElementById("geminiDailyAllowance").innerHTML =
-          `${geminiRatio}% / day<br><span class="text-[9px] text-slate-400 font-normal">~${geminiAllowanceRuns.toFixed(1)} runs</span>`;
+          `${adjustedGRatio.toFixed(2)}% / day<br><span class="text-[9px] text-slate-400 font-normal">~${geminiAllowanceRuns.toFixed(1)} runs</span>`;
         document.getElementById("geminiMeasuredCost").innerHTML =
           `${geminiAvgCost.toFixed(2)}%<br><span class="text-[9px] text-slate-400 font-normal">${geminiRunsCount} runs</span>`;
 
         // Gemini Recovery Math
         const gPct = data.gemini.weekly_percent || 100.0;
-        const gRef = data.gemini.weekly_refreshes_in_hours || 0.0;
-        let geminiWaitHours = Math.max(0.0, gRef - elapsedHours - 1.68 * gPct);
+        let geminiWaitHours = Math.max(
+          0.0,
+          data.gemini.weekly_refreshes_in_hours - elapsedHours - 1.68 * gPct,
+        );
         let geminiRecoveryDate = new Date(
           Date.now() + geminiWaitHours * 3600000,
         );
@@ -2679,16 +2691,33 @@
             "bg-[#0e1612] border border-emerald-500/15 rounded-lg p-3 flex flex-col justify-between min-h-[64px]";
         }
 
+        // Determine Gemini status dynamically
+        let geminiStatusText = data.gemini.status;
+        if (data.gemini.weekly_percent <= 0.0) {
+          geminiStatusText = "Exhausted";
+        } else if (data.gemini.sprint_disabled) {
+          geminiStatusText = "Sprint Disabled";
+        } else if (
+          data.gemini.sprint_percent < 10.0 &&
+          adjustedGSprintRef > 0
+        ) {
+          geminiStatusText = "Sprint Exhausted";
+        } else if (adjustedGRatio < 14.29) {
+          geminiStatusText = "Throttled";
+        } else {
+          geminiStatusText = "Healthy";
+        }
+
         const geminiStatusBadge = document.getElementById("geminiQuotaStatus");
         const geminiMathStatus = document.getElementById("geminiMathStatus");
 
-        geminiStatusBadge.textContent = data.gemini.status.toUpperCase();
-        if (data.gemini.status === "Healthy") {
+        geminiStatusBadge.textContent = geminiStatusText.toUpperCase();
+        if (geminiStatusText === "Healthy") {
           geminiStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
           geminiMathStatus.textContent = "Safe to Run (Allowance > 14.29%)";
           geminiMathStatus.className = "text-xs font-semibold text-emerald-400";
-        } else if (data.gemini.status === "Throttled") {
+        } else if (geminiStatusText === "Throttled") {
           geminiStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
           geminiMathStatus.textContent = "Throttled (Allowance < 14.29%)";
@@ -2696,21 +2725,30 @@
         } else {
           geminiStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20";
-          geminiMathStatus.textContent = data.gemini.status;
+          geminiMathStatus.textContent = geminiStatusText;
           geminiMathStatus.className = "text-xs font-semibold text-rose-400";
         }
 
-        // Claude
-        document.getElementById("claudeAccount").textContent = showAccountEmails
-          ? data.claude.account || "Unknown"
-          : "••••••••••••••••";
-        document.getElementById("claudeWeeklyPercent").textContent =
-          `${data.claude.weekly_percent}%`;
-        document.getElementById("claudeWeeklyBar").style.width =
-          `${data.claude.weekly_percent}%`;
-        document.getElementById("claudeWeeklyReset").textContent =
-          `Refreshes in: ${data.claude.weekly_refreshes_in_hours.toFixed(1)}h (${(data.claude.weekly_refreshes_in_hours / 24).toFixed(2)} days)`;
+        // Claude Adjustments for Elapsed Time
+        const adjustedCRef = Math.max(
+          0.0,
+          data.claude.weekly_refreshes_in_hours - elapsedHours,
+        );
+        const adjustedCRefDays = adjustedCRef / 24;
+        const adjustedCRatio =
+          adjustedCRefDays > 0
+            ? data.claude.weekly_percent / adjustedCRefDays
+            : 100.0;
 
+        const claudeAvgCost =
+          data.claude_avg_cost !== undefined ? data.claude_avg_cost : 3.0;
+        const claudeRunsCount = data.claude_runs_count || 0;
+        const claudeAllowanceRuns = adjustedCRatio / claudeAvgCost;
+
+        document.getElementById("claudeWeeklyReset").textContent =
+          `Refreshes in: ${adjustedCRef.toFixed(1)}h (${(adjustedCRef / 24).toFixed(2)} days)`;
+
+        let adjustedCSprintRef = 0.0;
         if (data.claude.sprint_disabled) {
           document.getElementById("claudeSprintPercent").textContent =
             "Disabled";
@@ -2718,34 +2756,29 @@
           document.getElementById("claudeSprintReset").textContent =
             "Sprint disabled due to weekly lockout";
         } else {
+          adjustedCSprintRef = Math.max(
+            0.0,
+            data.claude.sprint_refreshes_in_hours - elapsedHours,
+          );
           document.getElementById("claudeSprintPercent").textContent =
             `${data.claude.sprint_percent}%`;
           document.getElementById("claudeSprintBar").style.width =
             `${data.claude.sprint_percent}%`;
           document.getElementById("claudeSprintReset").textContent =
-            `Refreshes in: ${data.claude.sprint_refreshes_in_hours.toFixed(1)}h`;
+            `Refreshes in: ${adjustedCSprintRef.toFixed(1)}h`;
         }
 
-        const claudeRatio = data.claude.ratio || 0;
-        const claudeRefDays = (
-          data.claude.weekly_refreshes_in_hours / 24
-        ).toFixed(2);
-
-        const claudeAvgCost =
-          data.claude_avg_cost !== undefined ? data.claude_avg_cost : 3.0;
-        const claudeRunsCount = data.claude_runs_count || 0;
-        const claudeTargetRuns = 14.29 / claudeAvgCost;
-        const claudeAllowanceRuns = claudeRatio / claudeAvgCost;
-
         document.getElementById("claudeDailyAllowance").innerHTML =
-          `${claudeRatio}% / day<br><span class="text-[9px] text-slate-400 font-normal">~${claudeAllowanceRuns.toFixed(1)} runs</span>`;
+          `${adjustedCRatio.toFixed(2)}% / day<br><span class="text-[9px] text-slate-400 font-normal">~${claudeAllowanceRuns.toFixed(1)} runs</span>`;
         document.getElementById("claudeMeasuredCost").innerHTML =
           `${claudeAvgCost.toFixed(2)}%<br><span class="text-[9px] text-slate-400 font-normal">${claudeRunsCount} runs</span>`;
 
         // Claude Recovery Math
         const cPct = data.claude.weekly_percent || 100.0;
-        const cRef = data.claude.weekly_refreshes_in_hours || 0.0;
-        let claudeWaitHours = Math.max(0.0, cRef - elapsedHours - 1.68 * cPct);
+        let claudeWaitHours = Math.max(
+          0.0,
+          data.claude.weekly_refreshes_in_hours - elapsedHours - 1.68 * cPct,
+        );
         let claudeRecoveryDate = new Date(
           Date.now() + claudeWaitHours * 3600000,
         );
@@ -2802,16 +2835,33 @@
             "bg-[#0e1612] border border-emerald-500/15 rounded-lg p-3 flex flex-col justify-between min-h-[64px]";
         }
 
+        // Determine Claude status dynamically
+        let claudeStatusText = data.claude.status;
+        if (data.claude.weekly_percent <= 0.0) {
+          claudeStatusText = "Exhausted";
+        } else if (data.claude.sprint_disabled) {
+          claudeStatusText = "Sprint Disabled";
+        } else if (
+          data.claude.sprint_percent < 10.0 &&
+          adjustedCSprintRef > 0
+        ) {
+          claudeStatusText = "Sprint Exhausted";
+        } else if (adjustedCRatio < 14.29) {
+          claudeStatusText = "Throttled";
+        } else {
+          claudeStatusText = "Healthy";
+        }
+
         const claudeStatusBadge = document.getElementById("claudeQuotaStatus");
         const claudeMathStatus = document.getElementById("claudeMathStatus");
 
-        claudeStatusBadge.textContent = data.claude.status.toUpperCase();
-        if (data.claude.status === "Healthy") {
+        claudeStatusBadge.textContent = claudeStatusText.toUpperCase();
+        if (claudeStatusText === "Healthy") {
           claudeStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
           claudeMathStatus.textContent = "Safe to Run (Allowance > 14.29%)";
           claudeMathStatus.className = "text-xs font-semibold text-emerald-400";
-        } else if (data.claude.status === "Throttled") {
+        } else if (claudeStatusText === "Throttled") {
           claudeStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20";
           claudeMathStatus.textContent = "Throttled (Allowance < 14.29%)";
@@ -2819,7 +2869,7 @@
         } else {
           claudeStatusBadge.className =
             "px-2.5 py-1 rounded text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20";
-          claudeMathStatus.textContent = data.claude.status;
+          claudeMathStatus.textContent = claudeStatusText;
           claudeMathStatus.className = "text-xs font-semibold text-rose-400";
         }
 

@@ -6756,6 +6756,39 @@ def orchestrator_quota_info():
             parsed = json.loads(row['value'])
         else:
             parsed = {'gemini': None, 'claude': None}
+
+        # Auto-refresh quota cache if it's older than 1 hour (3600 seconds)
+        should_refresh = True
+        if parsed and parsed.get('last_updated'):
+            try:
+                last_updated_dt = datetime.datetime.fromisoformat(parsed['last_updated'])
+                if last_updated_dt.tzinfo is not None:
+                    from datetime import timezone, timedelta
+                    IST = timezone(timedelta(hours=5, minutes=30))
+                    now = datetime.datetime.now(IST)
+                else:
+                    now = datetime.datetime.now()
+                if (now - last_updated_dt).total_seconds() < 3600:
+                    should_refresh = False
+            except Exception:
+                pass
+        
+        if should_refresh:
+            try:
+                from orchestrator.quota import fetch_quota_data_from_container, parse_quota_text
+                from datetime import timezone, timedelta
+                IST = timezone(timedelta(hours=5, minutes=30))
+                raw_text = fetch_quota_data_from_container()
+                parsed_fresh = parse_quota_text(raw_text)
+                parsed_fresh["last_updated"] = datetime.datetime.now(IST).isoformat()
+                conn.execute("""
+                    INSERT INTO orchestrator_state (key, value) VALUES ('quota_data', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """, (json.dumps(parsed_fresh),))
+                conn.commit()
+                parsed = parsed_fresh
+            except Exception as e:
+                logger.error(f"Auto-refreshing quota failed in quota-info: {e}")
             
         rows = conn.execute("""
             SELECT key, value FROM orchestrator_state 
