@@ -95,13 +95,27 @@ class AngelTracer:
         self.host = host
         self.port = port
         self.sock = None
+        # Bolt - Performance/Stability: Track last connection attempt time to implement reconnect backoff cooldown
+        self.last_connect_attempt = 0.0
+        self.connect_cooldown = 5.0  # seconds
 
     def connect(self):
+        # Bolt - Performance: Avoid socket creation/connection storm if server is unreachable
+        now = time.time()
+        if now - self.last_connect_attempt < self.connect_cooldown:
+            return
+        self.last_connect_attempt = now
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.settimeout(1.0)
             self.sock.connect((self.host, self.port))
         except Exception:
+            # Bolt - Stability: Explicitly close the socket to prevent file descriptor leaks
+            if self.sock:
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
             self.sock = None
 
     def send_trace(self, node_id: str, latency_ns: int, trace_id: str = None):
@@ -159,7 +173,13 @@ class AngelTracer:
         try:
             self.sock.sendall(payload.encode("utf-8"))
         except Exception:
-            self.sock = None  # Force reconnection on next try
+            # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
+            if self.sock:
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
+            self.sock = None  # Force reconnection on next try (cooldown will be respected)
 
     def send_event(self, payload: dict):
         if not self.sock:
@@ -171,7 +191,14 @@ class AngelTracer:
         try:
             self.sock.sendall(payload_str.encode("utf-8"))
         except Exception:
+            # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
+            if self.sock:
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
             self.sock = None
+
 
 
 # Global default instance
