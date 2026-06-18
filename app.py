@@ -40,11 +40,24 @@ class LazyRedis:
     Lazy proxy for redis.StrictRedis to delay importing 'redis' until first access.
     """
     def __init__(self, *args, **kwargs):
+        """
+        Store connection arguments and initialize client tracking.
+
+        Args:
+            *args: Positional arguments for Redis client setup.
+            **kwargs: Keyword arguments for Redis client setup.
+        """
         self._args = args
         self._kwargs = kwargs
         self._client = None
 
     def _init_client(self):
+        """
+        Lazily import redis and construct the StrictRedis client instance.
+
+        Returns:
+            redis.StrictRedis: The instantiated Redis client.
+        """
         if self._client is None:
             # Inline import of redis to speed up startup time
             import redis
@@ -52,6 +65,15 @@ class LazyRedis:
         return self._client
 
     def __getattr__(self, name):
+        """
+        Proxy attribute/method requests to the underlying initialized Redis client.
+
+        Args:
+            name (str): The requested attribute or method name.
+
+        Returns:
+            Any: The attribute or method from the Redis client.
+        """
         client = self._init_client()
         return getattr(client, name)
 
@@ -60,10 +82,22 @@ class LazyFernet:
     Lazy proxy for cryptography.fernet.Fernet to delay importing 'cryptography' until first access.
     """
     def __init__(self, key):
+        """
+        Initialize LazyFernet with a secret key.
+
+        Args:
+            key (bytes/str): The key used for encryption/decryption.
+        """
         self._key = key
         self._fernet = None
 
     def _get_fernet(self):
+        """
+        Lazily import cryptography and construct the Fernet instance.
+
+        Returns:
+            cryptography.fernet.Fernet: The instantiated Fernet object.
+        """
         if self._fernet is None:
             # Inline import of Fernet to speed up startup time
             from cryptography.fernet import Fernet
@@ -71,9 +105,29 @@ class LazyFernet:
         return self._fernet
 
     def encrypt(self, *args, **kwargs):
+        """
+        Encrypt data using the underlying Fernet client.
+
+        Args:
+            *args: Positional arguments passed to Fernet.encrypt.
+            **kwargs: Keyword arguments passed to Fernet.encrypt.
+
+        Returns:
+            bytes: The encrypted ciphertext.
+        """
         return self._get_fernet().encrypt(*args, **kwargs)
 
     def decrypt(self, *args, **kwargs):
+        """
+        Decrypt data using the underlying Fernet client.
+
+        Args:
+            *args: Positional arguments passed to Fernet.decrypt.
+            **kwargs: Keyword arguments passed to Fernet.decrypt.
+
+        Returns:
+            bytes: The decrypted plaintext.
+        """
         return self._get_fernet().decrypt(*args, **kwargs)
 
 def __getattr__(name):
@@ -5652,6 +5706,14 @@ function copyCode() {
 
 @app.route('/auth/ssh', methods=['GET'])
 def ssh_auth_page():
+    """
+    Render the SSH Gateway authentication dashboard.
+    Verifies that the user is logged in and approved before serving the key generation UI.
+    If the user is logged in but not approved, renders the waitlist page.
+
+    Returns:
+        Response: The HTML page content or redirect response.
+    """
     if 'user_id' not in session:
         return redirect('/?redirect=/auth/ssh')
 
@@ -5676,6 +5738,13 @@ def ssh_auth_page():
 @app.route('/api/ssh/generate-code', methods=['POST'])
 @require_approval
 def ssh_generate_code():
+    """
+    Generate a temporary, one-time device authentication code for the SSH TUI.
+    Stores the code metadata in Redis with a 60-second TTL and increments active code counters.
+
+    Returns:
+        Response: JSON response containing the generated display code or an error message.
+    """
     user_id = session['user_id']
     username = session.get('username', '')
     display_name = session.get('display_name', username)
@@ -5717,6 +5786,14 @@ def ssh_generate_code():
 
 @app.route('/api/ssh/verify-code', methods=['POST'])
 def ssh_verify_code():
+    """
+    Verify a user-entered SSH device authentication code against Redis.
+    Performs gateway secret verification and rate limiting on failed attempts.
+    Deletes the one-time code on successful validation.
+
+    Returns:
+        Response: JSON indicating validation status, user_id, username, and display_name.
+    """
     # Verify shared secret
     gateway_secret = os.environ.get('SSH_GATEWAY_SECRET', 'stellar-ssh-internal-2024')
     data = request.get_json(silent=True)
@@ -5773,6 +5850,13 @@ def ssh_verify_code():
 
 @app.route('/check_auth', methods=['GET'])
 def check_auth_status():
+    """
+    Check the current login session status of the user.
+    Loads user details from the database if a valid session exists.
+
+    Returns:
+        Response: JSON indicating whether user is logged in, their username, and display name.
+    """
     if 'user_id' in session:
         db = get_db()
         cursor = db.execute('SELECT username, display_name, role, is_approved, pfp_url FROM users WHERE id = ?', (session['user_id'],))
@@ -5795,9 +5879,19 @@ def check_auth_status():
 @app.route('/api/user/events', methods=['GET'])
 @require_approval
 def user_global_events():
+    """
+    Establish a Server-Sent Events (SSE) stream for user-specific events.
+    Listens to a Redis pubsub channel mapping to the user's ID.
+
+    Returns:
+        Response: SSE event stream response.
+    """
     user_id = session['user_id']
 
     def event_stream():
+        """
+        Inner generator function that polls Redis pubsub and yields SSE events or heartbeats.
+        """
         pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
         pubsub.subscribe(f"user_events:{user_id}")
 
@@ -5827,6 +5921,13 @@ def user_global_events():
 @app.route('/api/chats', methods=['GET'])
 @require_approval
 def get_user_chats():
+    """
+    Retrieve all non-temporary chats belonging to the current user.
+    Uses a correlated subquery to fetch the last active message timestamp for sorting.
+
+    Returns:
+        Response: JSON list of user chats.
+    """
     user_id = session['user_id']
     db = get_db()
     try:
@@ -5849,6 +5950,12 @@ def get_user_chats():
 @app.route('/api/chats/new', methods=['POST'])
 @require_approval
 def create_new_chat():
+    """
+    Create a new chat session for the current user and sets it as active in the session.
+
+    Returns:
+        Response: JSON indicating success, chat ID, and default chat name.
+    """
     user_id = session['user_id']
     db = get_db()
     try:
@@ -5873,6 +5980,13 @@ def create_new_chat():
 @app.route('/api/chats/new_temp', methods=['POST'])
 @require_approval
 def create_temp_chat():
+    """
+    Create a new temporary (incognito) chat session.
+    Automatically deletes any pre-existing temp chats for this user to keep the DB clean.
+
+    Returns:
+        Response: JSON indicating success and new chat ID.
+    """
     user_id = session['user_id']
     db = get_db()
     try:
@@ -5897,6 +6011,12 @@ def create_temp_chat():
 @app.route('/api/set_active_chat', methods=['POST'])
 @require_approval
 def set_active_chat():
+    """
+    Set a specific chat ID as active in the user's login session.
+
+    Returns:
+        Response: JSON indicating success or error if unauthorized/missing.
+    """
     data = request.get_json()
     chat_id = data.get('chat_id')
     if not chat_id:
@@ -5917,6 +6037,13 @@ def set_active_chat():
 @app.route('/api/chats/<int:chat_id>/delete', methods=['DELETE'])
 @require_approval
 def delete_chat_route(chat_id):
+    """
+    Delete a specific chat, along with associated messages and tool calls.
+    Sends stop flags to Redis for any active generation query inside the chat.
+
+    Returns:
+        Response: JSON response indicating deletion status.
+    """
     user_id = session['user_id']
     db = get_db()
     try:
@@ -5957,6 +6084,12 @@ def delete_chat_route(chat_id):
 @app.route('/api/chats/<int:chat_id>/name', methods=['POST'])
 @require_approval
 def update_chat_name_route(chat_id):
+    """
+    Update the display name of a chat thread.
+
+    Returns:
+        Response: JSON indicating name update status.
+    """
     user_id = session['user_id']
     db = get_db()
     cursor = db.execute('SELECT 1 FROM chats WHERE id = ? AND user_id = ?', (chat_id, user_id))

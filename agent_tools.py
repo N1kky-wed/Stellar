@@ -1,3 +1,10 @@
+"""
+Agent Tools Module
+==================
+Provides the unified tool suite for autonomous agents inside the Stellar sandbox.
+Includes web search, code execution in Docker, file operations, e-mail notification helpers,
+and human-in-the-loop interaction routing.
+"""
 import time
 import uuid
 import json
