@@ -44,17 +44,39 @@ class LazyRedis:
     Lazy proxy for redis.Redis to delay importing 'redis' until first access.
     """
     def __init__(self, *args, **kwargs):
+        """
+        Store connection arguments and initialize client tracking.
+
+        Args:
+            *args: Positional arguments for Redis client setup.
+            **kwargs: Keyword arguments for Redis client setup.
+        """
         self._args = args
         self._kwargs = kwargs
         self._client = None
 
     def _init_client(self):
+        """
+        Lazily import redis and construct the Redis client instance.
+
+        Returns:
+            redis.Redis: The instantiated Redis client.
+        """
         if self._client is None:
             import redis
             self._client = redis.Redis(*self._args, **self._kwargs)
         return self._client
 
     def __getattr__(self, name):
+        """
+        Proxy attribute/method requests to the underlying initialized Redis client.
+
+        Args:
+            name (str): The requested attribute or method name.
+
+        Returns:
+            Any: The attribute or method from the Redis client.
+        """
         client = self._init_client()
         return getattr(client, name)
 
