@@ -269,12 +269,12 @@ def start_redis_cancellation_listener():
                                     if exclude_query_id and active_query_id == exclude_query_id:
                                         # Do not cancel if it matches the excluded new query
                                         continue
-                                    logger.info(f"Received cross-process cancel signal for chat_id: {c_id}, query_id: {active_query_id}")
+                                    logger.info("Received cross-process cancel signal chat_id=%s query_id=%s", c_id, active_query_id)
                                     cancel_event.set()
                     except Exception as parse_err:
-                        logger.error(f"Error parsing cancellation pubsub message: {parse_err}")
+                        logger.error("Error parsing cancellation pubsub message error=%s", parse_err, exc_info=True)
         except Exception as conn_err:
-            logger.error(f"Redis cancellation listener connection error: {conn_err}")
+            logger.error("Redis cancellation listener connection error error=%s", conn_err, exc_info=True)
         finally:
             try:
                 pubsub.close()
@@ -4430,22 +4430,22 @@ def stop_generation():
         # Publish cancellation to all Gunicorn workers via Redis Pub/Sub
         try:
             redis_client.publish("stellar_cancellations", json.dumps({"chat_id": chat_id}))
-            logger.info(f"Published cancellation event to Redis for chat_id: {chat_id}")
+            logger.info("Published cancellation event to Redis chat_id=%s", chat_id)
         except Exception as pub_err:
-            logger.error(f"Failed to publish cancellation event to Redis: {pub_err}")
+            logger.error("Failed to publish cancellation event to Redis: %s", pub_err)
 
         val = ACTIVE_CHATS_CANCEL_EVENTS.get(chat_id)
         if val:
             cancel_event = val[0] if isinstance(val, tuple) else val
-            logger.info(f"Stop button clicked: Signalling thread termination for chat_id: {chat_id}")
+            logger.info("Stop button clicked signalling thread termination chat_id=%s", chat_id)
             cancel_event.set()
 
-    logger.info(f"Stop flag set in Redis for query_id: {query_id}")
+    logger.info("Stop flag set in Redis query_id=%s", query_id)
     return jsonify({'success': True, 'message': 'Stop signal received.'})
 
 def check_and_log_stop(query_id, stage=""):
     if redis_client.exists(f"stop_flag:{query_id}"):
-        logger.info(f"Stop signal detected for query_id: {query_id} at stage: {stage}")
+        logger.info("Stop signal detected for query_id: %s at stage: %s", query_id, stage)
         return True
     return False
 
@@ -4536,7 +4536,7 @@ def delete_message():
     db = get_db()
 
     try:
-        logger.info(f"Attempting to delete message {message_id} for user {user_id}")
+        logger.info("Attempting to delete message message_id=%s user_id=%s", message_id, user_id)
         # Verify ownership by checking the chat the message belongs to
         cursor = db.execute('''
             SELECT m.id, c.user_id FROM messages m
@@ -4546,14 +4546,14 @@ def delete_message():
 
         row = cursor.fetchone()
         if not row:
-            logger.warning(f"Deletion failed: Message {message_id} not found or unauthorized for user {user_id}")
+            logger.warning("Deletion failed message_id=%s user_id=%s reason=not_found_or_unauthorized", message_id, user_id)
             return jsonify({'error': 'Message not found or unauthorized.'}), 403
 
-        logger.info(f"Ownership verified for message {message_id}. Proceeding with deletion.")
+        logger.info("Ownership verified proceeding with deletion message_id=%s", message_id)
         db.execute('DELETE FROM messages WHERE id = ?', (message_id,))
         db.commit()
 
-        logger.info(f"User {user_id} successfully deleted message {message_id}.")
+        logger.info("User deleted message user_id=%s message_id=%s", user_id, message_id)
         return jsonify({'success': True})
 
     except Exception as e:
@@ -6536,9 +6536,9 @@ def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=True, er
         if trigger_heal:
             payload = json.dumps({"process_id": process_id, "error_id": error_id})
             redis_client.lpush("sentinel:queue", payload)
-            logger.info(f"Sentinel: Queued healing task for app {process_id}, error_id={error_id}")
+            logger.info("Sentinel: Queued healing task process_id=%s error_id=%s", process_id, error_id)
         else:
-            logger.info(f"Sentinel: Logged error for app {process_id} (error_id={error_id}) but skipped healing (non-owner visitor).")
+            logger.info("Sentinel: Logged error process_id=%s error_id=%s action=skipped_healing reason=non_owner_visitor", process_id, error_id)
         return error_id
     except Exception as e:
         logger.error(f"Sentinel: Failed to log backend crash for {process_id}: {e}")
@@ -7988,7 +7988,7 @@ class OrphanContainerMonitor:
             try:
                 self._cleanup_orphans()
             except Exception as e:
-                logger.error(f"Error in OrphanContainerMonitor: {e}")
+                logger.error("Error in OrphanContainerMonitor: %s", e, exc_info=True)
             # Bolt - Stability Optimization: Wait on stop_event to exit instantly on stop/reload
             self.stop_event.wait(self.interval)
 
@@ -8007,7 +8007,7 @@ class OrphanContainerMonitor:
         try:
             containers = client.containers.list(all=True, filters={"label": "stellar_type"})
         except Exception as e:
-            logger.error(f"OrphanContainerMonitor: Failed to list containers: {e}")
+            logger.error("OrphanContainerMonitor: Failed to list containers error=%s", e, exc_info=True)
             return
 
         current_time = time.time()
@@ -8022,11 +8022,11 @@ class OrphanContainerMonitor:
                 if container.status == 'exited':
                     try:
                         container.remove(force=True)
-                        logger.info(f"OrphanContainerMonitor: Removed exited container {container.short_id}")
+                        logger.info("OrphanContainerMonitor: Removed exited container container_id=%s", container.short_id)
                     except docker.errors.NotFound:
                         pass
                     except Exception as e:
-                        logger.error(f"OrphanContainerMonitor: Error removing exited container {container.short_id}: {e}")
+                        logger.error("OrphanContainerMonitor: Error removing exited container container_id=%s error=%s", container.short_id, e, exc_info=True)
                     continue
 
                 # Check for running orphans
@@ -8047,11 +8047,11 @@ class OrphanContainerMonitor:
                             is_active = True
 
                     if not is_active:
-                        logger.warning(f"OrphanContainerMonitor: Found orphan container {container.short_id} (process {process_id}). Stopping...")
+                        logger.warning("OrphanContainerMonitor: Found orphan container container_id=%s process_id=%s action=stopping", container.short_id, process_id)
                         try:
                             container.stop(timeout=5)
                             container.remove(force=True)
-                            logger.info(f"OrphanContainerMonitor: Removed orphan {container.short_id}")
+                            logger.info("OrphanContainerMonitor: Removed orphan container container_id=%s process_id=%s", container.short_id, process_id)
                         except docker.errors.NotFound:
                             pass
                         except Exception as e:
@@ -8074,20 +8074,20 @@ class OrphanContainerMonitor:
                                         # Use a short timeout to prevent monitor stalls
                                         resp = requests.get(check_url, timeout=5)
                                         if resp.status_code >= 500:
-                                            logger.error(f"OrphanContainerMonitor: App {process_id} health check returned {resp.status_code}")
+                                            logger.error("OrphanContainerMonitor: App health check returned server error process_id=%s port=%s status_code=%d", process_id, target_port, resp.status_code)
                                             with active_apps_lock:
                                                 active_apps[process_id]['status'] = 'failed'
                                             redis_client.hset(_redis_repo_key(process_id), "status", "failed")
                                     except Exception as req_err:
-                                        logger.error(f"OrphanContainerMonitor: App {process_id} health check failed (Connection Error): {req_err}")
+                                        logger.error("OrphanContainerMonitor: App health check connection error process_id=%s port=%s error=%s", process_id, target_port, req_err)
                                         # Mark as failed in Redis and memory so user sees the error
                                         with active_apps_lock:
                                             active_apps[process_id]['status'] = 'failed'
                                         redis_client.hset(_redis_repo_key(process_id), "status", "failed")
                         except Exception as h_err:
-                            logger.error(f"OrphanContainerMonitor: Health check logic error: {h_err}")
+                            logger.error("OrphanContainerMonitor: Health check logic error process_id=%s error=%s", process_id, h_err, exc_info=True)
             except Exception as e:
-                logger.error(f"OrphanContainerMonitor: Error processing container {container.short_id}: {e}")
+                logger.error("OrphanContainerMonitor: Error processing container container_id=%s error=%s", container.short_id, e, exc_info=True)
 
 def cleanup_stale_containers():
     """
@@ -8104,10 +8104,9 @@ def cleanup_stale_containers():
                 ninety_hours_ago = (datetime.datetime.now() - datetime.timedelta(hours=90)).strftime('%Y-%m-%d %H:%M:%S')
                 db.execute("UPDATE repo_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created') AND created_at < ?", (ninety_hours_ago,))
                 db.commit()
-                logger.info(f"Database status for repo_history reset for apps older than {ninety_hours_ago}.")
+                logger.info("Database status for repo_history reset for apps older than %s", ninety_hours_ago)
         except Exception as db_err:
-            logger.exception("Error caught: %s", db_err)
-            logger.error(f"Failed to reset database statuses: {db_err}")
+            logger.exception("Failed to reset database statuses on startup error=%s", db_err)
 
         t_list = time.time()
         client = docker.from_env()
@@ -8124,7 +8123,7 @@ def cleanup_stale_containers():
             logger.info("No stale sandbox containers found on startup.")
             return
 
-        logger.warning(f"Found {len(all_stale)} stale sandbox container(s). Checking creation times...")
+        logger.warning("Found %d stale sandbox container(s) checking creation times", len(all_stale))
         current_time = time.time()
         for container in all_stale:
             try:
@@ -8135,24 +8134,23 @@ def cleanup_stale_containers():
                     try:
                         created_ts = float(created_ts_str)
                         if current_time - created_ts < 90 * 60 * 60:
-                            logger.info(f"Skipping recently created orphan (within 90h): {container.name}")
+                            logger.info("Skipping recently created container within 90h grace period container_name=%s", container.name)
                             continue
                     except ValueError:
                         pass
 
-                logger.warning(f"Force-removing stale container: {container.name} ({container.short_id})")
+                logger.warning("Force-removing stale container container_name=%s container_id=%s", container.name, container.short_id)
                 container.remove(force=True)
             except docker.errors.NotFound:
-                logger.info(f"Container {container.name} was already removed.")
+                logger.info("Container already removed container_name=%s", container.name)
             except Exception as e:
-                logger.error(f"Error during cleanup of container {container.name}: {e}")
+                logger.error("Error during cleanup of stale container container_name=%s error=%s", container.name, e, exc_info=True)
         logger.info("Stale container cleanup complete.")
 
     except docker.errors.DockerException as e:
-        logger.error(f"Docker is not available. Skipping stale container cleanup. Error: {e}")
+        logger.error("Docker not available skipping stale container cleanup error=%s", e, exc_info=True)
     except Exception as e:
-        logger.exception("Error caught: %s", e)
-        logger.error(f"An unexpected error occurred during stale container cleanup: {e}")
+        logger.exception("Unexpected error during stale container cleanup error=%s", e)
 
 # Start the orphan monitor - only in the main process to avoid multi-worker redundancy
 if not app.config.get('TESTING'):
@@ -8566,7 +8564,7 @@ class TaskSchedulerMonitor:
             try:
                 self._check_tasks()
             except Exception as e:
-                logger.error(f"Error in TaskSchedulerMonitor: {e}")
+                logger.error("Error in TaskSchedulerMonitor: %s", e, exc_info=True)
             # Bolt - Stability Optimization: Wait on stop_event to exit instantly on stop/reload
             self.stop_event.wait(self.interval)
 

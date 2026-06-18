@@ -296,6 +296,8 @@ Make sure your response ends with one of these statuses."""
 
                         break # Success or non-quota error
                     except subprocess.TimeoutExpired as e:
+                        duration_cli = time.time() - t_cli
+                        logger.warning("Gemini CLI timed out issue_id=%d attempt=%d duration_sec=%.2f", issue_id, retry_count+1, duration_cli)
                         output = e.stdout.decode('utf-8', 'replace') if e.stdout else "Timeout"
                         output += "\nSTATUS: ESCALATED"
                         break
