@@ -313,6 +313,31 @@ def start_patcher_thread():
 start_patcher_thread()
 
 
+# --- THREAD CONTEXT PROPAGATION PATCH ---
+import threading as _threading_orig
+
+_orig_thread_init = _threading_orig.Thread.__init__
+_orig_thread_run = _threading_orig.Thread.run
+
+def _patched_thread_init(self, *args, **kwargs):
+    self._angel_trace_id = active_trace_id.get()
+    _orig_thread_init(self, *args, **kwargs)
+
+def _patched_thread_run(self):
+    trace_id = getattr(self, '_angel_trace_id', None)
+    if trace_id:
+        token = active_trace_id.set(trace_id)
+        try:
+            _orig_thread_run(self)
+        finally:
+            active_trace_id.reset(token)
+    else:
+        _orig_thread_run(self)
+
+_threading_orig.Thread.__init__ = _patched_thread_init
+_threading_orig.Thread.run = _patched_thread_run
+
+
 # --- ZERO-CODE-CHANGE RUNTIME INSTRUMENTATION HOOK ---
 
 class AngelASTTransformer(ast.NodeTransformer):
