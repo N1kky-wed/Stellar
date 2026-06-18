@@ -4652,6 +4652,13 @@ def clear_history():
 @app.route('/image-proxy')
 @require_approval
 def image_proxy():
+    """
+    Proxy route to fetch and serve remote images safely.
+    Implements security controls against SSRF, DNS Rebinding, content injection, and DoS.
+
+    Returns:
+        Response: The streamed image response or an error code.
+    """
     import requests
     from urllib.parse import urlparse
 
@@ -4747,6 +4754,16 @@ def image_proxy():
 # INTENTIONALLY UNPROTECTED: This route omits @require_approval to allow users to easily share generated files and outputs via direct links.
 @app.route('/download/<path:filename>')
 def download_file(filename):
+    """
+    Serve a generated output file as an attachment.
+    Intentionally unprotected to allow easy downloading via direct links.
+
+    Args:
+        filename (str): Path to the target file inside outputs/.
+
+    Returns:
+        Response: The file attachment download response.
+    """
     if '..' in filename or filename.startswith('/'):
         return "Invalid path", 400
     # Resolve real path of output directory to prevent path traversal via symlinks
@@ -4768,6 +4785,16 @@ def download_file(filename):
 # INTENTIONALLY UNPROTECTED: This route omits @require_approval to allow users to easily share generated files and outputs via direct links.
 @app.route('/view/<path:filename>')
 def view_file(filename):
+    """
+    Serve a generated output file inline in the browser.
+    Intentionally unprotected to allow easy viewing via direct links.
+
+    Args:
+        filename (str): Path to the target file inside outputs/.
+
+    Returns:
+        Response: The inline file view response.
+    """
     if '..' in filename or filename.startswith('/'):
         return "Invalid path", 400
     # Resolve real path of output directory to prevent path traversal via symlinks

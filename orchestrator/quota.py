@@ -77,6 +77,15 @@ def parse_quota_text(text: str) -> Dict[str, Any]:
             claude_part = clean_text[claude_idx:]
             
         def parse_section(section_text: str) -> dict:
+            """
+            Parses a model specific quota section block to extract weekly and sprint limits.
+
+            Args:
+                section_text (str): The text content of a single quota section (Gemini or Claude).
+
+            Returns:
+                dict: Parsed quota information mapping.
+            """
             info = {
                 "weekly_percent": 100.0,
                 "weekly_refreshes_in_hours": 0.0,
@@ -195,6 +204,12 @@ def fetch_quota_data_from_container(model: str = "Claude Sonnet 4.6 (Thinking)")
 
     try:
         def read_callback(self, data):
+            """
+            Callback function used to capture streaming pexpect output chunks.
+
+            Args:
+                data (str): The text chunk streamed from the command output.
+            """
             output_captured.append(data)
             
         child.logfile_read = type('Logger', (object,), {'write': read_callback, 'flush': lambda self: None})()
