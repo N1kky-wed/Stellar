@@ -299,6 +299,8 @@ class RateLimiter:
         Returns:
             bool: True if connection is within the limit and allowed; False otherwise.
         """
+        # SECURITY CONTROL: Redis-based sliding/fixed window connection rate limiting.
+        # Restricts each IP to at most RATE_LIMIT_CONNECTIONS within the window.
         key = f"ssh_conn_rate:{ip}"
         try:
             count = self.r.incr(key)
@@ -320,6 +322,7 @@ class RateLimiter:
         Returns:
             int: The cumulative count of auth failures within the window, or 0 on error.
         """
+        # SECURITY CONTROL: Tracks failed authentication attempts to mitigate brute-force attacks.
         key = f"ssh_verify_fail:{ip}"
         try:
             count = self.r.incr(key)
@@ -340,6 +343,7 @@ class RateLimiter:
         Returns:
             bool: True if the IP is blocked (failures >= 10); False otherwise.
         """
+        # SECURITY CONTROL: Verifies if the client IP has exceeded the threshold of allowed failed authentication attempts (10).
         try:
             count = self.r.get(f"ssh_verify_fail:{ip}")
             return int(count or 0) >= 10
@@ -379,6 +383,8 @@ def get_user_repos(user_id: int) -> list:
             logger.warning("Slow SSH Gateway database connection duration_sec=%.3f", duration)
         
         t_query = time.time()
+        # SECURITY CONTROL: SQL Injection prevention. Use parameterized queries with bound variables.
+        # User ID is strictly validated and bound as a parameter, preventing arbitrary SQL execution.
         cursor = conn.execute(
             'SELECT id, project_name, process_id, container_id, status, '
             'subdomain, created_at, app_type FROM repo_history '
@@ -488,6 +494,9 @@ def verify_auth_code(code: str) -> dict | None:
     Returns:
         dict | None: The user session info dictionary containing user_id and username if valid; None otherwise.
     """
+    # SECURITY CONTROL: Sanitize user input by removing whitespace and hyphens, and convert to uppercase.
+    # Validate that the clean code is exactly 8 characters long to prevent brute force or denial of service
+    # via excessive database queries on malformed inputs.
     clean_code = code.strip().replace('-', '').replace(' ', '').upper()
     if len(clean_code) != 8:
         return None
@@ -1404,13 +1413,16 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
         container_name = container.name
         audit.info("SHELL_ATTACH | user_id=%s | container=%s", user_id, container_name)
 
+        # SECURITY CONTROL: Container status verification. Prevents attaching a shell or sending
+        # commands to containers that are not currently running, protecting against container state manipulation.
         if container.status != 'running':
             logger.warning("Cannot attach shell to non-running container container_name=%s user_id=%d", container_name, user_id)
             send_raw(channel, "\r\n\x1b[31m  Container is not running. Start it first.\x1b[0m\r\n")
             time.sleep(1.5)
             return
 
-        # Create exec instance with PTY
+        # SECURITY CONTROL: Strict separation of interactive execution channels. Paramiko's PTY is mapped
+        # directly to Docker's exec socket. No shell is spawned on the host machine.
         exec_instance = client.api.exec_create(
             container.id,
             '/bin/bash',
