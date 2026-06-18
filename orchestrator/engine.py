@@ -86,12 +86,24 @@ class OrchestratorEngine:
                 # if it hangs, or check process presence inside self._check_running_agent.
                 # Let's mock a process handle that checks process list on poll()
                 class RecoveredProcess:
+                    """
+                    Mock process handle for an agent run recovered after orchestrator restart.
+                    """
                     def poll(self):
+                        """
+                        Checks if the recovered agent process is still running inside the container.
+
+                        Returns:
+                            Optional[int]: 0 if completed/stopped, None if still running.
+                        """
                         inner_rc, inner_out, _ = container.exec_in_container("ps aux | grep -i agy | grep -v grep")
                         if inner_rc != 0 or "agy" not in inner_out:
                             return 0 # Completed/stopped
                         return None # Still running
                     def kill(self):
+                        """
+                        Kills the recovered agent process inside the container.
+                        """
                         container.exec_in_container("pkill -f agy")
                 self.current_process = RecoveredProcess()
                 self.agent_start_time = datetime.fromisoformat(current['started_at'])
@@ -1501,11 +1513,17 @@ Below is the failed build run log/trace. Please analyze it, locate the offending
         from pydantic import BaseModel, Field
 
         class FactItem(BaseModel):
+            """
+            Represents a single semantic fact item extracted from memory.
+            """
             id: Optional[int] = Field(None, description="The ID of the existing active fact if this updates or supersedes it, otherwise null.")
             fact: str = Field(description="The semantic fact, constraint, architecture detail, convention, or bug pattern.")
             category: str = Field(description="The category of the fact. Must be one of: 'constraint', 'convention', 'architecture', 'bug_pattern'.")
 
         class FactList(BaseModel):
+            """
+            Represents a collection of semantic fact items extracted from memory.
+            """
             facts: List[FactItem] = Field(description="List of semantic facts extracted or synthesized from the provided memories.")
 
         memories_formatted = ""

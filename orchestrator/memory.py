@@ -24,6 +24,13 @@ class MemoryDB:
         self._init_db()
 
     def _publish_refresh(self, target: str, **kwargs):
+        """
+        Publishes a refresh event to the Redis subscription channel.
+
+        Args:
+            target (str): The visual feed target identifier (e.g. 'tasks', 'dms').
+            **kwargs: Additional context parameters included in the event payload.
+        """
         try:
             import redis
             import json
