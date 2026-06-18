@@ -1769,15 +1769,16 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
                 setattr(g, retry_key, retry_count + 1)
             
             if retry_count < 2:
-                logger.warning(f"Detected broken container mount for {container_name} (retry {retry_count}). Recreating...")
+                logger.warning("Lab OCI mount error detected container_name=%s retry=%d action=recreating", container_name, retry_count)
                 try:
                     container.stop(timeout=2)
                     container.remove(force=True)
-                except:
-                    pass
+                except Exception as oci_cleanup_err:
+                    logger.warning("Lab OCI cleanup failed container_name=%s error=%s", container_name, oci_cleanup_err)
                 time.sleep(1) # Grace period for Docker to release resources
                 return lab_execute(command, status, timeout)
             else:
+                logger.error("Lab OCI mount error persistent after %d recreation attempts container_name=%s", retry_count, container_name)
                 return f"Critical OCI Runtime Error (Persistent after recreation): {output}"
         # ----------------------------------
         
@@ -1789,12 +1790,12 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
     except Exception as e:
         error_msg = str(e)
         if "mount namespace root" in error_msg or "container breakout" in error_msg:
-            logger.warning(f"Caught OCI error exception for {container_name}. Attempting recovery...")
+            logger.warning("Lab OCI mount exception during exec container_name=%s action=recovering error=%s", container_name, error_msg)
             try:
                 container.stop(timeout=2)
                 container.remove(force=True)
-            except:
-                pass
+            except Exception as oci_ex_cleanup_err:
+                logger.warning("Lab OCI exception cleanup failed container_name=%s error=%s", container_name, oci_ex_cleanup_err)
             time.sleep(1)
             return lab_execute(command, status, timeout)
 
@@ -1846,6 +1847,7 @@ def obtain_talent(talent_names: list[str], status: str, timeout: int, search_que
         conn.close()
         return "\n\n".join(results)
     except Exception as e:
+        logger.error("Error in obtain_talent tool error=%s", e, exc_info=True)
         return f"Error obtaining talent: {str(e)}"
 
 def read_tool_output(output_id: int, status: str, timeout: int, keyword: str = None, start_line: int = 0, max_lines: int = 100) -> str:
