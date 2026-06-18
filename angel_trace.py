@@ -237,6 +237,52 @@ def patch_flask():
 
         wrapped_wsgi_app._angel_patched = True
         flask.Flask.wsgi_app = wrapped_wsgi_app
+
+        # Patch stream_with_context to propagate trace ID context to SSE generators
+        if hasattr(flask, 'stream_with_context'):
+            sys.stderr.write("[angel] Patching flask.stream_with_context...\n")
+            original_swc = flask.stream_with_context
+
+            def wrap_generator(gen, t_id):
+                try:
+                    while True:
+                        if t_id:
+                            token = active_trace_id.set(t_id)
+                            try:
+                                val = next(gen)
+                            finally:
+                                active_trace_id.reset(token)
+                        else:
+                            val = next(gen)
+                        yield val
+                except StopIteration:
+                    return
+
+            def patched_swc(generator_or_function):
+                t_id = active_trace_id.get()
+                import inspect
+                
+                # If it's a generator iterator
+                if inspect.isgenerator(generator_or_function):
+                    return original_swc(wrap_generator(generator_or_function, t_id))
+                
+                # If it's a generator function
+                elif inspect.isgeneratorfunction(generator_or_function):
+                    @functools.wraps(generator_or_function)
+                    def wrapped_func(*args, **kwargs):
+                        gen = generator_or_function(*args, **kwargs)
+                        return wrap_generator(gen, t_id)
+                    return original_swc(wrapped_func)
+                
+                else:
+                    # Generic callback/callable
+                    res = original_swc(generator_or_function)
+                    if inspect.isgenerator(res):
+                        return wrap_generator(res, t_id)
+                    return res
+
+            flask.stream_with_context = patched_swc
+
         _patched_flask = True
         sys.stderr.write("[angel] Flask patched successfully!\n")
         return True
