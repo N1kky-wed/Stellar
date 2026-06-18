@@ -78,6 +78,12 @@ import ast
 import importlib.abc
 import importlib.machinery
 import importlib.util
+import contextvars
+import uuid
+import builtins
+
+# Thread-local / task-local tracing context
+active_trace_id = contextvars.ContextVar("active_trace_id", default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +104,7 @@ class AngelTracer:
         except Exception:
             self.sock = None
 
-    def send_trace(self, node_id: str, latency_ns: int):
+    def send_trace(self, node_id: str, latency_ns: int, trace_id: str = None):
         if not self.sock:
             self.connect()
         if not self.sock:
@@ -123,9 +129,14 @@ class AngelTracer:
         except Exception:
             pass
 
+        if not trace_id:
+            trace_id = active_trace_id.get()
+
         payload_dict = {"node_id": node_id, "latency_ns": latency_ns}
         if caller:
             payload_dict["caller"] = caller
+        if trace_id:
+            payload_dict["trace_id"] = trace_id
 
         payload = json.dumps(payload_dict) + "\n"
         try:
@@ -156,14 +167,150 @@ def trace_fn(node_id: str):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            start = time.perf_counter_ns()
-            try:
-                return func(*args, **kwargs)
-            finally:
-                duration = time.perf_counter_ns() - start
-                tracer.send_trace(node_id, duration)
+            trace_id = active_trace_id.get()
+            if not trace_id:
+                trace_id = uuid.uuid4().hex
+                token = active_trace_id.set(trace_id)
+                try:
+                    start = time.perf_counter_ns()
+                    try:
+                        return func(*args, **kwargs)
+                    finally:
+                        duration = time.perf_counter_ns() - start
+                        tracer.send_trace(node_id, duration, trace_id)
+                finally:
+                    active_trace_id.reset(token)
+            else:
+                start = time.perf_counter_ns()
+                try:
+                    return func(*args, **kwargs)
+                finally:
+                    duration = time.perf_counter_ns() - start
+                    tracer.send_trace(node_id, duration, trace_id)
         return wrapper
     return decorator
+
+
+# --- DISTRIBUTED TRACING MONKEYPATCHES ---
+# Strategy: use a background daemon thread that polls sys.modules and applies
+# patches once the target libraries are fully initialized. This avoids all
+# circular-import and recursion issues caused by hooking builtins.__import__.
+
+_patched_flask = False
+_patched_requests = False
+
+def patch_flask():
+    global _patched_flask
+    if _patched_flask:
+        return True
+    try:
+        flask = sys.modules.get('flask')
+        if flask is None or not hasattr(flask, 'Flask'):
+            return False
+
+        original_wsgi_app = flask.Flask.wsgi_app
+        # Guard against double-patching
+        if getattr(original_wsgi_app, '_angel_patched', False):
+            _patched_flask = True
+            return True
+
+        sys.stderr.write("[angel] Patching flask.Flask.wsgi_app...\n")
+
+        def wrapped_wsgi_app(self, environ, start_response):
+            # WSGI header names come in as HTTP_X_ANGEL_TRACE_ID
+            trace_id = (
+                environ.get('HTTP_X_ANGEL_TRACE_ID') or
+                environ.get('HTTP_X_ANGEL_TRACEID') or
+                environ.get('x-angel-trace-id')
+            )
+            if not trace_id:
+                trace_id = uuid.uuid4().hex
+                sys.stderr.write(f"[angel] WSGI: no incoming trace_id, generated {trace_id}\n")
+            else:
+                sys.stderr.write(f"[angel] WSGI: extracted incoming trace_id={trace_id}\n")
+
+            token = active_trace_id.set(trace_id)
+            try:
+                return original_wsgi_app(self, environ, start_response)
+            finally:
+                active_trace_id.reset(token)
+
+        wrapped_wsgi_app._angel_patched = True
+        flask.Flask.wsgi_app = wrapped_wsgi_app
+        _patched_flask = True
+        sys.stderr.write("[angel] Flask patched successfully!\n")
+        return True
+    except Exception as e:
+        sys.stderr.write(f"[angel] Warning: Failed to patch flask: {e}\n")
+        return False
+
+def patch_requests():
+    global _patched_requests
+    if _patched_requests:
+        return True
+    try:
+        requests = sys.modules.get('requests')
+        if requests is None or not hasattr(requests, 'Session'):
+            return False
+
+        original_request = requests.Session.request
+        if getattr(original_request, '_angel_patched', False):
+            _patched_requests = True
+            return True
+
+        sys.stderr.write("[angel] Patching requests.Session.request...\n")
+
+        def wrapped_request(self, method, url, *args, **kwargs):
+            trace_id = active_trace_id.get()
+            if trace_id:
+                headers = kwargs.get('headers')
+                if headers is None:
+                    headers = {}
+                    kwargs['headers'] = headers
+                has_header = any(
+                    k.lower() == 'x-angel-trace-id'
+                    for k in (headers.keys() if hasattr(headers, 'keys') else [])
+                )
+                if not has_header:
+                    headers['x-angel-trace-id'] = trace_id
+            return original_request(self, method, url, *args, **kwargs)
+
+        wrapped_request._angel_patched = True
+        requests.Session.request = wrapped_request
+        _patched_requests = True
+        sys.stderr.write("[angel] Requests patched successfully!\n")
+        return True
+    except Exception as e:
+        sys.stderr.write(f"[angel] Warning: Failed to patch requests: {e}\n")
+        return False
+
+def _patch_worker():
+    """Background thread: retries patching until both targets are patched."""
+    import threading
+    import time as _time
+    for _ in range(120):   # up to ~60 s
+        if _patched_flask and _patched_requests:
+            break
+        if not _patched_flask:
+            patch_flask()
+        if not _patched_requests:
+            patch_requests()
+        _time.sleep(0.5)
+
+def start_patcher_thread():
+    global _patched_flask, _patched_requests
+    _patched_flask = False
+    _patched_requests = False
+
+    import threading as _threading
+    for t in _threading.enumerate():
+        if t.name == "angel-patcher":
+            return
+
+    _t = _threading.Thread(target=_patch_worker, daemon=True, name="angel-patcher")
+    _t.start()
+
+start_patcher_thread()
 
 
 # --- ZERO-CODE-CHANGE RUNTIME INSTRUMENTATION HOOK ---

@@ -42,3 +42,6 @@ import sys
 # angel_trace.py must be importable from this directory (project root).
 import angel_trace
 sys.meta_path.insert(0, angel_trace.AngelFinder(os.path.dirname(os.path.abspath(__file__))))
+
+def post_fork(server, worker):
+    angel_trace.start_patcher_thread()
