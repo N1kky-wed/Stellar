@@ -2229,6 +2229,8 @@ def scrape_url(url: str) -> str:
     Returns:
         str: The text content of the page, or an error message.
     """
+    # SECURITY CONTROL: Protocol restriction. Force URLs to start strictly with HTTP or HTTPS
+    # to prevent protocol smuggling (e.g., file://, ftp://, gopher://).
     if not url or not url.startswith(('http://', 'https://')):
         return f"Error scraping {url}: Invalid URL format"
 
@@ -2236,12 +2238,15 @@ def scrape_url(url: str) -> str:
 
     try:
         parsed = urlparse(url)
+        # SECURITY CONTROL: Hostname resolving check. Check hostname against DNS entries, preventing access
+        # to private/reserved ranges (RFC 1918, localhost, loopback).
         safe, ip_or_msg = is_safe_hostname(parsed.hostname)
         if not safe:
             logger.warning(f"Blocked scraping SSRF attempt: {ip_or_msg} via {url}")
             return f"Error scraping {url}: {ip_or_msg}"
 
-        # Pin the resolved safe IP address in the thread-local cache to prevent DNS rebinding TOCTOU
+        # SECURITY CONTROL: DNS Rebinding prevention. Pin DNS resolution results in the thread-local
+        # cache to prevent Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding attacks.
         dns_cache.pinned_ips = getattr(dns_cache, 'pinned_ips', {})
         try:
             ipaddress.ip_address(ip_or_msg)
@@ -4651,18 +4656,23 @@ def image_proxy():
     from urllib.parse import urlparse
 
     image_url = request.args.get('url')
+    # SECURITY CONTROL: Protocol restriction. Force URLs to start strictly with HTTP or HTTPS
+    # to prevent protocol smuggling (e.g., file://, ftp://, gopher://).
     if not image_url or not image_url.startswith(('http://', 'https://')):
         return "Invalid URL", 400
 
     try:
         # 1. SSRF Protection: Prevent access to internal/private networks
         parsed = urlparse(image_url)
+        # SECURITY CONTROL: Hostname resolving check. Check hostname against DNS entries, preventing access
+        # to private/reserved ranges (RFC 1918, localhost, loopback).
         safe, ip_or_msg = is_safe_hostname(parsed.hostname)
         if not safe:
             logger.warning(f"Blocked SSRF attempt: {ip_or_msg} via {image_url}")
             return ip_or_msg, 403
 
-        # Pin DNS to prevent TOCTOU DNS rebinding
+        # SECURITY CONTROL: DNS Rebinding prevention. Pin DNS resolution results in the thread-local
+        # cache to prevent Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding attacks.
         dns_cache.pinned_ips = getattr(dns_cache, 'pinned_ips', {})
         try:
             ipaddress.ip_address(ip_or_msg)
@@ -4673,6 +4683,8 @@ def image_proxy():
         # 2. Fetch the image with a strict timeout and prevent redirects (SSRF Protection)
         resp = None
         try:
+            # SECURITY CONTROL: HTTP Request restrictions. Disable HTTP redirects to prevent redirection
+            # bypasses to internal networks, and set a strict timeout of 15 seconds to prevent DoS.
             resp = requests.get(image_url, stream=True, timeout=15, allow_redirects=False)
             if resp.status_code in (301, 302, 303, 307, 308):
                 resp.close()
@@ -4680,6 +4692,8 @@ def image_proxy():
             resp.raise_for_status()
 
             # 3. MIME Type Validation: Ensure it's actually an image, not a malicious script/HTML
+            # SECURITY CONTROL: Content-Type validation. Verifies the mimetype is strictly image/*
+            # to block XSS payloads disguised as images.
             content_type = resp.headers.get('Content-Type', '')
             if not content_type.startswith('image/'):
                 resp.close()
