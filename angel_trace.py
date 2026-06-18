@@ -132,7 +132,24 @@ class AngelTracer:
         if not trace_id:
             trace_id = active_trace_id.get()
 
-        payload_dict = {"node_id": node_id, "latency_ns": latency_ns}
+        import threading
+        thread_name = threading.current_thread().name
+        is_async = False
+        try:
+            import asyncio
+            task = asyncio.current_task()
+            if task is not None:
+                is_async = True
+                thread_name = f"{thread_name}:{task.get_name()}"
+        except Exception:
+            pass
+
+        payload_dict = {
+            "node_id": node_id,
+            "latency_ns": latency_ns,
+            "thread_name": thread_name,
+            "is_async": is_async,
+        }
         if caller:
             payload_dict["caller"] = caller
         if trace_id:
@@ -366,7 +383,8 @@ _orig_thread_init = _threading_orig.Thread.__init__
 _orig_thread_run = _threading_orig.Thread.run
 
 def _patched_thread_init(self, *args, **kwargs):
-    self._angel_trace_id = active_trace_id.get()
+    if not hasattr(self, '_angel_trace_id') or getattr(self, '_angel_trace_id') is None:
+        self._angel_trace_id = active_trace_id.get()
     _orig_thread_init(self, *args, **kwargs)
 
 def _patched_thread_run(self):
