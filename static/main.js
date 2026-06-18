@@ -611,6 +611,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const updatedLogs = Array.from(textareas)
         .map((t) => t.value.trim())
         .filter((v) => v !== "");
+
+      const originalText = saveAllLogsBtn.textContent;
+      saveAllLogsBtn.disabled = true;
+      saveAllLogsBtn.textContent = "Saving...";
+
       fetch("/api/logs_preferences", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -618,9 +623,34 @@ document.addEventListener("DOMContentLoaded", () => {
       })
         .then((res) => res.json())
         .then((res) => {
+          // Highlight save action success/failure with text transitions and color changes
           if (res.success) {
+            saveAllLogsBtn.textContent = "✓ Saved Successfully";
+            saveAllLogsBtn.style.background = "#22c55e"; // Success green accent
             fetchAndRenderLogs();
+            setTimeout(() => {
+              saveAllLogsBtn.textContent = originalText;
+              saveAllLogsBtn.style.background = "";
+              saveAllLogsBtn.disabled = false;
+            }, 2000);
+          } else {
+            saveAllLogsBtn.textContent = "Error Saving";
+            saveAllLogsBtn.style.background = "#ef4444"; // Error red accent
+            setTimeout(() => {
+              saveAllLogsBtn.textContent = originalText;
+              saveAllLogsBtn.style.background = "";
+              saveAllLogsBtn.disabled = false;
+            }, 2000);
           }
+        })
+        .catch(() => {
+          saveAllLogsBtn.textContent = "Error Saving";
+          saveAllLogsBtn.style.background = "#ef4444"; // Error red accent
+          setTimeout(() => {
+            saveAllLogsBtn.textContent = originalText;
+            saveAllLogsBtn.style.background = "";
+            saveAllLogsBtn.disabled = false;
+          }, 2000);
         });
     };
   }
