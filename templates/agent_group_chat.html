@@ -2730,6 +2730,15 @@
         }
 
         // Claude Adjustments for Elapsed Time
+        /* Bolt: Added missing UI updates for Claude Account details, weekly limit remaining percentage, and progress bar width. */
+        document.getElementById("claudeAccount").textContent = showAccountEmails
+          ? data.claude.account || "Unknown"
+          : "••••••••••••••••";
+        document.getElementById("claudeWeeklyPercent").textContent =
+          `${data.claude.weekly_percent}%`;
+        document.getElementById("claudeWeeklyBar").style.width =
+          `${data.claude.weekly_percent}%`;
+
         const adjustedCRef = Math.max(
           0.0,
           data.claude.weekly_refreshes_in_hours - elapsedHours,
