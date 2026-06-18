@@ -1373,9 +1373,9 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
         app_type (str): The application environment type.
         user_id (int): The ID of the authenticated user.
     """
+    import docker
     container_name = "unknown"
     try:
-        import docker
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
@@ -1505,8 +1505,8 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
     Returns:
         str: Success or failure status message.
     """
+    import docker
     try:
-        import docker
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
@@ -1544,8 +1544,8 @@ def stop_container(process_id: str, app_type: str, user_id: int) -> str:
     Returns:
         str: Success or failure status message.
     """
+    import docker
     try:
-        import docker
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
         container = get_container(client, process_id, app_type)
@@ -1583,8 +1583,8 @@ def start_container(process_id: str, app_type: str, user_id: int) -> str:
     Returns:
         str: Success or failure status message.
     """
+    import docker
     try:
-        import docker
         # Re-use global docker client to avoid expensive initialization overhead
         client = get_docker_client()
         container = get_container(client, process_id, app_type)

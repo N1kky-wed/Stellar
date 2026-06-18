@@ -123,7 +123,7 @@ class OrchestratorEngine:
             try:
                 self._tick()
             except Exception as e:
-                logger.error(f"Error in orchestrator engine tick: {e}", exc_info=True)
+                logger.error("Error in orchestrator engine tick: %s", e, exc_info=True)
             
             if self.current_process:
                 time.sleep(2)
@@ -465,7 +465,7 @@ class OrchestratorEngine:
         
         # Verify container is running
         if not container.is_container_running():
-            logger.error(f"Docker container {config.CONTAINER_NAME} is not running! Skipping tick.")
+            logger.error("Docker container %s is not running! Skipping tick.", config.CONTAINER_NAME)
             return
 
         # 0. Check for any agent that was deferred due to an orchestrator restart
@@ -493,11 +493,11 @@ class OrchestratorEngine:
         next_agent = self._check_for_merge_trigger()
         if next_agent:
             if not self._is_in_cooldown(now):
-                logger.info(f"PR MERGE EVENT DETECTED: Starting next agent {next_agent['name']} immediately!")
+                logger.info("PR MERGE EVENT DETECTED: Starting next agent %s immediately!", next_agent['name'])
                 self._start_agent(next_agent)
                 return
             else:
-                logger.info(f"PR MERGE EVENT DETECTED during cooldown: Deferring next agent {next_agent['name']} to DB state.")
+                logger.info("PR MERGE EVENT DETECTED during cooldown: Deferring next agent %s to DB state.", next_agent['name'])
                 self.state_db.set_state("pending_immediate_agent", next_agent['id'])
                 return
 
@@ -522,11 +522,11 @@ class OrchestratorEngine:
                 line = self.current_process.stdout.readline()
                 if not line:
                     break
-                logger.info(f"[{self.current_agent_id}] {line.strip()}")
+                logger.info("[%s] %s", self.current_agent_id, line.strip())
         except BlockingIOError:
             pass
         except Exception as e:
-            logger.error(f"Error reading process stdout: {e}")
+            logger.error("Error reading process stdout: %s", e)
 
     def _get_summary(self) -> Optional[str]:
         """
@@ -537,7 +537,7 @@ class OrchestratorEngine:
         try:
             return container.get_agent_final_summary()
         except Exception as e:
-            logger.error(f"Error extracting agent final summary: {e}")
+            logger.error("Error extracting agent final summary: %s", e)
             return None
 
     def _check_running_agent(self, now: datetime):
@@ -712,7 +712,7 @@ class OrchestratorEngine:
         try:
             self.current_process.kill()
         except Exception as e:
-            logger.error(f"Error killing agent process: {e}")
+            logger.error("Error killing agent process: %s", e)
         
         # Kill any runaway agy inside container
         container.exec_in_container("pkill -f agy")
