@@ -116,30 +116,32 @@ class AngelTracer:
         except (ValueError, TypeError):
             self.port = 9090
         self.sock = None
+        import collections
         import threading
         self.lock = threading.Lock()
         self.last_connect_attempt = 0.0
         self.connect_cooldown = 5.0  # seconds
+        # Initialised eagerly so that send_trace/send_event never need to call
+        # _verify_worker() on the hot path once the worker is running. The hot
+        # path checks the single bool self._worker_ready instead of doing
+        # hasattr() + thread.is_alive() (which acquires a lock) on every call.
+        self.queue = collections.deque(maxlen=50000)
+        self._drain_event = threading.Event()
+        self._worker_ready = False
+        self.worker = None
 
     def _verify_worker(self):
-        if not hasattr(self, 'worker') or self.worker is None or not self.worker.is_alive():
+        """Start the background worker thread if not already running.
+        Called at most once per tracer lifetime from the hot path."""
+        if not self._worker_ready:
             with self.lock:
-                if not hasattr(self, 'worker') or self.worker is None or not self.worker.is_alive():
-                    import collections
+                if not self._worker_ready:
                     import threading
-                    if not hasattr(self, 'queue') or self.queue is None:
-                        # Use a deque instead of queue.Queue. deque.append() is
-                        # atomic under the GIL and requires no Condition/lock
-                        # acquire, cutting hot-path overhead from ~1.2µs to ~0.1µs
-                        # per put. The worker drains it with popleft() under the
-                        # _drain_event notification pattern.
-                        self.queue = collections.deque(maxlen=50000)
-                        self._drain_event = threading.Event()
                     self.worker = threading.Thread(target=self._worker_loop, daemon=True, name="AngelTracerWorker")
                     self.worker.start()
+                    self._worker_ready = True
 
     def _worker_loop(self):
-        import collections
         drain = self._drain_event
         q = self.queue
         while True:
@@ -165,6 +167,15 @@ class AngelTracer:
                 pass
 
     def _serialize_event(self, item):
+        # Hot path appends a 6-tuple to avoid dict construction overhead.
+        # Unpack it here in the worker thread where cost doesn't matter.
+        if isinstance(item, tuple):
+            node_id, latency_ns, caller, trace_id, thread_name, is_async = item
+            d = {"node_id": node_id, "latency_ns": latency_ns,
+                 "thread_name": thread_name, "is_async": is_async}
+            if caller:     d["caller"]   = caller
+            if trace_id:   d["trace_id"] = trace_id
+            item = d
         try:
             import orjson
             return orjson.dumps(item) + b"\n"
@@ -227,7 +238,11 @@ class AngelTracer:
         Falls back to the thread-local call stack and finally to frame
         inference only for uninstrumented callers.
         """
-        self._verify_worker()
+        # _worker_ready is a plain bool attribute read — ~20ns.
+        # _verify_worker() (hasattr + thread.is_alive()) is only called once
+        # per tracer lifetime, not on every trace.
+        if not self._worker_ready:
+            self._verify_worker()
 
         # Resolve caller — priority order:
         #   1. compile-time static caller_id (zero runtime cost, injected by AST)
@@ -235,20 +250,21 @@ class AngelTracer:
         #   3. sys._getframe() walk (only for uninstrumented/external callers)
         caller = caller_id
         if not caller:
-            stack = _tl_stack()
-            if len(stack) >= 2:
-                caller = stack[-2]
-            elif len(stack) == 1 and stack[0] != node_id:
-                caller = stack[0]
+            stack = getattr(_thread_local, 'call_stack', None)
+            if stack:
+                if len(stack) >= 2:
+                    caller = stack[-2]
+                elif stack[0] != node_id:
+                    caller = stack[0]
         if not caller:
             caller = self._infer_caller_from_frames(node_id)
 
-        if not trace_id:
+        if trace_id is None:
             trace_id = active_trace_id.get()
 
         # Cached thread-local name — resolved once per OS thread.
         tl = _thread_local
-        thread_name = tl.name if hasattr(tl, 'name') else None
+        thread_name = getattr(tl, 'name', None)
         if thread_name is None:
             import threading
             thread_name = threading.current_thread().name
@@ -267,23 +283,15 @@ class AngelTracer:
             except Exception:
                 pass
 
-        payload_dict = {
-            "node_id": node_id,
-            "latency_ns": latency_ns,
-            "thread_name": thread_name,
-            "is_async": is_async,
-        }
-        if caller:
-            payload_dict["caller"] = caller
-        if trace_id:
-            payload_dict["trace_id"] = trace_id
-
-        try:
-            # deque.append is atomic under the GIL — no lock needed.
-            self.queue.append(payload_dict)
+        # Append a 6-tuple — ~3x cheaper than building a dict in the hot path.
+        # The worker thread unpacks it in _serialize_event().
+        q = self.queue
+        was_empty = len(q) == 0
+        q.append((node_id, latency_ns, caller, trace_id, thread_name, is_async))
+        # Signal the drain event only when transitioning from empty → non-empty.
+        # Avoids acquiring the Event's internal Condition lock on every single call.
+        if was_empty:
             self._drain_event.set()
-        except Exception:
-            pass
 
     def _infer_caller_from_frames(self, node_id: str):
         try:
@@ -342,10 +350,14 @@ class AngelTracer:
         return None
 
     def send_event(self, payload: dict):
-        self._verify_worker()
+        if not self._worker_ready:
+            self._verify_worker()
         try:
-            self.queue.append(payload)
-            self._drain_event.set()
+            q = self.queue
+            was_empty = len(q) == 0
+            q.append(payload)
+            if was_empty:
+                self._drain_event.set()
         except Exception:
             pass
 
@@ -1031,14 +1043,29 @@ class AngelASTTransformer(ast.NodeTransformer):
             )
         )
 
-        inner_try = ast.Try(
-            body=node.body,
-            handlers=[],
-            orelse=[],
-            finalbody=[send_call, stack_pop]
-        )
-
-        node.body = [stack_push, timer_start, inner_try]
+        if static_caller_id is not None:
+            # Caller is fully resolved at compile time — skip the thread-local
+            # stack push/pop entirely. These ops serve no purpose for nested
+            # instrumented calls and are the dominant overhead for recursive
+            # call patterns (they were called 2x per function invocation).
+            inner_try = ast.Try(
+                body=node.body,
+                handlers=[],
+                orelse=[],
+                finalbody=[send_call]
+            )
+            node.body = [timer_start, inner_try]
+        else:
+            # Top-level function: caller is unknown at compile time (may be
+            # called from uninstrumented code), so maintain the TL stack for
+            # runtime fallback to _infer_caller_from_frames().
+            inner_try = ast.Try(
+                body=node.body,
+                handlers=[],
+                orelse=[],
+                finalbody=[send_call, stack_pop]
+            )
+            node.body = [stack_push, timer_start, inner_try]
 
         if route_send_statements:
             return [node] + route_send_statements
