@@ -126,22 +126,58 @@ class AngelTracer:
         
         caller = None
         try:
-            # frame 0: send_trace
-            # frame 1: the finally block (or wrapper)
-            # frame 2: the calling function
-            f = sys._getframe(2)
-            co_name = f.f_code.co_name
-            co_filename = os.path.abspath(f.f_code.co_filename)
-            
-            if hasattr(self, 'project_root') and co_filename.startswith(self.project_root):
-                rel_path = os.path.relpath(co_filename, self.project_root)
-                if co_name and co_name != "<module>":
+            # Extract target function name from node_id to skip the instrumented function's own frame
+            target_fn = node_id
+            if "::" in target_fn:
+                target_fn = target_fn.split("::")[-1]
+            elif ":" in target_fn:
+                target_fn = target_fn.split(":")[-1]
+
+            # Walk the call stack looking for the first user-code frame.
+            # Start at depth=1 (frame 0 = send_trace itself).
+            # Skip Python internals AND our AngelTrace/angel_trace wrappers.
+            _INTERNAL_MODULES = {
+                "threading", "asyncio", "asyncio.tasks", "asyncio.futures",
+                "asyncio.base_events", "asyncio.coroutines", "concurrent.futures",
+                "AngelTrace", "angel_trace",
+            }
+            _INTERNAL_NAMES = {
+                "_bootstrap", "_bootstrap_inner", "_bootstrap_outer",
+                "_call_with_frames_cleaned", "_patched_thread_run",
+                "_patched_thread_init",
+            }
+            depth = 1
+            skipped_target = False
+            while True:
+                try:
+                    f = sys._getframe(depth)
+                except ValueError:
+                    break
+                co_name = f.f_code.co_name
+                co_filename = os.path.abspath(f.f_code.co_filename)
+                module = f.f_globals.get("__name__", "")
+                if (module in _INTERNAL_MODULES
+                        or co_name in _INTERNAL_NAMES
+                        or "lib/python" in co_filename.replace("\\", "/")
+                        or co_name == "<module>"):
+                    depth += 1
+                    continue
+
+                # Skip the instrumented function's own frame once to find its caller
+                if co_name == target_fn and not skipped_target:
+                    skipped_target = True
+                    depth += 1
+                    continue
+
+                if hasattr(self, 'project_root') and co_filename.startswith(self.project_root):
+                    rel_path = os.path.relpath(co_filename, self.project_root)
                     caller = f"{rel_path}::{co_name}"
-            else:
-                if co_name and co_name != "<module>":
+                else:
                     caller = co_name
+                break
         except Exception:
             pass
+
 
         if not trace_id:
             trace_id = active_trace_id.get()
