@@ -100,14 +100,23 @@ class AngelTracer:
         except (ValueError, TypeError):
             self.port = 9090
         self.sock = None
-        # Bolt - Performance/Stability: Track last connection attempt time to implement reconnect backoff cooldown
+        import threading
+        self.lock = threading.Lock()
         self.last_connect_attempt = 0.0
         self.connect_cooldown = 5.0  # seconds
 
     def connect(self):
-        # Bolt - Performance: Avoid socket creation/connection storm if server is unreachable
-        now = time.time()
-        if now - self.last_connect_attempt < self.connect_cooldown:
+        now = time.monotonic()
+        if self.last_connect_attempt != 0.0 and now - self.last_connect_attempt < self.connect_cooldown:
+            return
+        with self.lock:
+            self._connect_locked()
+
+    def _connect_locked(self):
+        if self.sock:
+            return
+        now = time.monotonic()
+        if self.last_connect_attempt != 0.0 and now - self.last_connect_attempt < self.connect_cooldown:
             return
         self.last_connect_attempt = now
         try:
@@ -124,11 +133,6 @@ class AngelTracer:
             self.sock = None
 
     def send_trace(self, node_id: str, latency_ns: int, trace_id: str = None):
-        if not self.sock:
-            self.connect()
-        if not self.sock:
-            return
-        
         caller = None
         call_stack = active_call_stack.get()
         if len(call_stack) >= 2:
@@ -164,16 +168,21 @@ class AngelTracer:
             payload_dict["trace_id"] = trace_id
 
         payload = json.dumps(payload_dict) + "\n"
-        try:
-            self.sock.sendall(payload.encode("utf-8"))
-        except Exception:
-            # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
-            if self.sock:
-                try:
-                    self.sock.close()
-                except Exception:
-                    pass
-            self.sock = None  # Force reconnection on next try (cooldown will be respected)
+        with self.lock:
+            if not self.sock:
+                self._connect_locked()
+            if not self.sock:
+                return
+            try:
+                self.sock.sendall(payload.encode("utf-8"))
+            except Exception:
+                # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
+                if self.sock:
+                    try:
+                        self.sock.close()
+                    except Exception:
+                        pass
+                self.sock = None  # Force reconnection on next try (cooldown will be respected)
 
     def _infer_caller_from_frames(self, node_id: str):
         try:
@@ -232,22 +241,22 @@ class AngelTracer:
         return None
 
     def send_event(self, payload: dict):
-        if not self.sock:
-            self.connect()
-        if not self.sock:
-            return
-        
         payload_str = json.dumps(payload) + "\n"
-        try:
-            self.sock.sendall(payload_str.encode("utf-8"))
-        except Exception:
-            # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
-            if self.sock:
-                try:
-                    self.sock.close()
-                except Exception:
-                    pass
-            self.sock = None
+        with self.lock:
+            if not self.sock:
+                self._connect_locked()
+            if not self.sock:
+                return
+            try:
+                self.sock.sendall(payload_str.encode("utf-8"))
+            except Exception:
+                # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
+                if self.sock:
+                    try:
+                        self.sock.close()
+                    except Exception:
+                        pass
+                self.sock = None
 
 
 # Global default instance

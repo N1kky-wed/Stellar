@@ -34,7 +34,7 @@ def test_angel_tracer_cooldown():
         assert tracer.last_connect_attempt == t1
 
         # Simulate time passing beyond cooldown
-        with patch("time.time", return_value=t1 + 6.0):
+        with patch("time.monotonic", return_value=t1 + 6.0):
             tracer.connect()
             mock_socket_class.assert_called_once()
             assert tracer.last_connect_attempt == t1 + 6.0
