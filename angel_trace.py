@@ -344,7 +344,8 @@ class AngelTracer:
     def send_event(self, payload: dict):
         self._verify_worker()
         try:
-            self.queue.put_nowait(payload)
+            self.queue.append(payload)
+            self._drain_event.set()
         except Exception:
             pass
 
