@@ -12,11 +12,11 @@ Architecture overview:
               └─ AngelSourceLoader (per-module)   │  SQLite trace store │
                     └─ AngelASTTransformer        └────────┬────────────┘
                           └─ wraps every fn              TCP│socket
-                                └─ AngelTracer ──────────────┘
+                                └─ angel_tracer ──────────────┘
                                       └─ send_trace(node_id, latency_ns)
 
 Components:
-    AngelTracer         — Lightweight TCP client. Sends JSON trace events to
+    angel_tracer         — Lightweight TCP client. Sends JSON trace events to
                           the Angel Rust server on port 9090. Reconnects
                           automatically on failure. Fire-and-forget; never
                           raises exceptions into application code.
@@ -81,41 +81,32 @@ import importlib.util
 import contextvars
 import uuid
 import builtins
+import inspect
 
 # Thread-local / task-local tracing context
 active_trace_id = contextvars.ContextVar("active_trace_id", default=None)
+active_call_stack = contextvars.ContextVar("active_call_stack", default=())
 
 
 # ---------------------------------------------------------------------------
 # TCP Trace Client
 # ---------------------------------------------------------------------------
 
-class AngelTracer:
-    def __init__(self, host="127.0.0.1", port=9090):
-        self.host = host
-        self.port = port
+class angel_tracer:
+    def __init__(self, host=None, port=None):
+        self.host = host or os.environ.get("ANGEL_HOST", "127.0.0.1")
+        try:
+            self.port = int(port or os.environ.get("ANGEL_PORT", 9090))
+        except (ValueError, TypeError):
+            self.port = 9090
         self.sock = None
-        # Bolt - Performance/Stability: Track last connection attempt time to implement reconnect backoff cooldown
-        self.last_connect_attempt = 0.0
-        self.connect_cooldown = 5.0  # seconds
 
     def connect(self):
-        # Bolt - Performance: Avoid socket creation/connection storm if server is unreachable
-        now = time.time()
-        if now - self.last_connect_attempt < self.connect_cooldown:
-            return
-        self.last_connect_attempt = now
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.settimeout(1.0)
             self.sock.connect((self.host, self.port))
         except Exception:
-            # Bolt - Stability: Explicitly close the socket to prevent file descriptor leaks
-            if self.sock:
-                try:
-                    self.sock.close()
-                except Exception:
-                    pass
             self.sock = None
 
     def send_trace(self, node_id: str, latency_ns: int, trace_id: str = None):
@@ -125,59 +116,12 @@ class AngelTracer:
             return
         
         caller = None
-        try:
-            # Extract target function name from node_id to skip the instrumented function's own frame
-            target_fn = node_id
-            if "::" in target_fn:
-                target_fn = target_fn.split("::")[-1]
-            elif ":" in target_fn:
-                target_fn = target_fn.split(":")[-1]
-
-            # Walk the call stack looking for the first user-code frame.
-            # Start at depth=1 (frame 0 = send_trace itself).
-            # Skip Python internals AND our AngelTrace/angel_trace wrappers.
-            _INTERNAL_MODULES = {
-                "threading", "asyncio", "asyncio.tasks", "asyncio.futures",
-                "asyncio.base_events", "asyncio.coroutines", "concurrent.futures",
-                "AngelTrace", "angel_trace",
-            }
-            _INTERNAL_NAMES = {
-                "_bootstrap", "_bootstrap_inner", "_bootstrap_outer",
-                "_call_with_frames_cleaned", "_patched_thread_run",
-                "_patched_thread_init",
-            }
-            depth = 1
-            skipped_target = False
-            while True:
-                try:
-                    f = sys._getframe(depth)
-                except ValueError:
-                    break
-                co_name = f.f_code.co_name
-                co_filename = os.path.abspath(f.f_code.co_filename)
-                module = f.f_globals.get("__name__", "")
-                if (module in _INTERNAL_MODULES
-                        or co_name in _INTERNAL_NAMES
-                        or "lib/python" in co_filename.replace("\\", "/")
-                        or co_name == "<module>"):
-                    depth += 1
-                    continue
-
-                # Skip the instrumented function's own frame once to find its caller
-                if co_name == target_fn and not skipped_target:
-                    skipped_target = True
-                    depth += 1
-                    continue
-
-                if hasattr(self, 'project_root') and co_filename.startswith(self.project_root):
-                    rel_path = os.path.relpath(co_filename, self.project_root)
-                    caller = f"{rel_path}::{co_name}"
-                else:
-                    caller = co_name
-                break
-        except Exception:
-            pass
-
+        call_stack = active_call_stack.get()
+        if len(call_stack) >= 2:
+            caller = call_stack[-2]
+        
+        if caller is None:
+            caller = self._infer_caller_from_frames(node_id)
 
         if not trace_id:
             trace_id = active_trace_id.get()
@@ -209,13 +153,63 @@ class AngelTracer:
         try:
             self.sock.sendall(payload.encode("utf-8"))
         except Exception:
-            # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
-            if self.sock:
+            self.sock = None  # Force reconnection on next try
+
+    def _infer_caller_from_frames(self, node_id: str):
+        try:
+            # Extract target function name from node_id to skip the instrumented function's own frame
+            target_fn = node_id
+            if "::" in target_fn:
+                target_fn = target_fn.split("::")[-1]
+            elif ":" in target_fn:
+                target_fn = target_fn.split(":")[-1]
+
+            # Walk the call stack looking for the first user-code frame.
+            # Start at depth=1 (frame 0 = send_trace itself).
+            # Skip frames from Python internals AND from angel_trace / angel_trace
+            # (our monkeypatching wrappers) to land on actual user-code.
+            _INTERNAL_MODULES = {
+                "threading", "asyncio", "asyncio.tasks", "asyncio.futures",
+                "asyncio.base_events", "asyncio.coroutines", "concurrent.futures",
+                "angel_trace", "angel_trace",
+            }
+            _INTERNAL_NAMES = {
+                "_bootstrap", "_bootstrap_inner", "_bootstrap_outer",
+                "_call_with_frames_cleaned", "_patched_thread_run",
+                "_patched_thread_init",
+            }
+            depth = 1
+            skipped_target = False
+            while True:
                 try:
-                    self.sock.close()
-                except Exception:
-                    pass
-            self.sock = None  # Force reconnection on next try (cooldown will be respected)
+                    f = sys._getframe(depth)
+                except ValueError:
+                    break
+                co_name = f.f_code.co_name
+                co_filename = os.path.abspath(f.f_code.co_filename)
+                module = f.f_globals.get("__name__", "")
+                if (module in _INTERNAL_MODULES
+                        or co_name in _INTERNAL_NAMES
+                        or "lib/python" in co_filename.replace("\\", "/")
+                        or co_name == "<module>"):
+                    depth += 1
+                    continue
+                
+                # Skip the instrumented function's own frame once to find its caller
+                if co_name == target_fn and not skipped_target:
+                    skipped_target = True
+                    depth += 1
+                    continue
+
+                # Found a user-code frame
+                if hasattr(self, 'project_root') and co_filename.startswith(self.project_root):
+                    rel_path = os.path.relpath(co_filename, self.project_root)
+                    return f"{rel_path}::{co_name}"
+                else:
+                    return co_name
+        except Exception:
+            return None
+        return None
 
     def send_event(self, payload: dict):
         if not self.sock:
@@ -227,24 +221,50 @@ class AngelTracer:
         try:
             self.sock.sendall(payload_str.encode("utf-8"))
         except Exception:
-            # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
-            if self.sock:
-                try:
-                    self.sock.close()
-                except Exception:
-                    pass
             self.sock = None
 
 
-
 # Global default instance
-tracer = AngelTracer()
+tracer = angel_tracer()
 
 def trace_fn(node_id: str):
     """
     Decorator to instrument a python function manually.
     """
     def decorator(func):
+        if inspect.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                trace_id = active_trace_id.get()
+                if not trace_id:
+                    trace_id = uuid.uuid4().hex
+                    token = active_trace_id.set(trace_id)
+                    try:
+                        stack_token = active_call_stack.set(active_call_stack.get() + (node_id,))
+                        start = time.perf_counter_ns()
+                        try:
+                            try:
+                                return await func(*args, **kwargs)
+                            finally:
+                                duration = time.perf_counter_ns() - start
+                                tracer.send_trace(node_id, duration, trace_id)
+                        finally:
+                            active_call_stack.reset(stack_token)
+                    finally:
+                        active_trace_id.reset(token)
+                else:
+                    stack_token = active_call_stack.set(active_call_stack.get() + (node_id,))
+                    start = time.perf_counter_ns()
+                    try:
+                        try:
+                            return await func(*args, **kwargs)
+                        finally:
+                            duration = time.perf_counter_ns() - start
+                            tracer.send_trace(node_id, duration, trace_id)
+                    finally:
+                        active_call_stack.reset(stack_token)
+            return async_wrapper
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             trace_id = active_trace_id.get()
@@ -252,21 +272,29 @@ def trace_fn(node_id: str):
                 trace_id = uuid.uuid4().hex
                 token = active_trace_id.set(trace_id)
                 try:
+                    stack_token = active_call_stack.set(active_call_stack.get() + (node_id,))
                     start = time.perf_counter_ns()
+                    try:
+                        try:
+                            return func(*args, **kwargs)
+                        finally:
+                            duration = time.perf_counter_ns() - start
+                            tracer.send_trace(node_id, duration, trace_id)
+                    finally:
+                        active_call_stack.reset(stack_token)
+                finally:
+                    active_trace_id.reset(token)
+            else:
+                stack_token = active_call_stack.set(active_call_stack.get() + (node_id,))
+                start = time.perf_counter_ns()
+                try:
                     try:
                         return func(*args, **kwargs)
                     finally:
                         duration = time.perf_counter_ns() - start
                         tracer.send_trace(node_id, duration, trace_id)
                 finally:
-                    active_trace_id.reset(token)
-            else:
-                start = time.perf_counter_ns()
-                try:
-                    return func(*args, **kwargs)
-                finally:
-                    duration = time.perf_counter_ns() - start
-                    tracer.send_trace(node_id, duration, trace_id)
+                    active_call_stack.reset(stack_token)
         return wrapper
     return decorator
 
@@ -277,7 +305,11 @@ def trace_fn(node_id: str):
 # circular-import and recursion issues caused by hooking builtins.__import__.
 
 _patched_flask = False
+_patched_django = False
+_patched_fastapi = False
 _patched_requests = False
+_patched_httpx = False
+_patched_aiohttp = False
 
 def patch_flask():
     global _patched_flask
@@ -370,6 +402,85 @@ def patch_flask():
         sys.stderr.write(f"[angel] Warning: Failed to patch flask: {e}\n")
         return False
 
+def patch_django():
+    global _patched_django
+    if _patched_django:
+        return True
+    try:
+        django_wsgi = sys.modules.get('django.core.handlers.wsgi')
+        if django_wsgi is None or not hasattr(django_wsgi, 'WSGIHandler'):
+            return False
+
+        original_wsgi_call = django_wsgi.WSGIHandler.__call__
+        if getattr(original_wsgi_call, '_angel_patched', False):
+            _patched_django = True
+            return True
+
+        sys.stderr.write("[angel] Patching django.core.handlers.wsgi.WSGIHandler.__call__...\n")
+
+        def wrapped_wsgi_call(self, environ, start_response):
+            trace_id = (
+                environ.get('HTTP_X_ANGEL_TRACE_ID') or
+                environ.get('HTTP_X_ANGEL_TRACEID') or
+                environ.get('x-angel-trace-id')
+            )
+            if not trace_id:
+                trace_id = uuid.uuid4().hex
+            token = active_trace_id.set(trace_id)
+            try:
+                return original_wsgi_call(self, environ, start_response)
+            finally:
+                active_trace_id.reset(token)
+
+        wrapped_wsgi_call._angel_patched = True
+        django_wsgi.WSGIHandler.__call__ = wrapped_wsgi_call
+        _patched_django = True
+        sys.stderr.write("[angel] Django patched successfully!\n")
+        return True
+    except Exception as e:
+        sys.stderr.write(f"[angel] Warning: Failed to patch django: {e}\n")
+        return False
+
+def patch_fastapi():
+    global _patched_fastapi
+    if _patched_fastapi:
+        return True
+    try:
+        starlette_app = sys.modules.get('starlette.applications')
+        if starlette_app is None or not hasattr(starlette_app, 'Starlette'):
+            return False
+
+        original_asgi_call = starlette_app.Starlette.__call__
+        if getattr(original_asgi_call, '_angel_patched', False):
+            _patched_fastapi = True
+            return True
+
+        sys.stderr.write("[angel] Patching starlette.applications.Starlette.__call__...\n")
+
+        async def wrapped_asgi_call(self, scope, receive, send):
+            if scope.get("type") == "http":
+                headers = dict(scope.get("headers", []))
+                trace_id_bytes = headers.get(b"x-angel-trace-id") or headers.get(b"x-angel-traceid")
+                trace_id = trace_id_bytes.decode("utf-8") if trace_id_bytes else None
+                if not trace_id:
+                    trace_id = uuid.uuid4().hex
+                token = active_trace_id.set(trace_id)
+                try:
+                    await original_asgi_call(self, scope, receive, send)
+                finally:
+                    active_trace_id.reset(token)
+            else:
+                await original_asgi_call(self, scope, receive, send)
+
+        wrapped_asgi_call._angel_patched = True
+        starlette_app.Starlette.__call__ = wrapped_asgi_call
+        _patched_fastapi = True
+        sys.stderr.write("[angel] FastAPI/Starlette patched successfully!\n")
+        return True
+    except Exception as e:
+        sys.stderr.write(f"[angel] Warning: Failed to patch FastAPI/Starlette: {e}\n")
+        return False
+
 def patch_requests():
     global _patched_requests
     if _patched_requests:
@@ -410,23 +521,130 @@ def patch_requests():
         sys.stderr.write(f"[angel] Warning: Failed to patch requests: {e}\n")
         return False
 
+def patch_httpx():
+    global _patched_httpx
+    if _patched_httpx:
+        return True
+    try:
+        httpx = sys.modules.get('httpx')
+        if httpx is None:
+            return False
+
+        # Patch sync client
+        if hasattr(httpx, 'Client'):
+            original_request_sync = httpx.Client.request
+            if not getattr(original_request_sync, '_angel_patched', False):
+                def wrapped_request_sync(self, method, url, *args, **kwargs):
+                    trace_id = active_trace_id.get()
+                    if trace_id:
+                        headers = kwargs.get('headers')
+                        if headers is None:
+                            headers = {}
+                            kwargs['headers'] = headers
+                        if hasattr(headers, 'keys'):
+                            has_header = any(k.lower() == 'x-angel-trace-id' for k in headers.keys())
+                            if not has_header:
+                                headers['x-angel-trace-id'] = trace_id
+                        elif isinstance(headers, list):
+                            has_header = any(k.lower() == b'x-angel-trace-id' or k.lower() == 'x-angel-trace-id' for k, v in headers)
+                            if not has_header:
+                                headers.append(('x-angel-trace-id', trace_id))
+                    return original_request_sync(self, method, url, *args, **kwargs)
+                wrapped_request_sync._angel_patched = True
+                httpx.Client.request = wrapped_request_sync
+
+        # Patch async client
+        if hasattr(httpx, 'AsyncClient'):
+            original_request_async = httpx.AsyncClient.request
+            if not getattr(original_request_async, '_angel_patched', False):
+                async def wrapped_request_async(self, method, url, *args, **kwargs):
+                    trace_id = active_trace_id.get()
+                    if trace_id:
+                        headers = kwargs.get('headers')
+                        if headers is None:
+                            headers = {}
+                            kwargs['headers'] = headers
+                        if hasattr(headers, 'keys'):
+                            has_header = any(k.lower() == 'x-angel-trace-id' for k in headers.keys())
+                            if not has_header:
+                                headers['x-angel-trace-id'] = trace_id
+                        elif isinstance(headers, list):
+                            has_header = any(k.lower() == b'x-angel-trace-id' or k.lower() == 'x-angel-trace-id' for k, v in headers)
+                            if not has_header:
+                                headers.append(('x-angel-trace-id', trace_id))
+                    return await original_request_async(self, method, url, *args, **kwargs)
+                wrapped_request_async._angel_patched = True
+                httpx.AsyncClient.request = wrapped_request_async
+
+        _patched_httpx = True
+        sys.stderr.write("[angel] HTTPX patched successfully!\n")
+        return True
+    except Exception as e:
+        sys.stderr.write(f"[angel] Warning: Failed to patch HTTPX: {e}\n")
+        return False
+
+def patch_aiohttp():
+    global _patched_aiohttp
+    if _patched_aiohttp:
+        return True
+    try:
+        aiohttp = sys.modules.get('aiohttp')
+        if aiohttp is None or not hasattr(aiohttp, 'ClientSession'):
+            return False
+
+        original_request = aiohttp.ClientSession._request
+        if getattr(original_request, '_angel_patched', False):
+            _patched_aiohttp = True
+            return True
+
+        sys.stderr.write("[angel] Patching aiohttp.ClientSession._request...\n")
+
+        async def wrapped_request(self, method, str_or_url, *args, **kwargs):
+            trace_id = active_trace_id.get()
+            if trace_id:
+                headers = kwargs.get('headers')
+                if headers is None:
+                    headers = {}
+                    kwargs['headers'] = headers
+                if hasattr(headers, 'keys'):
+                    has_header = any(k.lower() == 'x-angel-trace-id' for k in headers.keys())
+                    if not has_header:
+                        headers['x-angel-trace-id'] = trace_id
+                elif isinstance(headers, list):
+                    has_header = any(k.lower() == b'x-angel-trace-id' or k.lower() == 'x-angel-trace-id' for k, v in headers)
+                    if not has_header:
+                        headers.append(('x-angel-trace-id', trace_id))
+            return await original_request(self, method, str_or_url, *args, **kwargs)
+
+        wrapped_request._angel_patched = True
+        aiohttp.ClientSession._request = wrapped_request
+        _patched_aiohttp = True
+        sys.stderr.write("[angel] aiohttp patched successfully!\n")
+        return True
+    except Exception as e:
+        sys.stderr.write(f"[angel] Warning: Failed to patch aiohttp: {e}\n")
+        return False
+
 def _patch_worker():
-    """Background thread: retries patching until both targets are patched."""
-    import threading
+    """Background thread: retries patching until targets are patched."""
     import time as _time
     for _ in range(120):   # up to ~60 s
-        if _patched_flask and _patched_requests:
-            break
-        if not _patched_flask:
-            patch_flask()
-        if not _patched_requests:
-            patch_requests()
+        patch_requests()
+        patch_httpx()
+        patch_aiohttp()
+        patch_flask()
+        patch_django()
+        patch_fastapi()
         _time.sleep(0.5)
 
 def start_patcher_thread():
-    global _patched_flask, _patched_requests
+    global _patched_flask, _patched_django, _patched_fastapi, _patched_requests, _patched_httpx, _patched_aiohttp
     _patched_flask = False
+    _patched_django = False
+    _patched_fastapi = False
     _patched_requests = False
+    _patched_httpx = False
+    _patched_aiohttp = False
 
     import threading as _threading
     for t in _threading.enumerate():
@@ -470,18 +688,24 @@ _threading_orig.Thread.run = _patched_thread_run
 class AngelASTTransformer(ast.NodeTransformer):
     def __init__(self, relative_path):
         self.relative_path = relative_path
-        self.func_stack = []
+        self.scope_stack = []
+
+    def visit_ClassDef(self, node):
+        self.scope_stack.append(node.name)
+        res = self.generic_visit(node)
+        self.scope_stack.pop()
+        return res
 
     def visit_FunctionDef(self, node):
-        self.func_stack.append(node.name)
+        self.scope_stack.append(node.name)
         res = self.instrument_function(node)
-        self.func_stack.pop()
+        self.scope_stack.pop()
         return res
 
     def visit_AsyncFunctionDef(self, node):
-        self.func_stack.append(node.name)
+        self.scope_stack.append(node.name)
         res = self.instrument_function(node)
-        self.func_stack.pop()
+        self.scope_stack.pop()
         return res
 
     def get_route_info(self, decorator):
@@ -526,7 +750,7 @@ class AngelASTTransformer(ast.NodeTransformer):
         if node.name.startswith("__") and node.name.endswith("__"):
             return node
             
-        qname = "::".join(self.func_stack)
+        qname = "::".join(self.scope_stack)
         node_id = f"{self.relative_path}::{qname}"
         
         # Collect route registrations to emit at import time
@@ -568,7 +792,43 @@ class AngelASTTransformer(ast.NodeTransformer):
                 )
                 route_send_statements.append(route_send_stmt)
 
-        # 1. _angel_t0 = time.perf_counter_ns()
+        # 1. Track the exact static node-id stack for caller correlation.
+        stack_token = ast.Assign(
+            targets=[ast.Name(id="_angel_stack_token", ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Attribute(
+                        value=ast.Name(id="angel_trace", ctx=ast.Load()),
+                        attr="active_call_stack",
+                        ctx=ast.Load()
+                    ),
+                    attr="set",
+                    ctx=ast.Load()
+                ),
+                args=[
+                    ast.BinOp(
+                        left=ast.Call(
+                            func=ast.Attribute(
+                                value=ast.Attribute(
+                                    value=ast.Name(id="angel_trace", ctx=ast.Load()),
+                                    attr="active_call_stack",
+                                    ctx=ast.Load()
+                                ),
+                                attr="get",
+                                ctx=ast.Load()
+                            ),
+                            args=[],
+                            keywords=[]
+                        ),
+                        op=ast.Add(),
+                        right=ast.Tuple(elts=[ast.Constant(value=node_id)], ctx=ast.Load())
+                    )
+                ],
+                keywords=[]
+            )
+        )
+
+        # 2. _angel_t0 = time.perf_counter_ns()
         timer_start = ast.Assign(
             targets=[ast.Name(id="_angel_t0", ctx=ast.Store())],
             value=ast.Call(
@@ -582,7 +842,7 @@ class AngelASTTransformer(ast.NodeTransformer):
             )
         )
         
-        # 2. timer_diff = time.perf_counter_ns() - _angel_t0
+        # 3. timer_diff = time.perf_counter_ns() - _angel_t0
         timer_diff = ast.BinOp(
             left=ast.Call(
                 func=ast.Attribute(
@@ -597,7 +857,7 @@ class AngelASTTransformer(ast.NodeTransformer):
             right=ast.Name(id="_angel_t0", ctx=ast.Load())
         )
         
-        # 3. angel_trace.tracer.send_trace(node_id, timer_diff)
+        # 4. angel_trace.tracer.send_trace(node_id, timer_diff)
         send_call = ast.Expr(
             value=ast.Call(
                 func=ast.Attribute(
@@ -616,16 +876,38 @@ class AngelASTTransformer(ast.NodeTransformer):
                 keywords=[]
             )
         )
+
+        reset_stack = ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Attribute(
+                        value=ast.Name(id="angel_trace", ctx=ast.Load()),
+                        attr="active_call_stack",
+                        ctx=ast.Load()
+                    ),
+                    attr="reset",
+                    ctx=ast.Load()
+                ),
+                args=[ast.Name(id="_angel_stack_token", ctx=ast.Load())],
+                keywords=[]
+            )
+        )
         
-        # Wrap body in Try-Finally
-        try_node = ast.Try(
+        inner_try = ast.Try(
             body=node.body,
             handlers=[],
             orelse=[],
             finalbody=[send_call]
         )
+
+        outer_try = ast.Try(
+            body=[timer_start, inner_try],
+            handlers=[],
+            orelse=[],
+            finalbody=[reset_stack]
+        )
         
-        node.body = [timer_start, try_node]
+        node.body = [stack_token, outer_try]
         
         if route_send_statements:
             return [node] + route_send_statements
@@ -649,11 +931,25 @@ class AngelSourceLoader(importlib.machinery.SourceFileLoader):
         try:
             tree = ast.parse(source)
             
-            # Prepend logging dependencies at the top of the file namespace
+            # Insert dependencies after module docstring and future imports.
             imp_time = ast.Import(names=[ast.alias(name="time", asname=None)])
             imp_angel = ast.Import(names=[ast.alias(name="angel_trace", asname=None)])
-            tree.body.insert(0, imp_time)
-            tree.body.insert(1, imp_angel)
+            insert_at = 0
+            if (
+                tree.body
+                and isinstance(tree.body[0], ast.Expr)
+                and isinstance(tree.body[0].value, ast.Constant)
+                and isinstance(tree.body[0].value.value, str)
+            ):
+                insert_at = 1
+            while (
+                insert_at < len(tree.body)
+                and isinstance(tree.body[insert_at], ast.ImportFrom)
+                and tree.body[insert_at].module == "__future__"
+            ):
+                insert_at += 1
+            tree.body.insert(insert_at, imp_time)
+            tree.body.insert(insert_at + 1, imp_angel)
 
             # Instrument the file's AST
             transformer = AngelASTTransformer(self.relative_path)
@@ -691,7 +987,7 @@ class AngelFinder(importlib.abc.MetaPathFinder):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Angel Trace Launcher")
-        print("Usage: python3 -m angel_trace <script.py> [args...]")
+        print("Usage: python3 angel_trace.py <script.py> [args...]")
         sys.exit(1)
 
     script_path = os.path.abspath(sys.argv[1])
