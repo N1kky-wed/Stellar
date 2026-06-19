@@ -52,6 +52,7 @@ def test_angel_tracer_send_trace_error_handling():
 
     # Send trace should fail, close the socket, and set it to None
     tracer.send_trace("test_node", 12345, "test_trace_id")
+    time.sleep(1.5)
     assert tracer.sock is None
     mock_sock.close.assert_called_once()
 
@@ -67,5 +68,6 @@ def test_angel_tracer_send_event_error_handling():
 
     # Send event should fail, close the socket, and set it to None
     tracer.send_event({"event": "test"})
+    time.sleep(1.5)
     assert tracer.sock is None
     mock_sock.close.assert_called_once()

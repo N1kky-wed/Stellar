@@ -12,11 +12,11 @@ Architecture overview:
               └─ AngelSourceLoader (per-module)   │  SQLite trace store │
                     └─ AngelASTTransformer        └────────┬────────────┘
                           └─ wraps every fn              TCP│socket
-                                └─ angel_tracer ──────────────┘
+                                └─ AngelTracer ──────────────┘
                                       └─ send_trace(node_id, latency_ns)
 
 Components:
-    angel_tracer         — Lightweight TCP client. Sends JSON trace events to
+    AngelTracer         — Lightweight TCP client. Sends JSON trace events to
                           the Angel Rust server on port 9090. Reconnects
                           automatically on failure. Fire-and-forget; never
                           raises exceptions into application code.
@@ -105,6 +105,71 @@ class AngelTracer:
         self.last_connect_attempt = 0.0
         self.connect_cooldown = 5.0  # seconds
 
+    def _verify_worker(self):
+        if not hasattr(self, 'worker') or self.worker is None or not self.worker.is_alive():
+            with self.lock:
+                if not hasattr(self, 'worker') or self.worker is None or not self.worker.is_alive():
+                    import queue
+                    import threading
+                    if not hasattr(self, 'queue') or self.queue is None:
+                        self.queue = queue.Queue(maxsize=50000)
+                    self.worker = threading.Thread(target=self._worker_loop, daemon=True, name="AngelTracerWorker")
+                    self.worker.start()
+
+    def _worker_loop(self):
+        import queue
+        while True:
+            batch = []
+            try:
+                # Block for up to 1 second waiting for an item
+                item = self.queue.get(block=True, timeout=1.0)
+                batch.append(item)
+                # Try to pull up to 99 more items immediately
+                while len(batch) < 100:
+                    batch.append(self.queue.get_nowait())
+            except queue.Empty:
+                pass
+            except Exception:
+                pass
+
+            if not batch:
+                continue
+
+            try:
+                # Serialize the batch
+                serialized_payloads = b"".join(self._serialize_event(item) for item in batch)
+                self._send_payloads_with_retry(serialized_payloads)
+            except Exception:
+                pass
+
+    def _serialize_event(self, item):
+        try:
+            import orjson
+            return orjson.dumps(item) + b"\n"
+        except ImportError:
+            try:
+                import json
+                return (json.dumps(item) + "\n").encode("utf-8")
+            except Exception:
+                return b""
+
+    def _send_payloads_with_retry(self, payloads):
+        with self.lock:
+            if not self.sock:
+                self._connect_locked()
+            if not self.sock:
+                return
+            try:
+                self.sock.sendall(payloads)
+            except Exception:
+                # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
+                if self.sock:
+                    try:
+                        self.sock.close()
+                    except Exception:
+                        pass
+                self.sock = None
+
     def connect(self):
         now = time.monotonic()
         if self.last_connect_attempt != 0.0 and now - self.last_connect_attempt < self.connect_cooldown:
@@ -133,6 +198,8 @@ class AngelTracer:
             self.sock = None
 
     def send_trace(self, node_id: str, latency_ns: int, trace_id: str = None):
+        self._verify_worker()
+
         caller = None
         call_stack = active_call_stack.get()
         if len(call_stack) >= 2:
@@ -167,22 +234,10 @@ class AngelTracer:
         if trace_id:
             payload_dict["trace_id"] = trace_id
 
-        payload = json.dumps(payload_dict) + "\n"
-        with self.lock:
-            if not self.sock:
-                self._connect_locked()
-            if not self.sock:
-                return
-            try:
-                self.sock.sendall(payload.encode("utf-8"))
-            except Exception:
-                # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
-                if self.sock:
-                    try:
-                        self.sock.close()
-                    except Exception:
-                        pass
-                self.sock = None  # Force reconnection on next try (cooldown will be respected)
+        try:
+            self.queue.put_nowait(payload_dict)
+        except Exception:
+            pass
 
     def _infer_caller_from_frames(self, node_id: str):
         try:
@@ -241,22 +296,11 @@ class AngelTracer:
         return None
 
     def send_event(self, payload: dict):
-        payload_str = json.dumps(payload) + "\n"
-        with self.lock:
-            if not self.sock:
-                self._connect_locked()
-            if not self.sock:
-                return
-            try:
-                self.sock.sendall(payload_str.encode("utf-8"))
-            except Exception:
-                # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
-                if self.sock:
-                    try:
-                        self.sock.close()
-                    except Exception:
-                        pass
-                self.sock = None
+        self._verify_worker()
+        try:
+            self.queue.put_nowait(payload)
+        except Exception:
+            pass
 
 
 # Global default instance
