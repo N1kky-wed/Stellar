@@ -5,10 +5,28 @@ import socket
 import json
 import sqlite3
 import tempfile
+import shutil
 import pytest
 
-ANGEL_BIN = "/home/stellaradmin/Angel/target/release/angel"
+def _resolve_angel_bin():
+    # 1. Check if angel is on PATH (installed system-wide or via cargo install)
+    which = shutil.which("angel")
+    if which:
+        return which
+    # 2. Fall back to common local build locations relative to this repo
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "..", "..", "Angel", "target", "release", "angel"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "Angel", "target", "debug", "angel"),
+        os.path.expanduser("~/.cargo/bin/angel"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return os.path.abspath(c)
+    return None
 
+ANGEL_BIN = _resolve_angel_bin()
+
+@pytest.mark.skipif(ANGEL_BIN is None, reason="angel binary not found — skipping integration test (not available in this environment)")
 def test_dropped_telemetry_integration():
     # 1. Create a temporary database file
     db_file = tempfile.mktemp(suffix=".db")
