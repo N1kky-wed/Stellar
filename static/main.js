@@ -6432,6 +6432,12 @@ function highlightTextInMessage(messageElement, textToHighlight) {
   const contentDiv = messageElement.querySelector(".message-content");
   if (!contentDiv || !textToHighlight) return;
 
+  // Safe regex escaping to handle special characters in textToHighlight
+  const regexSafeTerm = textToHighlight.replace(
+    /[/\-\\^$*+?.()|[\]{}]/g,
+    "\\$&",
+  );
+
   // Protect user messages: perform safe direct DOM highlight manipulation
   // to avoid reading/writing innerHTML and causing XSS or HTML/style unwrap leaks.
   const isUserMsg =
@@ -6458,7 +6464,7 @@ function highlightTextInMessage(messageElement, textToHighlight) {
         continue;
       }
 
-      const regex = new RegExp(textToHighlight, "gi");
+      const regex = new RegExp(regexSafeTerm, "gi");
       if (node.nodeValue.match(regex)) {
         nodesToReplace.push(node);
       }
@@ -6466,7 +6472,7 @@ function highlightTextInMessage(messageElement, textToHighlight) {
 
     nodesToReplace.forEach((node) => {
       const text = node.nodeValue;
-      const regex = new RegExp(textToHighlight, "gi");
+      const regex = new RegExp(regexSafeTerm, "gi");
       const parent = node.parentNode;
 
       let lastIndex = 0;
@@ -6524,7 +6530,7 @@ function highlightTextInMessage(messageElement, textToHighlight) {
       continue;
     }
 
-    const regex = new RegExp(textToHighlight, "gi");
+    const regex = new RegExp(regexSafeTerm, "gi");
     if (node.nodeValue.match(regex)) {
       nodesToReplace.push(node);
     }
@@ -6533,7 +6539,7 @@ function highlightTextInMessage(messageElement, textToHighlight) {
   nodesToReplace.forEach((node) => {
     const span = document.createElement("span");
     span.innerHTML = node.nodeValue.replace(
-      new RegExp(textToHighlight, "gi"),
+      new RegExp(regexSafeTerm, "gi"),
       (match) => `<span class="">${match}</span>`,
     );
     node.parentNode.replaceChild(span, node);
@@ -7458,9 +7464,17 @@ if (chatSearchInput) {
             item.dataset.searchTerm = searchTerm;
             if (snippetDiv) {
               if (result.snippet) {
-                snippetDiv.innerHTML = result.snippet.replace(
-                  new RegExp(searchTerm, "gi"),
-                  (match) => `<span class="">${match}</span>`,
+                // Protect snippet previews of user messages from client-side unwrap and HTML/CSS execution leaks
+                const escapedSnippet = escapeHtml(result.snippet);
+                const escapedSearchTerm = escapeHtml(searchTerm);
+                // Safe regex escaping to handle special characters in the search term
+                const regexSafeSearchTerm = escapedSearchTerm.replace(
+                  /[/\-\\^$*+?.()|[\]{}]/g,
+                  "\\$&",
+                );
+                snippetDiv.innerHTML = escapedSnippet.replace(
+                  new RegExp(regexSafeSearchTerm, "gi"),
+                  (match) => `<span class="highlighted-text">${match}</span>`,
                 );
                 snippetDiv.style.display = "block";
               } else {
