@@ -470,12 +470,19 @@ _threading_orig.Thread.run = _patched_thread_run
 class AngelASTTransformer(ast.NodeTransformer):
     def __init__(self, relative_path):
         self.relative_path = relative_path
+        self.func_stack = []
 
     def visit_FunctionDef(self, node):
-        return self.instrument_function(node)
+        self.func_stack.append(node.name)
+        res = self.instrument_function(node)
+        self.func_stack.pop()
+        return res
 
     def visit_AsyncFunctionDef(self, node):
-        return self.instrument_function(node)
+        self.func_stack.append(node.name)
+        res = self.instrument_function(node)
+        self.func_stack.pop()
+        return res
 
     def get_route_info(self, decorator):
         if not isinstance(decorator, ast.Call):
@@ -519,7 +526,8 @@ class AngelASTTransformer(ast.NodeTransformer):
         if node.name.startswith("__") and node.name.endswith("__"):
             return node
             
-        node_id = f"{self.relative_path}::{node.name}"
+        qname = "::".join(self.func_stack)
+        node_id = f"{self.relative_path}::{qname}"
         
         # Collect route registrations to emit at import time
         route_send_statements = []
