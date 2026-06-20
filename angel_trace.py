@@ -342,12 +342,12 @@ class AngelTracer:
         # Get or register node_id
         if node_id not in self.registered_nodes:
             self.registered_nodes[node_id] = self.next_node_id
-            self.next_node_id = (self.next_node_id + 1) & 0xffff
+            self.next_node_id = (self.next_node_id + 1) & 0xffffffff
             if self.next_node_id == 0:
                 self.next_node_id = 1
             node_bytes = node_id.encode('utf-8', errors='replace')
-            payload_len = 5 + len(node_bytes)
-            payloads.append(struct.pack(">B H B H H", 0xAB, payload_len, 0x02, self.registered_nodes[node_id], len(node_bytes)) + node_bytes)
+            payload_len = 7 + len(node_bytes)
+            payloads.append(struct.pack(">B H B I H", 0xAB, payload_len, 0x02, self.registered_nodes[node_id], len(node_bytes)) + node_bytes)
         dynamic_id = self.registered_nodes[node_id]
 
         # Get or register caller
@@ -355,43 +355,43 @@ class AngelTracer:
         if caller:
             if caller not in self.registered_nodes:
                 self.registered_nodes[caller] = self.next_node_id
-                self.next_node_id = (self.next_node_id + 1) & 0xffff
+                self.next_node_id = (self.next_node_id + 1) & 0xffffffff
                 if self.next_node_id == 0:
                     self.next_node_id = 1
                 caller_bytes = caller.encode('utf-8', errors='replace')
-                payload_len = 5 + len(caller_bytes)
-                payloads.append(struct.pack(">B H B H H", 0xAB, payload_len, 0x02, self.registered_nodes[caller], len(caller_bytes)) + caller_bytes)
+                payload_len = 7 + len(caller_bytes)
+                payloads.append(struct.pack(">B H B I H", 0xAB, payload_len, 0x02, self.registered_nodes[caller], len(caller_bytes)) + caller_bytes)
             caller_id = self.registered_nodes[caller]
 
         # Get or register trace_id (Type 0x03)
         trace_hash = 0
         if trace_id:
-            trace_hash = 0x811c9dc5
+            trace_hash = 0xcbf29ce484222325
             for b in trace_id.encode('utf-8', errors='replace'):
-                trace_hash = (trace_hash ^ b) & 0xffffffff
-                trace_hash = (trace_hash * 0x01000193) & 0xffffffff
+                trace_hash = (trace_hash ^ b) & 0xffffffffffffffff
+                trace_hash = (trace_hash * 0x100000001b3) & 0xffffffffffffffff
             if trace_hash not in self.registered_strings:
                 self.registered_strings[trace_hash] = trace_id
                 trace_bytes = trace_id.encode('utf-8', errors='replace')
-                payload_len = 7 + len(trace_bytes)
-                payloads.append(struct.pack(">B H B I H", 0xAB, payload_len, 0x03, trace_hash, len(trace_bytes)) + trace_bytes)
+                payload_len = 11 + len(trace_bytes)
+                payloads.append(struct.pack(">B H B Q H", 0xAB, payload_len, 0x03, trace_hash, len(trace_bytes)) + trace_bytes)
 
         # Get or register thread_name (Type 0x03)
         thread_hash = 0
         if thread_name:
-            thread_hash = 0x811c9dc5
+            thread_hash = 0xcbf29ce484222325
             for b in thread_name.encode('utf-8', errors='replace'):
-                thread_hash = (thread_hash ^ b) & 0xffffffff
-                thread_hash = (thread_hash * 0x01000193) & 0xffffffff
+                thread_hash = (thread_hash ^ b) & 0xffffffffffffffff
+                thread_hash = (thread_hash * 0x100000001b3) & 0xffffffffffffffff
             if thread_hash not in self.registered_strings:
                 self.registered_strings[thread_hash] = thread_name
                 thread_bytes = thread_name.encode('utf-8', errors='replace')
-                payload_len = 7 + len(thread_bytes)
-                payloads.append(struct.pack(">B H B I H", 0xAB, payload_len, 0x03, thread_hash, len(thread_bytes)) + thread_bytes)
+                payload_len = 11 + len(thread_bytes)
+                payloads.append(struct.pack(">B H B Q H", 0xAB, payload_len, 0x03, thread_hash, len(thread_bytes)) + thread_bytes)
 
         # Telemetry packet
         flags = 0x01 if is_async else 0x00
-        telemetry_payload = struct.pack(">B H B H Q H I I B", 0xAB, 22, 0x01, dynamic_id, latency_ns, caller_id, trace_hash, thread_hash, flags)
+        telemetry_payload = struct.pack(">B H B I Q I Q Q B", 0xAB, 34, 0x01, dynamic_id, latency_ns, caller_id, trace_hash, thread_hash, flags)
         payloads.append(telemetry_payload)
 
         return b"".join(payloads)
@@ -1235,7 +1235,7 @@ class AngelSourceLoader(importlib.machinery.SourceFileLoader):
             
             # Insert dependencies after module docstring and future imports.
             imp_time = ast.Import(names=[ast.alias(name="time", asname="_angel_time_mod")])
-            imp_angel = ast.Import(names=[ast.alias(name="angel_trace", asname="_angel_trace_mod")])
+            imp_angel = ast.Import(names=[ast.alias(name="AngelTrace", asname="_angel_trace_mod")])
             
             perf_assign = ast.Assign(
                 targets=[ast.Name(id="_angel_perf", ctx=ast.Store())],
@@ -1345,7 +1345,7 @@ class AngelFinder(importlib.abc.MetaPathFinder):
         if spec and spec.origin and os.path.isabs(spec.origin):
             origin_path = os.path.abspath(spec.origin)
             if origin_path.startswith(self.project_root):
-                if "AngelTrace" in fullname or "angel_trace" in fullname:
+                if "AngelTrace" in fullname:
                     return None
                 if self.is_ignored(origin_path):
                     return None
@@ -1367,6 +1367,7 @@ if __name__ == "__main__":
     project_root = os.path.dirname(script_path)
 
     # Register in Python import path
+    sys.modules["AngelTrace"] = sys.modules["__main__"]
     sys.meta_path.insert(0, AngelFinder(project_root))
 
     # Shift CLI arguments so target script reads its parameters correctly
