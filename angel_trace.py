@@ -1130,7 +1130,7 @@ class AngelASTTransformer(ast.NodeTransformer):
                     value=ast.Call(
                         func=ast.Attribute(
                             value=ast.Attribute(
-                                value=ast.Name(id="AngelTrace", ctx=ast.Load()),
+                                value=ast.Name(id="_angel_trace_mod", ctx=ast.Load()),
                                 attr="tracer",
                                 ctx=ast.Load()
                             ),
@@ -1235,7 +1235,7 @@ class AngelSourceLoader(importlib.machinery.SourceFileLoader):
             
             # Insert dependencies after module docstring and future imports.
             imp_time = ast.Import(names=[ast.alias(name="time", asname="_angel_time_mod")])
-            imp_angel = ast.Import(names=[ast.alias(name="AngelTrace", asname="_angel_trace_mod")])
+            imp_angel = ast.Import(names=[ast.alias(name="angel_trace", asname="_angel_trace_mod")])
             
             perf_assign = ast.Assign(
                 targets=[ast.Name(id="_angel_perf", ctx=ast.Store())],
