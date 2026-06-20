@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stellar | 502 Bad Gateway</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript
+      ><link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=JetBrains+Mono:wght@700&display=swap"
+    /></noscript>
+    <meta
+      name="description"
+      content="Stellar Offline Portal - 502 Gateway Error"
+    />
+    <style>
+      :root {
+        --bg-base: #010103;
+        --surface: rgba(10, 10, 15, 0.75);
+        --border: rgba(255, 255, 255, 0.08);
+        --accent-lunarity: #4285f4;
+        --accent-emerald: #00f090;
+        --accent-crimson: #ff2a4d;
+        --text-muted: #9ca3af;
+      }
+
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background-color: var(--bg-base);
+        font-family: "Inter", sans-serif;
+        overflow: hidden;
+        color: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        perspective: 1500px;
+      }
+
+      /* --- Mask Wrapper (Holds the Seamless Flashlight) --- */
+      .code-mask-wrapper {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 0;
+        pointer-events: none;
+
+        --mouse-x: 50vw;
+        --mouse-y: 50vh;
+
+        -webkit-mask-image: radial-gradient(
+          280px circle at var(--mouse-x) var(--mouse-y),
+          rgba(0, 0, 0, 1) 0%,
+          rgba(0, 0, 0, 0.8) 15%,
+          rgba(0, 0, 0, 0.5) 35%,
+          rgba(0, 0, 0, 0.3) 50%,
+          rgba(0, 0, 0, 0.2) 65%,
+          rgba(0, 0, 0, 0.15) 80%,
+          rgba(0, 0, 0, 0.12) 90%,
+          rgba(0, 0, 0, 0.1) 100%
+        );
+        mask-image: radial-gradient(
+          280px circle at var(--mouse-x) var(--mouse-y),
+          rgba(0, 0, 0, 1) 0%,
+          rgba(0, 0, 0, 0.8) 15%,
+          rgba(0, 0, 0, 0.5) 35%,
+          rgba(0, 0, 0, 0.3) 50%,
+          rgba(0, 0, 0, 0.2) 65%,
+          rgba(0, 0, 0, 0.15) 80%,
+          rgba(0, 0, 0, 0.12) 90%,
+          rgba(0, 0, 0, 0.1) 100%
+        );
+      }
+
+      /* Balanced darkness void behind the card */
+      .code-mask-wrapper::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse 450px 700px at center,
+          var(--bg-base) 15%,
+          rgba(1, 1, 3, 0.9) 40%,
+          transparent 75%
+        );
+        pointer-events: none;
+      }
+
+      /* --- Scrolling Code Canvas --- */
+      .code-canvas {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        line-height: 1.3;
+        color: rgba(255, 42, 77, 0.45); /* Red/crimson tone for error state */
+        white-space: pre;
+        width: 110vw;
+        margin-left: -5vw;
+        will-change: transform;
+        animation: scrollMemoryDump 100s linear infinite;
+      }
+
+      @keyframes scrollMemoryDump {
+        0% {
+          transform: translateY(0);
+        }
+        100% {
+          transform: translateY(-50%);
+        }
+      }
+
+      /* --- Main UI Wrapper --- */
+      .gateway-wrapper {
+        position: relative;
+        z-index: 10;
+        width: 100%;
+        max-width: 480px;
+        padding: 20px;
+        box-sizing: border-box;
+        transform-style: preserve-3d;
+        will-change: transform;
+      }
+
+      .auth-card {
+        background: var(--surface);
+        backdrop-filter: blur(40px);
+        -webkit-backdrop-filter: blur(40px);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 60px 40px;
+
+        box-shadow:
+          0 0 50px 2px rgba(0, 0, 0, 0.8),
+          0 40px 80px -20px rgba(0, 0, 0, 1),
+          inset 0 1px 0 rgba(255, 255, 255, 0.1);
+
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transform: translateZ(0);
+      }
+
+      .auth-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent-crimson),
+          transparent
+        );
+      }
+
+      /* Title */
+      .logo-mark {
+        font-size: 3rem;
+        font-weight: 900;
+        letter-spacing: 8px;
+        margin-bottom: 14px;
+        text-align: center;
+        background: linear-gradient(
+          135deg,
+          #ffffff 20%,
+          #fca5a5 60%,
+          #ff2a4d 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        filter: drop-shadow(0 4px 15px rgba(255, 42, 77, 0.3));
+      }
+
+      .subtitle {
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        margin-bottom: 52px;
+        line-height: 1.6;
+        text-align: center;
+        letter-spacing: 0.5px;
+      }
+
+      /* Offline Error Badge */
+      .error-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 42, 77, 0.08);
+        border: 1px solid rgba(255, 42, 77, 0.2);
+        padding: 6px 14px;
+        border-radius: 100px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--accent-crimson);
+        margin-bottom: 24px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        box-shadow: 0 0 15px rgba(255, 42, 77, 0.15);
+      }
+
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        background: var(--accent-crimson);
+        border-radius: 50%;
+        box-shadow: 0 0 8px var(--accent-crimson);
+        animation: blink 1.5s infinite;
+      }
+
+      @keyframes blink {
+        0%, 100% { opacity: 0.4; }
+        50% { opacity: 1; }
+      }
+
+      /* Action Button */
+      .auth-btn {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        color: #fff;
+        border-radius: 12px;
+        padding: 18px 20px;
+        font-size: 1rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        cursor: pointer;
+        width: 100%;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .auth-btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 42, 77, 0.5);
+        transform: translateY(-2px);
+        box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.6);
+      }
+
+      .auth-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .btn-icon {
+        width: 22px;
+        height: 22px;
+        stroke: var(--accent-crimson);
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: none;
+      }
+
+      /* Persona Nodes */
+      .persona-status {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+      }
+
+      .persona {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.6rem;
+        color: var(--text-muted);
+        letter-spacing: 1px;
+      }
+
+      .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+      }
+      .dot.obs {
+        background: #888890;
+        box-shadow: 0 0 8px #888890;
+      }
+      .dot.cri {
+        background: #ff2a4d;
+        box-shadow: 0 0 8px #ff2a4d;
+      }
+      .dot.lun {
+        background: #4285f4;
+        box-shadow: 0 0 8px #4285f4;
+      }
+      .dot.eme {
+        background: #00f090;
+        box-shadow: 0 0 8px #00f090;
+      }
+
+      /* Loading System */
+      .loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(1, 1, 3, 0.98);
+        backdrop-filter: blur(12px);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.4s ease;
+        z-index: 20;
+      }
+
+      .loading-overlay.active {
+        opacity: 1;
+        pointer-events: all;
+      }
+
+      .loader-ring {
+        width: 36px;
+        height: 36px;
+        border: 2px solid rgba(255, 42, 77, 0.1);
+        border-top-color: var(--accent-crimson);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 24px;
+      }
+
+      .loader-text {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.75rem;
+        color: var(--accent-emerald);
+        letter-spacing: 1.5px;
+        text-align: center;
+        padding: 0 20px;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      #auth-message {
+        margin-top: 12px;
+        font-size: 0.85rem;
+        text-align: center;
+        min-height: 1.2em;
+        font-family: "JetBrains Mono", monospace;
+        color: var(--accent-crimson);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="code-mask-wrapper" id="maskWrapper" data-nosnippet>
+      <div class="code-canvas" id="codeCanvas" aria-hidden="true"></div>
+    </div>
+
+    <main class="gateway-wrapper" id="gatewayWrapper">
+      <div class="auth-card">
+        <div class="loading-overlay" id="loadingOverlay">
+          <div class="loader-ring"></div>
+          <div class="loader-text" id="loaderText">
+            PINGING ENDPOINT...
+          </div>
+        </div>
+
+        <div class="error-badge">
+          <span class="status-dot"></span>
+          <span>502 BAD GATEWAY</span>
+        </div>
+
+        <div class="logo-mark">STELLAR</div>
+        <div class="subtitle">
+          Autonomous Environment Agency.<br />The upstream server is offline for maintenance.
+        </div>
+
+        <button class="auth-btn" id="retryBtn">
+          <!-- Refresh icon -->
+          <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l.73-.73" />
+          </svg>
+          Retry Connection
+        </button>
+
+        <div id="auth-message">GATEWAY_CONNECTION_REFUSED</div>
+
+        <div class="persona-status">
+          <div class="persona">
+            <div class="dot obs"></div>
+            OBSIDIAN
+          </div>
+          <div class="persona">
+            <div class="dot cri"></div>
+            CRIMSON
+          </div>
+          <div class="persona">
+            <div class="dot lun"></div>
+            LUNARITY
+          </div>
+          <div class="persona">
+            <div class="dot eme"></div>
+            EMERALD
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const maskWrapper = document.getElementById("maskWrapper");
+        const codeCanvas = document.getElementById("codeCanvas");
+        const snippets = [
+          "def provision_docker_cluster(node_id):",
+          "ledger = db.query('SELECT * FROM ground_truth')",
+          "raise StateDriftException('Ledger mismatch')",
+          "container = client.containers.run(network='bridge')",
+          "async function mountPagedMemory(stream) {",
+          "return chunks.map(chunk => compressMetadata(chunk));",
+          "def proxy_wildcard(path):",
+          "container_ip = redis.get(f'route:{host}')",
+          "[OBSIDIAN] Adversarial security audit...",
+          "INSERT INTO interactions (agent_id) VALUES ('obsidian');",
+          "0x0000000000000000",
+          "0xFFFFFFFFFFFFFFFF",
+          "sys.stdout.write",
+        ];
+
+        let baseDump = "";
+        for (let i = 0; i < 150; i++) {
+          let line = "";
+          while (line.length < 350) {
+            line +=
+              snippets[Math.floor(Math.random() * snippets.length)] + "  ";
+          }
+          baseDump += line + "\n";
+        }
+        codeCanvas.textContent = baseDump + baseDump;
+
+        const wrapper = document.getElementById("gatewayWrapper");
+        let mouseX = 0,
+          mouseY = 0,
+          targetX = 0,
+          targetY = 0;
+
+        document.addEventListener("mousemove", (e) => {
+          maskWrapper.style.setProperty("--mouse-x", `${e.clientX}px`);
+          maskWrapper.style.setProperty("--mouse-y", `${e.clientY}px`);
+
+          mouseX = (e.clientX - window.innerWidth / 2) / 75;
+          mouseY = (e.clientY - window.innerHeight / 2) / 75;
+        });
+
+        function animate3D() {
+          if (Math.abs(mouseX - targetX) > 0.001)
+            targetX += (mouseX - targetX) * 0.04;
+          if (Math.abs(mouseY - targetY) > 0.001)
+            targetY += (mouseY - targetY) * 0.04;
+
+          wrapper.style.transform = `rotateY(${targetX}deg) rotateX(${-targetY}deg)`;
+          requestAnimationFrame(animate3D);
+        }
+        animate3D();
+
+        document.getElementById("retryBtn").onclick = function () {
+          const btn = this;
+          const originalContent = btn.innerHTML;
+          btn.disabled = true;
+          btn.innerHTML =
+            '<div class="loader-ring" style="width: 20px; height: 20px; margin-bottom: 0; margin-right: 10px; border-width: 2px; border-color: rgba(255,255,255,0.2); border-top-color: #fff;"></div> Pinging...';
+
+          const overlay = document.getElementById("loadingOverlay");
+          const loaderText = document.getElementById("loaderText");
+          const msg = document.getElementById("auth-message");
+          msg.innerText = "";
+
+          overlay.classList.add("active");
+          loaderText.innerText = "CHECKING HANDSHAKE...";
+
+          const sequence = [
+            "POLLING UPSTREAM GATEWAY...",
+            "RESOLVING HOST ROUTE...",
+            "RETRIES_EXHAUSTED",
+          ];
+
+          let step = 0;
+          const interval = setInterval(() => {
+            if (step < sequence.length) {
+              loaderText.innerText = sequence[step];
+              step++;
+            } else {
+              clearInterval(interval);
+              overlay.classList.remove("active");
+              btn.disabled = false;
+              btn.innerHTML = originalContent;
+              msg.innerText = "GATEWAY_CONNECTION_REFUSED";
+              // Reload page to see if system actually came back up
+              window.location.reload();
+            }
+          }, 600);
+        };
+      });
+    </script>
+  </body>
+</html>
