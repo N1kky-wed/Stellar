@@ -303,6 +303,17 @@ class AngelTracer:
         if isinstance(item, tuple):
             node_id, latency_ns, caller, trace_id, thread_name, is_async = item
         else:
+            if not isinstance(item, dict) or "node_id" not in item or "type" in item:
+                # Fall back to JSON for non-telemetry events or general dicts
+                try:
+                    import orjson
+                    return orjson.dumps(item) + b"\n"
+                except ImportError:
+                    try:
+                        import json
+                        return (json.dumps(item) + "\n").encode("utf-8")
+                    except Exception:
+                        return b""
             node_id = item.get("node_id")
             latency_ns = item.get("latency_ns", 0)
             caller = item.get("caller")
