@@ -1,0 +1,11 @@
+venv
+node_modules
+deploy
+deployments
+sandbox_runs
+tmp_db
+uploads
+logs
+.git
+.github
+.pytest_cache
