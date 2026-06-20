@@ -248,6 +248,31 @@ class AngelTracer:
         self._worker_ready = False
         self.worker = None
 
+        # Register fork handler if supported (Python 3.7+ on Unix)
+        if hasattr(os, "register_at_fork"):
+            os.register_at_fork(
+                after_in_child=self._handle_fork_in_child
+            )
+
+    def _handle_fork_in_child(self):
+        # Prevent parent/child socket sharing
+        if self.sock:
+            try:
+                self.sock.close()
+            except Exception:
+                pass
+            self.sock = None
+        
+        # Reset registry state and queues
+        self.registered_nodes.clear()
+        self.registered_strings.clear()
+        self.next_node_id = 1
+        self.queue.clear()
+        
+        # Mark worker as unstarted so the next trace call spawns a new thread
+        self.worker = None
+        self._worker_ready = False
+
     def _verify_worker(self):
         """Start the background worker thread if not already running.
         Called at most once per tracer lifetime from the hot path."""
