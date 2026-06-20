@@ -82,26 +82,139 @@ import contextvars
 import uuid
 import builtins
 import inspect
+import asyncio
 
 # Task-local trace-id context (kept for async correlation)
-active_trace_id = contextvars.ContextVar("active_trace_id", default=None)
+class ActiveTraceContextVar:
+    def __init__(self, name, default=None):
+        self._var = contextvars.ContextVar(name, default=default)
+        self._active_count = 0
 
-# DEPRECATED ContextVar-based call stack — replaced by thread-local list below.
-# Kept as a no-op stub so existing compiled bytecache referencing it doesn't crash.
-active_call_stack = contextvars.ContextVar("active_call_stack", default=())
+    def get(self, *args, **kwargs):
+        if self._active_count == 0:
+            return None
+        return self._var.get(*args, **kwargs)
 
-# Thread-local call stack — list.append/pop is significantly cheaper than
-# building an immutable tuple and calling ContextVar.set() on every function
-# entry and exit. Thread-locals require no lock and are GIL-safe.
+    def set(self, value):
+        token = self._var.set(value)
+        if value is not None:
+            self._active_count += 1
+        return token
+
+    def reset(self, token):
+        self._var.reset(token)
+        if self._active_count > 0:
+            self._active_count -= 1
+
+active_trace_id = ActiveTraceContextVar("active_trace_id", default=None)
+
+# Task-local call stack ContextVar (supports async isolation via immutable tuples)
+active_call_stack = contextvars.ContextVar("active_call_stack", default=None)
+
+# Thread-local cache for thread name
 import threading as _threading_mod
-_thread_local = _threading_mod.local()
+
+class ThreadLocalCache(_threading_mod.local):
+    def __init__(self):
+        import threading
+        self.name = threading.current_thread().name
+        self.stack = []
+
+_thread_local = ThreadLocalCache()
+
+_angel_active_stack = contextvars.ContextVar("_angel_active_stack", default=None)
+
+# Bind _angel_enter_fast and _angel_exit_fast
+try:
+    import sys
+    import os
+    _curr_dir = os.path.dirname(os.path.abspath(__file__))
+    if _curr_dir not in sys.path:
+        sys.path.insert(0, _curr_dir)
+    import angel_speedup
+    angel_speedup.init(_angel_active_stack)
+    
+    is_async_mode = False
+    try:
+        import asyncio
+        if asyncio._get_running_loop() is not None:
+            is_async_mode = True
+    except Exception:
+        pass
+    if not is_async_mode:
+        for mod in list(sys.modules.keys()):
+            if any(x in mod for x in ("uvicorn", "hypercorn", "daphne", "fastapi", "starlette", "sanic", "tornado")):
+                is_async_mode = True
+                break
+
+    if is_async_mode:
+        _angel_enter_fast = angel_speedup.enter_async
+        _angel_exit_fast = angel_speedup.exit_async
+        _has_c_stack = False
+    else:
+        _angel_enter_fast = angel_speedup.enter_sync
+        _angel_exit_fast = angel_speedup.exit_sync
+        _has_c_stack = True
+except ImportError:
+    _has_c_stack = False
+    def _angel_enter_fast(node_id: str):
+        stack = _angel_active_stack.get()
+        if stack is None:
+            stack = []
+            _angel_active_stack.set(stack)
+        stack.append(node_id)
+        if stack.count(node_id) <= 2:
+            return time.perf_counter_ns()
+        return None
+
+    def _angel_exit_fast():
+        stack = _angel_active_stack.get()
+        if stack:
+            stack.pop()
 
 def _tl_stack():
-    """Return the per-thread call stack list, creating it on first access."""
-    tl = _thread_local
-    if not hasattr(tl, 'call_stack'):
-        tl.call_stack = []
-    return tl.call_stack
+    """Return the task-local/thread-local call stack tuple."""
+    if _has_c_stack:
+        try:
+            return angel_speedup.get_stack() or ()
+        except Exception:
+            pass
+    stack = _angel_active_stack.get()
+    if stack is not None:
+        return tuple(stack)
+    if _tl_enter == _tl_enter_async:
+        return active_call_stack.get() or ()
+    else:
+        return tuple(_thread_local.stack)
+
+def _tl_enter_sync(node_id: str) -> int:
+    """Ultra-fast synchronous push and depth count."""
+    stack = _thread_local.stack
+    stack.append(node_id)
+    return stack.count(node_id)
+
+def _tl_exit_sync(node_id: str):
+    """Ultra-fast synchronous pop."""
+    stack = _thread_local.stack
+    if stack:
+        stack.pop()
+
+def _tl_enter_async(node_id: str) -> int:
+    """Task-safe async push and depth count."""
+    stack = active_call_stack.get() or ()
+    new_stack = stack + (node_id,)
+    active_call_stack.set(new_stack)
+    return new_stack.count(node_id)
+
+def _tl_exit_async(node_id: str):
+    """Task-safe async pop."""
+    stack = active_call_stack.get() or ()
+    if stack:
+        active_call_stack.set(stack[:-1])
+
+# Bind to synchronous implementation by default for maximum performance
+_tl_enter = _tl_enter_sync
+_tl_exit = _tl_exit_sync
 
 
 # ---------------------------------------------------------------------------
@@ -121,11 +234,16 @@ class AngelTracer:
         self.lock = threading.Lock()
         self.last_connect_attempt = 0.0
         self.connect_cooldown = 5.0  # seconds
+        self.registered_nodes = {}
+        self.registered_strings = {}
+        self.next_node_id = 1
+        self.use_binary = os.environ.get("ANGEL_PROTOCOL", "").lower() != "json"
         # Initialised eagerly so that send_trace/send_event never need to call
         # _verify_worker() on the hot path once the worker is running. The hot
         # path checks the single bool self._worker_ready instead of doing
         # hasattr() + thread.is_alive() (which acquires a lock) on every call.
         self.queue = collections.deque(maxlen=50000)
+        self.queue_append = self.queue.append
         self._drain_event = threading.Event()
         self._worker_ready = False
         self.worker = None
@@ -161,8 +279,21 @@ class AngelTracer:
                 continue
 
             try:
-                serialized_payloads = b"".join(self._serialize_event(item) for item in batch)
-                self._send_payloads_with_retry(serialized_payloads)
+                with self.lock:
+                    if not self.sock:
+                        self._connect_locked()
+                    if not self.sock:
+                        continue
+                    serialized_payloads = b"".join(self._serialize_event(item) for item in batch)
+                    try:
+                        self.sock.sendall(serialized_payloads)
+                    except Exception:
+                        if self.sock:
+                            try:
+                                self.sock.close()
+                            except Exception:
+                                pass
+                        self.sock = None
             except Exception:
                 pass
 
@@ -171,37 +302,88 @@ class AngelTracer:
         # Unpack it here in the worker thread where cost doesn't matter.
         if isinstance(item, tuple):
             node_id, latency_ns, caller, trace_id, thread_name, is_async = item
+        else:
+            node_id = item.get("node_id")
+            latency_ns = item.get("latency_ns", 0)
+            caller = item.get("caller")
+            trace_id = item.get("trace_id")
+            thread_name = item.get("thread_name", "Thread-1")
+            is_async = item.get("is_async", False)
+
+        if not self.use_binary:
             d = {"node_id": node_id, "latency_ns": latency_ns,
                  "thread_name": thread_name, "is_async": is_async}
             if caller:     d["caller"]   = caller
             if trace_id:   d["trace_id"] = trace_id
-            item = d
-        try:
-            import orjson
-            return orjson.dumps(item) + b"\n"
-        except ImportError:
             try:
-                import json
-                return (json.dumps(item) + "\n").encode("utf-8")
-            except Exception:
-                return b""
+                import orjson
+                return orjson.dumps(d) + b"\n"
+            except ImportError:
+                try:
+                    import json
+                    return (json.dumps(d) + "\n").encode("utf-8")
+                except Exception:
+                    return b""
 
-    def _send_payloads_with_retry(self, payloads):
-        with self.lock:
-            if not self.sock:
-                self._connect_locked()
-            if not self.sock:
-                return
-            try:
-                self.sock.sendall(payloads)
-            except Exception:
-                # Bolt - Stability: Explicitly close failed socket to prevent fd leak before setting to None
-                if self.sock:
-                    try:
-                        self.sock.close()
-                    except Exception:
-                        pass
-                self.sock = None
+        import struct
+        payloads = []
+
+        # Get or register node_id
+        if node_id not in self.registered_nodes:
+            self.registered_nodes[node_id] = self.next_node_id
+            self.next_node_id = (self.next_node_id + 1) & 0xffff
+            if self.next_node_id == 0:
+                self.next_node_id = 1
+            node_bytes = node_id.encode('utf-8', errors='replace')
+            payload_len = 5 + len(node_bytes)
+            payloads.append(struct.pack(">B H B H H", 0xAB, payload_len, 0x02, self.registered_nodes[node_id], len(node_bytes)) + node_bytes)
+        dynamic_id = self.registered_nodes[node_id]
+
+        # Get or register caller
+        caller_id = 0
+        if caller:
+            if caller not in self.registered_nodes:
+                self.registered_nodes[caller] = self.next_node_id
+                self.next_node_id = (self.next_node_id + 1) & 0xffff
+                if self.next_node_id == 0:
+                    self.next_node_id = 1
+                caller_bytes = caller.encode('utf-8', errors='replace')
+                payload_len = 5 + len(caller_bytes)
+                payloads.append(struct.pack(">B H B H H", 0xAB, payload_len, 0x02, self.registered_nodes[caller], len(caller_bytes)) + caller_bytes)
+            caller_id = self.registered_nodes[caller]
+
+        # Get or register trace_id (Type 0x03)
+        trace_hash = 0
+        if trace_id:
+            trace_hash = 0x811c9dc5
+            for b in trace_id.encode('utf-8', errors='replace'):
+                trace_hash = (trace_hash ^ b) & 0xffffffff
+                trace_hash = (trace_hash * 0x01000193) & 0xffffffff
+            if trace_hash not in self.registered_strings:
+                self.registered_strings[trace_hash] = trace_id
+                trace_bytes = trace_id.encode('utf-8', errors='replace')
+                payload_len = 7 + len(trace_bytes)
+                payloads.append(struct.pack(">B H B I H", 0xAB, payload_len, 0x03, trace_hash, len(trace_bytes)) + trace_bytes)
+
+        # Get or register thread_name (Type 0x03)
+        thread_hash = 0
+        if thread_name:
+            thread_hash = 0x811c9dc5
+            for b in thread_name.encode('utf-8', errors='replace'):
+                thread_hash = (thread_hash ^ b) & 0xffffffff
+                thread_hash = (thread_hash * 0x01000193) & 0xffffffff
+            if thread_hash not in self.registered_strings:
+                self.registered_strings[thread_hash] = thread_name
+                thread_bytes = thread_name.encode('utf-8', errors='replace')
+                payload_len = 7 + len(thread_bytes)
+                payloads.append(struct.pack(">B H B I H", 0xAB, payload_len, 0x03, thread_hash, len(thread_bytes)) + thread_bytes)
+
+        # Telemetry packet
+        flags = 0x01 if is_async else 0x00
+        telemetry_payload = struct.pack(">B H B H Q H I I B", 0xAB, 22, 0x01, dynamic_id, latency_ns, caller_id, trace_hash, thread_hash, flags)
+        payloads.append(telemetry_payload)
+
+        return b"".join(payloads)
 
     def connect(self):
         now = time.monotonic()
@@ -221,6 +403,9 @@ class AngelTracer:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.settimeout(1.0)
             self.sock.connect((self.host, self.port))
+            self.registered_nodes.clear()
+            self.registered_strings.clear()
+            self.next_node_id = 1
         except Exception:
             # Bolt - Stability: Explicitly close the socket to prevent file descriptor leaks
             if self.sock:
@@ -240,17 +425,13 @@ class AngelTracer:
         """
         # _worker_ready is a plain bool attribute read — ~20ns.
         # _verify_worker() (hasattr + thread.is_alive()) is only called once
-        # per tracer lifetime, not on every trace.
+        """Hot-path trace emitter."""
         if not self._worker_ready:
             self._verify_worker()
 
-        # Resolve caller — priority order:
-        #   1. compile-time static caller_id (zero runtime cost, injected by AST)
-        #   2. thread-local call stack top (cheap list index, no GIL contention)
-        #   3. sys._getframe() walk (only for uninstrumented/external callers)
         caller = caller_id
         if not caller:
-            stack = getattr(_thread_local, 'call_stack', None)
+            stack = _tl_stack()
             if stack:
                 if len(stack) >= 2:
                     caller = stack[-2]
@@ -259,43 +440,30 @@ class AngelTracer:
         if not caller:
             caller = self._infer_caller_from_frames(node_id)
 
-        if trace_id is None:
-            trace_id = active_trace_id.get()
+        if trace_id is None and active_trace_id._active_count > 0:
+            trace_id = active_trace_id._var.get()
 
-        # Cached thread-local name — resolved once per OS thread.
-        tl = _thread_local
-        thread_name = getattr(tl, 'name', None)
-        if thread_name is None:
-            import threading
-            thread_name = threading.current_thread().name
-            tl.name = thread_name
+        thread_name = _thread_local.name
 
-        # Gate asyncio introspection behind active_trace_id so synchronous
-        # call trees never pay the asyncio scheduler lookup cost.
         is_async = False
         if trace_id is not None:
-            try:
-                import asyncio
-                task = asyncio.current_task()
-                if task is not None:
-                    is_async = True
-                    thread_name = f"{thread_name}:{task.get_name()}"
-            except Exception:
-                pass
+            loop = asyncio._get_running_loop()
+            if loop is not None:
+                try:
+                    task = asyncio.current_task(loop)
+                    if task is not None:
+                        is_async = True
+                        thread_name = f"{thread_name}:{task.get_name()}"
+                except Exception:
+                    pass
 
-        # Append a 6-tuple — ~3x cheaper than building a dict in the hot path.
-        # The worker thread unpacks it in _serialize_event().
-        q = self.queue
-        was_empty = len(q) == 0
-        q.append((node_id, latency_ns, caller, trace_id, thread_name, is_async))
-        # Signal the drain event only when transitioning from empty → non-empty.
-        # Avoids acquiring the Event's internal Condition lock on every single call.
+        was_empty = not self.queue
+        self.queue_append((node_id, latency_ns, caller, trace_id, thread_name, is_async))
         if was_empty:
             self._drain_event.set()
 
     def _infer_caller_from_frames(self, node_id: str):
         try:
-            # Extract target function name from node_id to skip the instrumented function's own frame
             target_fn = node_id
             if "::" in target_fn:
                 target_fn = target_fn.split("::")[-1]
@@ -364,6 +532,7 @@ class AngelTracer:
 
 # Global default instance
 tracer = AngelTracer()
+_angel_send_fast = tracer.send_trace
 
 def trace_fn(node_id: str):
     """
@@ -823,6 +992,19 @@ _threading_orig.Thread.run = _patched_thread_run
 
 # --- ZERO-CODE-CHANGE RUNTIME INSTRUMENTATION HOOK ---
 
+class GeneratorChecker(ast.NodeVisitor):
+    def __init__(self):
+        self.found = False
+    def visit_FunctionDef(self, node):
+        pass
+    def visit_AsyncFunctionDef(self, node):
+        pass
+    def visit_Yield(self, node):
+        self.found = True
+    def visit_YieldFrom(self, node):
+        self.found = True
+
+
 class AngelASTTransformer(ast.NodeTransformer):
     def __init__(self, relative_path):
         self.relative_path = relative_path
@@ -881,11 +1063,21 @@ class AngelASTTransformer(ast.NodeTransformer):
             
         return path_expr, methods_expr
 
+    def is_generator(self, node):
+        checker = GeneratorChecker()
+        for child in node.body:
+            checker.visit(child)
+        return checker.found
+
     def instrument_function(self, node):
         self.generic_visit(node)
 
         # Skip special/internal dunder functions
         if node.name.startswith("__") and node.name.endswith("__"):
+            return node
+
+        # Skip generator functions to avoid generator GC/lifetime timing pollution
+        if self.is_generator(node):
             return node
 
         qname = "::".join(self.scope_stack)
@@ -940,52 +1132,20 @@ class AngelASTTransformer(ast.NodeTransformer):
                 )
                 route_send_statements.append(route_send_stmt)
 
-        # 1. Push this function's node_id onto the thread-local call stack.
-        #    AngelTrace._tl_stack().append(node_id)
-        #    This replaces the old ContextVar tuple-concat pattern which allocated
-        #    a new tuple and called ContextVar.set() on every function entry.
-        stack_push = ast.Expr(
+        # _angel_t0 = _angel_enter(node_id)
+        enter_call = ast.Assign(
+            targets=[ast.Name(id="_angel_t0", ctx=ast.Store())],
             value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="AngelTrace", ctx=ast.Load()),
-                            attr="_tl_stack",
-                            ctx=ast.Load()
-                        ),
-                        args=[],
-                        keywords=[]
-                    ),
-                    attr="append",
-                    ctx=ast.Load()
-                ),
+                func=ast.Name(id="_angel_enter", ctx=ast.Load()),
                 args=[ast.Constant(value=node_id)],
                 keywords=[]
             )
         )
 
-        # 2. _angel_t0 = time.perf_counter_ns()
-        timer_start = ast.Assign(
-            targets=[ast.Name(id="_angel_t0", ctx=ast.Store())],
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="time", ctx=ast.Load()),
-                    attr="perf_counter_ns",
-                    ctx=ast.Load()
-                ),
-                args=[],
-                keywords=[]
-            )
-        )
-
-        # 3. timer_diff = time.perf_counter_ns() - _angel_t0
+        # 3. timer_diff = _angel_perf() - _angel_t0
         timer_diff = ast.BinOp(
             left=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="time", ctx=ast.Load()),
-                    attr="perf_counter_ns",
-                    ctx=ast.Load()
-                ),
+                func=ast.Name(id="_angel_perf", ctx=ast.Load()),
                 args=[],
                 keywords=[]
             ),
@@ -993,79 +1153,52 @@ class AngelASTTransformer(ast.NodeTransformer):
             right=ast.Name(id="_angel_t0", ctx=ast.Load())
         )
 
-        # 4. AngelTrace.tracer.send_trace(node_id, timer_diff, caller_id=<static>)
-        #    The caller_id keyword is a static string constant resolved at AST
-        #    rewrite time, so send_trace never needs to walk frames for
-        #    instrumented-to-instrumented calls.
-        send_keywords = []
+        # 4. _angel_send(node_id, timer_diff, None, caller_id)
+        #    Pass parameters positionally to bypass all keyword argument overhead.
+        send_args = [
+            ast.Constant(value=node_id),
+            timer_diff
+        ]
         if static_caller_id is not None:
-            send_keywords.append(
-                ast.keyword(arg="caller_id", value=ast.Constant(value=static_caller_id))
-            )
+            send_args.append(ast.Constant(value=None))
+            send_args.append(ast.Constant(value=static_caller_id))
         send_call = ast.Expr(
             value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Attribute(
-                        value=ast.Name(id="AngelTrace", ctx=ast.Load()),
-                        attr="tracer",
-                        ctx=ast.Load()
-                    ),
-                    attr="send_trace",
-                    ctx=ast.Load()
-                ),
-                args=[
-                    ast.Constant(value=node_id),
-                    timer_diff
-                ],
-                keywords=send_keywords
+                func=ast.Name(id="_angel_send", ctx=ast.Load()),
+                args=send_args,
+                keywords=[]
             )
         )
 
-        # 5. Pop this function's node_id off the thread-local stack on exit.
-        #    AngelTrace._tl_stack().pop()
-        stack_pop = ast.Expr(
+        # _angel_exit()
+        exit_call = ast.Expr(
             value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Call(
-                        func=ast.Attribute(
-                            value=ast.Name(id="AngelTrace", ctx=ast.Load()),
-                            attr="_tl_stack",
-                            ctx=ast.Load()
-                        ),
-                        args=[],
-                        keywords=[]
-                    ),
-                    attr="pop",
-                    ctx=ast.Load()
-                ),
+                func=ast.Name(id="_angel_exit", ctx=ast.Load()),
                 args=[],
                 keywords=[]
             )
         )
 
-        if static_caller_id is not None:
-            # Caller is fully resolved at compile time — skip the thread-local
-            # stack push/pop entirely. These ops serve no purpose for nested
-            # instrumented calls and are the dominant overhead for recursive
-            # call patterns (they were called 2x per function invocation).
-            inner_try = ast.Try(
-                body=node.body,
-                handlers=[],
-                orelse=[],
-                finalbody=[send_call]
-            )
-            node.body = [timer_start, inner_try]
-        else:
-            # Top-level function: caller is unknown at compile time (may be
-            # called from uninstrumented code), so maintain the TL stack for
-            # runtime fallback to _infer_caller_from_frames().
-            inner_try = ast.Try(
-                body=node.body,
-                handlers=[],
-                orelse=[],
-                finalbody=[send_call, stack_pop]
-            )
-            node.body = [stack_push, timer_start, inner_try]
+        # if _angel_t0 is not None:
+        #     _angel_send(...)
+        send_if = ast.If(
+            test=ast.Compare(
+                left=ast.Name(id="_angel_t0", ctx=ast.Load()),
+                ops=[ast.IsNot()],
+                comparators=[ast.Constant(value=None)]
+            ),
+            body=[send_call],
+            orelse=[]
+        )
+
+        inner_try = ast.Try(
+            body=node.body,
+            handlers=[],
+            orelse=[],
+            finalbody=[exit_call, send_if]
+        )
+
+        node.body = [enter_call, inner_try]
 
         if route_send_statements:
             return [node] + route_send_statements
@@ -1090,8 +1223,45 @@ class AngelSourceLoader(importlib.machinery.SourceFileLoader):
             tree = ast.parse(source)
             
             # Insert dependencies after module docstring and future imports.
-            imp_time = ast.Import(names=[ast.alias(name="time", asname=None)])
-            imp_angel = ast.Import(names=[ast.alias(name="AngelTrace", asname=None)])
+            imp_time = ast.Import(names=[ast.alias(name="time", asname="_angel_time_mod")])
+            imp_angel = ast.Import(names=[ast.alias(name="AngelTrace", asname="_angel_trace_mod")])
+            
+            perf_assign = ast.Assign(
+                targets=[ast.Name(id="_angel_perf", ctx=ast.Store())],
+                value=ast.Attribute(
+                    value=ast.Name(id="_angel_time_mod", ctx=ast.Load()),
+                    attr="perf_counter_ns",
+                    ctx=ast.Load()
+                )
+            )
+            
+            send_assign = ast.Assign(
+                targets=[ast.Name(id="_angel_send", ctx=ast.Store())],
+                value=ast.Attribute(
+                    value=ast.Name(id="_angel_trace_mod", ctx=ast.Load()),
+                    attr="_angel_send_fast",
+                    ctx=ast.Load()
+                )
+            )
+            
+            enter_assign = ast.Assign(
+                targets=[ast.Name(id="_angel_enter", ctx=ast.Store())],
+                value=ast.Attribute(
+                    value=ast.Name(id="_angel_trace_mod", ctx=ast.Load()),
+                    attr="_angel_enter_fast",
+                    ctx=ast.Load()
+                )
+            )
+
+            exit_assign = ast.Assign(
+                targets=[ast.Name(id="_angel_exit", ctx=ast.Store())],
+                value=ast.Attribute(
+                    value=ast.Name(id="_angel_trace_mod", ctx=ast.Load()),
+                    attr="_angel_exit_fast",
+                    ctx=ast.Load()
+                )
+            )
+
             insert_at = 0
             if (
                 tree.body
@@ -1108,6 +1278,10 @@ class AngelSourceLoader(importlib.machinery.SourceFileLoader):
                 insert_at += 1
             tree.body.insert(insert_at, imp_time)
             tree.body.insert(insert_at + 1, imp_angel)
+            tree.body.insert(insert_at + 2, perf_assign)
+            tree.body.insert(insert_at + 3, send_assign)
+            tree.body.insert(insert_at + 4, enter_assign)
+            tree.body.insert(insert_at + 5, exit_assign)
 
             # Instrument the file's AST
             transformer = AngelASTTransformer(self.relative_path)
@@ -1124,15 +1298,45 @@ class AngelFinder(importlib.abc.MetaPathFinder):
     def __init__(self, project_root):
         self.project_root = os.path.abspath(project_root)
         tracer.project_root = self.project_root
+        
+        # Load ignore patterns from .angelignore or use standard defaults
+        self.ignore_patterns = {".git", "venv", "node_modules", "__pycache__"}
+        ignore_file = os.path.join(self.project_root, ".angelignore")
+        if os.path.exists(ignore_file):
+            try:
+                with open(ignore_file, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            self.ignore_patterns.add(line)
+            except Exception as e:
+                sys.stderr.write(f"[angel] Warning: Failed to read .angelignore: {e}\n")
+
+    def is_ignored(self, origin_path):
+        try:
+            rel_path = os.path.relpath(origin_path, self.project_root)
+        except Exception:
+            return True
+            
+        parts = rel_path.split(os.sep)
+        for part in parts:
+            if part in self.ignore_patterns:
+                return True
+                
+        for pattern in self.ignore_patterns:
+            if pattern in rel_path or pattern in origin_path:
+                return True
+                
+        return False
 
     def find_spec(self, fullname, path, target=None):
         spec = importlib.machinery.PathFinder.find_spec(fullname, path, target)
         if spec and spec.origin and os.path.isabs(spec.origin):
             origin_path = os.path.abspath(spec.origin)
             if origin_path.startswith(self.project_root):
-                if "AngelTrace" in fullname:
+                if "AngelTrace" in fullname or "angel_trace" in fullname:
                     return None
-                if "venv" in origin_path or "sandbox_runs" in origin_path or "deployments" in origin_path:
+                if self.is_ignored(origin_path):
                     return None
                 
                 rel_path = os.path.relpath(origin_path, self.project_root)
