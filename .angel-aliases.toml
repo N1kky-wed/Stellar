@@ -1,0 +1,64 @@
+# Angel Alias Config — .angel-aliases.toml
+# Auto-generated and extended by `angel scan` / `angel aliases`.
+# Edit freely: user entries are preserved on re-scan.
+# Format: canonical_name = ["AltSpelling", "another_variant", ...]
+#
+# Built-in heuristics (chat_id, message_id, content, user_id) always
+# apply even if absent here.
+
+[aliases]
+CLIENT_ID = ["client_id"]  # auto-inferred
+_type = ["type"]  # auto-inferred
+agent_id = ["agentId"]  # auto-inferred
+agent_name = ["agentName"]  # auto-inferred
+attached_files = ["attachedFiles"]  # auto-inferred
+blocked_until = ["blockedUntil"]  # auto-inferred
+c_pct = ["cPct"]  # auto-inferred
+chat_id = ["chatId"]  # auto-inferred
+chat_name = ["chatName"]  # auto-inferred
+clean_content = ["cleanContent"]  # auto-inferred
+clean_text = ["cleanText"]  # auto-inferred
+clean_title = ["cleanTitle"]  # auto-inferred
+container_id = ["containerId"]  # auto-inferred
+created_by = ["createdBy"]  # auto-inferred
+current_username = ["currentUsername"]  # auto-inferred
+date_str = ["dateStr"]  # auto-inferred
+display_name = ["displayName"]  # auto-inferred
+elapsed_hours = ["elapsedHours"]  # auto-inferred
+err_msg = ["errMsg"]  # auto-inferred
+error_msg = ["errorMsg"]  # auto-inferred
+file_name = ["fileName"]  # auto-inferred
+final_status = ["finalStatus"]  # auto-inferred
+g_pct = ["gPct"]  # auto-inferred
+html_content = ["htmlContent"]  # auto-inferred
+is_active = ["isActive"]  # auto-inferred
+key_data = ["keyData"]  # auto-inferred
+max_retries = ["maxRetries"]  # auto-inferred
+message_id = ["messageId"]  # auto-inferred
+message_type = ["messageType"]  # auto-inferred
+model_id = ["modelId"]  # auto-inferred
+msg_id = ["msgId"]  # auto-inferred
+new_messages = ["newMessages"]  # auto-inferred
+new_name = ["newName"]  # auto-inferred
+num_messages_in_chat = ["numMessagesInChat"]  # auto-inferred
+pending_files = ["pendingFiles"]  # auto-inferred
+poll_interval = ["pollInterval"]  # auto-inferred
+preview_header = ["previewHeader"]  # auto-inferred
+process_id = ["processId"]  # auto-inferred
+query_id = ["queryId"]  # auto-inferred
+raw_code = ["rawCode"]  # auto-inferred
+result_data = ["resultData"]  # auto-inferred
+retry_count = ["retryCount"]  # auto-inferred
+search_query = ["searchQuery"]  # auto-inferred
+search_term = ["searchTerm"]  # auto-inferred
+start_time = ["startTime"]  # auto-inferred
+target_url = ["targetUrl"]  # auto-inferred
+task_id = ["taskId"]  # auto-inferred
+text_list = ["textList"]  # auto-inferred
+time_str = ["timeStr"]  # auto-inferred
+timeout_val = ["timeoutVal"]  # auto-inferred
+token_count = ["tokenCount"]  # auto-inferred
+use_case = ["useCase"]  # auto-inferred
+user_message_id = ["userMessageId"]  # auto-inferred
+user_msg_id = ["userMsgId"]  # auto-inferred
+user_query = ["userQuery"]  # auto-inferred

@@ -14,9 +14,8 @@ __pycache__/
 
 # Database
 *.db
-stellar_local.db
-stellar_local.db-shm
-stellar_local.db-wal
+*.db-shm
+*.db-wal
 issue_resolver.log
 # App specific
 credentials/

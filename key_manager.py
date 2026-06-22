@@ -468,24 +468,27 @@ try:
         # Wrap models.generate_content
         if hasattr(self, 'models') and hasattr(self.models, 'generate_content'):
             original_generate_content = self.models.generate_content
-            def wrapped_generate_content(model, *args, **kwargs):
+            def wrapped_generate_content(*args, **kwargs):
+                model = kwargs.get('model') or (args[0] if args else None)
                 KEY_MANAGER.record_request(api_key, model)
-                return original_generate_content(model, *args, **kwargs)
+                return original_generate_content(*args, **kwargs)
             self.models.generate_content = wrapped_generate_content
 
         # Wrap models.count_tokens
         if hasattr(self, 'models') and hasattr(self.models, 'count_tokens'):
             original_count_tokens = self.models.count_tokens
-            def wrapped_count_tokens(model, *args, **kwargs):
+            def wrapped_count_tokens(*args, **kwargs):
+                model = kwargs.get('model') or (args[0] if args else None)
                 KEY_MANAGER.record_request(api_key, model)
-                return original_count_tokens(model, *args, **kwargs)
+                return original_count_tokens(*args, **kwargs)
             self.models.count_tokens = wrapped_count_tokens
 
         # Wrap chats.create
         if hasattr(self, 'chats') and hasattr(self.chats, 'create'):
             original_chats_create = self.chats.create
-            def wrapped_chats_create(model, *args, **kwargs):
-                chat_obj = original_chats_create(model, *args, **kwargs)
+            def wrapped_chats_create(*args, **kwargs):
+                model = kwargs.get('model') or (args[0] if args else None)
+                chat_obj = original_chats_create(*args, **kwargs)
                 if chat_obj and hasattr(chat_obj, 'send_message'):
                     original_send_message = chat_obj.send_message
                     def wrapped_send_message(*args, **kwargs):

@@ -1,0 +1,14 @@
+[Unit]
+Description=Angel dynamic TCP trace server
+After=network.target
+
+[Service]
+User=stellaradmin
+Group=www-data
+WorkingDirectory=/home/stellaradmin/my_app
+ExecStart=/home/stellaradmin/.cargo/bin/angel serve --db /home/stellaradmin/my_app/angel.db --port 9090
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
