@@ -1,5 +1,5 @@
 import time
-from angel_trace import tracer, active_trace_id
+from AngelTrace import tracer, active_trace_id
 
 print("Sending python direct trace...")
 # Set an active trace ID context

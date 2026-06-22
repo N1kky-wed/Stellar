@@ -1490,13 +1490,21 @@ Below is the failed build run log/trace. Please analyze it, locate the offending
 
         active_facts = self.memory_db.get_active_facts()
 
-        # Get API keys from environment
+        # Retrieve keys from key_manager unified loader, prioritizing os.environ overrides
+        from key_manager import KEY_MANAGER, PRIMARY_API_KEY, BACKUP_API_KEYS, parse_quota_block_duration
         raw_keys = []
         if os.environ.get("PRIMARY_API_KEY"):
             raw_keys.append(os.environ["PRIMARY_API_KEY"])
         for k in sorted(os.environ.keys()):
             if k.startswith("BACKUP_API_KEY_"):
                 raw_keys.append(os.environ[k])
+
+        # Fall back to key_manager loaded keys if none found in environment variables
+        if not raw_keys:
+            if PRIMARY_API_KEY:
+                raw_keys.append(PRIMARY_API_KEY)
+            if BACKUP_API_KEYS:
+                raw_keys.extend(BACKUP_API_KEYS)
 
         # Deduplicate keys while preserving order
         keys_to_try = []
@@ -1505,7 +1513,7 @@ Below is the failed build run log/trace. Please analyze it, locate the offending
                 keys_to_try.append(key)
 
         if not keys_to_try:
-            logger.error("No API keys found in environment variables for memory summarization.")
+            logger.error("No API keys found for memory summarization.")
             return
 
         from google import genai
@@ -1560,7 +1568,16 @@ Below is the failed build run log/trace. Please analyze it, locate the offending
         resp = None
         last_err = None
 
-        for key in keys_to_try:
+        # Filter out globally rate-limited or quota-exhausted keys
+        active_keys = []
+        for k in keys_to_try:
+            is_blocked, _ = KEY_MANAGER.is_key_blocked(k, model_id)
+            if not is_blocked:
+                active_keys.append(k)
+        if not active_keys:
+            active_keys = keys_to_try
+
+        for key in active_keys:
             try:
                 masked_key = key[:4] + "..." + key[-4:] if len(key) > 8 else "..."
                 logger.info("Attempting summarization with API key %s", masked_key)
@@ -1581,6 +1598,15 @@ Below is the failed build run log/trace. Please analyze it, locate the offending
                     logger.info("Gemini summarization API call completed model=%s duration_sec=%.3f", model_id, duration_api)
                     break
             except Exception as e:
+                err_str = str(e).lower()
+                if ('429' in err_str or '403' in err_str or 'resource_exhausted' in err_str or 'quota' in err_str or 'rate limit' in err_str or
+                    'overloaded' in err_str or '503' in err_str or 'service unavailable' in err_str or
+                    '500' in err_str or 'internal error' in err_str or 'internal_error' in err_str):
+                    block_duration, block_reason = parse_quota_block_duration(err_str)
+                    block_scope = None if ('403' in err_str or 'permission_denied' in err_str or 'invalid' in err_str) else model_id
+                    KEY_MANAGER.block_key(key, block_scope, block_duration, block_reason)
+                    logger.warning("Globally blocked API key (Hash: %s) for %ds for model %s due to %s error during memory summarization.",
+                                   hash(key), block_duration, block_scope, block_reason)
                 logger.warning("Gemini summarization API call failed: %s", e)
                 last_err = e
 

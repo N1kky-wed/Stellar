@@ -41,4 +41,6 @@ scratch/
 test_marked.js
 diff_app.txt
 *.log
+orchestrator/orchestrator.log*
 .ssh_theme_*.json
+keys_validation_report.json

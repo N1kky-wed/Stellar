@@ -112,10 +112,10 @@ def test_parse_quota_block_duration_rpd_billing_keyword():
 
 
 def test_parse_quota_block_duration_overload_503():
-    """'503' or 'overloaded' errors should return 30s / 'OVERLOAD'."""
+    """'503' or 'overloaded' errors should return 600s / 'OVERLOAD'."""
     from app import parse_quota_block_duration
     duration, reason = parse_quota_block_duration("503 Service Unavailable: model overloaded")
-    assert duration == 30
+    assert duration == 600
     assert reason == 'OVERLOAD'
 
 
@@ -204,10 +204,10 @@ def test_global_key_manager_block_and_is_blocked():
     After blocking a key for a model, is_key_blocked should report it as
     blocked before the duration expires.
     """
-    from app import GlobalKeyManager
+    from key_manager import GlobalKeyManager
     mgr = GlobalKeyManager()
     with patch.object(mgr, '_get_redis_keys', return_value=('k_until', 'k_reason')):
-        with patch('app.redis_client') as mock_redis:
+        with patch('key_manager.redis_client') as mock_redis:
             mock_redis.setex.return_value = True
             mock_redis.get.return_value = None   # Redis returns nothing; fallback to memory
             mgr.block_key('fake-api-key', 'gemini-3.5-flash', duration_seconds=300, reason='RPM')
@@ -221,10 +221,10 @@ def test_global_key_manager_block_with_invalid_reason_clears_model():
     When reason='INVALID', model_id should be reset to None (global block),
     and the key should subsequently report as globally blocked.
     """
-    from app import GlobalKeyManager
+    from key_manager import GlobalKeyManager
     mgr = GlobalKeyManager()
     with patch.object(mgr, '_get_redis_keys', return_value=('k_until', 'k_reason')):
-        with patch('app.redis_client') as mock_redis:
+        with patch('key_manager.redis_client') as mock_redis:
             mock_redis.setex.return_value = True
             mock_redis.get.return_value = None
             mgr.block_key('invalid-key', 'gemini-3.5-flash', duration_seconds=60, reason='INVALID')
@@ -238,14 +238,14 @@ def test_global_key_manager_not_blocked_after_expiry():
     A key that was blocked in the past (blocked_until in the past) should
     not be reported as blocked.
     """
-    from app import GlobalKeyManager
+    from key_manager import GlobalKeyManager
     import time
     mgr = GlobalKeyManager()
     # Inject an expired entry directly into the in-memory store
     mgr.blocked_until[('old-key', 'gemini-3.5-flash')] = time.time() - 10  # expired
     mgr.block_reason[('old-key', 'gemini-3.5-flash')] = 'RPM'
 
-    with patch('app.redis_client') as mock_redis:
+    with patch('key_manager.redis_client') as mock_redis:
         mock_redis.get.return_value = None   # Nothing in Redis
         is_blocked, _ = mgr.is_key_blocked('old-key', 'gemini-3.5-flash')
     assert is_blocked is False
@@ -256,13 +256,13 @@ def test_global_key_manager_redis_fallback_on_error():
     If Redis raises an exception during is_key_blocked, the manager falls
     back to in-memory state without crashing.
     """
-    from app import GlobalKeyManager
+    from key_manager import GlobalKeyManager
     import time
     mgr = GlobalKeyManager()
     mgr.blocked_until[('api-key-x', 'gemini-3.5-flash')] = time.time() + 300
     mgr.block_reason[('api-key-x', 'gemini-3.5-flash')] = 'RPD'
 
-    with patch('app.redis_client') as mock_redis:
+    with patch('key_manager.redis_client') as mock_redis:
         mock_redis.get.side_effect = Exception("Redis connection refused")
         is_blocked, reason = mgr.is_key_blocked('api-key-x', 'gemini-3.5-flash')
     assert is_blocked is True
@@ -274,9 +274,9 @@ def test_global_key_manager_get_key_blocks_returns_structure():
     get_key_blocks should return a dict keyed by 'global' and each model,
     each with 'blocked', 'reason', and 'remaining_seconds'.
     """
-    from app import GlobalKeyManager
+    from key_manager import GlobalKeyManager
     mgr = GlobalKeyManager()
-    with patch('app.redis_client') as mock_redis:
+    with patch('key_manager.redis_client') as mock_redis:
         mock_redis.get.return_value = None
         blocks = mgr.get_key_blocks('some-key', ['gemini-3.5-flash', 'gemma-4-31b-it'])
     assert 'global' in blocks
@@ -285,6 +285,30 @@ def test_global_key_manager_get_key_blocks_returns_structure():
     for scope in blocks.values():
         assert 'blocked' in scope
         assert 'remaining_seconds' in scope
+
+
+def test_global_key_manager_model_overloaded():
+    """
+    If a key is blocked with OVERLOAD reason, it should mark that model as globally overloaded,
+    blocking all other keys for that model.
+    """
+    from key_manager import GlobalKeyManager
+    mgr = GlobalKeyManager()
+    with patch('key_manager.redis_client') as mock_redis:
+        mock_redis.setex.return_value = True
+        mock_redis.get.return_value = None
+        
+        # Block key 1 on model gemini-3.5-flash with reason OVERLOAD
+        mgr.block_key('key-1', 'gemini-3.5-flash', duration_seconds=600, reason='OVERLOAD')
+        
+        # Now check if key-2 is blocked on model gemini-3.5-flash (even though key-2 was never explicitly blocked)
+        is_blocked, reason = mgr.is_key_blocked('key-2', 'gemini-3.5-flash')
+        assert is_blocked is True
+        assert reason == 'OVERLOAD'
+        
+        # Check if key-2 is NOT blocked on another model like gemini-3.1-flash-lite
+        is_blocked_other, _ = mgr.is_key_blocked('key-2', 'gemini-3.1-flash-lite')
+        assert is_blocked_other is False
 
 
 # ===========================================================================

@@ -2,11 +2,11 @@ import time
 import socket
 import pytest
 from unittest.mock import MagicMock, patch
-import angel_trace
+import AngelTrace
 
 def test_angel_tracer_cooldown():
     """Verify that AngelTracer connect respects connection backoff cooldown."""
-    tracer = angel_trace.AngelTracer(host="127.0.0.1", port=9099)
+    tracer = AngelTrace.AngelTracer(host="127.0.0.1", port=9099)
     assert tracer.sock is None
     assert tracer.last_connect_attempt == 0.0
 
@@ -43,7 +43,7 @@ def test_angel_tracer_cooldown():
 
 def test_angel_tracer_send_trace_error_handling():
     """Verify that send_trace handles socket send errors and closes socket on failure."""
-    tracer = angel_trace.AngelTracer(host="127.0.0.1", port=9099)
+    tracer = AngelTrace.AngelTracer(host="127.0.0.1", port=9099)
     
     # Pre-populate socket
     mock_sock = MagicMock()
@@ -59,7 +59,7 @@ def test_angel_tracer_send_trace_error_handling():
 
 def test_angel_tracer_send_event_error_handling():
     """Verify that send_event handles socket send errors and closes socket on failure."""
-    tracer = angel_trace.AngelTracer(host="127.0.0.1", port=9099)
+    tracer = AngelTrace.AngelTracer(host="127.0.0.1", port=9099)
     
     # Pre-populate socket
     mock_sock = MagicMock()

@@ -39,9 +39,9 @@ import sys
 
 # Insert AngelFinder at the front of the import machinery so it intercepts
 # every subsequent project module import and instruments it automatically.
-# angel_trace.py must be importable from this directory (project root).
-import angel_trace
-sys.meta_path.insert(0, angel_trace.AngelFinder(os.path.dirname(os.path.abspath(__file__))))
+# AngelTrace.py must be importable from this directory (project root).
+import AngelTrace
+sys.meta_path.insert(0, AngelTrace.AngelFinder(os.path.dirname(os.path.abspath(__file__))))
 
 def post_fork(server, worker):
-    angel_trace.start_patcher_thread()
+    AngelTrace.start_patcher_thread()

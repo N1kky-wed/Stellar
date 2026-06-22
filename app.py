@@ -655,8 +655,8 @@ def custom_get_cookie_domain(app):
     return original_get_cookie_domain(app)
 app.session_interface.get_cookie_domain = custom_get_cookie_domain
 
+from key_manager import GlobalKeyManager, PRIMARY_API_KEY, BACKUP_API_KEYS, KEY_MANAGER
 
-PRIMARY_API_KEY = os.getenv("PRIMARY_API_KEY")
 if PRIMARY_API_KEY:
     masked = PRIMARY_API_KEY[:4] + "..." + PRIMARY_API_KEY[-4:]
     logger.info(f"PRIMARY_API_KEY initialized: {masked}")
@@ -673,225 +673,6 @@ MODEL_NAMES = {
 ERROR_CODE = "ERROR_CODE_ABC123XYZ456"
 
 # -------------------------------------------------------------
-# GLOBAL THREAD-SAFE GEMINI API KEY RATE LIMIT MANAGER
-# -------------------------------------------------------------
-import time
-from threading import Lock
-
-class GlobalKeyManager:
-    """
-    A thread-safe manager for tracking Gemini API key rate limits and blocks.
-    Synchronizes blocks across multiple workers/processes via Redis, falling back
-    to thread-safe in-memory tracking if Redis is unavailable.
-    """
-    def __init__(self):
-        """
-        Initialize the GlobalKeyManager with an internal lock and block tracking dictionaries.
-        """
-        self.lock = Lock()
-        self.blocked_until = {}
-        self.block_reason = {}
-
-    def _get_redis_keys(self, key_val, model_id):
-        """
-        Helper method to generate Redis keys for tracking blocked keys and their reasons.
-
-        Args:
-            key_val (str): The raw Gemini API key value.
-            model_id (str or None): The specific model identifier, or None for global blocks.
-
-        Returns:
-            tuple: (block_until_key, block_reason_key) as string paths in Redis.
-        """
-        import hashlib
-        key_hash = hashlib.sha256(key_val.encode('utf-8')).hexdigest()
-        scope = model_id if model_id is not None else "global"
-        return f"stellar:blocked_until:{key_hash}:{scope}", f"stellar:block_reason:{key_hash}:{scope}"
-
-    def block_key(self, key_val, model_id, duration_seconds, reason='RPM'):
-        """
-        Block an API key for a specified duration and reason.
-        Saves the block both to Redis (for cross-process synchronization) and to local memory.
-
-        Args:
-            key_val (str): The raw Gemini API key value.
-            model_id (str or None): The model identifier. If reason is 'INVALID', model_id is set to None.
-            duration_seconds (int): The duration of the block in seconds.
-            reason (str, optional): The reason for blocking (e.g. 'RPM', 'RPD', 'INVALID'). Defaults to 'RPM'.
-        """
-        if reason == 'INVALID':
-            model_id = None
-
-        key_hash = hash(key_val) if key_val else 0
-        logger.warning("API key blocked hash=%s model=%s duration_sec=%s reason=%s", key_hash, model_id, duration_seconds, reason)
-
-        with self.lock:
-            self.blocked_until[(key_val, model_id)] = time.time() + duration_seconds
-            self.block_reason[(key_val, model_id)] = reason
-
-        try:
-            k_until, k_reason = self._get_redis_keys(key_val, model_id)
-            redis_client.setex(k_until, int(duration_seconds), str(time.time() + duration_seconds))
-            redis_client.setex(k_reason, int(duration_seconds), reason)
-        except Exception as e:
-            logger.error(f"Error writing key block to Redis: {e}")
-
-    def is_key_blocked(self, key_val, model_id):
-        """
-        Check if a given API key is currently blocked.
-        Checks both model-specific and global blocks in Redis and in-memory.
-
-        Args:
-            key_val (str): The raw Gemini API key.
-            model_id (str or None): The model identifier to check.
-
-        Returns:
-            tuple: (is_blocked, reason) where is_blocked is a boolean and reason is a string or None.
-        """
-        # Try checking Redis first to coordinate between different processes
-        try:
-            k_until, k_reason = self._get_redis_keys(key_val, model_id)
-            blocked_until_val = redis_client.get(k_until)
-            if blocked_until_val:
-                try:
-                    blocked_until_time = float(blocked_until_val)
-                    if time.time() < blocked_until_time:
-                        reason = redis_client.get(k_reason) or 'RPM'
-                        return True, reason
-                except ValueError:
-                    pass
-
-            # Check global block in Redis
-            if model_id is not None:
-                k_until_g, k_reason_g = self._get_redis_keys(key_val, None)
-                blocked_until_val_g = redis_client.get(k_until_g)
-                if blocked_until_val_g:
-                    try:
-                        blocked_until_time_g = float(blocked_until_val_g)
-                        if time.time() < blocked_until_time_g:
-                            reason = redis_client.get(k_reason_g) or 'RPM'
-                            return True, reason
-                    except ValueError:
-                        pass
-        except Exception as e:
-            logger.error(f"Error reading key block from Redis: {e}")
-
-        # Fallback to local process memory if Redis is unavailable or hasn't cached it
-        with self.lock:
-            # Check model-specific block first
-            blocked_time = self.blocked_until.get((key_val, model_id), 0)
-            if time.time() < blocked_time:
-                return True, self.block_reason.get((key_val, model_id), 'RPM')
-
-            # Check global model block
-            if model_id is not None:
-                blocked_time_global = self.blocked_until.get((key_val, None), 0)
-                if time.time() < blocked_time_global:
-                    return True, self.block_reason.get((key_val, None), 'RPM')
-
-            return False, None
-
-    def get_key_blocks(self, key_val, models):
-        """
-        Retrieve a dictionary containing block status and remaining seconds
-        for global and model-specific scopes of a given API key.
-
-        Args:
-            key_val (str): The raw Gemini API key value.
-            models (list of str): The list of model identifiers to inspect.
-
-        Returns:
-            dict: A mapping of scope (e.g. 'global' or model name) to its block status details.
-        """
-        blocks = {}
-        global_blocked, global_reason = self.is_key_blocked(key_val, None)
-        if global_blocked:
-            remaining = 0
-            g_blocked_until = 0.0
-            try:
-                k_until, _ = self._get_redis_keys(key_val, None)
-                blocked_until_val = redis_client.get(k_until)
-                if blocked_until_val:
-                    g_blocked_until = float(blocked_until_val)
-                    remaining = max(0.0, g_blocked_until - time.time())
-            except Exception:
-                pass
-            if remaining == 0:
-                with self.lock:
-                    blocked_time = self.blocked_until.get((key_val, None), 0)
-                    remaining = max(0.0, blocked_time - time.time())
-                    g_blocked_until = time.time() + remaining
-            blocks["global"] = {
-                "blocked": True,
-                "reason": global_reason or 'RPM',
-                "remaining_seconds": int(remaining),
-                "blocked_until": g_blocked_until
-            }
-        else:
-            blocks["global"] = {
-                "blocked": False,
-                "reason": None,
-                "remaining_seconds": 0,
-                "blocked_until": 0.0
-            }
-
-        for model in models:
-            model_blocked = False
-            model_reason = None
-            model_remaining = 0.0
-
-            try:
-                k_until, k_reason = self._get_redis_keys(key_val, model)
-                blocked_until_val = redis_client.get(k_until)
-                if blocked_until_val:
-                    try:
-                        blocked_until_time = float(blocked_until_val)
-                        if time.time() < blocked_until_time:
-                            model_blocked = True
-                            model_reason = redis_client.get(k_reason) or 'RPM'
-                            model_remaining = max(0.0, blocked_until_time - time.time())
-                    except ValueError:
-                        pass
-            except Exception:
-                pass
-
-            if not model_blocked:
-                with self.lock:
-                    blocked_time = self.blocked_until.get((key_val, model), 0)
-                    if time.time() < blocked_time:
-                        model_blocked = True
-                        model_reason = self.block_reason.get((key_val, model), 'RPM')
-                        model_remaining = max(0.0, blocked_time - time.time())
-
-            effective_blocked, effective_reason = self.is_key_blocked(key_val, model)
-            if effective_blocked:
-                if model_blocked:
-                    blocks[model] = {
-                        "blocked": True,
-                        "reason": model_reason,
-                        "remaining_seconds": int(model_remaining),
-                        "blocked_until": time.time() + model_remaining,
-                        "type": "model_specific"
-                    }
-                else:
-                    blocks[model] = {
-                        "blocked": True,
-                        "reason": global_reason,
-                        "remaining_seconds": int(blocks["global"]["remaining_seconds"]),
-                        "blocked_until": blocks["global"]["blocked_until"],
-                        "type": "global"
-                    }
-            else:
-                blocks[model] = {
-                    "blocked": False,
-                    "reason": None,
-                    "remaining_seconds": 0,
-                    "blocked_until": 0.0,
-                    "type": None
-                }
-        return blocks
-
-KEY_MANAGER = GlobalKeyManager()
 
 
 def get_seconds_until_pacific_midnight():
@@ -932,6 +713,7 @@ def get_seconds_until_pacific_midnight():
         logger.error(f"Error calculating Pacific midnight offset: {e}")
         return 14400 # Fallback to 4 hours if datetime calculations fail
 
+
 def parse_quota_block_duration(error_msg):
     """
     Parse an error message to classify the quota/rate limit error type and determine the block duration.
@@ -954,14 +736,13 @@ def parse_quota_block_duration(error_msg):
         duration = get_seconds_until_pacific_midnight()
         return duration, 'RPD'
     elif ('overloaded' in err_lower or '503' in err_lower or 'service unavailable' in err_lower or 'service_unavailable' in err_lower):
-        # Model overloaded / 503: Block key for 30 seconds to let Google cool down
-        return 30, 'OVERLOAD'
+        # Model overloaded / 503: Block key for 600 seconds to let Google cool down
+        return 600, 'OVERLOAD'
     elif ('500' in err_lower or 'internal error' in err_lower or 'internal_error' in err_lower):
         # Internal error / 500: Block key for 10 seconds
         return 10, 'INTERNAL'
     # Minute limit / TPM / RPM: Block for 61 seconds (extra 1s for network I/O jitter)
     return 61, 'RPM'
-# -------------------------------------------------------------
 
 
 def get_fallback_chain(start_model):
@@ -984,17 +765,7 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 # (PRIMARY_API_KEY already assigned in aggressive loading block)
 
-backup_env_pattern = re.compile(r'^BACKUP_API_KEY_(\d+)$')
-
-# 2. Extract into a sorted dictionary to maintain numerical order
-backup_vars = {
-    int(match.group(1)): os.environ[key]
-    for key in os.environ
-    if (match := backup_env_pattern.match(key))
-}
-
-# 3. Final list of functional backup keys (automatically scales)
-BACKUP_API_KEYS = [backup_vars[i] for i in sorted(backup_vars.keys())]
+# BACKUP_API_KEYS are imported from key_manager
 
 tavily_backup_env_pattern = re.compile(r'^TAVILY_BACKUP_API_KEY_(\d+)$')
 tavily_backup_vars = {
