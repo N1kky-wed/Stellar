@@ -689,13 +689,39 @@ def report_process_issue(topic: str, issue_description: str, technical_context: 
         conn.close()
         logger.info("Agent feedback stored successfully user_id=%s chat_id=%s topic=%s", u_id, c_id, topic)
 
-        import subprocess
+        # Send email directly to developer instead of spawning issue_resolver.py
         import os
-        import sys
-        resolver_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.py')
-        log_path = os.path.join(os.path.dirname(__file__), 'issue_resolver.log')
-        with open(log_path, 'a') as log_file:
-            subprocess.Popen([sys.executable, resolver_path], stdout=log_file, stderr=log_file)
+        if os.environ.get('TESTING') != 'true':
+            import smtplib
+            from email.message import EmailMessage
+            sender = os.getenv("EMAIL_USER")
+            password = os.getenv("EMAIL_PASS")
+            recipient = "nikhil080905@gmail.com"
+            if sender and password:
+                msg = EmailMessage()
+                msg['Subject'] = f"[STELLAR] New Issue Reported: {topic}"
+                msg['From'] = f"Stellar System <{sender}>"
+                msg['To'] = recipient
+                body_content = f"""🚨 New Issue Reported from Stellar
+
+Topic: {topic}
+Description: {issue_description}
+
+Technical Context:
+{technical_context}
+
+---
+Transmission from Stellar Environment."""
+                msg.set_content(body_content)
+                try:
+                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+                        smtp.login(sender, password)
+                        smtp.send_message(msg)
+                    logger.info("Issue notification email sent to developer successfully topic=%s", topic)
+                except Exception as mail_e:
+                    logger.error("Failed to send issue notification email to developer: %s", mail_e, exc_info=True)
+            else:
+                logger.warning("EMAIL_USER or EMAIL_PASS not set. Cannot send issue notification email.")
 
         return "Feedback successfully reported and stored for developer review."
     except Exception as e:

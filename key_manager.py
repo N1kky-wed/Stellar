@@ -107,7 +107,10 @@ def get_seconds_until_pacific_midnight():
 
 def parse_quota_block_duration(error_msg):
     err_lower = error_msg.lower()
-    if ('minute' in err_lower or 'queries per minute' in err_lower or
+    if ('expired' in err_lower or 'invalid' in err_lower or 'disabled' in err_lower or
+        'denied' in err_lower or 'unauthenticated' in err_lower or '401' in err_lower):
+        return 31536000, 'INVALID'
+    elif ('minute' in err_lower or 'queries per minute' in err_lower or
         'rpm' in err_lower or 'tpm' in err_lower or 'queriesperminute' in err_lower):
         return 61, 'RPM'
     elif ('requestsperday' in err_lower or 'requests per day' in err_lower or

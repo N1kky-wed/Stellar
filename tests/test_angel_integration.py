@@ -28,16 +28,22 @@ ANGEL_BIN = _resolve_angel_bin()
 
 @pytest.mark.skipif(ANGEL_BIN is None, reason="angel binary not found — skipping integration test (not available in this environment)")
 def test_dropped_telemetry_integration():
-    # 1. Create a temporary database file
-    db_file = tempfile.mktemp(suffix=".db")
+    # 1. Create a temporary directory and populate it with a dummy python file
+    dummy_dir = tempfile.mkdtemp()
+    with open(os.path.join(dummy_dir, "dummy.py"), "w") as f:
+        f.write("def dummy_func():\n    pass\n")
     
-    # 2. Find a free port
+    # 2. Run scan on that directory, which builds and populates dummy_dir/angel.db
+    subprocess.run([ANGEL_BIN, "scan", dummy_dir], capture_output=True)
+    db_file = os.path.join(dummy_dir, "angel.db")
+    
+    # 3. Find a free port
     s = socket.socket()
     s.bind(('127.0.0.1', 0))
     port = s.getsockname()[1]
     s.close()
     
-    # 3. Start the angel serve daemon on that port
+    # 4. Start the angel serve daemon on that port using our seeded database
     proc = subprocess.Popen(
         [ANGEL_BIN, "serve", "--db", db_file, "--port", str(port)],
         stdout=subprocess.PIPE,
@@ -49,7 +55,7 @@ def test_dropped_telemetry_integration():
     time.sleep(1.0)
     
     try:
-        # 4. Connect to the telemetry socket and send an unknown node_id trace
+        # 5. Connect to the telemetry socket and send an unknown node_id trace
         client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_sock.connect(('127.0.0.1', port))
         
@@ -69,7 +75,7 @@ def test_dropped_telemetry_integration():
         time.sleep(0.5)
         
     finally:
-        # 5. Stop the daemon
+        # 6. Stop the daemon
         proc.terminate()
         try:
             proc.wait(timeout=2)
@@ -80,10 +86,10 @@ def test_dropped_telemetry_integration():
         print("Collector stdout:", stdout)
         print("Collector stderr:", stderr)
         
-    # 6. Verify warning is printed in stderr
+    # 7. Verify warning is printed in stderr
     assert "Dropped telemetry event for unknown node_id 'unknown_func_123'" in stderr
     
-    # 7. Check database content directly
+    # 8. Check database content directly
     conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
     cursor.execute("SELECT node_id, drop_count FROM dropped_telemetry")
@@ -94,7 +100,7 @@ def test_dropped_telemetry_integration():
     assert rows[0][0] == "unknown_func_123"
     assert rows[0][1] == 1
     
-    # 8. Run angel stats and verify it reports dropped telemetry
+    # 9. Run angel stats and verify it reports dropped telemetry
     env = os.environ.copy()
     env["ANGEL_DB_PATH"] = db_file
     stats_proc = subprocess.run(
@@ -112,6 +118,6 @@ def test_dropped_telemetry_integration():
     assert "unknown_func_123" in stats_proc.stdout
     assert "1" in stats_proc.stdout  # Count
 
-    # Clean up
-    if os.path.exists(db_file):
-        os.unlink(db_file)
+    # Clean up the entire temporary directory
+    if os.path.exists(dummy_dir):
+        shutil.rmtree(dummy_dir)

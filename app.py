@@ -381,13 +381,41 @@ def ensure_user_network(docker_client, user_id):
             pass  # Ignore if created concurrently
     return network_name
 
-from telegram_bot import TelegramBot
+# telegram_bot unused - removed
 
-telegram_bot = TelegramBot()
+def send_email_to_nikhil(subject, body):
+    """
+    Sends an email notification to the system administrator (Nikhil) at nikhil080905@gmail.com.
+    """
+    import smtplib
+    from email.message import EmailMessage
+    sender = os.getenv("EMAIL_USER")
+    password = os.getenv("EMAIL_PASS")
+    recipient = "nikhil080905@gmail.com"
+    
+    if not sender or not password:
+        logger.warning("EMAIL_USER or EMAIL_PASS not set. Skipping email notification.")
+        return False
+        
+    msg = EmailMessage()
+    msg['Subject'] = f"[STELLAR] {subject}"
+    msg['From'] = f"Stellar System <{sender}>"
+    msg['To'] = recipient
+    msg.set_content(body)
+    
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(sender, password)
+            smtp.send_message(msg)
+        logger.info("Email notification sent successfully to %s. Subject: %s", recipient, subject)
+        return True
+    except Exception as e:
+        logger.error("Failed to send email notification to %s: %s", recipient, e, exc_info=True)
+        return False
 
 def send_login_notification(username, display_name=None, is_waitlist=False):
     """
-    Send a login or waitlist registration notification via the Telegram bot.
+    Send a login or waitlist registration notification via Email.
 
     Args:
         username (str): The username of the user.
@@ -398,16 +426,18 @@ def send_login_notification(username, display_name=None, is_waitlist=False):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
     name_str = f"{display_name} ({username})" if display_name else username
     if is_waitlist:
+        subject = "New Waitlist Registration"
         message_body = f"⏳ New Waitlist Registration\nUser: {name_str}\nTime: {timestamp}"
     else:
+        subject = "User Login on Stellar"
         message_body = f"✅ User Login on Stellar\nUser: {name_str}\nTime: {timestamp}"
     try:
-        telegram_bot.send_message(message_body)
+        send_email_to_nikhil(subject, message_body)
         duration = time.time() - t0
-        logger.info("Login notification sent via Telegram successfully username=%s duration_sec=%.3f", username, duration)
+        logger.info("Login notification sent via Email successfully username=%s duration_sec=%.3f", username, duration)
     except Exception as e:
         duration = time.time() - t0
-        logger.error("Failed to send login notification via Telegram username=%s error=%s duration_sec=%.3f", username, e, duration)
+        logger.error("Failed to send login notification via Email username=%s error=%s duration_sec=%.3f", username, e, duration)
 
 # --- LOGGING AND ENV LOADING ---
 
@@ -2351,12 +2381,12 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 except Exception as loop_e:
                     logger.exception("Error caught: %s", loop_e)
                     error_string = str(loop_e).lower()
-                    is_quota = any(x in error_string for x in ['429', '403', 'permission_denied', 'resource_exhausted', 'quota', 'rate limit'])
+                    is_quota = any(x in error_string for x in ['429', '403', '401', '400', 'permission_denied', 'resource_exhausted', 'quota', 'rate limit', 'expired', 'invalid', 'disabled', 'unauthenticated'])
                     is_network = any(x in error_string for x in ['500', '503', 'connection', 'timeout', 'deadline'])
 
                     if is_quota:
                         block_duration, block_reason = parse_quota_block_duration(error_string)
-                        block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                        block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string or 'expired' in error_string or '401' in error_string or '400' in error_string or 'disabled' in error_string or 'unauthenticated' in error_string) else model_id
                         KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                         logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in inner loop.")
 
@@ -2856,13 +2886,13 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             is_blockable_error = False
             error_string = str(e).lower()
 
-            is_quota_error = ('429' in error_string or '403' in error_string or 'permission_denied' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string)
+            is_quota_error = ('429' in error_string or '403' in error_string or '401' in error_string or '400' in error_string or 'permission_denied' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or 'rate limit' in error_string or 'expired' in error_string or 'invalid' in error_string or 'disabled' in error_string or 'unauthenticated' in error_string)
             is_transient_error = ('overloaded' in error_string or '503' in error_string or 'service unavailable' in error_string or '500' in error_string or 'internal error' in error_string or 'internal_error' in error_string)
 
             if is_quota_error or is_transient_error:
                  is_blockable_error = True
                  block_duration, block_reason = parse_quota_block_duration(error_string)
-                 block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                 block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string or 'expired' in error_string or '401' in error_string or '400' in error_string or 'disabled' in error_string or 'unauthenticated' in error_string) else model_id
                  KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
                  logger.warning(f"Globally blocked API key (Hash: {hash(current_key)}) for {block_duration}s for model {block_scope} due to {block_reason} error in generation loop.")
 
@@ -6122,7 +6152,7 @@ def submit_waitlist_form():
         if user_data:
             name_str = f"{user_data['display_name']} ({user_data['username']})" if user_data['display_name'] else user_data['username']
             msg = f"📝 Waitlist Form Submitted\nUser: {name_str}\nDesignation: {designation}\nSource: {source}\nUse Case: {use_case}"
-            telegram_bot.send_message(msg)
+            send_email_to_nikhil("Waitlist Form Submitted", msg)
 
         return jsonify({"success": True})
     except Exception as e:
@@ -8302,7 +8332,10 @@ def resume_repo_history(history_id):
         user_row = cursor.fetchone()
         if user_row:
             current_username = user_row['username']
-            telegram_bot.send_message(f"🛠️ {current_username} resumed repo session: {project_name}")
+            send_email_to_nikhil(
+                f"Repo Session Resumed: {project_name}",
+                f"🛠️ {current_username} resumed repo session: {project_name}"
+            )
     except Exception as e:
         logger.error(f"Failed to send Repo Resume Telegram notification: {e}")
     return jsonify({'success': True, 'message': 'Project loaded.', 'files': files, 'process_id': process_id})

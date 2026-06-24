@@ -102,6 +102,10 @@ sys.modules['twilio.base.exceptions'] = MagicMock()
 # Mock sqlitecloud just in case
 sys.modules['sqlitecloud'] = MagicMock()
 
+# Mock smtplib globally to prevent any actual SMTP/email connection attempts
+mock_smtplib = MagicMock()
+sys.modules['smtplib'] = mock_smtplib
+
 # --- End Mocks ---
 
 # Setup Env Vars

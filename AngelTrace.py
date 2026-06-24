@@ -262,16 +262,28 @@ class AngelTracer:
             except Exception:
                 pass
             self.sock = None
-        
+
         # Reset registry state and queues
         self.registered_nodes.clear()
         self.registered_strings.clear()
         self.next_node_id = 1
         self.queue.clear()
-        
+
         # Mark worker as unstarted so the next trace call spawns a new thread
         self.worker = None
         self._worker_ready = False
+
+        # Reset C-level thread-local state: native_stack[] and node_counts[].
+        # Without this, the child inherits the parent's call-stack depth at
+        # the moment of fork — stale counts cause incorrect reentrancy gating
+        # on the first request in the child process.
+        try:
+            import angel_speedup
+            angel_speedup.reset_thread_state()
+        except Exception:
+            # C extension unavailable (ImportError) or already unloaded at
+            # interpreter shutdown — safe to ignore.
+            pass
 
     def _verify_worker(self):
         """Start the background worker thread if not already running.
