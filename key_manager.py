@@ -192,13 +192,13 @@ class GlobalKeyManager:
             rpm_key = f"stellar:count_rpm:{key_hash}:{model_id}:{current_minute}"
             rpd_key = f"stellar:count_rpd:{key_hash}:{model_id}:{current_day}"
             
-            rpm_val = redis_client.get(rpm_key)
-            if rpm_val and int(rpm_val) >= limits["rpm"]:
-                return True, 'RPM'
-                
             rpd_val = redis_client.get(rpd_key)
             if rpd_val and int(rpd_val) >= limits["rpd"]:
                 return True, 'RPD'
+                
+            rpm_val = redis_client.get(rpm_key)
+            if rpm_val and int(rpm_val) >= limits["rpm"]:
+                return True, 'RPM'
         except Exception:
             pass
 
@@ -235,10 +235,10 @@ class GlobalKeyManager:
             current_day = get_pacific_day_bucket()
             limits = get_limits(model_id)
             
-            if self.local_rpm.get((key_val, model_id, current_minute), 0) >= limits["rpm"]:
-                return True, 'RPM'
             if self.local_rpd.get((key_val, model_id, current_day), 0) >= limits["rpd"]:
                 return True, 'RPD'
+            if self.local_rpm.get((key_val, model_id, current_minute), 0) >= limits["rpm"]:
+                return True, 'RPM'
                 
             blocked_time = self.blocked_until.get((key_val, model_id), 0)
             if time.time() < blocked_time:
@@ -390,6 +390,18 @@ class GlobalKeyManager:
                     limits = get_limits(model)
                     if effective_reason == 'RPM':
                         rem = 60 - int(time.time() % 60)
+                    elif effective_reason == 'OVERLOAD':
+                        rem = 600
+                        try:
+                            overloaded_val = redis_client.get(f"stellar:model_overloaded:{model}")
+                            if overloaded_val:
+                                rem = max(0.0, float(overloaded_val) - time.time())
+                        except Exception:
+                            pass
+                        if rem == 600:
+                            with self.lock:
+                                blocked_time = self.model_overloaded.get(model, 0)
+                                rem = max(0.0, blocked_time - time.time())
                     else:
                         rem = get_seconds_until_pacific_midnight()
                     blocks[model] = {
