@@ -659,60 +659,6 @@ def trace_fn(node_id: str):
 # patches once the target libraries are fully initialized. This avoids all
 # circular-import and recursion issues caused by hooking builtins.__import__.
 
-def get_redis_key(key):
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(0.2)
-        s.connect(("127.0.0.1", 6379))
-        cmd = f"*2\r\n$3\r\nGET\r\n${len(key.encode('utf-8'))}\r\n{key}\r\n".encode('utf-8')
-        s.sendall(cmd)
-        resp = s.recv(4096)
-        s.close()
-        if resp.startswith(b"$"):
-            lines = resp.split(b"\r\n")
-            if len(lines) >= 3:
-                length = int(lines[0][1:])
-                if length > 0:
-                    return lines[1].decode('utf-8', errors='ignore')
-    except Exception:
-        pass
-    return None
-
-def extract_tag_from_json(json_str):
-    try:
-        data = json.loads(json_str)
-        if isinstance(data, dict):
-            val = data.get("query")
-            if val and isinstance(val, str):
-                return val[:200]
-    except Exception:
-        pass
-    return ""
-
-def fnv1a_32(data: str) -> int:
-    h = 0x811c9dc5
-    for b in data.encode('utf-8', errors='ignore'):
-        h ^= b
-        h = (h * 0x01000193) & 0xffffffff
-    return h
-
-def tokenize_and_hash(body_str: str) -> list:
-    import re
-    # Stopwords aligned with Rust db.rs
-    stopwords = {"the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "is", "was", "i", "my", "me", "just", "did", "do"}
-    
-    # Split on whitespace
-    raw_tokens = body_str.lower().split()
-    hashes = []
-    
-    for token in raw_tokens:
-        # Strip non-alphanumeric characters from start and end
-        token = re.sub(r'^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$', '', token)
-        if len(token) > 2 and token not in stopwords:
-            h = fnv1a_32(token)
-            hashes.append(f"{h:08x}")
-    return hashes
-
 def extract_tag_from_body(body_str):
     body_str = body_str.strip()
     if body_str.startswith("{") and body_str.endswith("}"):
@@ -743,48 +689,25 @@ def extract_tag_from_body(body_str):
             pass
     return body_str[:200]
 
-def _capture_request_context_async(trace_id, route, query_id, body_bytes):
-    def run():
-        try:
-            tag = ""
-            hashes_str = ""
-            capture_enabled = os.environ.get("ANGEL_CAPTURE_TAGS", "").lower() == "true"
-            if capture_enabled:
-                body_str = ""
-                if query_id:
-                    val = get_redis_key(f"query_args:{query_id}")
-                    if val:
-                        tag = extract_tag_from_json(val)
-                        body_str = val
-                if not tag and body_bytes:
-                    body_str = body_bytes.decode('utf-8', errors='ignore')
-                    tag = extract_tag_from_body(body_str)
-                
-                if body_str:
-                    hashes = tokenize_and_hash(body_str)
-                    if hashes:
-                        hashes_str = " ".join(hashes)
-            
-            # Format combined tag: display_tag|hashes
-            # Truncate display tag to 50 chars to avoid memory bloat
-            display_tag = tag[:50] if tag else ""
-            combined_tag = f"{display_tag}|{hashes_str}"
-            
-            import datetime
-            event = {
-                "type": "trace_context",
-                "trace_id": trace_id,
-                "route": route,
-                "tag": combined_tag,
-                "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
-            }
-            tracer.send_event(event)
-        except Exception:
-            pass
-            
-    import threading
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
+def _capture_request_context(trace_id, route, body_bytes):
+    try:
+        tag = ""
+        capture_enabled = os.environ.get("ANGEL_CAPTURE_TAGS", "").lower() == "true"
+        if capture_enabled and body_bytes:
+            body_str = body_bytes.decode('utf-8', errors='ignore')
+            tag = extract_tag_from_body(body_str)
+        
+        import datetime
+        event = {
+            "type": "trace_context",
+            "trace_id": trace_id,
+            "route": route,
+            "tag": tag or "",
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+        }
+        tracer.send_event(event)
+    except Exception:
+        pass
 
 _patched_flask = False
 _patched_django = False
@@ -830,19 +753,10 @@ def patch_flask():
                     path_info = environ.get('PATH_INFO', '/')
                     route = f"{method} {path_info}"
 
-                    query_string = environ.get('QUERY_STRING', '')
-                    query_id = None
-                    if query_string:
-                        for part in query_string.split("&"):
-                            pair = part.split("=")
-                            if len(pair) == 2 and pair[0] == "query_id":
-                                from urllib.parse import unquote
-                                query_id = unquote(pair[1])
-                                break
-
+                    capture_enabled = os.environ.get("ANGEL_CAPTURE_TAGS", "").lower() == "true"
                     content_length = int(environ.get('CONTENT_LENGTH') or 0)
                     body_bytes = b""
-                    if 0 < content_length < 65536:
+                    if capture_enabled and 0 < content_length < 65536:
                         import io
                         wsgi_input = environ.get('wsgi.input')
                         if wsgi_input:
@@ -851,7 +765,7 @@ def patch_flask():
                                 environ['wsgi.input'] = io.BytesIO(body_bytes)
                             except Exception:
                                 pass
-                    _capture_request_context_async(trace_id, route, query_id, body_bytes)
+                    _capture_request_context(trace_id, route, body_bytes)
                 except Exception:
                     pass
                 return original_wsgi_app(self, environ, start_response)
@@ -944,19 +858,10 @@ def patch_django():
                     path_info = environ.get('PATH_INFO', '/')
                     route = f"{method} {path_info}"
 
-                    query_string = environ.get('QUERY_STRING', '')
-                    query_id = None
-                    if query_string:
-                        for part in query_string.split("&"):
-                            pair = part.split("=")
-                            if len(pair) == 2 and pair[0] == "query_id":
-                                from urllib.parse import unquote
-                                query_id = unquote(pair[1])
-                                break
-
+                    capture_enabled = os.environ.get("ANGEL_CAPTURE_TAGS", "").lower() == "true"
                     content_length = int(environ.get('CONTENT_LENGTH') or 0)
                     body_bytes = b""
-                    if 0 < content_length < 65536:
+                    if capture_enabled and 0 < content_length < 65536:
                         import io
                         wsgi_input = environ.get('wsgi.input')
                         if wsgi_input:
@@ -965,7 +870,7 @@ def patch_django():
                                 environ['wsgi.input'] = io.BytesIO(body_bytes)
                             except Exception:
                                 pass
-                    _capture_request_context_async(trace_id, route, query_id, body_bytes)
+                    _capture_request_context(trace_id, route, body_bytes)
                 except Exception:
                     pass
                 return original_wsgi_call(self, environ, start_response)
@@ -1010,43 +915,33 @@ def patch_fastapi():
                 path = scope.get("path", "/")
                 route = f"{method} {path}"
 
-                query_string = scope.get("query_string", b"").decode("utf-8", errors="ignore")
-                query_id = None
-                if query_string:
-                    for part in query_string.split("&"):
-                        pair = part.split("=")
-                        if len(pair) == 2 and pair[0] == "query_id":
-                            from urllib.parse import unquote
-                            query_id = unquote(pair[1])
-                            break
-
+                capture_enabled = os.environ.get("ANGEL_CAPTURE_TAGS", "").lower() == "true"
                 body_chunks = []
                 sent = [False]
+                
                 def trigger_capture(body):
                     if not sent[0]:
                         sent[0] = True
-                        _capture_request_context_async(trace_id, route, query_id, body)
+                        _capture_request_context(trace_id, route, body)
 
-                async def wrapped_receive():
-                    message = await receive()
-                    if message.get("type") == "http.request":
-                        body = message.get("body", b"")
-                        if body and len(body_chunks) * 1024 < 65536:
-                            body_chunks.append(body)
-                        if not message.get("more_body", False):
-                            trigger_capture(b"".join(body_chunks))
-                    return message
-
-                import threading
-                timer = threading.Timer(1.0, lambda: trigger_capture(b"".join(body_chunks)))
-                timer.daemon = True
-                timer.start()
+                if capture_enabled:
+                    async def wrapped_receive():
+                        message = await receive()
+                        if message.get("type") == "http.request":
+                            body = message.get("body", b"")
+                            if body and len(body_chunks) * 1024 < 65536:
+                                body_chunks.append(body)
+                            if not message.get("more_body", False):
+                                trigger_capture(b"".join(body_chunks))
+                        return message
+                else:
+                    wrapped_receive = receive
+                    trigger_capture(b"")
 
                 token = active_trace_id.set(trace_id)
                 try:
                     await original_asgi_call(self, scope, wrapped_receive, send)
                 finally:
-                    timer.cancel()
                     trigger_capture(b"".join(body_chunks))
                     active_trace_id.reset(token)
             else:
