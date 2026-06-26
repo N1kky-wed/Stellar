@@ -335,10 +335,14 @@ class AngelTracer:
                 pass
 
     def _serialize_event(self, item):
-        # Hot path appends a 6-tuple to avoid dict construction overhead.
+        # Hot path appends a 7-tuple to avoid dict construction overhead.
         # Unpack it here in the worker thread where cost doesn't matter.
         if isinstance(item, tuple):
-            node_id, latency_ns, caller, trace_id, thread_name, is_async = item
+            if len(item) == 7:
+                node_id, latency_ns, caller, trace_id, thread_name, is_async, is_error = item
+            else:
+                node_id, latency_ns, caller, trace_id, thread_name, is_async = item
+                is_error = False
         else:
             if not isinstance(item, dict) or "node_id" not in item or "type" in item:
                 # Fall back to JSON for non-telemetry events or general dicts
@@ -357,10 +361,11 @@ class AngelTracer:
             trace_id = item.get("trace_id")
             thread_name = item.get("thread_name", "Thread-1")
             is_async = item.get("is_async", False)
+            is_error = item.get("is_error", False)
 
         if not self.use_binary:
             d = {"node_id": node_id, "latency_ns": latency_ns,
-                 "thread_name": thread_name, "is_async": is_async}
+                 "thread_name": thread_name, "is_async": is_async, "is_error": is_error}
             if caller:     d["caller"]   = caller
             if trace_id:   d["trace_id"] = trace_id
             try:
@@ -427,7 +432,11 @@ class AngelTracer:
                 payloads.append(struct.pack(">B H B Q H", 0xAB, payload_len, 0x03, thread_hash, len(thread_bytes)) + thread_bytes)
 
         # Telemetry packet
-        flags = 0x01 if is_async else 0x00
+        flags = 0x00
+        if is_async:
+            flags |= 0x01
+        if is_error:
+            flags |= 0x02
         telemetry_payload = struct.pack(">B H B I Q I Q Q B", 0xAB, 34, 0x01, dynamic_id, latency_ns, caller_id, trace_hash, thread_hash, flags)
         payloads.append(telemetry_payload)
 
@@ -463,7 +472,7 @@ class AngelTracer:
                     pass
             self.sock = None
 
-    def send_trace(self, node_id: str, latency_ns: int, trace_id: str = None, caller_id: str = None):
+    def send_trace(self, node_id: str, latency_ns: int, trace_id: str = None, caller_id: str = None, is_error: bool = None):
         """Hot-path trace emitter.
 
         caller_id: static string injected by the AST transformer at compile
@@ -471,11 +480,12 @@ class AngelTracer:
         Falls back to the thread-local call stack and finally to frame
         inference only for uninstrumented callers.
         """
-        # _worker_ready is a plain bool attribute read — ~20ns.
-        # _verify_worker() (hasattr + thread.is_alive()) is only called once
-        """Hot-path trace emitter."""
         if not self._worker_ready:
             self._verify_worker()
+
+        if is_error is None:
+            import sys
+            is_error = (sys.exc_info()[0] is not None)
 
         caller = caller_id
         if not caller:
@@ -506,7 +516,7 @@ class AngelTracer:
                     pass
 
         was_empty = not self.queue
-        self.queue_append((node_id, latency_ns, caller, trace_id, thread_name, is_async))
+        self.queue_append((node_id, latency_ns, caller, trace_id, thread_name, is_async, is_error))
         if was_empty:
             self._drain_event.set()
 
@@ -597,27 +607,33 @@ def trace_fn(node_id: str):
                     try:
                         stack_token = active_call_stack.set(active_call_stack.get() + (node_id,))
                         start = time.perf_counter_ns()
+                        is_error = False
                         try:
                             try:
                                 return await func(*args, **kwargs)
-                            finally:
-                                duration = time.perf_counter_ns() - start
-                                tracer.send_trace(node_id, duration, trace_id)
+                            except BaseException:
+                                is_error = True
+                                raise
                         finally:
-                            active_call_stack.reset(stack_token)
+                            duration = time.perf_counter_ns() - start
+                            tracer.send_trace(node_id, duration, trace_id, is_error=is_error)
                     finally:
-                        active_trace_id.reset(token)
+                        active_call_stack.reset(stack_token)
+                    active_trace_id.reset(token)
                 else:
                     stack_token = active_call_stack.set(active_call_stack.get() + (node_id,))
                     start = time.perf_counter_ns()
+                    is_error = False
                     try:
                         try:
                             return await func(*args, **kwargs)
-                        finally:
-                            duration = time.perf_counter_ns() - start
-                            tracer.send_trace(node_id, duration, trace_id)
+                        except BaseException:
+                            is_error = True
+                            raise
                     finally:
-                        active_call_stack.reset(stack_token)
+                        duration = time.perf_counter_ns() - start
+                        tracer.send_trace(node_id, duration, trace_id, is_error=is_error)
+                    active_call_stack.reset(stack_token)
             return async_wrapper
 
         @functools.wraps(func)
@@ -629,27 +645,33 @@ def trace_fn(node_id: str):
                 try:
                     stack_token = active_call_stack.set(active_call_stack.get() + (node_id,))
                     start = time.perf_counter_ns()
+                    is_error = False
                     try:
                         try:
                             return func(*args, **kwargs)
-                        finally:
-                            duration = time.perf_counter_ns() - start
-                            tracer.send_trace(node_id, duration, trace_id)
+                        except BaseException:
+                            is_error = True
+                            raise
                     finally:
-                        active_call_stack.reset(stack_token)
+                        duration = time.perf_counter_ns() - start
+                        tracer.send_trace(node_id, duration, trace_id, is_error=is_error)
                 finally:
-                    active_trace_id.reset(token)
+                    active_call_stack.reset(stack_token)
+                active_trace_id.reset(token)
             else:
                 stack_token = active_call_stack.set(active_call_stack.get() + (node_id,))
                 start = time.perf_counter_ns()
+                is_error = False
                 try:
                     try:
                         return func(*args, **kwargs)
-                    finally:
-                        duration = time.perf_counter_ns() - start
-                        tracer.send_trace(node_id, duration, trace_id)
+                    except BaseException:
+                        is_error = True
+                        raise
                 finally:
-                    active_call_stack.reset(stack_token)
+                    duration = time.perf_counter_ns() - start
+                    tracer.send_trace(node_id, duration, trace_id, is_error=is_error)
+                active_call_stack.reset(stack_token)
         return wrapper
     return decorator
 
