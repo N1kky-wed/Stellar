@@ -20,6 +20,16 @@ class MockRedisClass:
         self.store = {}
     def ping(self):
         return True
+    def incr(self, name, amount=1):
+        val = self.store.get(name)
+        if val is None:
+            val = amount
+        else:
+            val = int(val) + amount
+        self.store[name] = str(val)
+        return val
+    def expire(self, name, time):
+        return True
     def get(self, name):
         return self.store.get(name)
     def set(self, name, value, ex=None, px=None, nx=False, xx=False):
