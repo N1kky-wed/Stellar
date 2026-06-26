@@ -689,6 +689,30 @@ def extract_tag_from_json(json_str):
         pass
     return ""
 
+def fnv1a_32(data: str) -> int:
+    h = 0x811c9dc5
+    for b in data.encode('utf-8', errors='ignore'):
+        h ^= b
+        h = (h * 0x01000193) & 0xffffffff
+    return h
+
+def tokenize_and_hash(body_str: str) -> list:
+    import re
+    # Stopwords aligned with Rust db.rs
+    stopwords = {"the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "is", "was", "i", "my", "me", "just", "did", "do"}
+    
+    # Split on whitespace
+    raw_tokens = body_str.lower().split()
+    hashes = []
+    
+    for token in raw_tokens:
+        # Strip non-alphanumeric characters from start and end
+        token = re.sub(r'^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$', '', token)
+        if len(token) > 2 and token not in stopwords:
+            h = fnv1a_32(token)
+            hashes.append(f"{h:08x}")
+    return hashes
+
 def extract_tag_from_body(body_str):
     body_str = body_str.strip()
     if body_str.startswith("{") and body_str.endswith("}"):
@@ -723,21 +747,35 @@ def _capture_request_context_async(trace_id, route, query_id, body_bytes):
     def run():
         try:
             tag = ""
+            hashes_str = ""
             capture_enabled = os.environ.get("ANGEL_CAPTURE_TAGS", "").lower() == "true"
             if capture_enabled:
+                body_str = ""
                 if query_id:
                     val = get_redis_key(f"query_args:{query_id}")
                     if val:
                         tag = extract_tag_from_json(val)
+                        body_str = val
                 if not tag and body_bytes:
-                    tag = extract_tag_from_body(body_bytes.decode('utf-8', errors='ignore'))
+                    body_str = body_bytes.decode('utf-8', errors='ignore')
+                    tag = extract_tag_from_body(body_str)
+                
+                if body_str:
+                    hashes = tokenize_and_hash(body_str)
+                    if hashes:
+                        hashes_str = " ".join(hashes)
+            
+            # Format combined tag: display_tag|hashes
+            # Truncate display tag to 50 chars to avoid memory bloat
+            display_tag = tag[:50] if tag else ""
+            combined_tag = f"{display_tag}|{hashes_str}"
             
             import datetime
             event = {
                 "type": "trace_context",
                 "trace_id": trace_id,
                 "route": route,
-                "tag": tag or "",
+                "tag": combined_tag,
                 "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
             }
             tracer.send_event(event)
