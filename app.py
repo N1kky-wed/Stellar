@@ -2199,9 +2199,9 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
     # Partition: permanently remove RPD/INVALID keys; keep RPM/OVERLOAD
     # keys because they will recover within this call.
     def _is_permanently_blocked(k):
-        """True only for RPD or INVALID blocks (won't recover mid-call)."""
+        """True for RPD, INVALID, or OVERLOAD blocks (won't recover mid-call)."""
         blocked, reason = KEY_MANAGER.is_key_blocked(k, model_id)
-        return blocked and reason in ('RPD', 'INVALID')
+        return blocked and reason in ('RPD', 'INVALID', 'OVERLOAD')
 
     keys_to_try = [k for k in ALL_KEYS if not _is_permanently_blocked(k)]
     if not keys_to_try:
@@ -2238,7 +2238,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
 
         Pass 1 — Scan keys 0..N-1. Pure time comparison, no request sent.
         Pass 2 — All blocked: find soonest expiry, sleep + 1 s, rescan from 0.
-        RPD/INVALID — skipped, never waited on.
+        RPD/INVALID/OVERLOAD — skipped, never waited on.
         """
         if not keys_to_try:
             return None
@@ -2249,7 +2249,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             is_blocked, reason = KEY_MANAGER.is_key_blocked(k, model_id)
             if not is_blocked:
                 return i
-            if reason in ('RPD', 'INVALID'):
+            if reason in ('RPD', 'INVALID', 'OVERLOAD'):
                 continue  # permanent — skip silently
 
         # Pass 2: all N keys still within their RPM window.
@@ -2261,7 +2261,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             is_blocked, reason = KEY_MANAGER.is_key_blocked(k, model_id)
             if not is_blocked:
                 return i  # cleared between Pass 1 and here (race)
-            if reason in ('RPD', 'INVALID'):
+            if reason in ('RPD', 'INVALID', 'OVERLOAD'):
                 continue
             remaining = 62.0
             try:
@@ -2277,7 +2277,7 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
                 soonest_idx = i
 
         if soonest_idx is None:
-            logger.error("Only RPD/INVALID keys remain for model %s. Cannot recover.", model_id)
+            logger.error("Only RPD/INVALID/OVERLOAD keys remain for model %s. Cannot recover.", model_id)
             return None
 
         wait_secs = soonest_wait + 1.0  # +1 s for network I/O jitter
