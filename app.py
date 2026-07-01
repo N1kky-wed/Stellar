@@ -2825,7 +2825,10 @@ def gemini_generate(prompt: str, model_id: str, key: str, attempts: int = 3, bac
             output_this_attempt = re.sub(r'```(?:svg|xml)?[\s\S]*?(<svg[\s\S]*?</svg>)[\s\S]*?```', r'\1', output_this_attempt, flags=re.IGNORECASE)
 
             if candidate is None:
-                raise ValueError("No candidate was generated because all API keys were blocked or generation failed.")
+                logger.error("No candidate was generated because all API keys are blocked for model %s.", model_id)
+                yield {'status': f'All API keys are blocked for model {display_name}. Failing over...'}
+                last_exception = ValueError("All API keys are blocked.")
+                break
 
             candidate_finish_reason_obj = getattr(candidate, 'finish_reason', 'UNKNOWN')
             candidate_finish_reason = candidate_finish_reason_obj.name if hasattr(candidate_finish_reason_obj, 'name') else str(candidate_finish_reason_obj)
