@@ -10,3 +10,4 @@ logs
 .github
 .pytest_cache
 outputs
+key_manager.py
