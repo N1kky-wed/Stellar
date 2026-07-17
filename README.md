@@ -61,58 +61,7 @@ Key design principles:
 - **Live follow-up injection** — users can send additional messages while the agent is still generating, which are injected into the active LLM loop in real time.
 - **Time-Aware Context** — The backend tracks relative time deltas between messages, providing the agent with a temporal understanding of the conversation flow.
 
----
 
-## Observability — Angel Runtime Tracer
-
-Stellar uses **Angel** for zero-code-change runtime observability. Angel dynamically instruments every Python function at import time using AST rewriting and stores per-call latency traces in a local SQLite database, queryable via a Rust CLI.
-
-### How it works
-
-```
-gunicorn.conf.py  ←─ loaded by Gunicorn on startup (before any app module)
-    │
-    └─ registers AngelFinder into sys.meta_path
-              │
-              └─ intercepts every project module import
-                        │
-                        └─ AngelSourceLoader rewrites the module AST
-                                  │
-                                  └─ wraps every function with try/finally timing
-                                            │
-                                            └─ AngelTracer sends JSON over TCP
-                                                      │
-                                                      ▼
-                                            Angel Rust server :9090
-                                            SQLite trace store
-                                            (/home/stellaradmin/Angel/angel.db)
-```
-
-### Key files
-
-| File                        | Purpose                                                                              |
-| --------------------------- | ------------------------------------------------------------------------------------ |
-| `gunicorn.conf.py`          | Gunicorn bootstrap — registers `AngelFinder` before workers fork. **Do not remove.** |
-| `angel_trace.py`            | Python tracer runtime — AST transformer, import hook, TCP client. **Do not remove.** |
-| `/home/stellaradmin/Angel/` | Rust CLI + TCP server + SQLite store (separate repo)                                 |
-
-### CLI usage (on the host)
-
-```bash
-# See recently called functions with latency
-angel recent 50
-
-# Search for a function/node by name
-angel nodes <name>
-
-# Trace incoming/outgoing call dependencies
-angel trace <function_name>
-
-# Query relations between nodes
-angel relations <function_name>
-```
-
-> **Note for agents:** `angel_trace.py` and `gunicorn.conf.py` are **not dead code**. They are the instrumentation layer for the Angel observability system. Do not remove, rename, or refactor them without understanding the full Angel architecture above.
 
 ---
 
@@ -563,6 +512,8 @@ lab_execute(
 
 ---
 
+### `make_presentation(topic, slides_count, status, timeout)`
+
 **End-to-end AI-generated PowerPoint presentations.**
 
 1. Uses `gemini-2.5-flash` with structured JSON output to plan slide titles, summaries, and visual layouts.
@@ -835,7 +786,7 @@ Stellar will:
 
 > _"Audit this open-source API for authentication vulnerabilities."_
 
-Under the Red Team mandate (persona: **Angel**), Stellar will:
+Under the Red Team mandate (codename: **Angel**), Stellar will:
 
 1. `lab_execute` — clone the target repository, install `sqlmap`, `semgrep`, or custom scanners.
 2. `lab_execute` — run static analysis, enumerate endpoints, attempt injection payloads.
@@ -933,8 +884,6 @@ if is_blocked:
 ```
 
 All tools in `agent_tools.py` implement the same rotation pattern, and `gemini_generate` handles mid-conversation key switches by reconstructing the chat history with the new key's client.
-
-### Credential Store for Subagents
 
 ### Manual Account Switching
 

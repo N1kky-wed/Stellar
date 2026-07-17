@@ -8020,8 +8020,13 @@ def log_request_end(response):
 def add_security_headers(response):
     # Sentinel Security Fix: Prevent MIME-sniffing, clickjacking, and referrer leakage
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    
+    # Don't restrict framing for proxied user subdomains (e.g. live previews)
+    if getattr(g, 'is_proxy', False):
+        response.headers.pop('X-Frame-Options', None)
+    else:
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     
     # Sentinel Security Fix: Apply strict sandbox Content-Security-Policy for files viewed in browser
     # to isolate them from the main origin and prevent script execution (stored XSS protection)
@@ -8052,6 +8057,7 @@ def intercept_subdomains():
 
     # Catch any request to *.stellarai.live (excluding www and the main root domain)
     if len(domain_parts) >= 3 and domain_parts[-2] == 'stellarai' and domain_parts[-1] == 'live' and domain_parts[0] != 'www':
+        g.is_proxy = True
         subdomain = domain_parts[0]
 
         db = get_db()
