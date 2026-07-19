@@ -103,12 +103,11 @@ def test_parse_quota_block_duration_rpd_daily_keyword():
 
 
 def test_parse_quota_block_duration_rpd_billing_keyword():
-    """'billing details' error text triggers the daily-quota branch."""
+    """'billing details' or generic quota error text defaults to 61s / RPM block."""
     from app import parse_quota_block_duration
-    with patch('app.get_seconds_until_pacific_midnight', return_value=3600):
-        duration, reason = parse_quota_block_duration("You exceeded your current quota; update billing details")
-    assert duration == 3600
-    assert reason == 'RPD'
+    duration, reason = parse_quota_block_duration("You exceeded your current quota; update billing details")
+    assert duration == 61
+    assert reason == 'RPM'
 
 
 def test_parse_quota_block_duration_overload_503():

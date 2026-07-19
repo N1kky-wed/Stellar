@@ -755,13 +755,15 @@ def parse_quota_block_duration(error_msg):
         tuple: (duration_seconds, block_reason) where duration_seconds is an int, and block_reason is a str.
     """
     err_lower = error_msg.lower()
-    if ('minute' in err_lower or 'queries per minute' in err_lower or
+    if ('expired' in err_lower or 'invalid' in err_lower or 'disabled' in err_lower or
+        'denied' in err_lower or 'unauthenticated' in err_lower or '401' in err_lower):
+        return 31536000, 'INVALID'
+    elif ('minute' in err_lower or 'queries per minute' in err_lower or
         'rpm' in err_lower or 'tpm' in err_lower or 'queriesperminute' in err_lower):
         # Minute limit / TPM / RPM: Block for 61 seconds (extra 1s for network I/O jitter)
         return 61, 'RPM'
     elif ('requestsperday' in err_lower or 'requests per day' in err_lower or
-          'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower or
-          'exceeded your current quota' in err_lower or 'billing details' in err_lower or 'quota/rate limits' in err_lower):
+          'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower):
         # Daily limit / Quota exhaustion: Block until the next Pacific Midnight reset time
         duration = get_seconds_until_pacific_midnight()
         return duration, 'RPD'
@@ -771,7 +773,7 @@ def parse_quota_block_duration(error_msg):
     elif ('500' in err_lower or 'internal error' in err_lower or 'internal_error' in err_lower):
         # Internal error / 500: Block key for 10 seconds
         return 10, 'INTERNAL'
-    # Minute limit / TPM / RPM: Block for 61 seconds (extra 1s for network I/O jitter)
+    # Default fallback for generic 429/quota errors: Block for 61 seconds (RPM)
     return 61, 'RPM'
 
 

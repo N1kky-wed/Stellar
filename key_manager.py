@@ -114,8 +114,7 @@ def parse_quota_block_duration(error_msg):
         'rpm' in err_lower or 'tpm' in err_lower or 'queriesperminute' in err_lower):
         return 61, 'RPM'
     elif ('requestsperday' in err_lower or 'requests per day' in err_lower or
-          'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower or
-          'exceeded your current quota' in err_lower or 'billing details' in err_lower or 'quota/rate limits' in err_lower):
+          'daily' in err_lower or 'perday' in err_lower or 'projectpermodel-freetier' in err_lower):
         duration = get_seconds_until_pacific_midnight()
         return duration, 'RPD'
     elif ('overloaded' in err_lower or '503' in err_lower or 'service unavailable' in err_lower or 'service_unavailable' in err_lower):
@@ -123,6 +122,7 @@ def parse_quota_block_duration(error_msg):
     elif ('500' in err_lower or 'internal error' in err_lower or 'internal_error' in err_lower):
         return 10, 'INTERNAL'
     return 61, 'RPM'
+
 
 # -------------------------------------------------------------
 # GLOBAL KEY MANAGER CLASS
@@ -182,22 +182,24 @@ class GlobalKeyManager:
                     return True, 'OVERLOAD'
 
         # 1. First check if key has crossed rate limits or reserve limits in Redis
+        # 1. First check if key has crossed rate limits or reserve limits in Redis
         try:
             limits = get_limits(model_id)
             current_time = time.time()
-            current_minute = int(current_time // 60)
             current_day = get_pacific_day_bucket()
             key_hash = hashlib.sha256(key_val.encode('utf-8')).hexdigest()
             
-            rpm_key = f"stellar:count_rpm:{key_hash}:{model_id}:{current_minute}"
             rpd_key = f"stellar:count_rpd:{key_hash}:{model_id}:{current_day}"
-            
             rpd_val = redis_client.get(rpd_key)
             if rpd_val and int(rpd_val) >= limits["rpd"]:
                 return True, 'RPD'
                 
-            rpm_val = redis_client.get(rpm_key)
-            if rpm_val and int(rpm_val) >= limits["rpm"]:
+            # True 60-second sliding window check in Redis
+            zkey = f"stellar:rpm_zset:{key_hash}:{model_id}"
+            window_start = current_time - 60.0
+            redis_client.zremrangebyscore(zkey, "-inf", window_start)
+            rpm_count = redis_client.zcard(zkey)
+            if rpm_count >= limits["rpm"]:
                 return True, 'RPM'
         except Exception:
             pass
@@ -231,13 +233,14 @@ class GlobalKeyManager:
         # 3. Check local memory blocks and local counters
         with self.lock:
             current_time = time.time()
-            current_minute = int(current_time // 60)
             current_day = get_pacific_day_bucket()
             limits = get_limits(model_id)
             
             if self.local_rpd.get((key_val, model_id, current_day), 0) >= limits["rpd"]:
                 return True, 'RPD'
-            if self.local_rpm.get((key_val, model_id, current_minute), 0) >= limits["rpm"]:
+            
+            local_rpm_list = [t for t in self.local_rpm.get((key_val, model_id), []) if t > current_time - 60.0]
+            if len(local_rpm_list) >= limits["rpm"]:
                 return True, 'RPM'
                 
             blocked_time = self.blocked_until.get((key_val, model_id), 0)
@@ -254,23 +257,28 @@ class GlobalKeyManager:
             return
         limits = get_limits(model_id)
         current_time = time.time()
-        current_minute = int(current_time // 60)
         current_day = get_pacific_day_bucket()
 
-        # Redis implementation
+        # Redis implementation (True 60-second sliding window)
         try:
             key_hash = hashlib.sha256(key_val.encode('utf-8')).hexdigest()
-            rpm_key = f"stellar:count_rpm:{key_hash}:{model_id}:{current_minute}"
+            zkey = f"stellar:rpm_zset:{key_hash}:{model_id}"
             rpd_key = f"stellar:count_rpd:{key_hash}:{model_id}:{current_day}"
+            window_start = current_time - 60.0
+            member_id = f"{current_time}:{os.getpid()}:{time.monotonic()}"
+
+            pipe = redis_client.pipeline()
+            pipe.zremrangebyscore(zkey, "-inf", window_start)
+            pipe.zadd(zkey, {member_id: current_time})
+            pipe.expire(zkey, 120)
+            pipe.zcard(zkey)
+            pipe.incr(rpd_key)
+            pipe.expire(rpd_key, 90000)
+            res = pipe.execute()
+
+            rpm_count = res[3]
+            rpd_count = res[4]
             
-            rpm_count = redis_client.incr(rpm_key)
-            if rpm_count == 1:
-                redis_client.expire(rpm_key, 80)
-                
-            rpd_count = redis_client.incr(rpd_key)
-            if rpd_count == 1:
-                redis_client.expire(rpd_key, 90000)
-                
             if rpm_count >= limits["rpm"]:
                 remaining = 60 - int(current_time % 60)
                 block_duration = max(10, remaining)
@@ -285,18 +293,16 @@ class GlobalKeyManager:
         except Exception as e:
             logger.error(f"Error incrementing request counts in Redis: {e}")
 
-        # Local memory fallback
+        # Local memory fallback (Sliding window list)
         with self.lock:
-            for k in list(self.local_rpm.keys()):
-                if k[2] != current_minute:
-                    del self.local_rpm[k]
             for k in list(self.local_rpd.keys()):
                 if k[2] != current_day:
                     del self.local_rpd[k]
                     
-            rpm_key_local = (key_val, model_id, current_minute)
-            self.local_rpm[rpm_key_local] = self.local_rpm.get(rpm_key_local, 0) + 1
-            rpm_count = self.local_rpm[rpm_key_local]
+            local_rpm_list = [t for t in self.local_rpm.get((key_val, model_id), []) if t > current_time - 60.0]
+            local_rpm_list.append(current_time)
+            self.local_rpm[(key_val, model_id)] = local_rpm_list
+            rpm_count = len(local_rpm_list)
             
             rpd_key_local = (key_val, model_id, current_day)
             self.local_rpd[rpd_key_local] = self.local_rpd.get(rpd_key_local, 0) + 1
@@ -489,14 +495,8 @@ try:
                 return original_generate_content(*args, **kwargs)
             self.models.generate_content = wrapped_generate_content
 
-        # Wrap models.count_tokens
-        if hasattr(self, 'models') and hasattr(self.models, 'count_tokens'):
-            original_count_tokens = self.models.count_tokens
-            def wrapped_count_tokens(*args, **kwargs):
-                model = kwargs.get('model') or (args[0] if args else None)
-                KEY_MANAGER.record_request(api_key, model)
-                return original_count_tokens(*args, **kwargs)
-            self.models.count_tokens = wrapped_count_tokens
+        # Do not instrument models.count_tokens because metadata token count queries
+        # do not consume model generation RPM quota.
 
         # Wrap chats.create
         if hasattr(self, 'chats') and hasattr(self.chats, 'create'):
