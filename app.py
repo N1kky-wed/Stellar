@@ -8,6 +8,15 @@ import queue
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, g, session, current_app, make_response, has_request_context, redirect, render_template
 from flask_session import Session
 import os
+from dotenv import load_dotenv
+from pathlib import Path
+
+script_dir = Path(__file__).resolve().parent
+keys_env_path = script_dir / 'keys.env'
+if keys_env_path.is_file():
+    load_dotenv(dotenv_path=keys_env_path, override=True)
+
+STELLAR_DOMAIN = os.environ.get('STELLAR_DOMAIN', 'stellarai.site')
 import re
 import time
 import json
@@ -110,13 +119,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-script_dir = Path(__file__).resolve().parent
-keys_env_path = script_dir / 'keys.env'
-if keys_env_path.is_file():
-    load_dotenv(dotenv_path=keys_env_path, override=True)
-    logger.info("Loaded keys.env environment variables.")
-else:
-    logger.error(f"CRITICAL: keys.env NOT FOUND at {keys_env_path}.")
 # -------------------------------
 # VAPID Key Loading & Generation for PWA Web Push
 # -------------------------------
@@ -2706,7 +2708,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 except Exception:
                     logger.exception("Failed to persist host_port for %s", process_id)
 
-                public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
+                public_url = f"https://{subdomain}.{STELLAR_DOMAIN}/" if subdomain else f"https://{process_id}.{STELLAR_DOMAIN}/"
                 _put_event({'type': 'phase', 'phase': 'ready'})
                 _put_event({'type': 'log', 'content': f'✨ Server is ready! Available at {public_url}'})
                 _put_event({'type': 'port_info', 'url': public_url})
@@ -3866,7 +3868,7 @@ def send_approval_email(recipient_email, display_name):
                                     Your account has been successfully approved and provisioned for the Stellar Autonomous Environment. You can now log in and begin orchestrating clusters and generating analytics.
                                 </p>
                                 
-                                <a href="https://stellarai.live" style="display: inline-block; background-color: #4285F4; color: white; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 1rem; letter-spacing: 0.5px;">ENTER STELLAR</a>
+                                <a href="https://{STELLAR_DOMAIN}" style="display: inline-block; background-color: #4285F4; color: white; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 1rem; letter-spacing: 0.5px;">ENTER STELLAR</a>
                             </td>
                         </tr>
                     </table>
@@ -3877,7 +3879,7 @@ def send_approval_email(recipient_email, display_name):
     </html>
     """
     
-    msg.set_content(f"Welcome to Stellar, {display_name}! Your account has been approved. Visit https://stellarai.live to access the platform.")
+    msg.set_content(f"Welcome to Stellar, {display_name}! Your account has been approved. Visit https://{STELLAR_DOMAIN} to access the platform.")
     msg.add_alternative(html_content, subtype='html')
 
     try:
@@ -4111,7 +4113,7 @@ def logout_user():
     # 2. Delete cookie on parent wildcard domain to clean up stale cookies from prior configurations
     response.delete_cookie(
         app.config.get('SESSION_COOKIE_NAME', 'stellar_session_main'),
-        domain='.stellarai.live',
+        domain=f'.{STELLAR_DOMAIN}',
         path='/'
     )
     # 3. Delete cookie on exact host (no domain parameter)
@@ -4460,7 +4462,7 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
         <div class="auth-card">
             <div class="logo-mark">STELLAR</div>
             <div class="subtitle" style="margin-bottom: 30px;">
-                Open a terminal, run <code>ssh stellar@stellarai.live</code>, generate your access code below, and paste it to connect.
+                Open a terminal, run <code>ssh stellar@{STELLAR_DOMAIN}</code>, generate your access code below, and paste it to connect.
             </div>
 
             <button class="btn" id="genBtn" onclick="generateCode()">Generate SSH Code</button>
@@ -5601,7 +5603,7 @@ def run_code():
                             with active_apps_lock:
                                 active_apps[process_id] = {"port": int(host_port), "container_id": container.id}
                             redis_client.hset(redis_key, mapping={"host_port": str(host_port), "status": "running"})
-                            public_url = f"https://{process_id}.stellarai.live/"
+                            public_url = f"https://{process_id}.{STELLAR_DOMAIN}/"
                             yield f"data: {json.dumps({'type': 'port_info', 'url': public_url})}\n\n"
                             public_url_found = True
                             break
@@ -6001,8 +6003,9 @@ def intercept_subdomains():
     host = request.headers.get('Host', '')
     domain_parts = host.split(':')[0].split('.')
 
-    # Catch any request to *.stellarai.live (excluding www and the main root domain)
-    if len(domain_parts) >= 3 and domain_parts[-2] == 'stellarai' and domain_parts[-1] == 'live' and domain_parts[0] != 'www':
+    # Catch any request to *.{STELLAR_DOMAIN} (excluding www and the main root domain)
+    expected_domain_parts = STELLAR_DOMAIN.split('.')
+    if len(domain_parts) >= len(expected_domain_parts) + 1 and domain_parts[-2] == expected_domain_parts[-2] and domain_parts[-1] == expected_domain_parts[-1] and domain_parts[0] != 'www':
         subdomain = domain_parts[0]
 
         db = get_db()

@@ -2,7 +2,7 @@
 
 > **A persistent, stateful, multi-user AI operating system delivering total autonomous agency across infrastructure, research, development, and security.**
 
-Stellar is a production-grade Flask application powering [stellarai.live](https://stellarai.live) — a platform where users interact with a suite of AI agents (Crimson, Obsidian, Lunarity, Emerald) backed by the Gemini API. It is not merely a chatbot. It is a full AI runtime with native Docker orchestration, isolated sandboxed execution, persistent memory, autonomous scheduling, multi-modal content generation, and an extensible mandate system.
+Stellar is a production-grade Flask application powering [stellarai.site](https://stellarai.site) — a platform where users interact with a suite of AI agents (Crimson, Obsidian, Lunarity, Emerald) backed by the Gemini API. It is not merely a chatbot. It is a full AI runtime with native Docker orchestration, isolated sandboxed execution, persistent memory, autonomous scheduling, multi-modal content generation, and an extensible mandate system.
 
 ---
 
@@ -33,7 +33,7 @@ Stellar is a production-grade Flask application powering [stellarai.live](https:
 ## Architecture Overview
 
 ```
-Internet ──► Nginx (HTTPS + wildcard *.stellarai.live)
+Internet ──► Nginx (HTTPS + wildcard *.stellarai.site)
                 │
                 ▼
           Gunicorn (gthread, 4 workers × 25 threads)
@@ -190,7 +190,7 @@ Stellar uses Docker extensively. All AI-executed code runs inside isolated conta
 
 - **Purpose:** Full application hosting environments for `repo_control` — deploy Node.js, React, Python Flask, Go, Ruby, or any custom stack.
 - **Naming:** `stellar-repo-<process_id>`
-- **Subdomain Routing:** Each deployment gets a unique subdomain `https://<name>.stellarai.live/` routed through Nginx.
+- **Subdomain Routing:** Each deployment gets a unique subdomain `https://<name>.stellarai.site/` routed through Nginx.
 - **Persistence:** File snapshots stored in SQLite (`repo_history.files_snapshot` column as JSON). Auto-snapshot occurs before any `stop` or `restart` action.
 - **Lifespan:** Maximum 90 hours per container.
 - **Mobile Builds:** Setting `env_type='mobile'` provisions a `reactnativecommunity/react-native-android` container instead.
@@ -237,10 +237,10 @@ Stellar includes a fully custom, interactive SSH Terminal User Interface (TUI) g
 
 **Authentication & Login Flow:**
 Stellar completely replaces traditional SSH public-key authentication with a modern, short-lived device authorization flow tied to the user's web session:
-1. The user initiates a connection via `ssh stellar@stellarai.live`.
+1. The user initiates a connection via `ssh stellar@stellarai.site`.
 2. The OpenSSH server matches the `stellar` user, disables all tunneling/port-forwarding, and forces the connection into the Python Paramiko SSH server (`ssh_gateway.py`).
 3. The user is presented with an ASCII art prompt requesting a 6-character code.
-4. The user visits `https://stellarai.live/auth/ssh` in their browser. Because this route is protected by `@require_approval`, the user **must be securely logged into their Stellar web account**.
+4. The user visits `https://stellarai.site/auth/ssh` in their browser. Because this route is protected by `@require_approval`, the user **must be securely logged into their Stellar web account**.
 5. The web app generates a cryptographically random 6-character code, ties it securely to the user's ID, stores it in Redis with a 5-minute TTL, and enforces a strict rate limit.
 6. The user pastes this code into their SSH terminal. The gateway verifies the code against Redis via an internal API. Upon success, the session is instantly authenticated as the correct user without ever exposing server credentials or requiring public SSH keys.
 
@@ -252,7 +252,7 @@ Stellar completely replaces traditional SSH public-key authentication with a mod
 
 **Usage:**
 ```bash
-ssh stellar@stellarai.live
+ssh stellar@stellarai.site
 ```
 
 **Service Deployment:**
@@ -274,7 +274,7 @@ sudo nginx -t && sudo systemctl reload nginx
 ```
 
 Key Nginx settings:
-- **SSL:** Let's Encrypt certificates for `stellarai.live` and `*.stellarai.live`
+- **SSL:** Let's Encrypt certificates for `stellarai.site` and `*.stellarai.site`
 - **Max body size:** 50MB (for file uploads)
 - **Proxy timeouts:** 3600s (matching Gunicorn)
 - **Buffering:** Disabled (`proxy_buffering off`) for real-time streaming
@@ -396,7 +396,7 @@ Re-generates a single slide in an existing presentation using the original slide
 - **Quality tiers:** `512`, `1K`, `2K`, `4K`.
 - **Aspect ratios:** `1:1`, `3:4`, `4:3`, `9:16`, `16:9`.
 - **Reference images:** Pass up to 14 uploaded filenames for image editing, style transfer, or conditioning.
-- Generated images are saved to `outputs/` and served at `https://stellarai.live/view/<filename>`.
+- Generated images are saved to `outputs/` and served at `https://stellarai.site/view/<filename>`.
 
 ---
 
@@ -826,4 +826,4 @@ my_app/
 
 ---
 
-*Built with Flask · Powered by Gemini · Deployed on stellarai.live*
+*Built with Flask · Powered by Gemini · Deployed on stellarai.site*

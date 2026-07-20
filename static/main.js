@@ -4185,8 +4185,8 @@ const defaultAgentSettings = {
             // Hide the original raw text link so it looks cleaner
             link.style.display = "none";
           } else if (
-            url.endsWith("stellarai.live") ||
-            url.endsWith("stellarai.live/")
+            url.endsWith(window.location.hostname) ||
+            url.endsWith(window.location.hostname + "/")
           ) {
             // Check if the application is online before rendering the iframe
             fetch("/api/utils/check_url?url=" + encodeURIComponent(url))

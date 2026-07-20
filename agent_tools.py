@@ -4,6 +4,7 @@ import requests
 import json
 import base64
 import os
+STELLAR_DOMAIN = os.environ.get('STELLAR_DOMAIN', 'stellarai.site')
 import re
 from tavily import TavilyClient
 import asyncio
@@ -577,7 +578,7 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
                     with open(file_path, "wb") as f:
                         f.write(img_data)
                     
-                    return f"![Generated Image](https://stellarai.live/view/{filename})"
+                    return f"![Generated Image](https://{STELLAR_DOMAIN}/view/{filename})"
             return "Error: Image model returned no visual data. Since image generation failed, please use the web search tool to find relevant images on the web instead."
         except Exception as e:
             logger.error(f"Error in generate_image tool: {e}", exc_info=True)
@@ -1222,7 +1223,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                 host_port = container.attrs['NetworkSettings']['Ports'][f"{port}/tcp"][0]['HostPort']
                 redis_client.hset(r_key, mapping={"container_id": container.id, "status": "running", "process_id": process_id, "host_port": str(host_port), "files": json.dumps(initial_files)})
                 with active_apps_lock: active_apps[process_id] = {"container_id": container.id, "port": host_port, "status": "running"}
-                db.execute("UPDATE repo_history SET status = 'running', deployment_url = ? WHERE process_id = ?", (f"https://{subdomain}.stellarai.live/", process_id))
+                db.execute("UPDATE repo_history SET status = 'running', deployment_url = ? WHERE process_id = ?", (f"https://{subdomain}.{STELLAR_DOMAIN}/", process_id))
                 db.commit()
                 
                 if repo_url and not os.listdir(project_dir):
@@ -1231,7 +1232,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                 
                 restored_count = len(existing_snapshot) if existing_snapshot else 0
                 
-                public_url = f"https://{subdomain}.stellarai.live/"
+                public_url = f"https://{subdomain}.{STELLAR_DOMAIN}/"
                 restore_msg = f" (Restored {restored_count} files from snapshot)" if restored_count > 0 else ""
                 return f"Container provisioned for '{project_title}'! ID: `{process_id}`. Live URL: {public_url}{restore_msg} Use action='execute' to build and start the app. CRITICAL: Ensure your app listens on 0.0.0.0 and port {port}."
             except Exception as e:
@@ -1313,7 +1314,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             if not history: return "You have no past deployments."
             res = "### Your Deployment History:\n"
             for row in history:
-                url = row['deployment_url'] or (f"https://{row['subdomain']}.stellarai.live/" if row['subdomain'] else f"https://{row['process_id']}.stellarai.live/")
+                url = row['deployment_url'] or (f"https://{row['subdomain']}.{STELLAR_DOMAIN}/" if row['subdomain'] else f"https://{row['process_id']}.{STELLAR_DOMAIN}/")
                 url_str = f" - [Visit App]({url})" if row['status'] == 'running' else ""
                 res += f"- **{row['project_name']}** (ID: `{row['process_id']}`) - Status: {row['status']} - Created: {row['created_at']}{url_str}\n"
             return res
@@ -1328,7 +1329,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             
             actual_id = row['process_id']
             new_subdomain = generate_unique_subdomain(project_name)
-            new_url = f"https://{new_subdomain}.stellarai.live/"
+            new_url = f"https://{new_subdomain}.{STELLAR_DOMAIN}/"
             
             db.execute("UPDATE repo_history SET project_name = ?, subdomain = ?, deployment_url = ? WHERE process_id = ?", (project_name, new_subdomain, new_url, actual_id))
             db.commit()
@@ -1462,7 +1463,7 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             if repo_url and not os.listdir(project_dir):
                 container.exec_run(f"git clone {repo_url} .")
 
-            public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
+            public_url = f"https://{subdomain}.{STELLAR_DOMAIN}/" if subdomain else f"https://{process_id}.{STELLAR_DOMAIN}/"
             
             # Re-run health check loop
             status_code = 0

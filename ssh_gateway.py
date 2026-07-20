@@ -5,8 +5,8 @@ Stellar SSH Gateway
 Secure SSH-based TUI for managing Docker container deployments.
 
 Flow:
-  1. User connects: ssh stellarai.live
-  2. Sees auth screen → visits https://stellarai.live/auth/ssh
+  1. User connects: ssh <STELLAR_DOMAIN>
+  2. Sees auth screen → visits https://<STELLAR_DOMAIN>/auth/ssh
   3. Generates one-time code, pastes into SSH terminal
   4. Authenticated → TUI dashboard with repo list
   5. Select a repo → drops into interactive container shell
@@ -20,6 +20,16 @@ Security:
   - Audit logging of all connections and actions
   - Container ownership validation against database
 """
+
+import os
+from dotenv import load_dotenv
+from pathlib import Path
+
+_keys_env_path = Path(__file__).resolve().parent / 'keys.env'
+if _keys_env_path.is_file():
+    load_dotenv(dotenv_path=_keys_env_path, override=True)
+
+STELLAR_DOMAIN = os.environ.get('STELLAR_DOMAIN', 'stellarai.site')
 
 import paramiko
 import threading
@@ -493,7 +503,7 @@ class TUI:
         content = Text.from_markup(TUI.get_big_logo(theme) + "\n", justify="center")
         content.append("\nAuthentication required\n", style=f"bold {theme['text']}")
         content.append(f"Visit ", style=theme['dim'])
-        content.append("https://stellarai.live/auth/ssh", style=f"bold underline {theme['accent']}")
+        content.append(f"https://{STELLAR_DOMAIN}/auth/ssh", style=f"bold underline {theme['accent']}")
         content.append(f"\nto generate your one-time access code.\n\n", style=theme['dim'])
         
         # Format code

@@ -1,5 +1,13 @@
 import json
 import os
+from dotenv import load_dotenv
+from pathlib import Path
+
+_keys_env_path = Path(__file__).resolve().parents[1] / 'keys.env'
+if _keys_env_path.is_file():
+    load_dotenv(dotenv_path=_keys_env_path, override=True)
+
+STELLAR_DOMAIN = os.environ.get('STELLAR_DOMAIN', 'stellarai.site')
 import pytest
 from unittest.mock import patch, MagicMock
 from app import get_db
@@ -26,7 +34,7 @@ def setup_repo_history(client):
 def test_log_error_invalid_subdomain(mock_redis, client):
     # Test error logging without mapping
     payload = {
-        "url": "https://unknown.stellarai.live/some/path",
+        "url": f"https://unknown.{STELLAR_DOMAIN}/some/path",
         "error": {
             "type": "js_error",
             "message": "Uncaught ReferenceError: x is not defined",
@@ -47,7 +55,7 @@ def test_log_error_invalid_subdomain(mock_redis, client):
 def test_log_error_success(mock_redis, setup_repo_history, client):
     # Test error logging with valid mapping
     payload = {
-        "url": "https://mysubdomain.stellarai.live/some/path",
+        "url": f"https://mysubdomain.{STELLAR_DOMAIN}/some/path",
         "error": {
             "type": "js_error",
             "message": "Uncaught ReferenceError: x is not defined",
