@@ -397,7 +397,7 @@ def test_sentinel_log_error_no_deployment_mapping(auth_client):
     the endpoint returns 404 with 'No deployment mapping found'.
     """
     payload = {
-        'url': 'https://nonexistent-subdomain.stellarai.live',
+        'url': 'https://nonexistent-subdomain.stellarai.site',
         'error': {
             'type': 'ReferenceError',
             'message': 'x is not defined',
@@ -428,7 +428,7 @@ def test_sentinel_log_error_success_owner(auth_client):
 
     with patch('app.log_backend_crash', return_value=42) as mock_log:
         payload = {
-            'url': 'https://myapp123.stellarai.live',
+            'url': 'https://myapp123.stellarai.site',
             'error': {
                 'type': 'TypeError',
                 'message': 'Cannot read property of null',
@@ -471,7 +471,7 @@ def test_sentinel_log_error_non_owner_no_heal(client):
     # Do NOT set session — visitor is unauthenticated
     with patch('app.log_backend_crash', return_value=99) as mock_log:
         payload = {
-            'url': 'https://ownersapp.stellarai.live',
+            'url': 'https://ownersapp.stellarai.site',
             'error': {
                 'type': 'SyntaxError',
                 'message': 'bad syntax',
@@ -509,7 +509,7 @@ def test_sentinel_status_no_matching_subdomain(client):
     """
     A URL whose subdomain has no matching deployment returns {healing: false}.
     """
-    response = client.get('/api/sentinel/status?url=https://ghost-app.stellarai.live')
+    response = client.get('/api/sentinel/status?url=https://ghost-app.stellarai.site')
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['healing'] is False
@@ -530,7 +530,7 @@ def test_sentinel_status_healing_false_when_no_redis_key(auth_client):
         db.commit()
 
     with patch('app.redis_client.get', return_value=None):
-        response = auth_client.get('/api/sentinel/status?url=https://healapp.stellarai.live')
+        response = auth_client.get('/api/sentinel/status?url=https://healapp.stellarai.site')
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['healing'] is False
@@ -550,7 +550,7 @@ def test_sentinel_status_healing_true_when_redis_key_present(auth_client):
         db.commit()
 
     with patch('app.redis_client.get', return_value=b'1'):
-        response = auth_client.get('/api/sentinel/status?url=https://healapp2.stellarai.live')
+        response = auth_client.get('/api/sentinel/status?url=https://healapp2.stellarai.site')
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['healing'] is True

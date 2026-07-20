@@ -6,7 +6,7 @@ import orchestrator.quota as quota
 # Brief comment: Asserts that parse_quota_text correctly parses Gemini and Claude weekly/sprint percentages and refresh times under normal circumstances.
 def test_parse_quota_text_normal_parsing_success():
     raw_output = """
-    Account: testagent@stellarai.live
+    Account: testagent@stellarai.site
     
     GEMINI MODELS:
     Weekly Limit
@@ -30,7 +30,7 @@ def test_parse_quota_text_normal_parsing_success():
     
     # Verify Gemini parsing
     gemini = parsed["gemini"]
-    assert gemini["account"] == "testagent@stellarai.live"
+    assert gemini["account"] == "testagent@stellarai.site"
     assert gemini["weekly_percent"] == 100.0
     assert gemini["weekly_refreshes_in_hours"] == 12.5
     assert gemini["sprint_percent"] == 85.5
@@ -41,7 +41,7 @@ def test_parse_quota_text_normal_parsing_success():
     
     # Verify Claude parsing
     claude = parsed["claude"]
-    assert claude["account"] == "testagent@stellarai.live"
+    assert claude["account"] == "testagent@stellarai.site"
     assert claude["weekly_percent"] == 50.0
     assert claude["weekly_refreshes_in_hours"] == 4.0
     assert claude["sprint_percent"] == 0.0
@@ -70,7 +70,7 @@ def test_parse_quota_text_exception_logged_as_error():
 # Brief comment: Asserts that parse_quota_text handles exhausted weekly limits and marks the status as Exhausted.
 def test_parse_quota_text_exhausted_weekly_status():
     raw_output = """
-    Account: testagent@stellarai.live
+    Account: testagent@stellarai.site
     
     GEMINI MODELS:
     Weekly Limit
@@ -83,7 +83,7 @@ def test_parse_quota_text_exhausted_weekly_status():
 # Brief comment: Asserts that parse_quota_text handles sprint exhausted state (sprint limit < 10% and refresh > 0) and sets status to Sprint Exhausted.
 def test_parse_quota_text_sprint_exhausted_status():
     raw_output = """
-    Account: testagent@stellarai.live
+    Account: testagent@stellarai.site
     
     GEMINI MODELS:
     Weekly Limit

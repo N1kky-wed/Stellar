@@ -669,7 +669,7 @@ original_get_cookie_domain = app.session_interface.get_cookie_domain
 def custom_get_cookie_domain(app):
     """
     Retrieve the custom session cookie domain to support wildcard subdomains dynamically.
-    If 'stellarai.live' is in the request host header, it returns '.stellarai.live' to share
+    If 'stellarai.site' is in the request host header, it returns '.stellarai.site' to share
     session cookies across subdomains.
 
     Args:
@@ -680,8 +680,8 @@ def custom_get_cookie_domain(app):
     """
     if has_request_context():
         host = request.headers.get('Host', '')
-        if 'stellarai.live' in host:
-            return '.stellarai.live'
+        if 'stellarai.site' in host:
+            return '.stellarai.site'
     return original_get_cookie_domain(app)
 app.session_interface.get_cookie_domain = custom_get_cookie_domain
 
@@ -3371,7 +3371,7 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                 except Exception:
                     logger.exception("Failed to persist host_port for %s", process_id)
 
-                public_url = f"https://{subdomain}.stellarai.live/" if subdomain else f"https://{process_id}.stellarai.live/"
+                public_url = f"https://{subdomain}.stellarai.site/" if subdomain else f"https://{process_id}.stellarai.site/"
                 _put_event({'type': 'phase', 'phase': 'ready'})
                 _put_event({'type': 'log', 'content': f'✨ Server is ready! Available at {public_url}'})
                 _put_event({'type': 'port_info', 'url': public_url})
@@ -4695,7 +4695,7 @@ def send_approval_email(recipient_email, display_name):
                                     Your account has been successfully approved and provisioned for the Stellar Autonomous Environment. You can now log in and begin orchestrating clusters and generating analytics.
                                 </p>
 
-                                <a href="https://stellarai.live" style="display: inline-block; background-color: #4285F4; color: white; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 1rem; letter-spacing: 0.5px;">ENTER STELLAR</a>
+                                <a href="https://stellarai.site" style="display: inline-block; background-color: #4285F4; color: white; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 1rem; letter-spacing: 0.5px;">ENTER STELLAR</a>
                             </td>
                         </tr>
                     </table>
@@ -4706,7 +4706,7 @@ def send_approval_email(recipient_email, display_name):
     </html>
     """
 
-    msg.set_content(f"Welcome to Stellar, {display_name}! Your account has been approved. Visit https://stellarai.live to access the platform.")
+    msg.set_content(f"Welcome to Stellar, {display_name}! Your account has been approved. Visit https://stellarai.site to access the platform.")
     msg.add_alternative(html_content, subtype='html')
 
     logger.info("Sending approval email to recipient_email=%s", recipient_email)
@@ -5061,7 +5061,7 @@ def logout_user():
     # 2. Delete cookie on parent wildcard domain to clean up stale cookies from prior configurations
     response.delete_cookie(
         app.config.get('SESSION_COOKIE_NAME', 'stellar_session_main'),
-        domain='.stellarai.live',
+        domain='.stellarai.site',
         path='/'
     )
     # 3. Delete cookie on exact host (no domain parameter)
@@ -5410,7 +5410,7 @@ _SSH_AUTH_PAGE_HTML = '''<!DOCTYPE html>
         <div class="auth-card">
             <div class="logo-mark">STELLAR</div>
             <div class="subtitle" style="margin-bottom: 30px;">
-                Open a terminal, run <code>ssh stellar@stellarai.live</code>, generate your access code below, and paste it to connect.
+                Open a terminal, run <code>ssh stellar@stellarai.site</code>, generate your access code below, and paste it to connect.
             </div>
 
             <button class="btn" id="genBtn" onclick="generateCode()">Generate SSH Code</button>
@@ -7565,7 +7565,7 @@ def run_code():
                             with active_apps_lock:
                                 active_apps[process_id] = {"port": int(host_port), "container_id": container.id}
                             redis_client.hset(redis_key, mapping={"host_port": str(host_port), "status": "running"})
-                            public_url = f"https://{process_id}.stellarai.live/"
+                            public_url = f"https://{process_id}.stellarai.site/"
                             yield f"data: {json.dumps({'type': 'port_info', 'url': public_url})}\n\n"
                             public_url_found = True
                             break
@@ -8057,7 +8057,7 @@ def intercept_subdomains():
     host = request.headers.get('Host', '')
     domain_parts = host.split(':')[0].split('.')
 
-    # Catch any request to *.stellarai.live (excluding www and the main root domain)
+    # Catch any request to *.stellarai.site (excluding www and the main root domain)
     if len(domain_parts) >= 3 and domain_parts[-2] == 'stellarai' and domain_parts[-1] == 'live' and domain_parts[0] != 'www':
         g.is_proxy = True
         subdomain = domain_parts[0]

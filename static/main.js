@@ -4132,8 +4132,8 @@ function unwrapVisuals(container) {
       // Hide the original raw text link so it looks cleaner
       link.style.display = "none";
     } else if (
-      url.endsWith("stellarai.live") ||
-      url.endsWith("stellarai.live/")
+      url.endsWith("stellarai.site") ||
+      url.endsWith("stellarai.site/")
     ) {
       // Check if the application is online before rendering the iframe
       fetch("/api/utils/check_url?url=" + encodeURIComponent(url))

@@ -1,6 +1,6 @@
 [Unit]
 Description=Stellar Autonomous Agent Orchestrator
-Documentation=https://stellarai.live
+Documentation=https://stellarai.site
 After=network.target docker.service
 Requires=docker.service
 

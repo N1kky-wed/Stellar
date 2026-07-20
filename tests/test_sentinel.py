@@ -26,7 +26,7 @@ def setup_repo_history(client):
 def test_log_error_invalid_subdomain(mock_redis, client):
     # Test error logging without mapping
     payload = {
-        "url": "https://unknown.stellarai.live/some/path",
+        "url": "https://unknown.stellarai.site/some/path",
         "error": {
             "type": "js_error",
             "message": "Uncaught ReferenceError: x is not defined",
@@ -47,7 +47,7 @@ def test_log_error_invalid_subdomain(mock_redis, client):
 def test_log_error_success(mock_redis, setup_repo_history, client):
     # Test error logging with valid mapping
     payload = {
-        "url": "https://mysubdomain.stellarai.live/some/path",
+        "url": "https://mysubdomain.stellarai.site/some/path",
         "error": {
             "type": "js_error",
             "message": "Uncaught ReferenceError: x is not defined",
@@ -88,7 +88,7 @@ def test_log_error_success(mock_redis, setup_repo_history, client):
 def test_log_error_non_owner(mock_redis, setup_repo_history, client):
     # Test error logging with valid mapping but visitor is a different user (not owner)
     payload = {
-        "url": "https://mysubdomain.stellarai.live/some/path",
+        "url": "https://mysubdomain.stellarai.site/some/path",
         "error": {
             "type": "js_error",
             "message": "Uncaught ReferenceError: x is not defined",
@@ -115,7 +115,7 @@ def test_log_error_non_owner(mock_redis, setup_repo_history, client):
 def test_log_error_anonymous(mock_redis, setup_repo_history, client):
     # Test error logging with valid mapping but visitor is anonymous (no session)
     payload = {
-        "url": "https://mysubdomain.stellarai.live/some/path",
+        "url": "https://mysubdomain.stellarai.site/some/path",
         "error": {
             "type": "js_error",
             "message": "Uncaught ReferenceError: x is not defined",
@@ -287,7 +287,7 @@ def test_sentinel_status_no_mapping(mock_redis, client):
     Asserts that sentinel status route returns healing: False if subdomain does not map
     to any process in repo_history.
     """
-    response = client.get('/api/sentinel/status?url=https://unknown.stellarai.live')
+    response = client.get('/api/sentinel/status?url=https://unknown.stellarai.site')
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['healing'] is False
@@ -299,7 +299,7 @@ def test_sentinel_status_not_healing(mock_redis, setup_repo_history, client):
     but Redis key "sentinel:healing:<process_id>" is not set.
     """
     mock_redis.get.return_value = None
-    response = client.get('/api/sentinel/status?url=https://mysubdomain.stellarai.live')
+    response = client.get('/api/sentinel/status?url=https://mysubdomain.stellarai.site')
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['healing'] is False
@@ -312,7 +312,7 @@ def test_sentinel_status_healing(mock_redis, setup_repo_history, client):
     and Redis key "sentinel:healing:<process_id>" is set.
     """
     mock_redis.get.return_value = b"1"
-    response = client.get('/api/sentinel/status?url=https://mysubdomain.stellarai.live')
+    response = client.get('/api/sentinel/status?url=https://mysubdomain.stellarai.site')
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['healing'] is True
