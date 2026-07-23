@@ -447,6 +447,31 @@
           }
         });
 
+        // Ctrl+V paste: let browser fire native paste event, intercept it below
+        // Ctrl+C copy: copy selection if text is selected, otherwise send SIGINT
+        term.attachCustomKeyEventHandler((event) => {
+          if (event.type === "keydown" && event.ctrlKey && event.key === "v") {
+            return false; // let browser handle it -> fires paste event
+          }
+          if (event.type === "keydown" && event.ctrlKey && event.key === "c") {
+            const selection = term.getSelection();
+            if (selection) {
+              navigator.clipboard.writeText(selection);
+              return false;
+            }
+          }
+          return true;
+        });
+
+        // Capture native paste event on the terminal container
+        document.getElementById("terminal").addEventListener("paste", (e) => {
+          e.preventDefault();
+          const text = (e.clipboardData || window.clipboardData).getData("text");
+          if (text && sessionId) {
+            sendInput(text);
+          }
+        });
+
         window.addEventListener("resize", () => {
           resizeTerminal();
         });

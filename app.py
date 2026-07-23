@@ -5139,8 +5139,14 @@ import termios
 import subprocess
 import uuid
 import queue
+import redis as _redis_module
 
 active_terminals = {}
+
+# Dedicated binary Redis client for PTY terminal I/O (the global redis_client
+# uses decode_responses=True which corrupts binary terminal data and causes
+# 'str' object has no attribute 'decode' errors in the pubsub listener).
+_terminal_redis = _redis_module.StrictRedis(host='localhost', port=6379, db=0, decode_responses=False)
 
 class LocalTerminalSession:
     def __init__(self, session_id, process_id, master_fd, child_pid, process_obj, user_id):
@@ -5171,7 +5177,7 @@ class LocalTerminalSession:
         
         try:
             # Set initial active state in Redis
-            redis_client.setex(active_key, 300, str(self.user_id))
+            _terminal_redis.setex(active_key, 300, str(self.user_id))
             
             while self.active:
                 r, w, x = select.select([self.master_fd], [], [], 0.5)
@@ -5188,9 +5194,9 @@ class LocalTerminalSession:
                         if len(self.history) > self.max_history:
                             self.history = self.history[-self.max_history:]
                         
-                        redis_client.setex(history_key, 600, bytes(self.history))
-                        redis_client.expire(active_key, 300)
-                        redis_client.publish(output_channel, data)
+                        _terminal_redis.setex(history_key, 600, bytes(self.history))
+                        _terminal_redis.expire(active_key, 300)
+                        _terminal_redis.publish(output_channel, data)
                     except Exception:
                         break
         finally:
@@ -5200,7 +5206,7 @@ class LocalTerminalSession:
         input_channel = f"stellar:terminal:input:{self.session_id}"
         resize_channel = f"stellar:terminal:resize:{self.session_id}"
         
-        pubsub = redis_client.pubsub()
+        pubsub = _terminal_redis.pubsub()
         pubsub.subscribe(input_channel, resize_channel)
         
         try:
@@ -5213,8 +5219,6 @@ class LocalTerminalSession:
                     
                     if channel == input_channel:
                         try:
-                            if isinstance(payload, str):
-                                payload = payload.encode('utf-8')
                             os.write(self.master_fd, payload)
                             self.last_activity = time.time()
                         except Exception as e:
@@ -5222,10 +5226,7 @@ class LocalTerminalSession:
                             
                     elif channel == resize_channel:
                         try:
-                            import json
-                            if isinstance(payload, bytes):
-                                payload = payload.decode('utf-8')
-                            dims = json.loads(payload)
+                            dims = json.loads(payload.decode('utf-8'))
                             rows = int(dims.get('rows', 24))
                             cols = int(dims.get('cols', 80))
                             size = struct.pack('HHHH', rows, cols, 0, 0)
@@ -5252,9 +5253,9 @@ class LocalTerminalSession:
         output_channel = f"stellar:terminal:output:{self.session_id}"
         
         try:
-            redis_client.delete(active_key)
-            redis_client.delete(history_key)
-            redis_client.publish(output_channel, b"__EOF__")
+            _terminal_redis.delete(active_key)
+            _terminal_redis.delete(history_key)
+            _terminal_redis.publish(output_channel, b"__EOF__")
         except Exception:
             pass
             
@@ -5302,16 +5303,17 @@ def api_ssh_terminal_start(process_id):
     session_id = request.args.get('session_id') or (request.json.get('session_id') if request.is_json else None)
     if session_id:
         active_key = f"stellar:terminal:active:{session_id}"
-        owner_id_bytes = redis_client.get(active_key)
+        owner_id_bytes = _terminal_redis.get(active_key)
         if owner_id_bytes:
-            if isinstance(owner_id_bytes, bytes):
-                owner_id = int(owner_id_bytes.decode('utf-8'))
-            else:
-                owner_id = int(owner_id_bytes)
+            owner_id = int(owner_id_bytes.decode('utf-8'))
             if owner_id == user_id:
-                redis_client.expire(active_key, 300)
-                logger.info("Reconnecting client to active PTY session %s", session_id)
-                return jsonify({"session_id": session_id}), 200
+                # Check if the hosting worker is actually subscribed and listening to the channel
+                input_channel = f"stellar:terminal:input:{session_id}"
+                sub_info = _terminal_redis.pubsub_numsub(input_channel)
+                if sub_info and sub_info[0][1] > 0:
+                    _terminal_redis.expire(active_key, 300)
+                    logger.info("Reconnecting client to active PTY session %s", session_id)
+                    return jsonify({"session_id": session_id}), 200
 
     # 1. Fetch container app type & subdomain from DB
     db = get_db()
@@ -5377,14 +5379,11 @@ def api_ssh_terminal_stream(session_id):
     history_key = f"stellar:terminal:history:{session_id}"
     output_channel = f"stellar:terminal:output:{session_id}"
     
-    owner_id_bytes = redis_client.get(active_key)
+    owner_id_bytes = _terminal_redis.get(active_key)
     if not owner_id_bytes:
         return "Session not found", 404
         
-    if isinstance(owner_id_bytes, bytes):
-        owner_id = int(owner_id_bytes.decode('utf-8'))
-    else:
-        owner_id = int(owner_id_bytes)
+    owner_id = int(owner_id_bytes.decode('utf-8'))
     
     # Verify owner credentials
     if 'user_id' not in session or session['user_id'] != owner_id:
@@ -5392,14 +5391,12 @@ def api_ssh_terminal_stream(session_id):
 
     def stream():
         # A. Send history first
-        history_data = redis_client.get(history_key)
+        history_data = _terminal_redis.get(history_key)
         if history_data:
-            if isinstance(history_data, bytes):
-                history_data = history_data.decode('utf-8', errors='ignore')
-            yield f"event: history\ndata: {json.dumps({'output': history_data})}\n\n"
+            yield f"event: history\ndata: {json.dumps({'output': history_data.decode('utf-8', errors='ignore')})}\n\n"
             
-        # B. Subscribe to live outputs
-        pubsub = redis_client.pubsub()
+        # B. Subscribe to live outputs via binary pubsub
+        pubsub = _terminal_redis.pubsub()
         pubsub.subscribe(output_channel)
         
         try:
@@ -5407,11 +5404,9 @@ def api_ssh_terminal_stream(session_id):
                 message = pubsub.get_message(ignore_subscribe_messages=True, timeout=20.0)
                 if message:
                     payload = message['data']
-                    if payload == b"__EOF__" or payload == "__EOF__":
+                    if payload == b"__EOF__":
                         break
-                    if isinstance(payload, bytes):
-                        payload = payload.decode('utf-8', errors='ignore')
-                    yield f"data: {json.dumps({'output': payload})}\n\n"
+                    yield f"data: {json.dumps({'output': payload.decode('utf-8', errors='ignore')})}\n\n"
                 else:
                     yield ": keep-alive\n\n"
         except Exception as e:
@@ -5434,22 +5429,19 @@ def api_ssh_terminal_input(session_id):
     active_key = f"stellar:terminal:active:{session_id}"
     input_channel = f"stellar:terminal:input:{session_id}"
     
-    owner_id_bytes = redis_client.get(active_key)
+    owner_id_bytes = _terminal_redis.get(active_key)
     if not owner_id_bytes:
         return jsonify({"error": "Session not found"}), 404
         
-    if isinstance(owner_id_bytes, bytes):
-        owner_id = int(owner_id_bytes.decode('utf-8'))
-    else:
-        owner_id = int(owner_id_bytes)
+    owner_id = int(owner_id_bytes.decode('utf-8'))
     if owner_id != session['user_id']:
         return jsonify({"error": "Unauthorized"}), 403
         
     data = request.get_json(silent=True) or {}
     input_str = data.get('input', '')
     
-    redis_client.publish(input_channel, input_str.encode('utf-8'))
-    redis_client.expire(active_key, 300)
+    _terminal_redis.publish(input_channel, input_str.encode('utf-8'))
+    _terminal_redis.expire(active_key, 300)
     return jsonify({"success": True}), 200
 
 
@@ -5459,14 +5451,11 @@ def api_ssh_terminal_resize(session_id):
     active_key = f"stellar:terminal:active:{session_id}"
     resize_channel = f"stellar:terminal:resize:{session_id}"
     
-    owner_id_bytes = redis_client.get(active_key)
+    owner_id_bytes = _terminal_redis.get(active_key)
     if not owner_id_bytes:
         return jsonify({"error": "Session not found"}), 404
         
-    if isinstance(owner_id_bytes, bytes):
-        owner_id = int(owner_id_bytes.decode('utf-8'))
-    else:
-        owner_id = int(owner_id_bytes)
+    owner_id = int(owner_id_bytes.decode('utf-8'))
     if owner_id != session['user_id']:
         return jsonify({"error": "Unauthorized"}), 403
         
@@ -5474,10 +5463,9 @@ def api_ssh_terminal_resize(session_id):
     rows = int(data.get('rows', 24))
     cols = int(data.get('cols', 80))
     
-    import json
     payload = json.dumps({"rows": rows, "cols": cols})
-    redis_client.publish(resize_channel, payload.encode('utf-8'))
-    redis_client.expire(active_key, 300)
+    _terminal_redis.publish(resize_channel, payload.encode('utf-8'))
+    _terminal_redis.expire(active_key, 300)
     return jsonify({"success": True}), 200
 
 
