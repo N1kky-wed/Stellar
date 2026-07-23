@@ -1599,13 +1599,14 @@ Below is the failed build run log/trace. Please analyze it, locate the offending
                     break
             except Exception as e:
                 err_str = str(e).lower()
-                if ('429' in err_str or '403' in err_str or 'resource_exhausted' in err_str or 'quota' in err_str or 'rate limit' in err_str or
+                is_invalid_key = ('api_key_invalid' in err_str or 'api key not valid' in err_str or 'invalid_api_key' in err_str or 'key expired' in err_str or '401' in err_str or 'unauthenticated' in err_str)
+                if ('429' in err_str or 'resource_exhausted' in err_str or 'quota' in err_str or 'rate limit' in err_str or
                     'overloaded' in err_str or '503' in err_str or 'service unavailable' in err_str or
-                    '500' in err_str or 'internal error' in err_str or 'internal_error' in err_str):
+                    '500' in err_str or 'internal error' in err_str or 'internal_error' in err_str or is_invalid_key):
                     block_duration, block_reason = parse_quota_block_duration(err_str)
-                    block_scope = None if ('403' in err_str or 'permission_denied' in err_str or 'invalid' in err_str) else model_id
+                    block_scope = None if is_invalid_key else model_id
                     KEY_MANAGER.block_key(key, block_scope, block_duration, block_reason)
-                    logger.warning("Globally blocked API key (Hash: %s) for %ds for model %s due to %s error during memory summarization.",
+                    logger.warning("Blocked API key (Hash: %s) for %ds for model %s due to %s error during memory summarization.",
                                    hash(key), block_duration, block_scope, block_reason)
                 logger.warning("Gemini summarization API call failed: %s", e)
                 last_err = e

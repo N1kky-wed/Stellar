@@ -641,11 +641,12 @@ def generate_image(model: str, prompt: str, status: str, timeout: int, quality: 
         except Exception as e:
             logger.error("Error in generate_image tool error=%s", e, exc_info=True)
             error_string = str(e).lower()
-            if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
+            is_invalid_key = ('api_key_invalid' in error_string or 'api key not valid' in error_string or 'invalid_api_key' in error_string or '401' in error_string or 'unauthenticated' in error_string)
+            if ('429' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or is_invalid_key):
                 block_duration, block_reason = parse_quota_block_duration(error_string)
-                block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model
+                block_scope = None if is_invalid_key else model
                 KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                logger.warning("Globally blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=generate_image", hash(current_key), block_duration, block_scope, block_reason)
+                logger.warning("Blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=generate_image", hash(current_key), block_duration, block_scope, block_reason)
                 last_error = e
                 continue
             return f"Error generating image: {str(e)}. Since image generation failed, please use the web search tool to find relevant images on the web instead."
@@ -969,11 +970,12 @@ def make_presentation(topic: str, status: str, timeout: int, num_slides: int = 1
         except Exception as e:
             logger.error("Error in make_presentation tool error=%s", e, exc_info=True)
             error_string = str(e).lower()
-            if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
+            is_invalid_key = ('api_key_invalid' in error_string or 'api key not valid' in error_string or 'invalid_api_key' in error_string or '401' in error_string or 'unauthenticated' in error_string)
+            if ('429' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or is_invalid_key):
                 block_duration, block_reason = parse_quota_block_duration(error_string)
-                block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                block_scope = None if is_invalid_key else model_id
                 KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                logger.warning("Globally blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=make_presentation", hash(current_key), block_duration, block_scope, block_reason)
+                logger.warning("Blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=make_presentation", hash(current_key), block_duration, block_scope, block_reason)
                 last_error = e
                 continue
             return f"Error: Failed to plan presentation: {str(e)}. Since presentation generation failed, please perform a web search for relevant images and place them in a nice UI for the user."
@@ -1208,11 +1210,12 @@ def regenerate_presentation_slide(presentation_id: str, slide_index: int, status
         except Exception as e:
             logger.error("Error in regenerate_presentation_slide tool error=%s", e, exc_info=True)
             error_string = str(e).lower()
-            if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
+            is_invalid_key = ('api_key_invalid' in error_string or 'api key not valid' in error_string or 'invalid_api_key' in error_string or '401' in error_string or 'unauthenticated' in error_string)
+            if ('429' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or is_invalid_key):
                 block_duration, block_reason = parse_quota_block_duration(error_string)
-                block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                block_scope = None if is_invalid_key else model_id
                 KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                logger.warning("Globally blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=regenerate_presentation_slide", hash(current_key), block_duration, block_scope, block_reason)
+                logger.warning("Blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=regenerate_presentation_slide", hash(current_key), block_duration, block_scope, block_reason)
                 last_error = e
                 continue
             return f"Error: Failed to re-plan or generate slide: {str(e)}. Since slide regeneration failed, please perform a web search for relevant images and place them in a nice UI for the user."
@@ -2074,11 +2077,12 @@ def analyze_youtube_video(query: str, status: str, timeout: int, action: str = "
         except Exception as e:
             logger.error("Error in analyze_youtube_video tool error=%s", e, exc_info=True)
             error_string = str(e).lower()
-            if ('429' in error_string or '403' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string):
+            is_invalid_key = ('api_key_invalid' in error_string or 'api key not valid' in error_string or 'invalid_api_key' in error_string or '401' in error_string or 'unauthenticated' in error_string)
+            if ('429' in error_string or '503' in error_string or '500' in error_string or 'resource_exhausted' in error_string or 'quota' in error_string or is_invalid_key):
                 block_duration, block_reason = parse_quota_block_duration(error_string)
-                block_scope = None if ('403' in error_string or 'permission_denied' in error_string or 'invalid' in error_string) else model_id
+                block_scope = None if is_invalid_key else model_id
                 KEY_MANAGER.block_key(current_key, block_scope, block_duration, block_reason)
-                logger.warning("Globally blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=analyze_youtube_video", hash(current_key), block_duration, block_scope, block_reason)
+                logger.warning("Blocked API key hash=%s block_duration_sec=%d model=%s reason=%s error=analyze_youtube_video", hash(current_key), block_duration, block_scope, block_reason)
                 last_error = e
                 continue
             return f"Error analyzing YouTube video: {str(e)}"

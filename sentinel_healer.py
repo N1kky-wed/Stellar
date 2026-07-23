@@ -474,12 +474,13 @@ Please provide the corrected file contents to heal the application.
                 logger.error("Gemini API call failed with key context masked=%s error=%s", masked, ge, exc_info=True)
                 last_genai_error = ge
                 err_str = str(ge).lower()
+                is_invalid_key = ('api_key_invalid' in err_str or 'api key not valid' in err_str or 'invalid_api_key' in err_str or 'key expired' in err_str or '401' in err_str or 'unauthenticated' in err_str)
                 if '429' in err_str or 'quota' in err_str or 'resource_exhausted' in err_str:
                     KEY_MANAGER.block_key(k, "gemini-3.5-flash", 60, "RPM")
                     current_key_index += 1
                     logger.warning("429 on key masked=%s rotating to next key (%d/%d)", masked, current_key_index, len(active_keys))
                     time.sleep(0.5)
-                elif '403' in err_str or 'permission_denied' in err_str or 'invalid' in err_str:
+                elif is_invalid_key:
                     KEY_MANAGER.block_key(k, "gemini-3.5-flash", 3600, "INVALID")
                     current_key_index += 1
                 else:
