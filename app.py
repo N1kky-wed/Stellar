@@ -5396,7 +5396,7 @@ def api_ssh_terminal_stream(session_id):
         if history_data:
             if isinstance(history_data, bytes):
                 history_data = history_data.decode('utf-8', errors='ignore')
-            yield f"data: {json.dumps({'output': history_data})}\n\n"
+            yield f"event: history\ndata: {json.dumps({'output': history_data})}\n\n"
             
         # B. Subscribe to live outputs
         pubsub = redis_client.pubsub()

@@ -621,23 +621,43 @@
 
           sessionId = startData.session_id;
           sessionStorage.setItem(`stellar_term_sid_${pid}`, sessionId);
+          term.focus();
 
           // Open low-latency SSE output stream
           eventSource = new EventSource(
             `/api/ssh/terminal/stream/${sessionId}`,
           );
+
+          let hasLoadedHistory = false;
+
+          eventSource.addEventListener("history", (event) => {
+            if (!hasLoadedHistory) {
+              const data = JSON.parse(event.data);
+              if (data.output) {
+                term.clear();
+                term.write(data.output);
+              }
+              hasLoadedHistory = true;
+            }
+          });
+
           eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.output) {
               term.write(data.output);
             }
           };
+
           eventSource.onerror = (err) => {
-            console.error("Terminal stream error:", err);
-            term.write(
-              "\r\n\x1b[31m[Terminal session stream disconnected]\x1b[0m\r\n",
-            );
-            closeActiveSession();
+            if (eventSource.readyState === EventSource.CLOSED) {
+              console.error("Terminal stream closed:", err);
+              term.write(
+                "\r\n\x1b[31m[Terminal session stream disconnected]\x1b[0m\r\n",
+              );
+              closeActiveSession();
+            } else {
+              console.warn("Terminal stream reconnecting...", err);
+            }
           };
 
           // Fit window and propagate SIGWINCH resize settings
