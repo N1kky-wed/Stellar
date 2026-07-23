@@ -107,8 +107,15 @@ def get_seconds_until_pacific_midnight():
 
 def parse_quota_block_duration(error_msg):
     err_lower = error_msg.lower()
-    if ('expired' in err_lower or 'invalid' in err_lower or 'disabled' in err_lower or
-        'denied' in err_lower or 'unauthenticated' in err_lower or '401' in err_lower):
+    if ('api_key_invalid' in err_lower or 
+        'api key not valid' in err_lower or 
+        'invalid api key' in err_lower or 
+        'invalid_api_key' in err_lower or
+        'api key expired' in err_lower or 
+        'key expired' in err_lower or 
+        'key invalid' in err_lower or
+        'key is disabled' in err_lower or 
+        ('401' in err_lower and ('key' in err_lower or 'unauthorized' in err_lower or 'unauthenticated' in err_lower))):
         return 31536000, 'INVALID'
     elif ('minute' in err_lower or 'queries per minute' in err_lower or
         'rpm' in err_lower or 'tpm' in err_lower or 'queriesperminute' in err_lower):

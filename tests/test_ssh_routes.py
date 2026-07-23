@@ -92,8 +92,8 @@ def test_ssh_auth_page_approved_renders_ssh_instructions(auth_client):
     # auth_client has an approved admin user in session (user_id=1, is_approved=True)
     response = auth_client.get('/auth/ssh')
     assert response.status_code == 200
-    assert b'SSH Authentication' in response.data
-    assert b'copyCode' in response.data
+    assert b'Web Terminal' in response.data
+    assert b'deploymentList' in response.data
 
 
 # Assert that a user whose session says unapproved but database is approved gets auto-promoted.
@@ -111,7 +111,7 @@ def test_ssh_auth_page_approved_in_db_auto_promotes_session(client):
 
     response = client.get('/auth/ssh')
     assert response.status_code == 200
-    assert b'SSH Authentication' in response.data
+    assert b'Web Terminal' in response.data
     
     # Session is_approved should be updated to True
     with client.session_transaction() as sess:

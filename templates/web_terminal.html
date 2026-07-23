@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stellar &mdash; Web Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    />
+    <style>
+      :root {
+        --bg-base: #010103;
+        --bg-step: #08080a;
+        --border-subtle: rgba(255, 255, 255, 0.08);
+        --border-active: rgba(255, 255, 255, 0.15);
+        --card-bg: #0e0e12;
+        --input-bg: #08080a;
+        --text-primary: #f5f6f8;
+        --text-secondary: #94a3b8;
+        --accent-success: #10b981;
+        --accent-error: #ef4444;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background-color: var(--bg-base);
+        color: var(--text-primary);
+        font-family:
+          "Inter",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+      }
+
+      /* Layout split: Sidebar + Main Terminal */
+      .sidebar {
+        width: 320px;
+        background: var(--bg-step);
+        border-right: 1px solid var(--border-subtle);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+      }
+      .sidebar-header {
+        padding: 24px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .logo {
+        font-size: 1.1rem;
+        font-weight: 800;
+        letter-spacing: 2px;
+        color: var(--text-primary);
+        text-transform: uppercase;
+      }
+      .sidebar-title {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 18px;
+        padding-left: 2px;
+      }
+
+      .deployment-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        /* Firefox */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+      }
+      /* Webkit browsers (Chrome, Safari, Edge) */
+      .deployment-list::-webkit-scrollbar {
+        width: 4px;
+      }
+      .deployment-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .deployment-list::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+      }
+      .deployment-list::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .deployment-item {
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 12px 14px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        text-align: left;
+        transition: all 0.2s ease;
+      }
+      .deployment-item:hover {
+        background: rgba(255, 255, 255, 0.03);
+        border-color: rgba(255, 255, 255, 0.05);
+      }
+      .deployment-item.active {
+        background: var(--card-bg);
+        border-color: var(--border-active);
+      }
+      .deployment-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+      }
+      .deployment-name {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .status-dot.running {
+        background: var(--accent-success);
+        box-shadow: 0 0 6px var(--accent-success);
+      }
+      .status-dot.stopped {
+        background: var(--text-secondary);
+      }
+      .status-dot.notfound {
+        background: var(--accent-error);
+        box-shadow: 0 0 6px var(--accent-error);
+      }
+      .status-text {
+        color: var(--text-secondary);
+      }
+      .deployment-subdomain {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      .sidebar-footer {
+        padding: 20px;
+        border-top: 1px solid var(--border-subtle);
+      }
+      .nav-btn {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text-primary);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 10px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .nav-btn:hover {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.15);
+      }
+
+      /* Main Terminal Window */
+      .main-terminal {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-base);
+      }
+
+      .terminal-navbar {
+        height: 64px;
+        border-bottom: 1px solid var(--border-subtle);
+        padding: 0 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .terminal-title-group {
+        display: flex;
+        flex-direction: column;
+      }
+      .terminal-active-name {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+      .terminal-active-id {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      .terminal-controls {
+        display: flex;
+        gap: 8px;
+      }
+      .control-btn {
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text-primary);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: "Inter", sans-serif;
+      }
+      .control-btn:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+        border-color: rgba(255, 255, 255, 0.04);
+        color: var(--text-secondary);
+      }
+      .control-btn:hover {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.15);
+      }
+      .control-btn.btn-restart {
+        border-color: rgba(99, 102, 241, 0.3);
+        color: #818cf8;
+      }
+      .control-btn.btn-stop {
+        border-color: rgba(239, 68, 68, 0.3);
+        color: #f87171;
+      }
+      .control-btn.btn-start {
+        border-color: rgba(16, 185, 129, 0.3);
+        color: #34d399;
+      }
+      .control-btn.btn-restart:hover {
+        background: rgba(99, 102, 241, 0.08);
+      }
+      .control-btn.btn-stop:hover {
+        background: rgba(239, 68, 68, 0.08);
+      }
+      .control-btn.btn-start:hover {
+        background: rgba(16, 185, 129, 0.08);
+      }
+
+      .terminal-viewport {
+        flex: 1;
+        padding: 24px;
+        overflow-y: auto;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.9rem;
+        line-height: 1.6;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        /* Firefox */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+      }
+      /* Webkit browsers (Chrome, Safari, Edge) */
+      .terminal-viewport::-webkit-scrollbar {
+        width: 4px;
+      }
+      .terminal-viewport::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .terminal-viewport::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+      }
+      .terminal-viewport::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .line {
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .output-text {
+        color: #cbd5e1;
+      }
+      .success-text {
+        color: var(--accent-success);
+      }
+      .error-text {
+        color: var(--accent-error);
+      }
+      .system-text {
+        color: #818cf8;
+      }
+      .prompt-prefix {
+        color: #38bdf8;
+        font-weight: 600;
+      }
+
+      .terminal-input-bar {
+        background: var(--bg-step);
+        border-top: 1px solid var(--border-subtle);
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .term-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: var(--text-primary);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.95rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">Stellar Console</div>
+        <div class="sidebar-title">Deployments</div>
+      </div>
+      <div class="deployment-list" id="deploymentList">
+        <div class="line system-text" style="padding: 12px">
+          Loading active containers...
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button class="nav-btn" onclick="window.location.href = '/'">
+          <svg
+            width="16"
+            height="16"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          Return to Chat
+        </button>
+      </div>
+    </div>
+
+    <div class="main-terminal">
+      <div class="terminal-navbar">
+        <div class="terminal-title-group">
+          <div class="terminal-active-name" id="activeName">
+            No deployment selected
+          </div>
+          <div class="terminal-active-id" id="activeId">-</div>
+        </div>
+        <div class="terminal-controls">
+          <button class="control-btn" id="btnLogs" onclick="fetchLogs()">
+            Logs
+          </button>
+          <button
+            class="control-btn btn-restart"
+            id="btnRestart"
+            onclick="triggerAction('restart')"
+          >
+            Restart
+          </button>
+          <button
+            class="control-btn btn-stop"
+            id="btnStop"
+            onclick="triggerAction('stop')"
+          >
+            Stop
+          </button>
+          <button
+            class="control-btn btn-start"
+            id="btnStart"
+            onclick="triggerAction('start')"
+          >
+            Start
+          </button>
+          <button class="control-btn" id="btnCopy" onclick="copyConsoleLogs()">
+            Copy
+          </button>
+          <button class="control-btn" id="btnClear" onclick="clearTerminal()">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div class="terminal-viewport" id="termBody"></div>
+
+      <div class="terminal-input-bar">
+        <span class="prompt-prefix" id="promptDisplay">user@stellar:~$</span>
+        <input
+          type="text"
+          class="term-input"
+          id="cmdInput"
+          placeholder="Enter shell command to run in container..."
+          autofocus
+          autocomplete="off"
+        />
+      </div>
+    </div>
+
+    <script>
+      let containersList = [];
+      let currentContainer = null;
+
+      const termBody = document.getElementById("termBody");
+      const cmdInput = document.getElementById("cmdInput");
+      const deploymentList = document.getElementById("deploymentList");
+      const activeName = document.getElementById("activeName");
+      const activeId = document.getElementById("activeId");
+      const promptDisplay = document.getElementById("promptDisplay");
+
+      document.addEventListener("DOMContentLoaded", () => {
+        loadContainers();
+      });
+
+      async function loadContainers() {
+        try {
+          const res = await fetch("/api/ssh/containers");
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (jsonErr) {
+            appendLine("Error parsing response from server:", "error-text");
+            appendLine(
+              text.slice(0, 800) + (text.length > 800 ? "..." : ""),
+              "error-text",
+            );
+            return;
+          }
+          containersList = data.containers || [];
+          deploymentList.innerHTML = "";
+
+          if (containersList.length === 0) {
+            deploymentList.innerHTML =
+              '<div class="line error-text" style="padding: 12px;">No active deployments found.</div>';
+            appendLine(
+              "No active container deployments found for your account.",
+              "error-text",
+            );
+            return;
+          }
+
+          containersList.forEach((c) => {
+            const isRunning = c.live_status === "running";
+            const isNotFound = c.live_status === "not_found";
+            const item = document.createElement("div");
+            item.className = `deployment-item ${currentContainer && currentContainer.process_id === c.process_id ? "active" : ""}`;
+            item.id = `item-${c.process_id}`;
+            item.onclick = () => selectContainer(c.process_id);
+
+            let statusClass = "stopped";
+            if (isRunning) statusClass = "running";
+            else if (isNotFound) statusClass = "notfound";
+
+            let displayStatus = c.live_status;
+            if (isNotFound) displayStatus = "deleted";
+
+            item.innerHTML = `
+                <div class="deployment-meta">
+                    <span class="deployment-name">${c.name}</span>
+                    <span class="status-indicator">
+                        <span class="status-dot ${statusClass}"></span>
+                        <span class="status-text">${displayStatus}</span>
+                    </span>
+                </div>
+                <div class="deployment-subdomain">${c.subdomain}.stellarai.site</div>
+            `;
+            deploymentList.appendChild(item);
+          });
+
+          // Auto-select first container if none active, or refresh current selection status
+          if (!currentContainer && containersList.length > 0) {
+            selectContainer(containersList[0].process_id);
+          } else if (currentContainer) {
+            selectContainer(currentContainer.process_id);
+          }
+        } catch (e) {
+          appendLine("Failed to load deployments: " + e.message, "error-text");
+        }
+      }
+
+      function selectContainer(pid) {
+        currentContainer = containersList.find((c) => c.process_id === pid);
+        if (!currentContainer) return;
+
+        // Toggle active classes
+        document
+          .querySelectorAll(".deployment-item")
+          .forEach((el) => el.classList.remove("active"));
+        const activeEl = document.getElementById(`item-${pid}`);
+        if (activeEl) activeEl.classList.add("active");
+
+        activeName.textContent = currentContainer.name;
+        activeId.textContent = `Process ID: ${currentContainer.process_id}`;
+        promptDisplay.textContent = `stellar@${currentContainer.name}:~$`;
+
+        const status = currentContainer.live_status;
+        const isRunning = status === "running";
+        const isNotFound = status === "not_found";
+
+        document.getElementById("btnStart").disabled = isRunning || isNotFound;
+        document.getElementById("btnStop").disabled = !isRunning;
+        document.getElementById("btnRestart").disabled = !isRunning;
+
+        if (isNotFound) {
+          cmdInput.disabled = true;
+          cmdInput.placeholder =
+            "Deployment is deleted. Ask Stellar in chat to reprovision.";
+          appendLine(
+            `[!] WARNING: Container for deployment "${currentContainer.name}" was not found.`,
+            "error-text",
+          );
+          appendLine(
+            `[!] It has likely been pruned as stale (past 90 hours). To redeploy it, return to the chat interface and ask Stellar to reprovision the project "${currentContainer.name}".`,
+            "error-text",
+          );
+        } else if (!isRunning) {
+          cmdInput.disabled = true;
+          cmdInput.placeholder =
+            "Container is stopped. Start it to run commands...";
+        } else {
+          cmdInput.disabled = false;
+          cmdInput.placeholder = "Enter shell command to run in container...";
+        }
+
+        appendLine(
+          `[*] Active container context switched: ${currentContainer.name} (${currentContainer.process_id.slice(0, 8)})`,
+          "system-text",
+        );
+      }
+
+      cmdInput.addEventListener("keydown", async (e) => {
+        if (e.key === "Enter") {
+          const cmd = cmdInput.value.trim();
+          cmdInput.value = "";
+          if (cmd) {
+            await execCommand(cmd);
+          }
+        }
+      });
+
+      function appendLine(text, className = "output-text") {
+        const line = document.createElement("div");
+        line.className = `line ${className}`;
+        line.textContent = text;
+        termBody.appendChild(line);
+        termBody.scrollTop = termBody.scrollHeight;
+      }
+
+      function clearTerminal() {
+        termBody.innerHTML = "";
+      }
+
+      async function execCommand(cmd) {
+        if (!currentContainer) {
+          appendLine("No deployment selected.", "error-text");
+          return;
+        }
+        appendLine(`${promptDisplay.textContent} ${cmd}`, "prompt-prefix");
+
+        if (cmd === "clear") {
+          clearTerminal();
+          return;
+        }
+
+        try {
+          const res = await fetch(
+            `/api/ssh/container/${currentContainer.process_id}/action`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "exec",
+                command: cmd,
+                app_type: currentContainer.app_type,
+              }),
+            },
+          );
+          const data = await res.json();
+          if (data.output !== undefined) {
+            appendLine(data.output || "(No output)", "success-text");
+          } else if (data.error) {
+            appendLine(`Error: ${data.error}`, "error-text");
+          }
+        } catch (e) {
+          appendLine(`Command error: ${e.message}`, "error-text");
+        }
+      }
+
+      async function fetchLogs() {
+        if (!currentContainer) return;
+        appendLine(
+          `[*] Retrieving logs for ${currentContainer.name}...`,
+          "system-text",
+        );
+        try {
+          const res = await fetch(
+            `/api/ssh/container/${currentContainer.process_id}/action`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "logs",
+                app_type: currentContainer.app_type,
+              }),
+            },
+          );
+          const data = await res.json();
+          if (data.logs !== undefined && data.logs !== null) {
+            if (data.logs.trim() === "") {
+              appendLine(
+                "(No log output has been recorded for this container)",
+                "system-text",
+              );
+            } else {
+              appendLine(data.logs, "output-text");
+            }
+          } else if (data.error) {
+            appendLine(`Error: ${data.error}`, "error-text");
+          }
+        } catch (e) {
+          appendLine(`Failed to fetch logs: ${e.message}`, "error-text");
+        }
+      }
+
+      async function triggerAction(act) {
+        if (!currentContainer) return;
+        appendLine(
+          `[*] Triggering container ${act.toUpperCase()} for ${currentContainer.name}...`,
+          "system-text",
+        );
+        try {
+          const res = await fetch(
+            `/api/ssh/container/${currentContainer.process_id}/action`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: act,
+                app_type: currentContainer.app_type,
+              }),
+            },
+          );
+          const data = await res.json();
+          if (data.message) {
+            appendLine(data.message, "success-text");
+            setTimeout(loadContainers, 1500);
+          } else if (data.error) {
+            appendLine(`Error: ${data.error}`, "error-text");
+          }
+        } catch (e) {
+          appendLine(`Action failed: ${e.message}`, "error-text");
+        }
+      }
+
+      function copyConsoleLogs() {
+        const lines = Array.from(termBody.querySelectorAll(".line"))
+          .map((el) => el.textContent)
+          .join("\n");
+        navigator.clipboard
+          .writeText(lines)
+          .then(() => {
+            const btn = document.getElementById("btnCopy");
+            const originalText = btn.textContent;
+            btn.textContent = "Copied!";
+            btn.style.color = "var(--accent-success)";
+            setTimeout(() => {
+              btn.textContent = originalText;
+              btn.style.color = "";
+            }, 1500);
+          })
+          .catch((err) => {
+            appendLine("Failed to copy logs: " + err.message, "error-text");
+          });
+      }
+    </script>
+  </body>
+</html>
