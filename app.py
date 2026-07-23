@@ -5304,7 +5304,10 @@ def api_ssh_terminal_start(process_id):
         active_key = f"stellar:terminal:active:{session_id}"
         owner_id_bytes = redis_client.get(active_key)
         if owner_id_bytes:
-            owner_id = int(owner_id_bytes.decode('utf-8'))
+            if isinstance(owner_id_bytes, bytes):
+                owner_id = int(owner_id_bytes.decode('utf-8'))
+            else:
+                owner_id = int(owner_id_bytes)
             if owner_id == user_id:
                 redis_client.expire(active_key, 300)
                 logger.info("Reconnecting client to active PTY session %s", session_id)
