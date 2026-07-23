@@ -10,6 +10,10 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
     />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"
+    />
     <style>
       :root {
         --bg-base: #010103;
@@ -17,7 +21,6 @@
         --border-subtle: rgba(255, 255, 255, 0.08);
         --border-active: rgba(255, 255, 255, 0.15);
         --card-bg: #0e0e12;
-        --input-bg: #08080a;
         --text-primary: #f5f6f8;
         --text-secondary: #94a3b8;
         --accent-success: #10b981;
@@ -268,69 +271,14 @@
 
       .terminal-viewport {
         flex: 1;
-        padding: 24px;
-        overflow-y: auto;
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.9rem;
-        line-height: 1.6;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        /* Firefox */
-        scrollbar-width: thin;
-        scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+        padding: 16px;
+        background: #010103;
+        position: relative;
+        overflow: hidden;
       }
-      /* Webkit browsers (Chrome, Safari, Edge) */
-      .terminal-viewport::-webkit-scrollbar {
-        width: 4px;
-      }
-      .terminal-viewport::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .terminal-viewport::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 4px;
-      }
-      .terminal-viewport::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.3);
-      }
-      .line {
-        white-space: pre-wrap;
-        word-break: break-all;
-      }
-      .output-text {
-        color: #cbd5e1;
-      }
-      .success-text {
-        color: var(--accent-success);
-      }
-      .error-text {
-        color: var(--accent-error);
-      }
-      .system-text {
-        color: #818cf8;
-      }
-      .prompt-prefix {
-        color: #38bdf8;
-        font-weight: 600;
-      }
-
-      .terminal-input-bar {
-        background: var(--bg-step);
-        border-top: 1px solid var(--border-subtle);
-        padding: 14px 24px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .term-input {
-        flex: 1;
-        background: transparent;
-        border: none;
-        outline: none;
-        color: var(--text-primary);
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.95rem;
+      #terminal {
+        width: 100%;
+        height: 100%;
       }
     </style>
   </head>
@@ -341,7 +289,13 @@
         <div class="sidebar-title">Deployments</div>
       </div>
       <div class="deployment-list" id="deploymentList">
-        <div class="line system-text" style="padding: 12px">
+        <div
+          style="
+            padding: 12px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+          "
+        >
           Loading active containers...
         </div>
       </div>
@@ -408,60 +362,127 @@
         </div>
       </div>
 
-      <div class="terminal-viewport" id="termBody"></div>
-
-      <div class="terminal-input-bar">
-        <span class="prompt-prefix" id="promptDisplay">user@stellar:~$</span>
-        <input
-          type="text"
-          class="term-input"
-          id="cmdInput"
-          placeholder="Enter shell command to run in container..."
-          autofocus
-          autocomplete="off"
-        />
+      <div class="terminal-viewport">
+        <div id="terminal"></div>
       </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
     <script>
       let containersList = [];
       let currentContainer = null;
+      let term = null;
+      let fitAddon = null;
+      let eventSource = null;
+      let sessionId = null;
 
-      const termBody = document.getElementById("termBody");
-      const cmdInput = document.getElementById("cmdInput");
+      let inputQueue = [];
+      let isSendingInput = false;
+
       const deploymentList = document.getElementById("deploymentList");
       const activeName = document.getElementById("activeName");
       const activeId = document.getElementById("activeId");
-      const promptDisplay = document.getElementById("promptDisplay");
 
       document.addEventListener("DOMContentLoaded", () => {
+        initXterm();
         loadContainers();
       });
+
+      function initXterm() {
+        term = new Terminal({
+          cursorBlink: true,
+          theme: {
+            background: "#010103",
+            foreground: "#cbd5e1",
+            cursor: "#cbd5e1",
+            selectionBackground: "rgba(255, 255, 255, 0.15)",
+            black: "#000000",
+            red: "#ef4444",
+            green: "#10b981",
+            yellow: "#f59e0b",
+            blue: "#3b82f6",
+            magenta: "#d946ef",
+            cyan: "#06b6d4",
+            white: "#cbd5e1",
+          },
+          fontFamily: '"JetBrains Mono", monospace',
+          fontSize: 14,
+          lineHeight: 1.2,
+        });
+
+        fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById("terminal"));
+        fitAddon.fit();
+
+        term.write("\x1b[35mStellar Terminal Initialized.\x1b[0m\r\n");
+        term.write(
+          "Select a deployment in the sidebar to allocate a persistent shell session.\r\n\r\n",
+        );
+
+        term.onData((data) => {
+          if (sessionId) {
+            sendInput(data);
+          }
+        });
+
+        window.addEventListener("resize", () => {
+          resizeTerminal();
+        });
+      }
+
+      function sendInput(data) {
+        inputQueue.push(data);
+        processInputQueue();
+      }
+
+      async function processInputQueue() {
+        if (isSendingInput || inputQueue.length === 0 || !sessionId) return;
+        isSendingInput = true;
+
+        const input = inputQueue.join("");
+        inputQueue = [];
+
+        try {
+          await fetch(`/api/ssh/terminal/input/${sessionId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ input: input }),
+          });
+        } catch (e) {
+          console.error("Failed to send terminal input:", e);
+        } finally {
+          isSendingInput = false;
+          setTimeout(processInputQueue, 0);
+        }
+      }
+
+      function resizeTerminal() {
+        if (!term || !fitAddon || !sessionId) return;
+        fitAddon.fit();
+        const dims = fitAddon.proposeDimensions();
+        if (dims && dims.cols && dims.rows) {
+          fetch(`/api/ssh/terminal/resize/${sessionId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cols: dims.cols, rows: dims.rows }),
+          });
+        }
+      }
 
       async function loadContainers() {
         try {
           const res = await fetch("/api/ssh/containers");
-          const text = await res.text();
-          let data;
-          try {
-            data = JSON.parse(text);
-          } catch (jsonErr) {
-            appendLine("Error parsing response from server:", "error-text");
-            appendLine(
-              text.slice(0, 800) + (text.length > 800 ? "..." : ""),
-              "error-text",
-            );
-            return;
-          }
+          const data = await res.json();
           containersList = data.containers || [];
           deploymentList.innerHTML = "";
 
           if (containersList.length === 0) {
             deploymentList.innerHTML =
-              '<div class="line error-text" style="padding: 12px;">No active deployments found.</div>';
-            appendLine(
-              "No active container deployments found for your account.",
-              "error-text",
+              '<div style="padding: 12px; color: var(--accent-error);">No active deployments found.</div>';
+            term.write(
+              "\r\n\x1b[31m[No active container deployments found for your account.]\x1b[0m\r\n",
             );
             return;
           }
@@ -501,11 +522,13 @@
             selectContainer(currentContainer.process_id);
           }
         } catch (e) {
-          appendLine("Failed to load deployments: " + e.message, "error-text");
+          term.write(
+            `\r\n\x1b[31m[Failed to load deployments: ${e.message}]\x1b[0m\r\n`,
+          );
         }
       }
 
-      function selectContainer(pid) {
+      async function selectContainer(pid) {
         currentContainer = containersList.find((c) => c.process_id === pid);
         if (!currentContainer) return;
 
@@ -518,7 +541,6 @@
 
         activeName.textContent = currentContainer.name;
         activeId.textContent = `Process ID: ${currentContainer.process_id}`;
-        promptDisplay.textContent = `stellar@${currentContainer.name}:~$`;
 
         const status = currentContainer.live_status;
         const isRunning = status === "running";
@@ -529,95 +551,92 @@
         document.getElementById("btnRestart").disabled = !isRunning;
 
         if (isNotFound) {
-          cmdInput.disabled = true;
-          cmdInput.placeholder =
-            "Deployment is deleted. Ask Stellar in chat to reprovision.";
-          appendLine(
-            `[!] WARNING: Container for deployment "${currentContainer.name}" was not found.`,
-            "error-text",
+          term.write(
+            `\r\n\x1b[31m[!] WARNING: Deployment "${currentContainer.name}" was not found (likely deleted or lease expired). Please request a rebuild in the main chat.\x1b[0m\r\n`,
           );
-          appendLine(
-            `[!] It has likely been pruned as stale (past 90 hours). To redeploy it, return to the chat interface and ask Stellar to reprovision the project "${currentContainer.name}".`,
-            "error-text",
-          );
+          closeActiveSession();
         } else if (!isRunning) {
-          cmdInput.disabled = true;
-          cmdInput.placeholder =
-            "Container is stopped. Start it to run commands...";
+          term.write(
+            `\r\n\x1b[33m[*] Deployment "${currentContainer.name}" is currently stopped. Click "Start" to boot the container.\x1b[0m\r\n`,
+          );
+          closeActiveSession();
         } else {
-          cmdInput.disabled = false;
-          cmdInput.placeholder = "Enter shell command to run in container...";
+          // Start/reconnect to persistent PTY session
+          await establishPTYSession(pid);
         }
-
-        appendLine(
-          `[*] Active container context switched: ${currentContainer.name} (${currentContainer.process_id.slice(0, 8)})`,
-          "system-text",
-        );
       }
 
-      cmdInput.addEventListener("keydown", async (e) => {
-        if (e.key === "Enter") {
-          const cmd = cmdInput.value.trim();
-          cmdInput.value = "";
-          if (cmd) {
-            await execCommand(cmd);
-          }
+      function closeActiveSession() {
+        sessionId = null;
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
         }
-      });
+      }
 
-      function appendLine(text, className = "output-text") {
-        const line = document.createElement("div");
-        line.className = `line ${className}`;
-        line.textContent = text;
-        termBody.appendChild(line);
-        termBody.scrollTop = termBody.scrollHeight;
+      async function establishPTYSession(pid) {
+        closeActiveSession();
+        term.clear();
+        term.write(
+          `\x1b[34m[*] Connecting to PTY console for ${currentContainer.name}...\x1b[0m\r\n`,
+        );
+
+        // Check for cached session ID in sessionStorage to enable seamless tab refreshes
+        const cachedSid = sessionStorage.getItem(`stellar_term_sid_${pid}`);
+
+        try {
+          const startRes = await fetch(`/api/ssh/terminal/start/${pid}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: cachedSid }),
+          });
+          const startData = await startRes.json();
+
+          if (startData.error) {
+            term.write(
+              `\r\n\x1b[31mError starting PTY shell: ${startData.error}\x1b[0m\r\n`,
+            );
+            return;
+          }
+
+          sessionId = startData.session_id;
+          sessionStorage.setItem(`stellar_term_sid_${pid}`, sessionId);
+
+          // Open low-latency SSE output stream
+          eventSource = new EventSource(
+            `/api/ssh/terminal/stream/${sessionId}`,
+          );
+          eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.output) {
+              term.write(data.output);
+            }
+          };
+          eventSource.onerror = (err) => {
+            console.error("Terminal stream error:", err);
+            term.write(
+              "\r\n\x1b[31m[Terminal session stream disconnected]\x1b[0m\r\n",
+            );
+            closeActiveSession();
+          };
+
+          // Fit window and propagate SIGWINCH resize settings
+          setTimeout(resizeTerminal, 100);
+        } catch (e) {
+          term.write(
+            `\r\n\x1b[31mFailed to establish shell session: ${e.message}\x1b[0m\r\n`,
+          );
+        }
       }
 
       function clearTerminal() {
-        termBody.innerHTML = "";
-      }
-
-      async function execCommand(cmd) {
-        if (!currentContainer) {
-          appendLine("No deployment selected.", "error-text");
-          return;
-        }
-        appendLine(`${promptDisplay.textContent} ${cmd}`, "prompt-prefix");
-
-        if (cmd === "clear") {
-          clearTerminal();
-          return;
-        }
-
-        try {
-          const res = await fetch(
-            `/api/ssh/container/${currentContainer.process_id}/action`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "exec",
-                command: cmd,
-                app_type: currentContainer.app_type,
-              }),
-            },
-          );
-          const data = await res.json();
-          if (data.output !== undefined) {
-            appendLine(data.output || "(No output)", "success-text");
-          } else if (data.error) {
-            appendLine(`Error: ${data.error}`, "error-text");
-          }
-        } catch (e) {
-          appendLine(`Command error: ${e.message}`, "error-text");
-        }
+        if (term) term.clear();
       }
 
       async function fetchLogs() {
         if (!currentContainer) return;
-        appendLine(
-          `[*] Retrieving logs for ${currentContainer.name}...`,
-          "system-text",
+        term.write(
+          `\r\n\x1b[34m[*] Fetching container stdout/stderr logs...\x1b[0m\r\n`,
         );
         try {
           const res = await fetch(
@@ -634,26 +653,26 @@
           const data = await res.json();
           if (data.logs !== undefined && data.logs !== null) {
             if (data.logs.trim() === "") {
-              appendLine(
-                "(No log output has been recorded for this container)",
-                "system-text",
+              term.write(
+                "\x1b[33m(No standard output logs recorded for this container)\x1b[0m\r\n",
               );
             } else {
-              appendLine(data.logs, "output-text");
+              // Normalize newlines for xterm.js
+              const formattedLogs = data.logs.replace(/\r?\n/g, "\r\n");
+              term.write(formattedLogs + "\r\n");
             }
           } else if (data.error) {
-            appendLine(`Error: ${data.error}`, "error-text");
+            term.write(`\x1b[31mError fetching logs: ${data.error}\x1b[0m\r\n`);
           }
         } catch (e) {
-          appendLine(`Failed to fetch logs: ${e.message}`, "error-text");
+          term.write(`\x1b[31mFailed to fetch logs: ${e.message}\x1b[0m\r\n`);
         }
       }
 
       async function triggerAction(act) {
         if (!currentContainer) return;
-        appendLine(
-          `[*] Triggering container ${act.toUpperCase()} for ${currentContainer.name}...`,
-          "system-text",
+        term.write(
+          `\r\n\x1b[34m[*] Triggering container ${act.toUpperCase()}...\x1b[0m\r\n`,
         );
         try {
           const res = await fetch(
@@ -669,22 +688,29 @@
           );
           const data = await res.json();
           if (data.message) {
-            appendLine(data.message, "success-text");
+            term.write(`\x1b[32m${data.message}\x1b[0m\r\n`);
             setTimeout(loadContainers, 1500);
           } else if (data.error) {
-            appendLine(`Error: ${data.error}`, "error-text");
+            term.write(`\x1b[31mError: ${data.error}\x1b[0m\r\n`);
           }
         } catch (e) {
-          appendLine(`Action failed: ${e.message}`, "error-text");
+          term.write(`\x1b[31mAction failed: ${e.message}\x1b[0m\r\n`);
         }
       }
 
       function copyConsoleLogs() {
-        const lines = Array.from(termBody.querySelectorAll(".line"))
-          .map((el) => el.textContent)
-          .join("\n");
+        if (!term) return;
+        let buffer = "";
+        const lineCount = term.buffer.active.length;
+        for (let i = 0; i < lineCount; i++) {
+          const line = term.buffer.active.getLine(i);
+          if (line) {
+            buffer += line.translateToString(true) + "\n";
+          }
+        }
+
         navigator.clipboard
-          .writeText(lines)
+          .writeText(buffer.trim())
           .then(() => {
             const btn = document.getElementById("btnCopy");
             const originalText = btn.textContent;
@@ -696,7 +722,9 @@
             }, 1500);
           })
           .catch((err) => {
-            appendLine("Failed to copy logs: " + err.message, "error-text");
+            term.write(
+              `\r\n\x1b[31mFailed to copy buffer: ${err.message}\x1b[0m\r\n`,
+            );
           });
       }
     </script>

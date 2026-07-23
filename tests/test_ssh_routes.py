@@ -310,3 +310,28 @@ def test_ssh_verify_code_malformed_redis_data_fails_gracefully(client):
     assert data['user_id'] is None
     assert data['username'] is None
     assert data['display_name'] is None
+
+
+# ==============================================================================
+# Persistent PTY Terminal Session Route Tests
+# ==============================================================================
+
+def test_ssh_terminal_start_logged_out_returns_unauthorized(client):
+    response = client.post('/api/ssh/terminal/start/some-process-id')
+    assert response.status_code == 401
+
+
+def test_ssh_terminal_start_not_found_returns_404(auth_client):
+    response = auth_client.post('/api/ssh/terminal/start/non-existent-pid', json={})
+    assert response.status_code == 404
+
+
+def test_ssh_terminal_input_session_not_found_returns_404(auth_client):
+    response = auth_client.post('/api/ssh/terminal/input/invalid-session-uuid', json={"input": "echo hello"})
+    assert response.status_code == 404
+
+
+def test_ssh_terminal_resize_session_not_found_returns_404(auth_client):
+    response = auth_client.post('/api/ssh/terminal/resize/invalid-session-uuid', json={"rows": 24, "cols": 80})
+    assert response.status_code == 404
+

@@ -1089,6 +1089,13 @@ def initialize_database():
             except Exception as e:
                 logger.exception("Error adding 'subdomain' column: %s", e)
 
+        if 'app_type' not in columns:
+            try:
+                cursor.execute("ALTER TABLE repo_history ADD COLUMN app_type TEXT DEFAULT 'forge'")
+                logger.info("Added 'app_type' column to 'repo_history' table.")
+            except Exception as e:
+                logger.exception("Error adding 'app_type' column: %s", e)
+
         cursor.execute('''CREATE TABLE IF NOT EXISTS tool_calls (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id INTEGER NOT NULL,
@@ -5120,6 +5127,277 @@ def ssh_auth_page():
 
     return render_template('web_terminal.html'), 200, {'Content-Type': 'text/html'}
 
+
+# -------------------------------------------------------------
+# PERSISTENT PTY-BACKED INTERACTIVE WEB SHELL ENGINE
+# -------------------------------------------------------------
+import pty
+import select
+import struct
+import fcntl
+import termios
+import subprocess
+import uuid
+import queue
+
+active_terminals = {}
+
+class TerminalSession:
+    def __init__(self, session_id, process_id, master_fd, child_pid, process_obj, user_id):
+        self.session_id = session_id
+        self.process_id = process_id
+        self.master_fd = master_fd
+        self.child_pid = child_pid
+        self.process_obj = process_obj
+        self.user_id = user_id
+        self.queues = []
+        self.queues_lock = threading.Lock()
+        self.history = bytearray()
+        self.max_history = 100 * 1024  # 100KB history buffer
+        self.active = True
+        self.last_activity = time.time()
+        
+        # Start PTY stdout background reader thread
+        self.reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self.reader_thread.start()
+
+    def _reader_loop(self):
+        try:
+            while self.active:
+                r, w, x = select.select([self.master_fd], [], [], 0.5)
+                if not self.active:
+                    break
+                if self.master_fd in r:
+                    try:
+                        data = os.read(self.master_fd, 4096)
+                        if not data:  # EOF
+                            break
+                        
+                        # Store in terminal screen replay buffer
+                        self.history.extend(data)
+                        if len(self.history) > self.max_history:
+                            self.history = self.history[-self.max_history:]
+                        
+                        with self.queues_lock:
+                            for q in self.queues:
+                                q.put(data)
+                    except Exception:
+                        break
+        finally:
+            self.cleanup()
+
+    def add_queue(self):
+        q = queue.Queue()
+        if self.history:
+            q.put(bytes(self.history))
+        with self.queues_lock:
+            self.queues.append(q)
+        return q
+
+    def remove_queue(self, q):
+        with self.queues_lock:
+            if q in self.queues:
+                self.queues.remove(q)
+
+    def write(self, data_str):
+        self.last_activity = time.time()
+        try:
+            os.write(self.master_fd, data_str.encode('utf-8'))
+        except Exception as e:
+            logger.error("Failed to write input to master_fd: %s", e)
+
+    def resize(self, rows, cols):
+        self.last_activity = time.time()
+        try:
+            size = struct.pack('HHHH', rows, cols, 0, 0)
+            fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, size)
+        except Exception as e:
+            logger.error("Failed to send SIGWINCH terminal resize: %s", e)
+
+    def cleanup(self):
+        if not self.active:
+            return
+        self.active = False
+        logger.info("Cleaning up PTY session_id=%s process_id=%s", self.session_id, self.process_id)
+        
+        try:
+            os.close(self.master_fd)
+        except Exception:
+            pass
+            
+        try:
+            self.process_obj.terminate()
+            self.process_obj.wait(timeout=1.0)
+        except Exception:
+            try:
+                self.process_obj.kill()
+            except Exception:
+                pass
+
+        with self.queues_lock:
+            for q in self.queues:
+                q.put(None)  # EOF sentinel
+
+def terminal_cleanup_loop():
+    import time
+    while True:
+        try:
+            time.sleep(30)
+            now = time.time()
+            to_remove = []
+            for sid, session in list(active_terminals.items()):
+                exited = session.process_obj.poll() is not None
+                no_clients = len(session.queues) == 0
+                inactive = now - session.last_activity > 300
+                
+                if exited or (no_clients and inactive):
+                    to_remove.append(sid)
+                    
+            for sid in to_remove:
+                session = active_terminals.pop(sid, None)
+                if session:
+                    session.cleanup()
+        except Exception as e:
+            logger.error("Error in terminal_cleanup_loop: %s", e)
+
+
+@app.route('/api/ssh/terminal/start/<process_id>', methods=['POST', 'GET'])
+@require_approval
+def api_ssh_terminal_start(process_id):
+    user_id = session['user_id']
+    
+    # Grab optional session_id parameter to reconnect if tab refreshed
+    session_id = request.args.get('session_id') or (request.json.get('session_id') if request.is_json else None)
+    if session_id and session_id in active_terminals:
+        sess = active_terminals[session_id]
+        if sess.user_id == user_id and sess.process_id == process_id and sess.active:
+            logger.info("Reconnecting client to active PTY session %s", session_id)
+            return jsonify({"session_id": session_id}), 200
+
+    # 1. Fetch container app type & subdomain from DB
+    db = get_db()
+    cursor = db.execute(
+        'SELECT project_name, app_type FROM repo_history WHERE process_id = ? AND user_id = ?',
+        (process_id, user_id)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({'error': 'Container deployment not found or access unauthorized'}), 404
+        
+    app_type = row['app_type']
+
+    # 2. Get container name and check running status
+    try:
+        from ssh_gateway import get_docker_client, get_container
+        client = get_docker_client()
+        container = get_container(client, process_id, app_type)
+        if container.status != 'running':
+            return jsonify({'error': 'Container is stopped. Please start the container first.'}), 400
+        container_name = container.name
+    except Exception as e:
+        return jsonify({'error': f'Failed to access container: {str(e)}'}), 500
+
+    # 3. Spawn Docker process in allocated PTY
+    try:
+        master_fd, slave_fd = pty.openpty()
+        
+        # Interactive shell wrapper with /bin/bash fallback to /bin/sh
+        cmd = [
+            "docker", "exec", "-it", container_name,
+            "sh", "-c", "if [ -x /bin/bash ]; then exec /bin/bash; else exec /bin/sh; fi"
+        ]
+        
+        proc = subprocess.Popen(
+            cmd,
+            stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
+            preexec_fn=os.setsid
+        )
+        os.close(slave_fd)
+        
+        new_sid = str(uuid.uuid4())
+        session_obj = TerminalSession(
+            session_id=new_sid,
+            process_id=process_id,
+            master_fd=master_fd,
+            child_pid=proc.pid,
+            process_obj=proc,
+            user_id=user_id
+        )
+        
+        active_terminals[new_sid] = session_obj
+        logger.info("Created new persistent PTY shell session %s inside container %s", new_sid, container_name)
+        return jsonify({"session_id": new_sid}), 200
+        
+    except Exception as err:
+        logger.exception("Error starting PTY terminal session")
+        return jsonify({"error": f"Failed to allocate PTY session: {str(err)}"}), 500
+
+
+@app.route('/api/ssh/terminal/stream/<session_id>', methods=['GET'])
+def api_ssh_terminal_stream(session_id):
+    if session_id not in active_terminals:
+        return "Session not found", 404
+        
+    session_obj = active_terminals[session_id]
+    
+    # Verify owner credentials
+    if 'user_id' not in session or session['user_id'] != session_obj.user_id:
+        return "Unauthorized", 403
+
+    q = session_obj.add_queue()
+
+    def stream():
+        try:
+            while True:
+                try:
+                    data = q.get(timeout=20)
+                    if data is None:  # EOF sentinel
+                        break
+                    yield f"data: {json.dumps({'output': data.decode('utf-8', errors='ignore')})}\n\n"
+                except queue.Empty:
+                    yield ": keep-alive\n\n"
+        finally:
+            session_obj.remove_queue(q)
+
+    response = Response(stream(), mimetype='text/event-stream')
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
+
+
+@app.route('/api/ssh/terminal/input/<session_id>', methods=['POST'])
+@require_approval
+def api_ssh_terminal_input(session_id):
+    if session_id not in active_terminals:
+        return jsonify({"error": "Session not found"}), 404
+        
+    session_obj = active_terminals[session_id]
+    if session_obj.user_id != session['user_id']:
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    data = request.get_json(silent=True) or {}
+    input_str = data.get('input', '')
+    session_obj.write(input_str)
+    return jsonify({"success": True}), 200
+
+
+@app.route('/api/ssh/terminal/resize/<session_id>', methods=['POST'])
+@require_approval
+def api_ssh_terminal_resize(session_id):
+    if session_id not in active_terminals:
+        return jsonify({"error": "Session not found"}), 404
+        
+    session_obj = active_terminals[session_id]
+    if session_obj.user_id != session['user_id']:
+        return jsonify({"error": "Unauthorized"}), 403
+        
+    data = request.get_json(silent=True) or {}
+    rows = int(data.get('rows', 24))
+    cols = int(data.get('cols', 80))
+    session_obj.resize(rows, cols)
+    return jsonify({"success": True}), 200
+
+
 @app.route('/api/ssh/containers', methods=['GET'])
 @require_approval
 def api_ssh_containers():
@@ -8157,6 +8435,14 @@ if os.environ.get('TESTING') != 'true':
         logger.info("Successfully started Sentinel Healer background worker.")
     except Exception as e:
         logger.error(f"Failed to start Sentinel Healer: {e}")
+
+    # Start PTY terminal session cleanup monitor
+    try:
+        t_clean = threading.Thread(target=terminal_cleanup_loop, daemon=True)
+        t_clean.start()
+        logger.info("Successfully started PTY terminal session cleanup background worker.")
+    except Exception as e:
+        logger.error(f"Failed to start PTY terminal cleanup worker: {e}")
 
 if __name__ == '__main__':    # Ensure Docker images are ready before starting the server
     try:
