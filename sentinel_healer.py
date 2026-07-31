@@ -703,68 +703,25 @@ Please provide the corrected file contents to heal the application.
 
 def _healer_loop():
     """
-    Main loop for the Sentinel Healer background worker.
-    Runs continuously in a background daemon thread until stop event is signaled.
-    Blocks for 1 second at a time while popping jobs from the 'sentinel:queue' Redis list.
-    When a job is dequeued, it delegates execution to the `heal_application` helper.
+    Sentinel Healer background worker is disabled.
     """
-    import redis
-    # Connect to Redis
-    r_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
-    
-    while not _stop_event.is_set():
-        try:
-            # Block for 1 second on redis pop
-            val = r_client.brpop("sentinel:queue", timeout=1)
-            if val:
-                payload_str = val[1]
-                payload = json.loads(payload_str)
-                process_id = payload.get("process_id")
-                error_id = payload.get("error_id")
-                if process_id and error_id:
-                    try:
-                        from app import thread_local_ctx
-                        thread_local_ctx.request_id = f"heal-{process_id[:8]}"
-                    except Exception:
-                        pass
-                    logger.info("Dequeued self-healing job process_id=%s error_id=%s", process_id, error_id)
-                    try:
-                        heal_application(process_id, error_id, r_client)
-                    except Exception as e:
-                        logger.error("Error executing self-healing for app process_id=%s: %s", process_id, e, exc_info=True)
-                    finally:
-                        try:
-                            thread_local_ctx.request_id = None
-                        except Exception:
-                            pass
-        except Exception as queue_err:
-            try:
-                logger.error("Error in sentinel healer loop: %s", queue_err, exc_info=True)
-            except Exception:
-                pass
-            time.sleep(2)
+    logger.info("Sentinel Healer background worker is disabled.")
+    return
 
 def start_sentinel_healer():
     """
-    Start the Sentinel self-healing background thread if it is not already active.
-    Initializes a new daemon thread targetting `_healer_loop`.
+    Sentinel Healer is disabled.
     """
-    global _healer_thread, _stop_event
-    if _healer_thread is not None and _healer_thread.is_alive():
-        return
-    logger.info("Starting Sentinel self-healing daemon thread...")
-    _stop_event.clear()
-    _healer_thread = threading.Thread(target=_healer_loop, daemon=True)
-    _healer_thread.start()
+    logger.info("Sentinel Healer is disabled.")
+    return
 
 def stop_sentinel_healer():
     """
-    Signal the Sentinel self-healing background thread to exit gracefully.
-    Sets the stop event which causes the `_healer_loop` to exit.
+    Sentinel Healer is disabled.
     """
     global _stop_event
-    logger.info("Stopping Sentinel self-healing daemon thread...")
     _stop_event.set()
+    return
 
 def __getattr__(name):
     """

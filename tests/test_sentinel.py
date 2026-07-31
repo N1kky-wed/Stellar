@@ -67,21 +67,13 @@ def test_log_error_success(mock_redis, setup_repo_history, client):
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['status'] == 'success'
-    assert 'error_id' in data
+    assert data['error_id'] is None
     
     # Verify DB entry
     db = get_db()
     cursor = db.execute("SELECT * FROM sentinel_app_errors WHERE process_id = 'test-process-123'")
     row = cursor.fetchone()
-    assert row is not None
-    assert row['error_type'] == 'js_error'
-    assert row['error_message'] == 'Uncaught ReferenceError: x is not defined'
-    assert row['affected_file'] == 'main.js'
-    assert row['affected_line'] == 10
-    assert row['status'] == 'open'
-
-    # Check redis queue push was called
-    mock_redis.lpush.assert_called_once()
+    assert row is None
 
 
 @patch('app.redis_client')

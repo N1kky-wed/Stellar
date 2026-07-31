@@ -335,3 +335,70 @@ def test_ssh_terminal_resize_session_not_found_returns_404(auth_client):
     response = auth_client.post('/api/ssh/terminal/resize/invalid-session-uuid', json={"rows": 24, "cols": 80})
     assert response.status_code == 404
 
+
+# ==============================================================================
+# Container File Upload Tests
+# ==============================================================================
+
+def test_ssh_container_upload_unauthorized(client):
+    response = client.post('/api/ssh/container/some-proc-id/upload')
+    assert response.status_code == 401
+
+
+def test_ssh_container_upload_not_found(auth_client):
+    response = auth_client.post('/api/ssh/container/non-existent-pid/upload')
+    assert response.status_code == 404
+
+
+def test_ssh_container_upload_no_files(auth_client):
+    from app import get_db
+    db = get_db()
+    db.execute(
+        "INSERT INTO repo_history (process_id, user_id, project_name, status, subdomain) VALUES (?, ?, ?, ?, ?)",
+        ('test-upload-proc-id', 1, 'Upload Test App', 'running', 'uploadtest')
+    )
+    db.commit()
+
+    response = auth_client.post('/api/ssh/container/test-upload-proc-id/upload', data={})
+    assert response.status_code == 400
+    data = json.loads(response.data)
+    assert 'No files selected' in data['error']
+
+
+def test_ssh_container_upload_success(auth_client):
+    from app import get_db
+    import io
+    import shutil
+    db = get_db()
+    db.execute(
+        "INSERT OR REPLACE INTO repo_history (process_id, user_id, project_name, status, subdomain) VALUES (?, ?, ?, ?, ?)",
+        ('test-upload-success-id', 1, 'Upload Success App', 'running', 'uploadsuccess')
+    )
+    db.commit()
+
+    file_data = (io.BytesIO(b'console.log("Hello from upload test");'), 'test_script.js')
+
+    with patch('ssh_gateway.get_container', side_effect=Exception("No container running in test")):
+        response = auth_client.post(
+            '/api/ssh/container/test-upload-success-id/upload',
+            data={'file': file_data},
+            content_type='multipart/form-data'
+        )
+
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert 'Successfully uploaded' in data['message']
+    assert 'test_script.js' in data['files']
+
+    # Verify file was written to host deployment folder
+    host_file = '/home/stellaradmin/my_app/deployments/test-upload-success-id/test_script.js'
+    assert os.path.exists(host_file)
+    with open(host_file, 'r') as f:
+        assert 'Hello from upload test' in f.read()
+
+    # Clean up test file & folder
+    if os.path.exists(host_file):
+        os.remove(host_file)
+    shutil.rmtree('/home/stellaradmin/my_app/deployments/test-upload-success-id', ignore_errors=True)
+
+

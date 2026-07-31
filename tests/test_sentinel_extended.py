@@ -523,32 +523,13 @@ def test_heal_application_health_check_failure(mock_genai_client_class, mock_doc
 
 def test_start_stop_sentinel_healer():
     """
-    Asserts that start_sentinel_healer launches background daemon, and stop halts it.
-    Uses custom loop implementation to avoid race conditions.
+    Asserts that start_sentinel_healer is a no-op when Sentinel Healer is disabled.
     """
-    # Start healer
-    with patch('sentinel_healer._healer_loop') as mock_loop:
-        def mock_loop_impl():
-            while not sentinel_healer._stop_event.is_set():
-                time.sleep(0.01)
-        mock_loop.side_effect = mock_loop_impl
-
-        sentinel_healer.start_sentinel_healer()
-        # Verify thread exists and is alive
-        assert sentinel_healer._healer_thread is not None
-        assert sentinel_healer._healer_thread.is_alive()
-        
-        # Start again should do nothing since it's already active
-        thread_ref = sentinel_healer._healer_thread
-        sentinel_healer.start_sentinel_healer()
-        assert sentinel_healer._healer_thread is thread_ref
-
-        # Stop healer
-        sentinel_healer.stop_sentinel_healer()
-        
-        # Wait a short moment for thread to exit
-        sentinel_healer._healer_thread.join(timeout=1.0)
-        assert sentinel_healer._stop_event.is_set()
+    sentinel_healer._healer_thread = None
+    sentinel_healer.start_sentinel_healer()
+    assert sentinel_healer._healer_thread is None
+    sentinel_healer.stop_sentinel_healer()
+    assert sentinel_healer._stop_event.is_set()
 
 
 # ===========================================================================
@@ -559,27 +540,9 @@ def test_start_stop_sentinel_healer():
 @patch('sentinel_healer.heal_application')
 def test_healer_loop_iteration(mock_heal, mock_redis_class):
     """
-    Asserts that _healer_loop pops tasks from Redis and runs heal_application.
-    Defines a clean generator function to prevent StopIteration hangs.
+    Asserts that _healer_loop returns immediately when Sentinel Healer is disabled.
     """
-    mock_redis_inst = MagicMock()
-    mock_redis_class.return_value = mock_redis_inst
-    
-    call_count = 0
-    def brpop_mock(key, timeout):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return ("sentinel:queue", json.dumps({"process_id": "test-loop-proc", "error_id": 40}))
-        else:
-            sentinel_healer._stop_event.set()
-            return None
-    
-    mock_redis_inst.brpop.side_effect = brpop_mock
-
     sentinel_healer._stop_event.clear()
     sentinel_healer._healer_loop()
-
-    # Verify heal_application was invoked with the popped details
-    mock_heal.assert_called_once_with("test-loop-proc", 40, mock_redis_inst)
+    mock_heal.assert_not_called()
 

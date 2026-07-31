@@ -1,6 +1,11 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script
+      async
+      src="https://8x.business/t.js"
+      data-8x-key="8x_a9312a274e7c6ce3711a713bcad84a28"
+    ></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stellar</title>
@@ -450,6 +455,12 @@
         const auth = firebase.auth();
         const provider = new firebase.auth.GoogleAuthProvider();
 
+        auth.onAuthStateChanged((user) => {
+          if (user) {
+            window._8x?.convert({ event: "signup" });
+          }
+        });
+
         const maskWrapper = document.getElementById("maskWrapper");
         const codeCanvas = document.getElementById("codeCanvas");
         const snippets = [
@@ -534,6 +545,7 @@
 
             const data = await response.json();
             if (data.success) {
+              window._8x?.convert({ event: "signup" });
               const sequence = [
                 "IDENTITY_VERIFIED",
                 "MOUNTING GROUND-TRUTH LEDGER...",

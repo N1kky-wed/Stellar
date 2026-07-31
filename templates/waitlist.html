@@ -1,6 +1,11 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script
+      async
+      src="https://8x.business/t.js"
+      data-8x-key="8x_a9312a274e7c6ce3711a713bcad84a28"
+    ></script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
@@ -550,6 +555,7 @@
 
           const result = await response.json();
           if (result.success) {
+            window._8x?.convert({ event: "signup" });
             document.getElementById("formModal").style.display = "none";
             document.getElementById("resubmitBtn").style.display =
               "inline-block";

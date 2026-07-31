@@ -1096,6 +1096,13 @@ def initialize_database():
             except Exception as e:
                 logger.exception("Error adding 'app_type' column: %s", e)
 
+        if 'deployed_by_admin' not in columns:
+            try:
+                cursor.execute("ALTER TABLE repo_history ADD COLUMN deployed_by_admin BOOLEAN DEFAULT 0")
+                logger.info("Added 'deployed_by_admin' column to 'repo_history' table.")
+            except Exception as e:
+                logger.exception("Error adding 'deployed_by_admin' column: %s", e)
+
         cursor.execute('''CREATE TABLE IF NOT EXISTS tool_calls (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chat_id INTEGER NOT NULL,
@@ -3098,11 +3105,22 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
     logs_buffer = []
 
     user_id = None
+    user_role = None
     with app_obj.app_context():
         db = get_db()
-        cursor = db.execute('SELECT user_id FROM repo_history WHERE process_id = ?', (process_id,))
+        cursor = db.execute('''
+            SELECT rh.user_id, u.role 
+            FROM repo_history rh
+            JOIN users u ON rh.user_id = u.id
+            WHERE rh.process_id = ?
+        ''', (process_id,))
         row = cursor.fetchone()
-        if row: user_id = row['user_id']
+        if row: 
+            user_id = row['user_id']
+            user_role = row['role']
+            is_admin = 1 if user_role == 'admin' else 0
+            db.execute("UPDATE repo_history SET deployed_by_admin = ? WHERE process_id = ?", (is_admin, process_id))
+            db.commit()
 
     import docker
     client = docker.from_env()
@@ -3252,7 +3270,8 @@ def _deploy_and_stream_output(app_obj, project_files, process_id, old_container_
                     "stellar_type": app_type,
                     "stellar_process_id": process_id,
                     "created_at_ts": str(time.time()),
-                    "repo_app_id": process_id
+                    "repo_app_id": process_id,
+                    "deployed_by_admin": "true" if user_role == 'admin' else "false"
                 }
             )
             logger.info("New sandbox container created process_id=%s container_id=%s duration_sec=%.2f", process_id, container.id, time.time() - t_run)
@@ -3513,6 +3532,7 @@ def stop_and_cleanup_app_by_process_id(process_id, app_type='repo'):
         process_id (str): The unique process identifier of the application.
         app_type (str, optional): The application type (e.g. 'repo'). Defaults to 'repo'.
     """
+    import docker
     if not process_id:
         return
 
@@ -5343,14 +5363,23 @@ def api_ssh_terminal_start(process_id):
         master_fd, slave_fd = pty.openpty()
         
         cmd = [
-            "docker", "exec", "-it", container_name,
+            "docker", "exec", "-it", "-e", "TERM=xterm-256color", container_name,
             "sh", "-c", "if [ -x /bin/bash ]; then exec /bin/bash; else exec /bin/sh; fi"
         ]
         
+        def set_ctty():
+            os.setsid()
+            import fcntl
+            import termios
+            try:
+                fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+            except Exception:
+                pass
+
         proc = subprocess.Popen(
             cmd,
             stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
-            preexec_fn=os.setsid
+            preexec_fn=set_ctty
         )
         os.close(slave_fd)
         
@@ -5536,6 +5565,90 @@ def api_ssh_container_action(process_id):
             return jsonify({'error': f'Execution failed: {str(e)}'}), 500
     else:
         return jsonify({'error': 'Invalid action'}), 400
+
+@app.route('/api/ssh/container/<process_id>/upload', methods=['POST'])
+@require_approval
+def api_ssh_container_upload(process_id):
+    """
+    Upload one or more files directly into the active container deployment.
+    """
+    user_id = session['user_id']
+    db = get_db()
+    cursor = db.execute(
+        'SELECT id, project_name FROM repo_history WHERE process_id = ? AND user_id = ?',
+        (process_id, user_id)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({'error': 'Container deployment not found or access unauthorized'}), 404
+
+    files = request.files.getlist('file') or request.files.getlist('files') or list(request.files.values())
+    if not files or all(getattr(f, 'filename', '') == '' for f in files):
+        return jsonify({'error': 'No files selected for upload'}), 400
+
+    from ssh_gateway import get_docker_client, get_container
+    import tempfile
+
+    dest_dir = request.form.get('dest_dir', '/app').strip() or '/app'
+    host_project_dir = f"/home/stellaradmin/my_app/deployments/{process_id}"
+
+    container = None
+    try:
+        client = get_docker_client()
+        container = get_container(client, process_id, app_type='repo')
+    except Exception as e:
+        logger.warning("Could not retrieve container for upload process_id=%s: %s", process_id, e)
+
+    uploaded_files = []
+    for file in files:
+        if not file or not getattr(file, 'filename', None):
+            continue
+
+        raw_name = os.path.basename(file.filename)
+        filename = secure_filename(raw_name) or raw_name or f"upload_{int(time.time())}"
+
+        # 1. Save directly to host deployment folder (which is bind-mounted to /app inside container)
+        os.makedirs(host_project_dir, exist_ok=True)
+        if dest_dir == '/app' or dest_dir == '/app/':
+            target_folder = host_project_dir
+        elif dest_dir.startswith('/app/'):
+            rel_path = os.path.relpath(dest_dir, '/app')
+            target_folder = os.path.join(host_project_dir, rel_path)
+        else:
+            target_folder = host_project_dir
+
+        os.makedirs(target_folder, exist_ok=True)
+        target_file_path = os.path.join(target_folder, filename)
+        file.save(target_file_path)
+        file.seek(0)
+
+        # 2. Also copy directly to container via docker cp if container is running
+        if container and container.status == 'running':
+            try:
+                with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                    file.save(tmp.name)
+                    tmp_path = tmp.name
+
+                container_dest = os.path.join(dest_dir, filename)
+                container.exec_run(f"mkdir -p {dest_dir}", user='root')
+                subprocess.run(['docker', 'cp', tmp_path, f"{container.name}:{container_dest}"], check=True, capture_output=True)
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception as cp_err:
+                logger.error("Failed docker cp for upload process_id=%s: %s", process_id, cp_err)
+
+        uploaded_files.append(filename)
+
+    if not uploaded_files:
+        return jsonify({'error': 'Failed to save uploaded files'}), 500
+
+    logger.info("Uploaded %d files to process_id=%s container dest_dir=%s", len(uploaded_files), process_id, dest_dir)
+    return jsonify({
+        'message': f"Successfully uploaded {len(uploaded_files)} file(s) to {dest_dir}",
+        'files': uploaded_files,
+        'dest_dir': dest_dir
+    }), 200
+
 
 @app.route('/api/ssh/generate-code', methods=['POST'])
 @require_approval
@@ -6310,27 +6423,10 @@ def pwa_test_push():
 
 # ─── Sentinel Healer Routes ───────────────────────────────────────────────────
 
-def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=True, error_message=None, affected_file=None, affected_line=None):
-    """Queue a backend crash to the Sentinel healer via Redis."""
-    try:
-        db = get_db()
-        msg = error_message if error_message else error_type
-        cursor = db.execute(
-            "INSERT INTO sentinel_app_errors (process_id, error_type, error_message, stack_trace, affected_file, affected_line, status) VALUES (?, ?, ?, ?, ?, ?, 'open')",
-            (process_id, error_type, msg, stack_trace, affected_file, affected_line)
-        )
-        error_id = cursor.lastrowid
-        db.commit()
-        if trigger_heal:
-            payload = json.dumps({"process_id": process_id, "error_id": error_id})
-            redis_client.lpush("sentinel:queue", payload)
-            logger.info("Sentinel: Queued healing task process_id=%s error_id=%s", process_id, error_id)
-        else:
-            logger.info("Sentinel: Logged error process_id=%s error_id=%s action=skipped_healing reason=non_owner_visitor", process_id, error_id)
-        return error_id
-    except Exception as e:
-        logger.error(f"Sentinel: Failed to log backend crash for {process_id}: {e}")
-        return None
+def log_backend_crash(process_id, error_type, stack_trace, trigger_heal=False, error_message=None, affected_file=None, affected_line=None):
+    """Sentinel Healer is disabled. Backend crashes will not be queued for healing."""
+    logger.debug("Sentinel Healer is disabled: crash report for %s ignored.", process_id)
+    return None
 
 @app.route('/api/sentinel/log_error', methods=['POST'])
 def sentinel_log_error():
@@ -7803,6 +7899,8 @@ class OrphanContainerMonitor:
         for container in containers:
             try:
                 labels = container.labels
+                if labels.get("deployed_by_admin") == "true":
+                    continue
                 process_id = labels.get("stellar_process_id")
                 created_ts_str = labels.get("created_at_ts")
 
@@ -7890,9 +7988,9 @@ def cleanup_stale_containers():
                 db = get_db()
                 # 90 hours in seconds
                 ninety_hours_ago = (datetime.datetime.now() - datetime.timedelta(hours=90)).strftime('%Y-%m-%d %H:%M:%S')
-                db.execute("UPDATE repo_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created') AND created_at < ?", (ninety_hours_ago,))
+                db.execute("UPDATE repo_history SET status = 'stopped' WHERE status IN ('running', 'starting', 'created') AND created_at < ? AND deployed_by_admin = 0", (ninety_hours_ago,))
                 db.commit()
-                logger.info("Database status for repo_history reset for apps older than %s", ninety_hours_ago)
+                logger.info("Database status for repo_history reset for apps older than %s and not deployed by admin", ninety_hours_ago)
         except Exception as db_err:
             logger.exception("Failed to reset database statuses on startup error=%s", db_err)
 
@@ -7917,6 +8015,9 @@ def cleanup_stale_containers():
             try:
                 # Check for 90-hour grace period
                 labels = container.labels
+                if labels.get("deployed_by_admin") == "true":
+                    logger.info("Skipping admin container container_name=%s (deployed_by_admin=true)", container.name)
+                    continue
                 created_ts_str = labels.get("created_at_ts")
                 if created_ts_str:
                     try:
@@ -8009,7 +8110,7 @@ def intercept_subdomains():
     domain_parts = host.split(':')[0].split('.')
 
     # Catch any request to *.stellarai.site (excluding www and the main root domain)
-    if len(domain_parts) >= 3 and domain_parts[-2] == 'stellarai' and domain_parts[-1] == 'live' and domain_parts[0] != 'www':
+    if len(domain_parts) >= 3 and domain_parts[-2] == 'stellarai' and domain_parts[-1] in ('site', 'live') and domain_parts[0] != 'www':
         g.is_proxy = True
         subdomain = domain_parts[0]
 
@@ -8028,14 +8129,6 @@ def intercept_subdomains():
 
         # Fallback to process_id (uuid) if it's a temporary run_code container
         process_id = row['process_id'] if row else subdomain
-
-        # Check if Sentinel is currently healing this application
-        try:
-            healing_status = redis_client.get(f"sentinel:healing:{process_id}")
-            if healing_status:
-                return render_template('sentinel_healing_overlay.html', app_name=subdomain, status_text=healing_status, process_id=process_id)
-        except Exception as redis_err:
-            logger.error(f"Failed to check sentinel healing status in Redis: {redis_err}")
 
         app_info = None
         with active_apps_lock:
@@ -8057,8 +8150,34 @@ def intercept_subdomains():
                     }
                     with active_apps_lock:
                         active_apps[process_id] = app_info
-                else:
-                    logger.debug(f"No active app found in Redis for {process_id} (subdomain: {subdomain})")
+                if not app_info:
+                    # Live Docker inspect fallback if Redis cache is empty or missed
+                    try:
+                        from ssh_gateway import get_docker_client
+                        d_client = get_docker_client()
+                        c_obj = d_client.containers.get(f"stellar-repo-{process_id}")
+                        if c_obj and c_obj.status == "running":
+                            c_ports = c_obj.attrs.get('NetworkSettings', {}).get('Ports', {})
+                            for _c_port, h_bindings in c_ports.items():
+                                if h_bindings and len(h_bindings) > 0:
+                                    l_port = int(h_bindings[0]['HostPort'])
+                                    app_info = {
+                                        "port": l_port,
+                                        "container_id": c_obj.id,
+                                        "status": "running"
+                                    }
+                                    with active_apps_lock:
+                                        active_apps[process_id] = app_info
+                                    redis_client.hset(_redis_repo_key(process_id), mapping={
+                                        "container_id": c_obj.id,
+                                        "status": "running",
+                                        "process_id": process_id,
+                                        "host_port": str(l_port)
+                                    })
+                                    logger.info(f"Auto-recovered app_info from live Docker container for {process_id} on port {l_port}")
+                                    break
+                    except Exception as d_err:
+                        logger.debug(f"Docker fallback lookup failed for {process_id}: {d_err}")
             except Exception as e:
                 logger.error(f"Redis lookup failed for app {process_id}: {e}")
                 return "Error looking up application state.", 500
@@ -8100,85 +8219,6 @@ def intercept_subdomains():
             headers.append(('Pragma', 'no-cache'))
             headers.append(('Expires', '0'))
 
-            # Check if the response is a server error — trigger Sentinel if so
-            if resp.status_code >= 500:
-                container_logs = ""
-                try:
-                    import docker
-                    d_client = docker.from_env()
-                    container = d_client.containers.get(f"stellar-repo-{process_id}")
-                    container_logs = container.logs(tail=100, stdout=True, stderr=True).decode('utf-8', 'replace')
-                except Exception as docker_err:
-                    container_logs = f"Failed to retrieve container logs: {docker_err}"
-                body_snippet = resp.text[:2000] if 'text/html' in resp.headers.get('Content-Type', '').lower() else ""
-                # Sentinel Security Fix: Only trigger self-healing if the visitor is the authenticated owner of the application.
-                is_owner = (owner_id is not None and 'user_id' in session and session['user_id'] == owner_id)
-                log_backend_crash(process_id, f"HTTP Server Error {resp.status_code}",
-                    f"HTTP STATUS {resp.status_code}\n\nCONTAINER LOGS:\n{container_logs}\n\nHTTP RESPONSE:\n{body_snippet}",
-                    trigger_heal=is_owner)
-
-            # Inject Sentinel telemetry JS hook into HTML responses
-            content_type = resp.headers.get('Content-Type', '')
-            if 'text/html' in content_type.lower():
-                html_content = resp.text
-                script_tag = """<script id="sentinel-telemetry-hook">
-(function() {
-    var SENTINEL_KEY = 'sentinel_reported_' + window.location.pathname;
-    var reportedErrors = {};
-    var errorCount = 0;
-    // Use sessionStorage to survive reloads — don't re-report on a just-healed page
-    var healingReported = sessionStorage.getItem(SENTINEL_KEY) === '1';
-    setInterval(function() { errorCount = 0; }, 10000);
-    // Clear the flag after 30s so future real errors can still be caught
-    if (healingReported) setTimeout(function() { sessionStorage.removeItem(SENTINEL_KEY); healingReported = false; }, 30000);
-    function pollForOverlay() {
-        var attempts = 0;
-        var interval = setInterval(function() {
-            attempts++;
-            fetch('/api/sentinel/status?url=' + encodeURIComponent(window.location.href))
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    if (data.healing) { clearInterval(interval); window.location.reload(); }
-                })
-                .catch(function(){});
-            if (attempts > 20) clearInterval(interval);
-        }, 1500);
-    }
-    function reportError(errorData) {
-        if (healingReported || errorCount >= 5) return;
-        // Ignore cross-origin errors (CDN scripts, browser extensions) — source is null or empty
-        var src = errorData.source || '';
-        if (!src || src === 'null' || (src.indexOf(window.location.origin) === -1 && src.indexOf('://') !== -1)) return;
-        var hash = errorData.message + (errorData.line || '') + src;
-        if (reportedErrors[hash] && (Date.now() - reportedErrors[hash] < 30000)) return;
-        reportedErrors[hash] = Date.now();
-        errorCount++;
-        healingReported = true;
-        sessionStorage.setItem(SENTINEL_KEY, '1');
-        fetch('/api/sentinel/log_error', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: window.location.href, error: errorData, user_agent: navigator.userAgent })
-        }).then(function(r) {
-            if (r.ok) pollForOverlay();
-        }).catch(function(){});
-    }
-    window.onerror = function(message, source, lineno, colno, error) {
-        reportError({ type: 'js_error', message: message, source: source || '', line: lineno, col: colno, stack: error ? error.stack : '' });
-    };
-    window.onunhandledrejection = function(event) {
-        if (!event.reason) return;
-        reportError({ type: 'promise_rejection', message: event.reason.message || String(event.reason), stack: event.reason.stack || '', source: window.location.href });
-    };
-})();
-</script>"""
-
-                if "</head>" in html_content:
-                    html_content = html_content.replace("</head>", f"{script_tag}</head>", 1)
-                else:
-                    html_content = script_tag + html_content
-                return Response(html_content, resp.status_code, headers)
-
             # FIX: Stream the response back in chunks instead of buffering with resp.content
             def generate():
                 try:
@@ -8202,26 +8242,27 @@ def intercept_subdomains():
                     pass
             logger.error(f"Dynamic proxy error for app {process_id}: {e}")
 
-            # Log connection failure to Sentinel
-            try:
-                import docker
-                d_client = docker.from_env()
-                container = d_client.containers.get(f"stellar-repo-{process_id}")
-                container_logs = container.logs(tail=100, stdout=True, stderr=True).decode('utf-8', 'replace')
-            except Exception as docker_err:
-                container_logs = f"Failed to retrieve container logs: {docker_err}"
-            # Sentinel Security Fix: Only trigger self-healing if the visitor is the authenticated owner of the application.
-            is_owner = (owner_id is not None and 'user_id' in session and session['user_id'] == owner_id)
-            log_backend_crash(process_id, f"Connection Failure: {str(e)}",
-                f"PROXY ERROR: {str(e)}\n\nCONTAINER LOGS:\n{container_logs}",
-                trigger_heal=is_owner)
-
-            # Passive Health Check: If connection is refused/reset, invalidate local cache
-            # The port might be stale. Removing it forces a Redis re-fetch on the next request.
+            # Passive Health Check: If connection is refused/reset, invalidate local and Redis cache
+            # The port might be stale or app server process inside container was stopped.
             if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
                 with active_apps_lock:
                     if process_id in active_apps:
                         del active_apps[process_id]
+                try:
+                    redis_client.hdel(_redis_repo_key(process_id), "host_port")
+                except Exception:
+                    pass
+
+                # Auto-relaunch web server process inside running container if it died
+                try:
+                    from ssh_gateway import get_docker_client
+                    d_client = get_docker_client()
+                    c_obj = d_client.containers.get(f"stellar-repo-{process_id}")
+                    if c_obj and c_obj.status == "running":
+                        logger.info("Auto-relaunching web server process inside container process_id=%s", process_id)
+                        c_obj.exec_run("bash -c 'cd /app && (test -f app.py && nohup python3 app.py > app.log 2>&1 & || test -f server.js && nohup node server.js > app.log 2>&1 & || test -f package.json && nohup npm start > app.log 2>&1 &)'", detach=True)
+                except Exception as auto_launch_err:
+                    logger.debug("Auto-relaunch web server check failed for process_id=%s: %s", process_id, auto_launch_err)
 
             if app_info.get("status") == "exited":
                  return "Application not found or has been stopped.", 404
@@ -8499,13 +8540,7 @@ if os.environ.get('TESTING') != 'true':
     task_scheduler = TaskSchedulerMonitor(app)
     task_scheduler.start()
 
-    try:
-        from sentinel_healer import start_sentinel_healer, stop_sentinel_healer
-        start_sentinel_healer()
-        atexit.register(stop_sentinel_healer)
-        logger.info("Successfully started Sentinel Healer background worker.")
-    except Exception as e:
-        logger.error(f"Failed to start Sentinel Healer: {e}")
+    logger.info("Sentinel Healer agent is disabled.")
 
     # Start PTY terminal session cleanup monitor
     try:

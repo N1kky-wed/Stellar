@@ -1309,8 +1309,13 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             if repo_url: initial_files['repo'] = repo_url
             if port: initial_files['port'] = port
 
-            db.execute('INSERT INTO repo_history (user_id, project_name, process_id, status, files_snapshot, subdomain) VALUES (?, ?, ?, ?, ?, ?)',
-                       (session['user_id'], project_title, process_id, 'created', json.dumps(initial_files), subdomain))
+            # Get user role to check if admin
+            cursor = db.execute('SELECT role FROM users WHERE id = ?', (session['user_id'],))
+            user_row = cursor.fetchone()
+            is_admin = 1 if (user_row and user_row['role'] == 'admin') else 0
+
+            db.execute('INSERT INTO repo_history (user_id, project_name, process_id, status, files_snapshot, subdomain, deployed_by_admin) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                       (session['user_id'], project_title, process_id, 'created', json.dumps(initial_files), subdomain, is_admin))
             db.commit()
 
             try:
@@ -1334,12 +1339,15 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                             f.write(content.encode('utf-8'))
 
                 t_run = time.time()
+                host_brain_dir = "/home/stellaradmin/.gemini/antigravity-cli/brain"
+                os.makedirs(host_brain_dir, exist_ok=True)
                 container = client.containers.run(
                     image=target_image,
                     command='sleep infinity',
                     ports={f"{port}/tcp": ('0.0.0.0', 0)},                    name=f"stellar-repo-{process_id}",
                     volumes={
-                        project_dir: {'bind': '/app', 'mode': 'rw'}
+                        project_dir: {'bind': '/app', 'mode': 'rw'},
+                        host_brain_dir: {'bind': '/root/.gemini/antigravity-cli/brain', 'mode': 'rw'}
                     },
                     remove=False,
                     detach=True,
@@ -1353,7 +1361,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                         "stellar_process_id": process_id,
                         "created_at_ts": str(time.time()),
                         "repo_app_id": process_id,
-                        "subdomain": subdomain
+                        "subdomain": subdomain,
+                        "deployed_by_admin": "true" if is_admin else "false"
                     }
                 )
                 logger.info("Repo container created process_id=%s image=%s duration_sec=%.2f", process_id, target_image, time.time() - t_run)
@@ -1570,7 +1579,13 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
             repo_url = snapshot.get('repo')
             port = snapshot.get('port', 5000)
             
-
+            # Get user role to check if admin
+            cursor = db.execute('SELECT role FROM users WHERE id = ?', (session['user_id'],))
+            user_row = cursor.fetchone()
+            is_admin = 1 if (user_row and user_row['role'] == 'admin') else 0
+            
+            db.execute("UPDATE repo_history SET deployed_by_admin = ? WHERE process_id = ?", (is_admin, process_id))
+            db.commit()
             # Generic Repo/Custom restart
             stop_and_cleanup_app_by_process_id(process_id, app_type='repo')
             
@@ -1591,12 +1606,15 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                         f.write(content.encode('utf-8'))
 
             t_run = time.time()
+            host_brain_dir = "/home/stellaradmin/.gemini/antigravity-cli/brain"
+            os.makedirs(host_brain_dir, exist_ok=True)
             container = client.containers.run(
                 image='stellar-repo-host:latest',
                 command='sleep infinity',
                 ports={f"{port}/tcp": ('0.0.0.0', 0)},
                 volumes={
-                    project_dir: {'bind': '/app', 'mode': 'rw'}
+                    project_dir: {'bind': '/app', 'mode': 'rw'},
+                    host_brain_dir: {'bind': '/root/.gemini/antigravity-cli/brain', 'mode': 'rw'}
                 },
                 name=f"stellar-repo-{process_id}",
                 detach=True,
@@ -1608,7 +1626,8 @@ def repo_control(action: str, status: str, timeout: int, app_id: str = None, pro
                     "stellar_process_id": process_id,
                     "created_at_ts": str(time.time()),
                     "repo_app_id": process_id,
-                    "subdomain": subdomain
+                    "subdomain": subdomain,
+                    "deployed_by_admin": "true" if is_admin else "false"
                 }
             )
             logger.info("Repo container restarted process_id=%s image=%s duration_sec=%.2f", process_id, 'stellar-repo-host:latest', time.time() - t_run)
@@ -1742,6 +1761,8 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
     except docker.errors.NotFound:
         try:
             t_run = time.time()
+            host_brain_dir = "/home/stellaradmin/.gemini/antigravity-cli/brain"
+            os.makedirs(host_brain_dir, exist_ok=True)
             container = client.containers.run(
                 image_name,
                 name=container_name,
@@ -1749,7 +1770,10 @@ def lab_execute(command: str, status: str, timeout: int) -> str:
                 tty=True,
                 init=True,
                 working_dir='/lab',
-                volumes={lab_workspace: {'bind': '/lab', 'mode': 'rw'}},
+                volumes={
+                    lab_workspace: {'bind': '/lab', 'mode': 'rw'},
+                    host_brain_dir: {'bind': '/root/.gemini/antigravity-cli/brain', 'mode': 'rw'}
+                },
                 restart_policy={"Name": "unless-stopped"},
                 network=user_network,
                 labels={

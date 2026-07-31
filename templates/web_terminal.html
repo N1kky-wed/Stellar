@@ -268,6 +268,42 @@
       .control-btn.btn-start:hover {
         background: rgba(16, 185, 129, 0.08);
       }
+      .control-btn.btn-upload {
+        border-color: rgba(59, 130, 246, 0.3);
+        color: #60a5fa;
+      }
+      .control-btn.btn-upload:hover {
+        background: rgba(59, 130, 246, 0.08);
+      }
+
+      .drag-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(1, 1, 3, 0.85);
+        backdrop-filter: blur(4px);
+        border: 2px dashed #60a5fa;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        z-index: 100;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .drag-overlay.active {
+        opacity: 1;
+      }
+      .drag-overlay-text {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #60a5fa;
+      }
 
       .terminal-viewport {
         flex: 1;
@@ -379,10 +415,44 @@
           <button class="control-btn" id="btnClear" onclick="clearTerminal()">
             Clear
           </button>
+          <button
+            class="control-btn btn-upload"
+            id="btnUpload"
+            onclick="triggerFileUpload()"
+            disabled
+          >
+            Upload
+          </button>
+          <input
+            type="file"
+            id="fileInput"
+            style="display: none"
+            multiple
+            onchange="handleFileSelect(event)"
+          />
         </div>
       </div>
 
       <div class="terminal-viewport">
+        <div id="dragOverlay" class="drag-overlay">
+          <svg
+            width="40"
+            height="40"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="#60a5fa"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+            />
+          </svg>
+          <div class="drag-overlay-text">
+            Drop files here to upload to container (/app)
+          </div>
+        </div>
         <div id="terminal"></div>
       </div>
     </div>
@@ -466,7 +536,9 @@
         // Capture native paste event on the terminal container
         document.getElementById("terminal").addEventListener("paste", (e) => {
           e.preventDefault();
-          const text = (e.clipboardData || window.clipboardData).getData("text");
+          const text = (e.clipboardData || window.clipboardData).getData(
+            "text",
+          );
           if (text && sessionId) {
             sendInput(text);
           }
@@ -594,6 +666,7 @@
         document.getElementById("btnStart").disabled = isRunning || isNotFound;
         document.getElementById("btnStop").disabled = !isRunning;
         document.getElementById("btnRestart").disabled = !isRunning;
+        document.getElementById("btnUpload").disabled = !isRunning;
 
         if (isNotFound) {
           term.write(
@@ -792,6 +865,105 @@
             );
           });
       }
+
+      function triggerFileUpload() {
+        if (!currentContainer || currentContainer.live_status !== "running")
+          return;
+        document.getElementById("fileInput").click();
+      }
+
+      async function handleFileSelect(event) {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+        await uploadFilesToContainer(files);
+        event.target.value = "";
+      }
+
+      async function uploadFilesToContainer(files) {
+        if (!currentContainer || currentContainer.live_status !== "running") {
+          alert("Please select an active running container first.");
+          return;
+        }
+
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+          formData.append("file", files[i]);
+        }
+
+        const fileNames = Array.from(files)
+          .map((f) => f.name)
+          .join(", ");
+        if (term) {
+          term.write(
+            `\r\n\x1b[33m[*] Uploading ${files.length} file(s) [${fileNames}] to /app...\x1b[0m\r\n`,
+          );
+        }
+
+        try {
+          const res = await fetch(
+            `/api/ssh/container/${currentContainer.process_id}/upload`,
+            {
+              method: "POST",
+              body: formData,
+            },
+          );
+          const data = await res.json();
+          if (res.ok) {
+            if (term) {
+              term.write(
+                `\x1b[32m[✓] ${data.message || "Upload complete."}\x1b[0m\r\n`,
+              );
+            }
+          } else {
+            if (term) {
+              term.write(
+                `\x1b[31m[!] Upload failed: ${data.error || "Server error"}\x1b[0m\r\n`,
+              );
+            }
+          }
+        } catch (err) {
+          if (term) {
+            term.write(
+              `\x1b[31m[!] Network error during upload: ${err.message}\x1b[0m\r\n`,
+            );
+          }
+        }
+      }
+
+      // Drag and Drop files onto terminal viewport
+      window.addEventListener("load", () => {
+        const viewport = document.querySelector(".terminal-viewport");
+        const dragOverlay = document.getElementById("dragOverlay");
+        if (!viewport || !dragOverlay) return;
+
+        viewport.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (currentContainer && currentContainer.live_status === "running") {
+            dragOverlay.classList.add("active");
+          }
+        });
+
+        viewport.addEventListener("dragleave", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragOverlay.classList.remove("active");
+        });
+
+        viewport.addEventListener("drop", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragOverlay.classList.remove("active");
+
+          if (!currentContainer || currentContainer.live_status !== "running")
+            return;
+
+          const files = e.dataTransfer.files;
+          if (files && files.length > 0) {
+            await uploadFilesToContainer(files);
+          }
+        });
+      });
     </script>
   </body>
 </html>

@@ -1529,7 +1529,8 @@ def attach_container_shell(channel, server: StellarSSHServer, process_id: str, a
 # ============================================================
 def restart_container(process_id: str, app_type: str, user_id: int) -> str:
     """
-    Restart the Docker container associated with the specified deployment.
+    Restart the Docker container associated with the specified deployment,
+    sync its updated host_port to Redis, and re-launch the application server process.
 
     Args:
         process_id (str): The process identifier of the application.
@@ -1548,11 +1549,46 @@ def restart_container(process_id: str, app_type: str, user_id: int) -> str:
         audit.info("CONTAINER_RESTART | user_id=%s | container=%s", user_id, container_name)
         start_time = time.time()
         container.restart(timeout=10)
+        time.sleep(1)
+        container.reload()
+
+        # Update host port routing in Redis
+        try:
+            ports = container.attrs.get('NetworkSettings', {}).get('Ports', {})
+            host_port = None
+            for _p_key, p_bindings in ports.items():
+                if p_bindings and len(p_bindings) > 0:
+                    host_port = p_bindings[0]['HostPort']
+                    break
+            if host_port:
+                redis_key = f"repo:process:{process_id}"
+                redis_client.hset(redis_key, mapping={"host_port": str(host_port), "status": "running"})
+        except Exception as redis_err:
+            logger.error("Failed to update Redis host_port on restart process_id=%s: %s", process_id, redis_err)
+
+        # Detect and re-launch application process inside container
+        try:
+            check_app = container.exec_run("test -f /app/app.py")
+            if check_app.exit_code == 0:
+                container.exec_run("bash -c 'cd /app && nohup python3 app.py > app.log 2>&1 &'", detach=True)
+            else:
+                check_server = container.exec_run("test -f /app/server.js")
+                if check_server.exit_code == 0:
+                    container.exec_run("bash -c 'cd /app && nohup node server.js > app.log 2>&1 &'", detach=True)
+                else:
+                    check_pkg = container.exec_run("test -f /app/package.json")
+                    if check_pkg.exit_code == 0:
+                        container.exec_run("bash -c 'cd /app && nohup npm start > app.log 2>&1 &'", detach=True)
+        except Exception as exec_err:
+            logger.error("Failed to launch app process inside container process_id=%s: %s", process_id, exec_err)
+
+        # Allow 2.5s for web server process socket initialization
+        time.sleep(2.5)
+
         duration = time.time() - start_time
         logger.info("Container restart complete container_name=%s duration_sec=%.2f", container_name, duration)
         audit.info("CONTAINER_RESTART_SUCCESS | user_id=%s | container=%s | duration_sec=%.2f", user_id, container_name, duration)
         # Optimize: Update local container status cache directly to prevent race conditions and stale UI states
-        # (Bolt - Performance optimization: direct cache update).
         with _cache_lock:
             _container_statuses_cache[container_name] = 'running'
         # Invalidate container cache so it updates instantly

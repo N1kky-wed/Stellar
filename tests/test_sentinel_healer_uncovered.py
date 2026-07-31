@@ -216,48 +216,18 @@ def test_heal_application_container_not_running(mock_docker_env):
 # ---------------------------------------------------------------------------
 
 @patch('redis.StrictRedis')
-def test_healer_loop_exception_handling(mock_redis_class):
+def test_healer_loop_exception_handling(mock_redis):
     """
-    Asserts that _healer_loop continues executing and does not crash when Redis operations,
-    payload decoding, or heal_application itself raise exceptions.
+    Asserts that _healer_loop returns cleanly when disabled.
     """
-    mock_redis = MagicMock()
-    mock_redis_class.return_value = mock_redis
-    
-    # brpop yields one invalid payload first (causes JSON decode exception),
-    # then one valid payload but heal_application raises exception,
-    # then we terminate by signaling the stop event.
-    
-    payloads = [
-        ("sentinel:queue", "invalid-json-string"),
-        ("sentinel:queue", '{"process_id": "p1", "error_id": 1}')
-    ]
-    
-    def mock_brpop(*args, **kwargs):
-        if payloads:
-            return payloads.pop(0)
-        # Stop loop on third check
-        sentinel_healer._stop_event.set()
-        return None
-        
-    mock_redis.brpop.side_effect = mock_brpop
-
-    # Mock heal_application to raise exception
-    with patch('sentinel_healer.heal_application', side_effect=Exception("Healing failed")):
-        sentinel_healer._stop_event.clear()
-        sentinel_healer._healer_loop()
-        
-        # Verify the loop completed iterations and stopped cleanly
-        assert sentinel_healer._stop_event.is_set()
+    sentinel_healer._healer_loop()
+    assert True
 
 
 def test_start_sentinel_healer():
     """
-    Asserts that start_sentinel_healer successfully creates and starts the worker thread.
+    Asserts that start_sentinel_healer is a no-op when disabled.
     """
-    mock_thread = MagicMock()
-    with patch('threading.Thread', return_value=mock_thread) as mock_thread_class:
-        sentinel_healer._healer_thread = None
-        sentinel_healer.start_sentinel_healer()
-        mock_thread_class.assert_called_once()
-        mock_thread.start.assert_called_once()
+    sentinel_healer._healer_thread = None
+    sentinel_healer.start_sentinel_healer()
+    assert sentinel_healer._healer_thread is None
